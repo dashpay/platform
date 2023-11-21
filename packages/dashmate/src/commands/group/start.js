@@ -1,11 +1,17 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
 
-const { Flags } = require('@oclif/core');
+import { Flags } from '@oclif/core';
+import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
+import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 
-const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
-const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
+export default class GroupStartCommand extends GroupBaseCommand {
+  static flags = {
+    ...GroupBaseCommand.flags,
+    'wait-for-readiness': Flags.boolean({ char: 'w', description: 'wait for nodes to be ready', default: false }),
+  };
 
-class GroupStartCommand extends GroupBaseCommand {
+  static description = 'Start group nodes';
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -56,12 +62,3 @@ class GroupStartCommand extends GroupBaseCommand {
     }
   }
 }
-
-GroupStartCommand.description = 'Start group nodes';
-
-GroupStartCommand.flags = {
-  ...GroupBaseCommand.flags,
-  'wait-for-readiness': Flags.boolean({ char: 'w', description: 'wait for nodes to be ready', default: false }),
-};
-
-module.exports = GroupStartCommand;

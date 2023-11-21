@@ -1,14 +1,13 @@
-const { Listr } = require('listr2');
+import Dash from 'dash';
+import WasmDPP from '@dashevo/wasm-dpp';
+import { Listr } from 'listr2';
 
-const Dash = require('dash');
-
-const { Identifier } = require('@dashevo/wasm-dpp');
-
+const { Identifier } = WasmDPP;
 /**
  *
  * @return {featureFlagTask}
  */
-function featureFlagTaskFactory() {
+export default function featureFlagTaskFactory() {
   /**
    * @typedef {featureFlagTask}
    * @param {Config} config
@@ -82,5 +81,3 @@ function featureFlagTaskFactory() {
 
   return featureFlagTask;
 }
-
-module.exports = featureFlagTaskFactory;

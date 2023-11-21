@@ -1,8 +1,9 @@
-const { PrivateKey } = require('@dashevo/dashcore-lib');
-const wait = require('../../util/wait');
-const { toDash } = require('../../util/satoshiConverter');
-const { NETWORK_LOCAL } = require('../../constants');
+import DashCoreLib from '@dashevo/dashcore-lib';
+import { toDash } from '../../util/satoshiConverter.js';
+import { NETWORK_LOCAL } from '../../constants.js';
+import wait from '../../util/wait.js';
 
+const { PrivateKey } = DashCoreLib;
 /**
  *
  * @typedef waitForBalanceToConfirm
@@ -12,7 +13,7 @@ const { NETWORK_LOCAL } = require('../../constants');
  * @param {function(balance: number)} [progressCallback]
  * @returns {Promise<void>}
  */
-async function waitForBalanceToConfirm(
+export default async function waitForBalanceToConfirm(
   coreService,
   network,
   address,
@@ -38,5 +39,3 @@ async function waitForBalanceToConfirm(
     await progressCallback(toDash(balanceImmature));
   } while (balanceImmature > 0);
 }
-
-module.exports = waitForBalanceToConfirm;

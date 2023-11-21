@@ -1,11 +1,17 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
+import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
+import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
+import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 
-const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
+export default class BuildCommand extends ConfigBaseCommand {
+  static description = `Build docker images
+Build docker images for services configured to be built from source
+`;
 
-const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
-const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
+  static flags = {
+    ...ConfigBaseCommand.flags,
+  };
 
-class BuildCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -51,13 +57,3 @@ class BuildCommand extends ConfigBaseCommand {
     }
   }
 }
-
-BuildCommand.description = `Build docker images
-Build docker images for services configured to be built from source
-`;
-
-BuildCommand.flags = {
-  ...ConfigBaseCommand.flags,
-};
-
-module.exports = BuildCommand;

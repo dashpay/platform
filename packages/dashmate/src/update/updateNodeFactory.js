@@ -1,11 +1,11 @@
-const _ = require('lodash');
+import * as _ from 'lodash';
 
 /**
  * @param {getServiceList} getServiceList
  * @param {docker} docker
  * @return {updateNode}
  */
-function updateNodeFactory(getServiceList, docker) {
+export default function updateNodeFactory(getServiceList, docker) {
   /**
    * Pulls all recent images by given config
    * @typedef {updateNode}
@@ -53,5 +53,3 @@ function updateNodeFactory(getServiceList, docker) {
 
   return updateNode;
 }
-
-module.exports = updateNodeFactory;

@@ -219,10 +219,11 @@ describe('Platform', () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
-      const [fetchedDocument] = await client.platform.documents.get(
-        'customContracts.indexedDocument',
-        { where: [['$id', '==', document.getId()]] },
-      );
+      const [fetchedDocument] = await client.platform
+        .documents.get(
+          'customContracts.indexedDocument',
+          { where: [['$id', '==', document.getId()]] },
+        );
 
       expect(fetchedDocument.get('firstName')).to.equal('updatedName');
       expect(fetchedDocument.getUpdatedAt())
@@ -248,7 +249,10 @@ describe('Platform', () => {
       documentsBatchTransition.transitions[0].updatedAt = new Date();
       documentsBatchTransition.transitions[0].revision += 1;
       const signedTransition = await signStateTransition(
-        client.platform, documentsBatchTransition, identity, 1,
+        client.platform,
+        documentsBatchTransition,
+        identity,
+        1,
       );
 
       const proof = await client.platform.broadcastStateTransition(signedTransition);
@@ -298,7 +302,10 @@ describe('Platform', () => {
 
       documentsBatchTransition.setTransitions(transitions);
       const signedTransition = await signStateTransition(
-        client.platform, documentsBatchTransition, identity, 1,
+        client.platform,
+        documentsBatchTransition,
+        identity,
+        1,
       );
 
       try {

@@ -1,14 +1,15 @@
-const ConfigFile = require('./ConfigFile');
-
-const packageJson = require('../../../package.json');
-const getShortHash = require('../../util/getShortHash');
+import fs from 'fs';
+import path from 'path';
+import getShortHash from '../../util/getShortHash.js';
+import ConfigFile from './ConfigFile.js';
+import { PACKAGE_ROOT_DIR } from '../../constants.js';
 
 /**
  * @param {DefaultConfigs} defaultConfigs
  * @param {HomeDir} homeDir
  * @return {createConfigFile}
  */
-function createConfigFileFactory(defaultConfigs, homeDir) {
+export default function createConfigFileFactory(defaultConfigs, homeDir) {
   /**
    * @typedef {function} createConfigFile
    * @returns {ConfigFile}
@@ -16,9 +17,11 @@ function createConfigFileFactory(defaultConfigs, homeDir) {
   function createConfigFile() {
     const projectId = getShortHash(homeDir.getPath());
 
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
     const configFile = new ConfigFile(
       defaultConfigs.getAll(),
-      packageJson.version,
+      version,
       projectId,
       null,
       null,
@@ -32,5 +35,3 @@ function createConfigFileFactory(defaultConfigs, homeDir) {
 
   return createConfigFile;
 }
-
-module.exports = createConfigFileFactory;

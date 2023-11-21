@@ -17,7 +17,6 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 function getDocumentsFactory(grpcTransport) {
   /**
    * Fetch Documents from Drive
-   *
    * @typedef {getDocuments}
    * @param {Buffer} contractId - Data Contract ID
    * @param {string} type - Document type

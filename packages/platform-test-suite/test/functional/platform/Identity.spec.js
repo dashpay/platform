@@ -73,9 +73,8 @@ describe('Platform', () => {
 
       const {
         identityCreateTransition: invalidIdentityCreateTransition,
-      } = await client.platform.identities.utils.createIdentityCreateTransition(
-        assetLockProof, privateKey,
-      );
+      } = await client.platform.identities
+        .utils.createIdentityCreateTransition(assetLockProof, privateKey);
 
       let broadcastError;
 
@@ -169,9 +168,8 @@ describe('Platform', () => {
 
       const {
         identityCreateTransition,
-      } = await client.platform.identities.utils.createIdentityCreateTransition(
-        assetLockProof, privateKey,
-      );
+      } = await client.platform.identities
+        .utils.createIdentityCreateTransition(assetLockProof, privateKey);
 
       // Remove signature
 

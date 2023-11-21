@@ -1,20 +1,20 @@
 /* eslint-disable no-param-reassign */
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
 
-const {
+import {
   NETWORK_LOCAL,
   NETWORK_TESTNET,
   NETWORK_MAINNET,
   SSL_PROVIDERS,
-} = require('../src/constants');
+} from '../src/constants.js';
 
 /**
  * @param {HomeDir} homeDir
  * @param {DefaultConfigs} defaultConfigs
  * @returns {getConfigFileMigrations}
  */
-function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
+export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
   /**
    * @typedef {function} getConfigFileMigrations
    * @returns {Object}
@@ -257,8 +257,14 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
               for (const filename of filenames) {
                 const oldFilePath = homeDir.joinPath('ssl', name, filename);
-                const newFilePath = homeDir.joinPath(name,
-                  'platform', 'dapi', 'envoy', 'ssl', filename);
+                const newFilePath = homeDir.joinPath(
+                  name,
+                  'platform',
+                  'dapi',
+                  'envoy',
+                  'ssl',
+                  filename,
+                );
 
                 if (fs.existsSync(oldFilePath)) {
                   fs.mkdirSync(path.dirname(newFilePath), { recursive: true });
@@ -314,10 +320,16 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
         return configFile;
       },
+      '0.25.16': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.core.insight = base.get('core.insight');
+          });
+
+        return configFile;
+      },
     };
   }
 
   return getConfigFileMigrations;
 }
-
-module.exports = getConfigFileMigrationsFactory;

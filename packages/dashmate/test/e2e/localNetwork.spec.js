@@ -1,7 +1,6 @@
-const { asValue } = require('awilix');
-
-const createDIContainer = require('../../src/createDIContainer');
-const HomeDir = require('../../src/config/HomeDir');
+import { asValue } from 'awilix';
+import createDIContainer from '../../src/createDIContainer.js';
+import HomeDir from '../../src/config/HomeDir.js';
 
 describe('Local Network', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes

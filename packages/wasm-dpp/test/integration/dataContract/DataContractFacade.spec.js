@@ -26,9 +26,7 @@ describe('DataContractFacade', () => {
 
   beforeEach(async function beforeEach() {
     stateTransitionMock = createStateRepositoryMock(this.sinon);
-    dpp = new DashPlatformProtocol(
-      { generate: () => crypto.randomBytes(32) }, 1,
-    );
+    dpp = new DashPlatformProtocol({ generate: () => crypto.randomBytes(32) }, 1);
 
     dataContract = await getDataContractFixture();
     rawDataContract = dataContract.toObject();

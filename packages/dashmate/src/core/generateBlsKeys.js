@@ -1,5 +1,5 @@
-const crypto = require('crypto');
-const BlsSignatures = require('@dashevo/bls');
+import crypto from 'crypto';
+import BlsSignatures from '@dashevo/bls';
 
 /**
  * Generate BLS keys
@@ -7,7 +7,7 @@ const BlsSignatures = require('@dashevo/bls');
  * @typedef {generateBlsKeys}
  * @return {Promise<{privateKey: *, address: *}>}
  */
-async function generateBlsKeys() {
+export default async function generateBlsKeys() {
   const blsSignatures = await BlsSignatures();
   const { BasicSchemeMPL } = blsSignatures;
 
@@ -26,5 +26,3 @@ async function generateBlsKeys() {
     privateKey: operatorPrivateKeyHex,
   };
 }
-
-module.exports = generateBlsKeys;

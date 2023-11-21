@@ -27,9 +27,7 @@ describe.skip('validateIdentityTopUpTransitionStateFactory', () => {
     const validator = new IdentityTopUpTransitionStateValidator(stateRepositoryMock);
 
     executionContext = new StateTransitionExecutionContext();
-    validateIdentityTopUpTransitionState = (st) => validator.validate(
-      st, executionContext,
-    );
+    validateIdentityTopUpTransitionState = (st) => validator.validate(st, executionContext);
   });
 
   it('should return valid result', async () => {

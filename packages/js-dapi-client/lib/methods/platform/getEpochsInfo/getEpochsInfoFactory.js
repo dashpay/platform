@@ -17,7 +17,6 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 function getEpochsInfoFactory(grpcTransport) {
   /**
    * Fetch the epoch info
-   *
    * @typedef {getEpochsInfo}
    * @param {number} startEpoch
    * @param {number} count

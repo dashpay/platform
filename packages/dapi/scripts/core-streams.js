@@ -120,8 +120,11 @@ async function main() {
 
   const blockHeadersCache = new BlockHeadersCache();
 
-  const chainDataProvider = new ChainDataProvider(dashCoreRpcClient,
-    dashCoreZmqClient, blockHeadersCache);
+  const chainDataProvider = new ChainDataProvider(
+    dashCoreRpcClient,
+    dashCoreZmqClient,
+    blockHeadersCache,
+  );
   await chainDataProvider.init();
 
   // Start GRPC server

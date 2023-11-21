@@ -16,7 +16,6 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 function getDataContractHistoryFactory(grpcTransport) {
   /**
    * Fetch Data Contract by id
-   *
    * @typedef {getDataContractHistory}
    * @param {Buffer} contractId
    * @param {number} [startAtMs]

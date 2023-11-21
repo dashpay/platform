@@ -32,7 +32,6 @@ class AbstractResponse {
   /**
    *
    * @param proto
-   *
    * @returns{{metadata: Metadata, proof: Proof|undefined}}
    * @throws {InvalidResponseError}
    */
