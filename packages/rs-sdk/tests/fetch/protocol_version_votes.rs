@@ -3,7 +3,7 @@ use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use drive_proof_verifier::types::MasternodeProtocolVote;
 use rs_sdk::platform::FetchMany;
 
-/// Given protxhash with only zeros, when I fetch node's votes, I can retrieve them.
+/// Given protxhash with only zeros, when I fetch protocol version votes for nodes, I can retrieve them.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_protocol_version_votes() {
     setup_logs();
@@ -21,7 +21,7 @@ async fn test_protocol_version_votes() {
     assert!(!votings.is_empty());
 }
 
-/// Given protxhash with only zeros, when I fetch node's votes with limit 2, I can retrieve them.
+/// Given protxhash with only zeros, when I fetcg protocol version votes for nodes with limit 2, I get exactly 2 items.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_protocol_version_votes_limit_2() {
     setup_logs();
@@ -39,7 +39,7 @@ async fn test_protocol_version_votes_limit_2() {
     assert!(votings.len() == 2);
 }
 
-/// Given protxhash with only `0xFF`s, when I fetch node's votes, I get nothing.
+/// Given protxhash with only `0xFF`s, when I fetch protocol version votes for nodes, I get nothing.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_protocol_version_votes_nx() {
     setup_logs();

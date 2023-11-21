@@ -10,7 +10,7 @@ use rs_sdk::platform::{Fetch, FetchMany};
 use crate::common::setup_logs;
 use crate::config::Config;
 
-/// Given some existing ide ntity ID, when I fetch the identity, and I get it.
+/// Given some existing identity ID, when I fetch the identity, and I get it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_identity_read() {
     setup_logs();
