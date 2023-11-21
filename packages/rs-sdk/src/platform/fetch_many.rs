@@ -51,7 +51,7 @@ use super::LimitQuery;
 ///
 /// * define [Identifier]s of data contracts to fetch,
 /// * create a query by grouping identifiers in a collection, like a [Vec] or a slice,
-/// * call [DataContract::fetch_many()] with the query and an instance of [Sdk].
+/// * call [DataContract::fetch_many()](FetchMany::fetch_many()) with the query and an instance of [Sdk].
 /// // TODO: UN-ignore after implementing DataContract::fetch_many
 /// ```rust,ignore
 /// use rs_sdk::{Sdk, platform::{Query, Identifier, Fetch, DataContract}};
@@ -289,7 +289,7 @@ impl FetchMany<ProtocolVersion> for ProtocolVersionVoteCount {
 ///
 /// * [ProTxHash](dashcore_rpc::dashcore::ProTxHash) - proTxHash of first object to find; will return up to
 /// [DEFAULT_NODES_VOTING_LIMIT](super::query::DEFAULT_NODES_VOTING_LIMIT) objects
-/// * [Option<ProTxHash>](dashcore_rpc::dashcore::ProTxHash) - proTxHash that can be and [Option]; if it is `None`,
+/// * [`Option<ProTxHash>`](dashcore_rpc::dashcore::ProTxHash) - proTxHash that can be and [Option]; if it is `None`,
 /// the query will return all objects
 /// * [`LimitQuery<ProTxHash>`](super::LimitQuery) - limit query that allows to specify maximum number of objects
 /// to fetch; see also [FetchMany::fetch_many_with_limit()].
