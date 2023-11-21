@@ -25,7 +25,7 @@ async fn test_data_contract_read() {
 
     let mut sdk = cfg.setup_api().await;
 
-    let result = DataContract::fetch(&mut sdk, id).await;
+    let result = DataContract::fetch_by_identifier(&mut sdk, id).await;
 
     assert!(matches!(result, Ok(Some(_))), "result: {:?}", result);
     assert_eq!(result.unwrap().unwrap().id(), id);
