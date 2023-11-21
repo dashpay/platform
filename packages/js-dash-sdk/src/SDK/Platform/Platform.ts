@@ -1,3 +1,4 @@
+// TODO remove default exports
 // eslint-disable-next-line no-restricted-exports
 import * as _DashPlatformProtocol from '@dashevo/wasm-dpp';
 import { Platform as PlatformClient } from '../Client/Platform/Platform';

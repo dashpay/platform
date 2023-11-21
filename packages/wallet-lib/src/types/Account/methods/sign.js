@@ -6,6 +6,7 @@ const { PrivateKey, HDPrivateKey } = require('@dashevo/dashcore-lib');
  * @param {number} [sigType] - a valid signature value (Dashcore.Signature)
  * @return {Transaction} transaction - the signed transaction
  */
+// TODO move options to as last param
 // eslint-disable-next-line default-param-last
 module.exports = function sign(object, privateKeys = [], sigType) {
   const { network } = this;

@@ -42,6 +42,7 @@ class TransactionsReader extends EventEmitter {
    * @param {Function} [createHistoricalSyncStream]
    * @param {Function} [createContinuousSyncStream]
    */
+  // TODO move options to as last param
   // eslint-disable-next-line default-param-last
   constructor(options = {}, createHistoricalSyncStream, createContinuousSyncStream) {
     super();
