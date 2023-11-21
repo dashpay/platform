@@ -60,7 +60,7 @@ async fn test_data_contracts_1_ok_1_nx() {
     );
     // not existing one
     assert!(
-        result.get(&id).expect("found in result").is_none(),
+        result.get(&nx_id).expect("found in result").is_none(),
         "proof of non-existence failed"
     );
 }

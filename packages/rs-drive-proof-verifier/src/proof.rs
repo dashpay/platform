@@ -567,7 +567,7 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         let maybe_contracts: Option<BTreeMap<Identifier, Option<DataContract>>> =
-            if contracts.count_some() > 0 {
+            if !contracts.is_empty() {
                 let contracts: DataContracts = contracts
                     .into_iter()
                     .try_fold(DataContracts::new(), |mut acc, (k, v)| {
