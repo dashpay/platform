@@ -32,11 +32,18 @@
 ### [0.25.15](https://github.com/dashpay/platform/compare/v0.25.13...v0.25.15) (2023-11-05)
 
 ### What's Changed
-* chore(dpp)!: allow only one document transition by @shumkov in https://github.com/dashpay/platform/pull/1555
-* chore: remove unused and vulnerable github-api package by @shumkov in https://github.com/dashpay/platform/pull/1571
-* build: bump rust packages versions in the release script by @pshenmic in https://github.com/dashpay/platform/pull/1573
-* ci: speed up workflows and reduce costs by @strophy in https://github.com/dashpay/platform/pull/1545
-* feat: rust software development kit for Dash Platform by @lklimek in https://github.com/dashpay/platform/pull/1475
+
+### ⚠ BREAKING CHANGES
+
+* dpp: allow only one document transition ([#1555](https://github.com/dashpay/platform/issues/1555))
+
+### Continuous Integration
+* chore: remove unused and vulnerable github-api package ([#1571](https://github.com/dashpay/platform/issues/1571))
+* bump rust packages versions in the release script by ([#1573](https://github.com/dashpay/platform/issues/1573))
+* ci: speed up workflows and reduce costs ([#1545](https://github.com/dashpay/platform/issues/1545))
+
+### Features
+* rust sofrware development kit for Dash Platform ([#1475](https://github.com/dashpay/platform/issues/1475))
 
 ### [0.25.13](https://github.com/dashpay/platform/compare/v0.25.12...v0.25.13) (2023-11-05)
 
