@@ -75,7 +75,7 @@ in `packages/rs-dapi-client/src/transport/grpc.rs`.
 4. [ ] If needed, implement new type in `packages/rs-drive-proof-verifier/src/types.rs` to hide complexity of data structures
    used internally.
 
-   If you intend to implement `FetchMany`, you should define type returned by `fetch_many()` using `Collection`
+   If you intend to implement `FetchMany`, you should define type returned by `fetch_many()` using `RetrievedObjects`
    that will store collection of  returned objects, indexd by some key.
 5. [ ] Implement `FromProof` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-drive-proof-verifier/src/proof.rs`.
 6. [ ] Implement `Query` trait for the `Request` in `packages/rs-sdk/src/platform/query.rs`.

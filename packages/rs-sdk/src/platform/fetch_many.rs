@@ -12,12 +12,13 @@ use crate::{
     Sdk,
 };
 use dapi_grpc::platform::v0::{
-    GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest,
+    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
@@ -154,4 +155,11 @@ impl FetchMany<ProtocolVersion> for ProtocolVersionVoteCount {
 /// indexed by [ProTxHash](dashcore_rpc::dashcore::ProTxHash).
 impl FetchMany<ProTxHash> for ProtocolVersion {
     type Request = GetProtocolVersionUpgradeVoteStatusRequest;
+}
+
+/// Fetch multiple data contracts.
+///
+/// Returns [DataContracts](drive_proof_verifier::types::DataContracts) indexed by [Identifier](dpp::prelude::Identifier).
+impl FetchMany<Identifier> for DataContract {
+    type Request = GetDataContractsRequest;
 }
