@@ -118,6 +118,35 @@ export default {
     core: {
       type: 'object',
       properties: {
+        insight: {
+          type: 'object',
+          properties: {
+            enabled: {
+              type: 'boolean',
+            },
+            ui: {
+              type: 'object',
+              properties: {
+                enabled: {
+                  type: 'boolean',
+                },
+                docker: {
+                  $ref: '#/definitions/docker',
+                },
+              },
+              required: ['enabled', 'docker'],
+              additionalProperties: false,
+            },
+            docker: {
+              $ref: '#/definitions/docker',
+            },
+            port: {
+              $ref: '#/definitions/port',
+            },
+          },
+          required: ['enabled', 'docker', 'port', 'ui'],
+          additionalProperties: false,
+        },
         docker: {
           type: 'object',
           properties: {
@@ -299,7 +328,7 @@ export default {
         },
       },
       required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet', 'log',
-        'logIps', 'indexes'],
+        'logIps', 'indexes', 'insight'],
       additionalProperties: false,
     },
     platform: {

@@ -100,6 +100,10 @@ function subscribeToTransactionsWithProofsHandlerFactory(
 
     const bloomFilterMessage = request.getBloomFilter();
 
+    if (!bloomFilterMessage) {
+      throw new InvalidArgumentGrpcError('Bloom filter is not set');
+    }
+
     const bloomFilter = {
       vData: bloomFilterMessage.getVData_asU8(),
       nHashFuncs: bloomFilterMessage.getNHashFuncs(),
