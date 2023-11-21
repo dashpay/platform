@@ -48,18 +48,6 @@ use std::sync::Arc;
 
 #[cfg(feature = "full")]
 use dpp::data_contract::DataContractFactory;
-use rand::random;
-#[cfg(feature = "full")]
-use rand::seq::SliceRandom;
-#[cfg(feature = "full")]
-use rand::{Rng, SeedableRng};
-#[cfg(feature = "full")]
-use serde::{Deserialize, Serialize};
-#[cfg(feature = "full")]
-use serde_json::json;
-#[cfg(feature = "full")]
-use tempfile::TempDir;
-
 #[cfg(feature = "full")]
 use drive::common;
 #[cfg(feature = "full")]
@@ -81,6 +69,15 @@ use drive::query::DriveQuery;
 #[cfg(feature = "full")]
 #[cfg(test)]
 use drive::tests::helpers::setup::setup_drive;
+use rand::random;
+#[cfg(feature = "full")]
+use rand::seq::SliceRandom;
+#[cfg(feature = "full")]
+use rand::{Rng, SeedableRng};
+#[cfg(feature = "full")]
+use serde::{Deserialize, Serialize};
+#[cfg(feature = "full")]
+use serde_json::json;
 
 #[cfg(feature = "full")]
 use dpp::document::Document;
@@ -4798,15 +4795,9 @@ fn test_dpns_query_start_after_with_null_id_desc() {
 #[cfg(feature = "full")]
 #[test]
 fn test_query_a_b_c_d_e_contract() {
-    let tmp_dir = TempDir::new().unwrap();
-
-    let drive: Drive = setup_drive(None);
+    let drive: Drive = setup_drive_with_initial_state_structure();
 
     let platform_version = PlatformVersion::latest();
-
-    drive
-        .create_initial_state_structure(None, platform_version)
-        .expect("expected to create root tree successfully");
 
     // Create a contract
 
