@@ -13,7 +13,9 @@ class ColdStorageWorker extends Worker {
       ],
     });
     if (!props.address) {
-      throw new Error('ColdStorageWorker expect an address');
+      // todo refactor constructor to fit no-constructor-return
+      // eslint-disable-next-line no-constructor-return
+      return new Error('ColdStorageWorker expect an address');
     }
     this.address = props.address;
   }
