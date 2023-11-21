@@ -1327,7 +1327,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-version = "0.25.0"
+version = "0.25.16-rc.1"
 dependencies = [
  "dapi-grpc",
  "dpp",
