@@ -31,8 +31,6 @@
 
 ### [0.25.15](https://github.com/dashpay/platform/compare/v0.25.13...v0.25.15) (2023-11-05)
 
-### What's Changed
-
 ### ⚠ BREAKING CHANGES
 
 * dpp: allow only one document transition ([#1555](https://github.com/dashpay/platform/issues/1555))
