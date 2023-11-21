@@ -146,7 +146,10 @@
         "prefixItems": {
           "$ref": "#/$defs/documentSchemaArray"
         },
-        "items": true
+        "items": true,
+        "position": {
+          "type": "integer"
+        }
       },
       "dependentSchemas": {
         "byteArray": {
@@ -281,6 +284,33 @@
         }
       },
       "allOf": [
+        {
+          "$comment": "require index for object properties",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "object"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "position": true
+                  },
+                  "required": ["position"]
+                }
+              }
+            }
+          }
+        },
         {
           "$comment": "allow only byte arrays",
           "if": {

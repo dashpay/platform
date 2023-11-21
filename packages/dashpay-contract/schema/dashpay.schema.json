@@ -27,29 +27,34 @@
       "avatarUrl": {
         "type": "string",
         "format": "uri",
-        "maxLength": 2048
+        "maxLength": 2048,
+        "position": 0
       },
       "avatarHash": {
         "type": "array",
         "byteArray": true,
         "minItems": 32,
         "maxItems": 32,
-        "description": "SHA256 hash of the bytes of the image specified by avatarUrl"
+        "description": "SHA256 hash of the bytes of the image specified by avatarUrl",
+        "position": 1
       },
       "avatarFingerprint": {
         "type": "array",
         "byteArray": true,
         "minItems": 8,
         "maxItems": 8,
-        "description": "dHash the image specified by avatarUrl"
+        "description": "dHash the image specified by avatarUrl",
+        "position": 2
       },
       "publicMessage": {
         "type": "string",
-        "maxLength": 140
+        "maxLength": 140,
+        "position": 3
       },
       "displayName": {
         "type": "string",
-        "maxLength": 25
+        "maxLength": 25,
+        "position": 4
       }
     },
     "required": [

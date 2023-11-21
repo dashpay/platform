@@ -38,21 +38,24 @@
         "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$",
         "minLength": 3,
         "maxLength": 63,
-        "description": "Domain label. e.g. 'Bob'."
+        "description": "Domain label. e.g. 'Bob'.",
+        "position": 0
       },
       "normalizedLabel": {
         "type": "string",
         "pattern": "^[a-hj-km-np-z0-9][a-hj-km-np-z0-9-]{0,61}[a-hj-km-np-z0-9]$",
         "maxLength": 63,
         "description": "Domain label converted to lowercase for case-insensitive uniqueness validation. \"o\", \"i\" and \"l\" replaced with \"0\" and \"1\" to mitigate homograph attack. e.g. 'b0b'",
-        "$comment": "Must be equal to the label in lowercase. \"o\", \"i\" and \"l\" must be replaced with \"0\" and \"1\"."
+        "$comment": "Must be equal to the label in lowercase. \"o\", \"i\" and \"l\" must be replaced with \"0\" and \"1\".",
+        "position": 1
       },
       "parentDomainName": {
         "type": "string",
         "pattern": "^$|^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$",
         "minLength": 0,
         "maxLength": 63,
-        "description": "A full parent domain name. e.g. 'dash'."
+        "description": "A full parent domain name. e.g. 'dash'.",
+        "position": 2
       },
       "normalizedParentDomainName": {
         "type": "string",
@@ -60,14 +63,16 @@
         "minLength": 0,
         "maxLength": 63,
         "description": "A parent domain name in lowercase for case-insensitive uniqueness validation. \"o\", \"i\" and \"l\" replaced with \"0\" and \"1\" to mitigate homograph attack. e.g. 'dash'",
-        "$comment": "Must either be equal to an existing domain or empty to create a top level domain. \"o\", \"i\" and \"l\" must be replaced with \"0\" and \"1\". Only the data contract owner can create top level domains."
+        "$comment": "Must either be equal to an existing domain or empty to create a top level domain. \"o\", \"i\" and \"l\" must be replaced with \"0\" and \"1\". Only the data contract owner can create top level domains.",
+        "position": 3
       },
       "preorderSalt": {
         "type": "array",
         "byteArray": true,
         "minItems": 32,
         "maxItems": 32,
-        "description": "Salt used in the preorder document"
+        "description": "Salt used in the preorder document",
+        "position": 4
       },
       "records": {
         "type": "object",
@@ -79,7 +84,8 @@
             "maxItems": 32,
             "contentMediaType": "application/x.dash.dpp.identifier",
             "description": "Identity ID to be used to create the primary name the Identity",
-            "$comment": "Must be equal to the document owner"
+            "$comment": "Must be equal to the document owner",
+            "position": 0
           },
           "dashAliasIdentityId": {
             "type": "array",
@@ -88,13 +94,15 @@
             "maxItems": 32,
             "contentMediaType": "application/x.dash.dpp.identifier",
             "description": "Identity ID to be used to create alias names for the Identity",
-            "$comment": "Must be equal to the document owner"
+            "$comment": "Must be equal to the document owner",
+            "position": 1
           }
         },
         "$comment": "Constraint with max and min properties ensure that only one identity record is used - either a `dashUniqueIdentityId` or a `dashAliasIdentityId`",
         "minProperties": 1,
         "maxProperties": 1,
-        "additionalProperties": false
+        "additionalProperties": false,
+        "position": 5
       },
       "subdomainRules": {
         "type": "object",
@@ -102,12 +110,14 @@
           "allowSubdomains": {
             "type": "boolean",
             "description": "This option defines who can create subdomains: true - anyone; false - only the domain owner",
-            "$comment": "Only the domain owner is allowed to create subdomains for non top-level domains"
+            "$comment": "Only the domain owner is allowed to create subdomains for non top-level domains",
+            "position": 0
           }
         },
         "description": "Subdomain rules allow domain owners to define rules for subdomains",
         "additionalProperties": false,
-        "required": ["allowSubdomains"]
+        "required": ["allowSubdomains"],
+        "position": 6
       }
     },
     "required": [
