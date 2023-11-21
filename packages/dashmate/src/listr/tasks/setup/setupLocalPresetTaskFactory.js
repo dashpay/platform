@@ -1,12 +1,10 @@
-const { Listr } = require('listr2');
-
-const {
+import { Listr } from 'listr2';
+import {
   PRESET_LOCAL,
-} = require('../../../constants');
-
-const generateTenderdashNodeKey = require('../../../tenderdash/generateTenderdashNodeKey');
-const deriveTenderdashNodeId = require('../../../tenderdash/deriveTenderdashNodeId');
-const generateRandomString = require('../../../util/generateRandomString');
+} from '../../../constants.js';
+import generateTenderdashNodeKey from '../../../tenderdash/generateTenderdashNodeKey.js';
+import deriveTenderdashNodeId from '../../../tenderdash/deriveTenderdashNodeId.js';
+import generateRandomString from '../../../util/generateRandomString.js';
 
 /**
  * @param {ConfigFile} configFile
@@ -17,7 +15,7 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
  * @param {HomeDir} homeDir
  */
-function setupLocalPresetTaskFactory(
+export default function setupLocalPresetTaskFactory(
   configFile,
   configureCoreTask,
   obtainSelfSignedCertificateTask,
@@ -303,5 +301,3 @@ function setupLocalPresetTaskFactory(
 
   return setupLocalPresetTask;
 }
-
-module.exports = setupLocalPresetTaskFactory;

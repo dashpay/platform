@@ -1,12 +1,26 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
 
-const { Flags } = require('@oclif/core');
+import { Flags } from '@oclif/core';
+import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
+import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
 
-const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
+export default class StopCommand extends ConfigBaseCommand {
+  static description = 'Stop node';
 
-const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
+  static flags = {
+    ...ConfigBaseCommand.flags,
+    force: Flags.boolean({
+      char: 'f',
+      description: 'force stop even if any service is running',
+      default: false,
+    }),
+    platform: Flags.boolean({
+      char: 'p',
+      description: 'stop only platform',
+      default: false,
+    }),
+  };
 
-class StopCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -24,20 +38,22 @@ class StopCommand extends ConfigBaseCommand {
     stopNodeTask,
     config,
   ) {
-    const tasks = new Listr([
+    const tasks = new Listr(
+      [
+        {
+          task: async () => stopNodeTask(config),
+        },
+      ],
       {
-        task: async () => stopNodeTask(config),
+        renderer: isVerbose ? 'verbose' : 'default',
+        rendererOptions: {
+          showTimer: isVerbose,
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
+        },
       },
-    ],
-    {
-      renderer: isVerbose ? 'verbose' : 'default',
-      rendererOptions: {
-        showTimer: isVerbose,
-        clearOutput: false,
-        collapse: false,
-        showSubtasks: true,
-      },
-    });
+    );
 
     try {
       await tasks.run({
@@ -50,21 +66,3 @@ class StopCommand extends ConfigBaseCommand {
     }
   }
 }
-
-StopCommand.description = 'Stop node';
-
-StopCommand.flags = {
-  ...ConfigBaseCommand.flags,
-  force: Flags.boolean({
-    char: 'f',
-    description: 'force stop even if any service is running',
-    default: false,
-  }),
-  platform: Flags.boolean({
-    char: 'p',
-    description: 'stop only platform',
-    default: false,
-  }),
-};
-
-module.exports = StopCommand;

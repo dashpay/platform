@@ -1,11 +1,23 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import { Flags } from '@oclif/core';
+import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 
-const { Flags } = require('@oclif/core');
+export default class ConfigEnvsCommand extends ConfigBaseCommand {
+  static description = `Export config to envs
 
-const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
+Export configuration options as Docker Compose envs
+`;
 
-class ConfigEnvsCommand extends ConfigBaseCommand {
+  static flags = {
+    ...ConfigBaseCommand.flags,
+    'output-file': Flags.string({
+      char: 'o',
+      description: 'output to file',
+      default: null,
+    }),
+  };
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -39,19 +51,3 @@ class ConfigEnvsCommand extends ConfigBaseCommand {
     }
   }
 }
-
-ConfigEnvsCommand.description = `Export config to envs
-
-Export configuration options as Docker Compose envs
-`;
-
-ConfigEnvsCommand.flags = {
-  ...ConfigBaseCommand.flags,
-  'output-file': Flags.string({
-    char: 'o',
-    description: 'output to file',
-    default: null,
-  }),
-};
-
-module.exports = ConfigEnvsCommand;

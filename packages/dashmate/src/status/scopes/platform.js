@@ -1,8 +1,8 @@
-const determineStatus = require('../determineStatus');
-const DockerStatusEnum = require('../enums/dockerStatus');
-const ServiceStatusEnum = require('../enums/serviceStatus');
-const providers = require('../providers');
-const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
+import providers from '../providers.js';
+import { DockerStatusEnum } from '../enums/dockerStatus.js';
+import { ServiceStatusEnum } from '../enums/serviceStatus.js';
+import determineStatus from '../determineStatus.js';
+import ContainerIsNotPresentError from '../../docker/errors/ContainerIsNotPresentError.js';
 
 /**
  * @returns {getPlatformScopeFactory}
@@ -10,7 +10,7 @@ const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPr
  * @param {createRpcClient} createRpcClient
  * @param {getConnectionHost} getConnectionHost
  */
-function getPlatformScopeFactory(
+export default function getPlatformScopeFactory(
   dockerCompose,
   createRpcClient,
   getConnectionHost,
@@ -260,5 +260,3 @@ function getPlatformScopeFactory(
 
   return getPlatformScope;
 }
-
-module.exports = getPlatformScopeFactory;

@@ -1,6 +1,5 @@
-const wait = require('../../util/wait');
-
-const { LLMQ_TYPE_TEST } = require('../../constants');
+import { LLMQ_TYPE_TEST } from '../../constants.js';
+import wait from '../../util/wait.js';
 
 /**
  *
@@ -65,7 +64,7 @@ async function checkDKGSessionPhase(
  * @param {number} [checkInterval]
  * @return {Promise<void>}
  */
-async function waitForQuorumPhase(
+export default async function waitForQuorumPhase(
   rpcClients,
   quorumHash,
   phase,
@@ -96,5 +95,3 @@ async function waitForQuorumPhase(
     }
   }
 }
-
-module.exports = waitForQuorumPhase;

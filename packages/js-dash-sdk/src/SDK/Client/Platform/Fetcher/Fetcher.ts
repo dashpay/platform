@@ -134,7 +134,10 @@ class Fetcher {
    * @param offset
    */
   public async fetchDataContractHistory(
-    id: Identifier, startAMs: number, limit: number, offset: number,
+    id: Identifier,
+    startAMs: number,
+    limit: number,
+    offset: number,
   ): Promise<GetDataContractHistoryResponse> {
     // Define query
     const query = async (): Promise<GetDataContractHistoryResponse> => await this

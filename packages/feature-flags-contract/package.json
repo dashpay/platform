@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/feature-flags-contract",
-  "version": "0.25.13",
+  "version": "0.25.15",
   "description": "Data Contract to store Dash Platform feature flags",
   "scripts": {
     "build": "",
@@ -33,13 +33,13 @@
   "license": "MIT",
   "devDependencies": {
     "@dashevo/wasm-dpp": "workspace:*",
-    "chai": "^4.3.9",
+    "chai": "^4.3.10",
     "dirty-chai": "^2.0.1",
-    "eslint": "^7.32.0",
-    "eslint-config-airbnb-base": "^14.2.1",
-    "eslint-plugin-import": "^2.24.2",
+    "eslint": "^8.53.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.29.0",
     "mocha": "^10.2.0",
-    "sinon": "^11.1.2",
+    "sinon": "^17.0.1",
     "sinon-chai": "^3.7.0"
   }
 }

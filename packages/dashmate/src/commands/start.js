@@ -1,12 +1,23 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
 
-const { Flags } = require('@oclif/core');
+import { Flags } from '@oclif/core';
+import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
+import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
 
-const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
+export default class StartCommand extends ConfigBaseCommand {
+  static description = 'Start node';
 
-const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
+  static flags = {
+    ...ConfigBaseCommand.flags,
+    'wait-for-readiness': Flags.boolean({ char: 'w', description: 'wait for nodes to be ready', default: false }),
+    platform: Flags.boolean({ char: 'p', description: 'start only platform', default: false }),
+    force: Flags.boolean({
+      char: 'f',
+      description: 'force start even if any services are already running',
+      default: false,
+    }),
+  };
 
-class StartCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -63,18 +74,3 @@ class StartCommand extends ConfigBaseCommand {
     }
   }
 }
-
-StartCommand.description = 'Start node';
-
-StartCommand.flags = {
-  ...ConfigBaseCommand.flags,
-  'wait-for-readiness': Flags.boolean({ char: 'w', description: 'wait for nodes to be ready', default: false }),
-  platform: Flags.boolean({ char: 'p', description: 'start only platform', default: false }),
-  force: Flags.boolean({
-    char: 'f',
-    description: 'force start even if any services are already running',
-    default: false,
-  }),
-};
-
-module.exports = StartCommand;

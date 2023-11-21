@@ -55,6 +55,7 @@ cargo test -p rs-sdk
 ## Implementing Fetch and FetchAny on new objects
 
 How to implement `Fetch` and `FetchAny` trait on new object types (`Object`).
+
 It's basically copy-paste and tweaking of existing implementation for another object type.
 
 Definitions:

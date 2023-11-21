@@ -1,7 +1,7 @@
-const path = require('path');
-const { PACKAGE_ROOT_DIR } = require('../../constants');
+import path from 'path';
+import { PACKAGE_ROOT_DIR } from '../../constants.js';
 
-function getConfigFileDataV0250() {
+export default function getConfigFileDataV0250() {
   return {
     configFormatVersion: '0.25.0',
     defaultConfigName: null,
@@ -1038,5 +1038,3 @@ function getConfigFileDataV0250() {
     projectId: 'ad3bc757',
   };
 }
-
-module.exports = getConfigFileDataV0250;

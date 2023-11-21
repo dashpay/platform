@@ -15,7 +15,6 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 function getProtocolVersionUpgradeVoteStatusFactory(grpcTransport) {
   /**
    * Fetch the version upgrade vote status
-   *
    * @typedef {getProtocolVersionUpgradeVoteStatus}
    * @param {string} startProTxHash
    * @param {number} count

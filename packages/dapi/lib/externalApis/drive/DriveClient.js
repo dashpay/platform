@@ -34,9 +34,7 @@ class DriveClient {
 
     // Handle JSON RPC error
     if (error) {
-      throw new RPCError(
-        error.code || -32602, error.message || 'Internal error', error.data,
-      );
+      throw new RPCError(error.code || -32602, error.message || 'Internal error', error.data);
     }
 
     // Check and handle ABCI errors

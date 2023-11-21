@@ -72,9 +72,7 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
 
     const privateKey = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
 
-    await stateTransition.signByPrivateKey(
-      Buffer.from(privateKey, 'hex'), IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-    );
+    await stateTransition.signByPrivateKey(Buffer.from(privateKey, 'hex'), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
   });
 
   it('should return InvalidIdentityRevisionError if new revision is not incremented by 1', async () => {

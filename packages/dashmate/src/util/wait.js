@@ -3,8 +3,4 @@
  * @param {Number} ms - Number of milliseconds to wait.
  * @return {Promise<void>} The promise to await on.
  */
-async function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-module.exports = wait;
+export default async (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });

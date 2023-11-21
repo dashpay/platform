@@ -62,7 +62,8 @@ describe.skip('validateIdentityTopUpTransitionBasicFactory', () => {
       delete rawStateTransition.protocolVersion;
 
       const result = await validateIdentityTopUpTransitionBasic(
-        rawStateTransition, executionContext,
+        rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result);
@@ -78,7 +79,8 @@ describe.skip('validateIdentityTopUpTransitionBasicFactory', () => {
       rawStateTransition.protocolVersion = '1';
 
       const result = await validateIdentityTopUpTransitionBasic(
-        rawStateTransition, executionContext,
+        rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result);
@@ -93,7 +95,8 @@ describe.skip('validateIdentityTopUpTransitionBasicFactory', () => {
       rawStateTransition.protocolVersion = 1000;
 
       const result = await validateIdentityTopUpTransitionBasic(
-        rawStateTransition, executionContext,
+        rawStateTransition,
+        executionContext,
       );
 
       await expectValidationError(result, UnsupportedProtocolVersionError);
@@ -105,7 +108,8 @@ describe.skip('validateIdentityTopUpTransitionBasicFactory', () => {
       delete rawStateTransition.type;
 
       const result = await validateIdentityTopUpTransitionBasic(
-        rawStateTransition, executionContext,
+        rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result);
@@ -121,7 +125,8 @@ describe.skip('validateIdentityTopUpTransitionBasicFactory', () => {
       rawStateTransition.type = 666;
 
       const result = await validateIdentityTopUpTransitionBasic(
-        rawStateTransition, executionContext,
+        rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result);
@@ -156,7 +161,8 @@ describe.skip('validateIdentityTopUpTransitionBasicFactory', () => {
       rawStateTransition.assetLockProof = 1;
 
       const result = await validateIdentityTopUpTransitionBasic(
-        rawStateTransition, executionContext,
+        rawStateTransition,
+        executionContext,
       );
 
       await expectJsonSchemaError(result, 1);

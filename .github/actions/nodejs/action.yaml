@@ -7,7 +7,7 @@ runs:
     - name: Setup Node.JS
       uses: actions/setup-node@v3
       with:
-        node-version: "18"
+        node-version: "20"
 
     - name: Enable corepack
       shell: bash
@@ -24,10 +24,10 @@ runs:
         root: actions-cache
         path: |
           .yarn/unplugged
-        key: ${{ runner.os }}/yarn/unplugged/${{ hashFiles('yarn.lock') }}
+        key: ${{ runner.os }}/yarn/unplugged/${{ runner.arch }}/${{ hashFiles('yarn.lock') }}
         restore-keys: |
-          ${{ runner.os }}/yarn/unplugged/
+          ${{ runner.os }}/yarn/unplugged/${{ runner.arch }}/
 
     - name: Install dependencies
       shell: bash
-      run: yarn install
+      run: yarn install --inline-builds

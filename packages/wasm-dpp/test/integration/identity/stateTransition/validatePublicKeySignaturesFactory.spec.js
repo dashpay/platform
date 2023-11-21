@@ -122,9 +122,10 @@ describe.skip('validatePublicKeySignaturesFactory', () => {
     rawIdentityCreateTransition = identityCreateTransition.toObject();
 
     const validator = new PublicKeysSignaturesValidator(blsAdapter);
-    validatePublicKeySignatures = (
-      stateTransition, keys,
-    ) => validator.validate(stateTransition, keys);
+    validatePublicKeySignatures = (stateTransition, keys) => validator.validate(
+      stateTransition,
+      keys,
+    );
 
     privateKey3.delete();
     publicKey3.delete();

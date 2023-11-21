@@ -39,6 +39,8 @@ class BlockHeadersProvider extends EventEmitter {
    * @param {Function} [createHistoricalSyncStream]
    * @param {Function} [createContinuousSyncStream]
    */
+  // TODO move options to as last param
+  // eslint-disable-next-line default-param-last
   constructor(options = {}, createHistoricalSyncStream, createContinuousSyncStream) {
     super();
     this.options = {
@@ -102,7 +104,6 @@ class BlockHeadersProvider extends EventEmitter {
 
   /**
    * Initializes SPV chain with a list of headers and a known lastSyncedHeaderHeight
-   *
    * @param headers
    * @param firstHeaderHeight
    */
@@ -120,7 +121,6 @@ class BlockHeadersProvider extends EventEmitter {
 
   /**
    * Checks whether spv chain has header at specified height and flushes chains if not
-   *
    * @private
    * @param height
    */
@@ -134,7 +134,6 @@ class BlockHeadersProvider extends EventEmitter {
 
   /**
    * Reads historical block headers
-   *
    * @param fromBlockHeight
    * @param toBlockHeight
    * @returns {Promise<void>}

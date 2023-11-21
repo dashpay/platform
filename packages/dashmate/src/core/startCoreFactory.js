@@ -1,4 +1,4 @@
-const CoreService = require('./CoreService');
+import CoreService from './CoreService.js';
 
 /**
  * @param {createRpcClient} createRpcClient
@@ -9,7 +9,7 @@ const CoreService = require('./CoreService');
  * @param {ensureFileMountExists} ensureFileMountExists
  * @return {startCore}
  */
-function startCoreFactory(
+export default function startCoreFactory(
   createRpcClient,
   waitForCoreStart,
   waitForCoreSync,
@@ -95,5 +95,3 @@ function startCoreFactory(
 
   return startCore;
 }
-
-module.exports = startCoreFactory;

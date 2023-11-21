@@ -25,10 +25,10 @@ runs:
         set -ex
         mkdir -p $HOME/bin
 
-        if [ "$(uname -m)" = "x86_64" ] ; then
+        if [ "${{ runner.arch }}" = "X64" ] ; then
           wget --compression=auto -q  -O $HOME/bin/yq \
             https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64;
-        else 
+        else
           wget --compression=auto -q  -O $HOME/bin/yq \
             https://github.com/mikefarah/yq/releases/latest/download/yq_linux_arm64;
         fi;
