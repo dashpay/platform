@@ -1,4 +1,4 @@
-import { publicIp } from 'public-ip';
+import { publicIpv4 } from 'public-ip';
 import validatePort from './validators/validatePort.js';
 import validateIPv4 from './validators/validateIPv4.js';
 import { PRESET_MAINNET } from '../../constants.js';
@@ -57,7 +57,7 @@ export default function createIpAndPortsFormFactory(defaultConfigs) {
     let { initialIp } = options;
     if (initialIp === null || initialIp === undefined) {
       initialIp = await Promise.race([
-        publicIp.v4().catch(() => ''),
+        publicIpv4().catch(() => ''),
         // Resolve in 10 seconds if public IP is not available
         wait(10000).then(() => ''),
       ]);
