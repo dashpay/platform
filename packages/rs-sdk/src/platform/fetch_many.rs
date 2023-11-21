@@ -289,6 +289,8 @@ impl FetchMany<ProtocolVersion> for ProtocolVersionVoteCount {
 ///
 /// * [ProTxHash](dashcore_rpc::dashcore::ProTxHash) - proTxHash of first object to find; will return up to
 /// [DEFAULT_NODES_VOTING_LIMIT](super::query::DEFAULT_NODES_VOTING_LIMIT) objects
+/// * [Option<ProTxHash>](dashcore_rpc::dashcore::ProTxHash) - proTxHash that can be and [Option]; if it is `None`,
+/// the query will return all objects
 /// * [`LimitQuery<ProTxHash>`](super::LimitQuery) - limit query that allows to specify maximum number of objects
 /// to fetch; see also [FetchMany::fetch_many_with_limit()].
 impl FetchMany<ProTxHash> for MasternodeProtocolVote {

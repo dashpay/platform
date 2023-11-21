@@ -5,7 +5,7 @@ use rs_sdk::platform::FetchMany;
 
 /// Given protxhash with only zeros, when I fetch protocol version votes for nodes, I can retrieve them.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn test_protocol_version_votes() {
+async fn test_protocol_version_votes_zeros() {
     setup_logs();
 
     let cfg = Config::new();
@@ -13,6 +13,23 @@ async fn test_protocol_version_votes() {
 
     let starting_protxhash = ProTxHash::from_slice(&[0u8; 32]).expect("zero protxhash");
     let votings = MasternodeProtocolVote::fetch_many(&mut sdk, starting_protxhash)
+        .await
+        .expect("fetch protocol version votes by node");
+
+    println!("votings: {:?}", votings);
+
+    assert!(!votings.is_empty());
+}
+
+/// Given protxhash with only zeros, when I fetch protocol version votes for nodes, I can retrieve them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_protocol_version_votes_none() {
+    setup_logs();
+
+    let cfg = Config::new();
+    let mut sdk = cfg.setup_api().await;
+
+    let votings = MasternodeProtocolVote::fetch_many(&mut sdk, None)
         .await
         .expect("fetch protocol version votes by node");
 
@@ -47,7 +64,7 @@ async fn test_protocol_version_votes_nx() {
     let cfg = Config::new();
     let mut sdk = cfg.setup_api().await;
 
-    let starting_protxhash = ProTxHash::from_slice(&[0xffu8; 32]).expect("zero protxhash");
+    let starting_protxhash = Some(ProTxHash::from_slice(&[0xffu8; 32]).expect("zero protxhash"));
     let votings = MasternodeProtocolVote::fetch_many_with_limit(&mut sdk, starting_protxhash, 2)
         .await
         .expect("fetch protocol version votes by node");

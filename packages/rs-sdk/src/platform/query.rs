@@ -198,7 +198,7 @@ impl Query<GetProtocolVersionUpgradeStateRequest> for () {
     }
 }
 
-impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<ProTxHash> {
+impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<Option<ProTxHash>> {
     fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
@@ -206,14 +206,34 @@ impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<ProTxHash>
 
         Ok(proto::get_protocol_version_upgrade_vote_status_request::GetProtocolVersionUpgradeVoteStatusRequestV0 {
             prove,
-            start_pro_tx_hash: self.query.to_byte_array().to_vec(),
+            // start_pro_tx_hash == [] means "start from beginning"
+            start_pro_tx_hash: self.query.map(|v|v.to_byte_array().to_vec()).unwrap_or_default(),
             count: self.limit.unwrap_or(DEFAULT_NODES_VOTING_LIMIT),
         }
         .into())
     }
 }
-impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for ProTxHash {
+
+impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for Option<ProTxHash> {
     fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
         LimitQuery::from(self).query(prove)
+    }
+}
+
+/// Conveniance method that allows direct use of a ProTxHash
+impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for ProTxHash {
+    fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
+        Some(self).query(prove)
+    }
+}
+
+/// Conveniance method that allows direct use of a ProTxHash
+impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<ProTxHash> {
+    fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
+        LimitQuery {
+            query: Some(self.query),
+            limit: self.limit,
+        }
+        .query(prove)
     }
 }
