@@ -36,9 +36,9 @@
 * dpp: allow only one document transition ([#1555](https://github.com/dashpay/platform/issues/1555))
 
 ### Continuous Integration
-* chore: remove unused and vulnerable github-api package ([#1571](https://github.com/dashpay/platform/issues/1571))
+* remove unused and vulnerable github-api package ([#1571](https://github.com/dashpay/platform/issues/1571))
 * bump rust packages versions in the release script by ([#1573](https://github.com/dashpay/platform/issues/1573))
-* ci: speed up workflows and reduce costs ([#1545](https://github.com/dashpay/platform/issues/1545))
+* speed up workflows and reduce costs ([#1545](https://github.com/dashpay/platform/issues/1545))
 
 ### Features
 * rust software development kit for Dash Platform ([#1475](https://github.com/dashpay/platform/issues/1475))
