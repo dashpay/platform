@@ -9,8 +9,8 @@ mod delegate;
 mod document_query;
 mod fetch;
 mod fetch_many;
-pub mod identity;
 mod query;
+pub mod types;
 
 pub use dapi_grpc::platform::v0::{self as proto};
 pub use drive::{

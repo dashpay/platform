@@ -58,6 +58,7 @@
 //! An example can be found in `tests/common.rs:setup_logs()`.
 //!
 #![warn(missing_docs)]
+#![allow(rustdoc::private_intra_doc_links)]
 
 pub mod core;
 pub mod error;

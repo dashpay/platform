@@ -767,7 +767,7 @@ impl FromProof<GetProtocolVersionUpgradeStateRequest> for ProtocolVersionUpgrade
     }
 }
 
-impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for ProtocolVersionVotes {
+impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtocolVotes {
     type Request = GetProtocolVersionUpgradeVoteStatusRequest;
     type Response = GetProtocolVersionUpgradeVoteStatusResponse;
 
@@ -814,16 +814,24 @@ impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for ProtocolVersionVo
         if objects.is_empty() {
             return Ok(None);
         }
-        let votes: ProtocolVersionVotes = objects
+        let votes: MasternodeProtocolVotes = objects
             .into_iter()
             .map(|(key, value)| {
                 ProTxHash::from_slice(&key)
-                    .map(|protxhash| (protxhash, Some(value)))
+                    .map(|protxhash| {
+                        (
+                            protxhash,
+                            Some(MasternodeProtocolVote {
+                                pro_tx_hash: protxhash,
+                                voted_version: value,
+                            }),
+                        )
+                    })
                     .map_err(|e| Error::ResultEncodingError {
                         error: e.to_string(),
                     })
             })
-            .collect::<Result<ProtocolVersionVotes, Error>>()?;
+            .collect::<Result<MasternodeProtocolVotes, Error>>()?;
 
         Ok(Some(votes))
     }
