@@ -40,7 +40,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::KeyID;
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::{Purpose, SecurityLevel};
 #[cfg(feature = "full")]
 use dpp::prelude::IdentityPublicKey;

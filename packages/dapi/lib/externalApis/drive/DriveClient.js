@@ -34,9 +34,7 @@ class DriveClient {
 
     // Handle JSON RPC error
     if (error) {
-      throw new RPCError(
-        error.code || -32602, error.message || 'Internal error', error.data,
-      );
+      throw new RPCError(error.code || -32602, error.message || 'Internal error', error.data);
     }
 
     // Check and handle ABCI errors
@@ -60,6 +58,20 @@ class DriveClient {
   async fetchDataContract(request) {
     return this.request(
       '/dataContract',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
+   * Fetch serialized data contracts
+   *
+   * @param {GetDataContractsRequest} request
+   *
+   * @return {Promise<Buffer>}
+   */
+  async fetchDataContracts(request) {
+    return this.request(
+      '/dataContracts',
       request.serializeBinary(),
     );
   }
@@ -102,6 +114,76 @@ class DriveClient {
   async fetchIdentity(request) {
     return this.request(
       '/identity',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
+   * Fetch serialized identities
+   *
+   * @param {GetIdentitiesRequest} request
+   *
+   * @return {Promise<Buffer>}
+   */
+  async fetchIdentities(request) {
+    return this.request(
+      '/identities',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
+   * Fetch serialized identity balance
+   *
+   * @param {GetIdentityBalanceRequest} request
+   *
+   * @return {Promise<Buffer>}
+   */
+  async fetchIdentityBalance(request) {
+    return this.request(
+      '/identity/balance',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
+   * Fetch serialized identity balance and revision
+   *
+   * @param {GetIdentityBalanceAndRevisionRequest} request
+   *
+   * @return {Promise<Buffer>}
+   */
+  async fetchIdentityBalanceAndRevision(request) {
+    return this.request(
+      '/identity/balanceAndRevision',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
+   * Fetch serialized identity keys
+   *
+   * @param {GetIdentityKeysRequest} request
+   *
+   * @return {Promise<Buffer>}
+   */
+  async fetchIdentityKeys(request) {
+    return this.request(
+      '/identity/keys',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
+   * Fetch serialized identity by its public key hash
+   *
+   * @param {GetIdentityByPublicKeyHashRequest} request
+   *
+   * @return {Promise<Buffer[]>}
+   */
+  async fetchIdentityByPublicKeyHash(request) {
+    return this.request(
+      '/identity/by-public-key-hash',
       request.serializeBinary(),
     );
   }
@@ -150,7 +232,7 @@ class DriveClient {
   /**
    *  Fetch version upgrade vote status
    *
-   * @param {GetVersionUpgradeVoteStatusRequest} request
+   * @param {GetProtocolVersionUpgradeVoteStatusRequest} request
    * @return {Promise<Buffer>}
    */
   async fetchVersionUpgradeVoteStatus(request) {
@@ -163,7 +245,7 @@ class DriveClient {
   /**
    *  Fetch version upgrade state
    *
-   * @param {GetVersionUpgradeStateRequest} request
+   * @param {GetProtocolVersionUpgradeStateRequest} request
    * @return {Promise<Buffer>}
    */
   async fetchVersionUpgradeState(request) {

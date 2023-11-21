@@ -342,31 +342,29 @@ const SpvChain = class {
       throw new SPVError(`Batch at invalid height arrived: ${batchHeadHeight}, expected > ${this.pendingStartBlockHeight}`);
     }
 
-    const allValid = normalizedHeaders.reduce(
-      (acc, header, index, array) => {
-        const previousHeaders = normalizedHeaders.slice(0, index);
-        if (index !== 0) {
-          if (!SpvChain.isParentChild(header, array[index - 1])) {
-            throw new SPVError(`SPV: Header ${header.hash} is not a child of ${array[index - 1].hash}`);
-          }
+    const allValid = normalizedHeaders.reduce((acc, header, index, array) => {
+      const previousHeaders = normalizedHeaders.slice(0, index);
+      if (index !== 0) {
+        if (!SpvChain.isParentChild(header, array[index - 1])) {
+          throw new SPVError(`SPV: Header ${header.hash} is not a child of ${array[index - 1].hash}`);
+        }
 
-          if (!this.isValid(header, previousHeaders)) {
-            throw new SPVError(`SPV: Header ${header.hash} is invalid`);
-          }
-          return acc && true;
+        if (!this.isValid(header, previousHeaders)) {
+          throw new SPVError(`SPV: Header ${header.hash} is invalid`);
         }
-        if (isOrphan) {
-          if (!this.isValid(header, previousHeaders)) {
-            throw new SPVError('Some headers are invalid');
-          }
-          return acc && true;
-        }
-        if (!this.isValid(header, this.getLongestChain())) {
+        return acc && true;
+      }
+      if (isOrphan) {
+        if (!this.isValid(header, previousHeaders)) {
           throw new SPVError('Some headers are invalid');
         }
         return acc && true;
-      }, true,
-    );
+      }
+      if (!this.isValid(header, this.getLongestChain())) {
+        throw new SPVError('Some headers are invalid');
+      }
+      return acc && true;
+    }, true);
     if (!allValid) {
       throw new SPVError('Some headers are invalid');
     }

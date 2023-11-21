@@ -4,8 +4,8 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::{
-    get_version_upgrade_vote_status_response, GetVersionUpgradeVoteStatusRequest,
-    GetVersionUpgradeVoteStatusResponse, Proof,
+    get_protocol_version_upgrade_vote_status_response, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeVoteStatusResponse, Proof,
 };
 use dpp::check_validation_result_with_data;
 use dpp::platform_value::Bytes32;
@@ -13,21 +13,21 @@ use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use prost::Message;
-use dapi_grpc::platform::v0::get_version_upgrade_vote_status_request::GetVersionUpgradeVoteStatusRequestV0;
-use dapi_grpc::platform::v0::get_version_upgrade_vote_status_response::get_version_upgrade_vote_status_response_v0::{VersionSignal, VersionSignals};
-use dapi_grpc::platform::v0::get_version_upgrade_vote_status_response::GetVersionUpgradeVoteStatusResponseV0;
+use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::GetProtocolVersionUpgradeVoteStatusRequestV0;
+use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_response::get_protocol_version_upgrade_vote_status_response_v0::{VersionSignal, VersionSignals};
+use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_response::GetProtocolVersionUpgradeVoteStatusResponseV0;
 use crate::error::query::QueryError;
 
 impl<C> Platform<C> {
     pub(super) fn query_version_upgrade_vote_status_v0(
         &self,
         state: &PlatformState,
-        request: GetVersionUpgradeVoteStatusRequestV0,
+        request: GetProtocolVersionUpgradeVoteStatusRequestV0,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
         let quorum_type = self.config.quorum_type() as u32;
-        let GetVersionUpgradeVoteStatusRequestV0 {
+        let GetProtocolVersionUpgradeVoteStatusRequestV0 {
             start_pro_tx_hash,
             count,
             prove,
@@ -65,11 +65,11 @@ impl<C> Platform<C> {
                     &platform_version.drive
                 ));
 
-            GetVersionUpgradeVoteStatusResponse {
-                version: Some(get_version_upgrade_vote_status_response::Version::V0(
-                    GetVersionUpgradeVoteStatusResponseV0 {
+            GetProtocolVersionUpgradeVoteStatusResponse {
+                version: Some(get_protocol_version_upgrade_vote_status_response::Version::V0(
+                    GetProtocolVersionUpgradeVoteStatusResponseV0 {
                         result: Some(
-                            get_version_upgrade_vote_status_response::get_version_upgrade_vote_status_response_v0::Result::Proof(
+                            get_protocol_version_upgrade_vote_status_response::get_protocol_version_upgrade_vote_status_response_v0::Result::Proof(
                                 Proof {
                                     grovedb_proof: proof,
                                     quorum_hash: state.last_quorum_hash().to_vec(),
@@ -101,11 +101,11 @@ impl<C> Platform<C> {
                 })
                 .collect();
 
-            GetVersionUpgradeVoteStatusResponse {
-                version: Some(get_version_upgrade_vote_status_response::Version::V0(
-                    GetVersionUpgradeVoteStatusResponseV0 {
+            GetProtocolVersionUpgradeVoteStatusResponse {
+                version: Some(get_protocol_version_upgrade_vote_status_response::Version::V0(
+                    GetProtocolVersionUpgradeVoteStatusResponseV0 {
                         result: Some(
-                            get_version_upgrade_vote_status_response::get_version_upgrade_vote_status_response_v0::Result::Versions(
+                            get_protocol_version_upgrade_vote_status_response::get_protocol_version_upgrade_vote_status_response_v0::Result::Versions(
                                 VersionSignals {
                                     version_signals: versions,
                                 },

@@ -29,7 +29,7 @@ describe.skip('validateStateTransitionStateFactory', () => {
     const dataContract = await getDataContractFixture();
     executionContext = new StateTransitionExecutionContext();
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.fetchDataContract.resolves();
     const blsMock = getBlsMock();
 

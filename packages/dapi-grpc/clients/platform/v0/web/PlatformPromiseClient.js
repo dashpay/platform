@@ -149,29 +149,29 @@ class PlatformPromiseClient {
   }
 
   /**
-   * @param {!GetVersionUpgradeVoteStatusRequest} getVersionUpgradeVoteStatusRequest
+   * @param {!GetProtocolVersionUpgradeVoteStatusRequest} getProtocolVersionUpgradeVoteStatusRequest
    * @param {?Object<string, string>} metadata
-   * @return {Promise<!GetVersionUpgradeVoteStatusResponse>}
+   * @return {Promise<!GetProtocolVersionUpgradeVoteStatusResponse>}
    */
-  getVersionUpgradeVoteStatus(getVersionUpgradeVoteStatusRequest, metadata = {}) {
+  getProtocolVersionUpgradeVoteStatus(getProtocolVersionUpgradeVoteStatusRequest, metadata = {}) {
     return promisify(
-      this.client.getVersionUpgradeVoteStatus.bind(this.client),
+      this.client.getProtocolVersionUpgradeVoteStatus.bind(this.client),
     )(
-      getVersionUpgradeVoteStatusRequest,
+      getProtocolVersionUpgradeVoteStatusRequest,
       metadata,
     );
   }
 
   /**
-   * @param {!GetVersionUpgradeStateRequest} getVersionUpgradeStateRequest
+   * @param {!GetProtocolVersionUpgradeStateRequest} getProtocolVersionUpgradeStateRequest
    * @param {?Object<string, string>} metadata
-   * @return {Promise<!GetVersionUpgradeStateResponse>}
+   * @return {Promise<!GetProtocolVersionUpgradeStateResponse>}
    */
-  getVersionUpgradeState(getVersionUpgradeStateRequest, metadata = {}) {
+  getProtocolVersionUpgradeState(getProtocolVersionUpgradeStateRequest, metadata = {}) {
     return promisify(
-      this.client.getVersionUpgradeState.bind(this.client),
+      this.client.getProtocolVersionUpgradeState.bind(this.client),
     )(
-      getVersionUpgradeStateRequest,
+      getProtocolVersionUpgradeStateRequest,
       metadata,
     );
   }

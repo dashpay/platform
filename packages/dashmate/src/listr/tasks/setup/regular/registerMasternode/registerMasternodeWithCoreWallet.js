@@ -1,28 +1,27 @@
-const wrapAnsi = require('wrap-ansi');
-const chalk = require('chalk');
-const BlsSignatures = require('@dashevo/bls');
-const generateBlsKeys = require('../../../../../core/generateBlsKeys');
-const validateAddress = require('../../../../prompts/validators/validateAddress');
-const {
+import wrapAnsi from 'wrap-ansi';
+import chalk from 'chalk';
+import BlsSignatures from '@dashevo/bls';
+import {
   HPMN_COLLATERAL_AMOUNT,
   MASTERNODE_COLLATERAL_AMOUNT,
   PRESET_MAINNET,
-} = require('../../../../../constants');
-
-const validateTxHex = require('../../../../prompts/validators/validateTxHex');
-const validatePositiveInteger = require('../../../../prompts/validators/validatePositiveInteger');
-const validatePercentage = require('../../../../prompts/validators/validatePercentage');
-const formatPercentage = require('../../../../prompts/formatters/formatPercentage');
-const createPlatformNodeKeyInput = require('../../../../prompts/createPlatformNodeKeyInput');
-const getBLSPublicKeyFromPrivateKeyHex = require('../../../../../core/getBLSPublicKeyFromPrivateKeyHex');
-const deriveTenderdashNodeId = require('../../../../../tenderdash/deriveTenderdashNodeId');
-const validateBLSPrivateKeyFactory = require('../../../../prompts/validators/validateBLSPrivateKeyFactory');
+} from '../../../../../constants.js';
+import validateBLSPrivateKeyFactory from '../../../../prompts/validators/validateBLSPrivateKeyFactory.js';
+import validateAddress from '../../../../prompts/validators/validateAddress.js';
+import generateBlsKeys from '../../../../../core/generateBlsKeys.js';
+import validateTxHex from '../../../../prompts/validators/validateTxHex.js';
+import validatePositiveInteger from '../../../../prompts/validators/validatePositiveInteger.js';
+import deriveTenderdashNodeId from '../../../../../tenderdash/deriveTenderdashNodeId.js';
+import formatPercentage from '../../../../prompts/formatters/formatPercentage.js';
+import validatePercentage from '../../../../prompts/validators/validatePercentage.js';
+import createPlatformNodeKeyInput from '../../../../prompts/createPlatformNodeKeyInput.js';
+import getBLSPublicKeyFromPrivateKeyHex from '../../../../../core/getBLSPublicKeyFromPrivateKeyHex.js';
 
 /**
  * @param {createIpAndPortsForm} createIpAndPortsForm
  * @return {registerMasternodeWithCoreWallet}
  */
-function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
+export default function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
   /**
    * Print prompts to collect masternode registration data with Core
    *
@@ -278,5 +277,3 @@ function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
 
   return registerMasternodeWithCoreWallet;
 }
-
-module.exports = registerMasternodeWithCoreWalletFactory;

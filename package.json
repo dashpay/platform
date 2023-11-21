@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.25.10",
+  "version": "0.25.15",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -29,17 +29,18 @@
     "configure": "yarn exec ./scripts/configure.sh",
     "clean:data": "yarn run dashmate group reset --verbose --group=local --hard",
     "clean": "yarn run clean:data && yarn run build",
-    "dashmate": "yarn exec packages/dashmate/bin/run",
+    "dashmate": "yarn exec packages/dashmate/bin/run.js",
     "release": "yarn exec ./scripts/release/release.sh",
     "bench": "yarn workspace @dashevo/bench-suite bench"
   },
-  "packageManager": "yarn@3.6.1",
+  "packageManager": "yarn@4.0.2",
   "ultra": {
     "concurrent": [
       "clean"
     ]
   },
   "devDependencies": {
+    "@iarna/toml": "^2.2.5",
     "add-stream": "^1.0.0",
     "conventional-changelog": "^3.1.24",
     "conventional-changelog-dash": "github:dashevo/conventional-changelog-dash",
@@ -80,9 +81,15 @@
     "semver": "^7.5.3",
     "word-wrap": "^1.2.4",
     "protobufjs": "^6.11.4",
-    "browserify-sign": "4.2.2"
+    "browserify-sign": "4.2.2",
+    "istanbul-lib-processinfo": "2.0.3",
+    "@babel/core": "7.23.3",
+    "tsconfig-paths": "4.2.0",
+    "ansi-regex": "5.0.1",
+    "cacache": "18.0.0",
+    "node-gyp": "10.0.1"
   },
   "dependencies": {
-    "node-gyp": "^9.3.1"
+    "node-gyp": "^10.0.1"
   }
 }

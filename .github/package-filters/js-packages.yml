@@ -1,0 +1,79 @@
+'@dashevo/dashpay-contract': &dashpay-contract
+  - .github/workflows/tests*
+  - packages/dashpay-contract/**
+
+'@dashevo/masternode-reward-shares-contract': &masternode-reward-shares-contract
+  - .github/workflows/tests*
+  - packages/masternode-reward-shares-contract/**
+
+'@dashevo/withdrawals-contract': &withdrawals-contract
+  - .github/workflows/tests*
+  - packages/withdrawals-contract/**
+
+'@dashevo/dpns-contract': &dpns-contract
+  - .github/workflows/tests*
+  - packages/dpns-contract/**
+
+'@dashevo/grpc-common': &grpc-common
+  - .github/workflows/tests*
+  - packages/js-grpc-common/**
+
+'@dashevo/wasm-dpp': &wasm-dpp
+  - .github/workflows/tests*
+  - packages/wasm-dpp/**
+  - *dashpay-contract
+  - *masternode-reward-shares-contract
+  - *dpns-contract
+  - *withdrawals-contract
+  - packages/rs-platform-serialization/**
+  - packages/rs-platform-serialization-derive/**
+  - packages/rs-platform-value/**
+  - packages/rs-platform-value-convertible/**
+  - packages/rs-platform-version/**
+  - packages/rs-platform-versioning/**
+  - packages/rs-dpp/**
+
+'@dashevo/dapi-grpc': &dapi-grpc
+  - .github/workflows/tests*
+  - packages/dapi-grpc/**
+  - *grpc-common
+
+'@dashevo/dash-spv': &dash-spv
+  - .github/workflows/tests*
+  - packages/dash-spv/**
+
+'@dashevo/dapi':
+  - .github/workflows/tests*
+  - packages/dapi/**
+  - *wasm-dpp
+  - *dapi-grpc
+  - *dash-spv
+
+'@dashevo/dapi-client': &dapi-client
+  - .github/workflows/tests*
+  - packages/js-dapi-client/**
+  - *dapi-grpc
+  - *dash-spv
+  - *wasm-dpp
+
+'@dashevo/wallet-lib': &wallet-lib
+  - .github/workflows/tests*
+  - packages/wallet-lib/**
+  - *dapi-client
+  - *wasm-dpp
+
+dash: &dash
+  - .github/workflows/tests*
+  - packages/js-dash-sdk/**
+  - *dapi-client
+  - *wallet-lib
+
+dashmate:
+  - .github/workflows/tests*
+  - packages/dashmate/**
+  - *dash
+
+'@dashevo/platform-test-suite':
+  - .github/workflows/tests*
+  - packages/platform-test-suite/**
+  - *dash

@@ -1,4 +1,4 @@
-const { LLMQ_TYPE_TEST } = require('../../constants');
+import { LLMQ_TYPE_TEST } from '../../constants.js';
 
 /**
  * Checks all mastrenodoes probes to incterconnected masternodes
@@ -76,7 +76,7 @@ async function checkProbes(rpcClients, bumpMockTime) {
  * @param {number} [timeout]
  * @return {Promise<void>}
  */
-async function waitForMasternodeProbes(rpcClients, bumpMockTime, timeout = 30000) {
+export default async function waitForMasternodeProbes(rpcClients, bumpMockTime, timeout = 30000) {
   const deadline = Date.now() + timeout;
 
   let isReady = false;
@@ -89,5 +89,3 @@ async function waitForMasternodeProbes(rpcClients, bumpMockTime, timeout = 30000
     }
   }
 }
-
-module.exports = waitForMasternodeProbes;

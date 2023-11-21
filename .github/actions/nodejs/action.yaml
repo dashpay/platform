@@ -7,7 +7,7 @@ runs:
     - name: Setup Node.JS
       uses: actions/setup-node@v3
       with:
-        node-version: "18"
+        node-version: "20"
 
     - name: Enable corepack
       shell: bash
@@ -17,34 +17,17 @@ runs:
       shell: bash
       run: npm config set audit false
 
-    - name: Configure AWS credentials and bucket region
-      uses: aws-actions/configure-aws-credentials@v4
-      if: contains(runner.name, 'ubuntu-platform')
-      with:
-        aws-region: eu-west-1
-
     - name: Cache NPM build artifacts (S3 bucket cache)
-      uses: everpcpc/actions-cache@v1
-      if: contains(runner.name, 'ubuntu-platform')
+      uses: strophy/actions-cache@opendal-update
       with:
-        bucket: multi-runner-linux-x64-platform-cache-ui535z23
+        bucket: multi-runner-cache-x1xibo9c
         root: actions-cache
         path: |
           .yarn/unplugged
-        key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+        key: ${{ runner.os }}/yarn/unplugged/${{ runner.arch }}/${{ hashFiles('yarn.lock') }}
         restore-keys: |
-          ${{ runner.os }}-yarn-unplugged-
-
-    - name: Cache NPM build artifacts (GitHub Actions cache)
-      uses: actions/cache@v3
-      if: ${{ !contains(runner.name, 'ubuntu-platform') }}
-      with:
-        path: |
-          .yarn/unplugged
-        key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-yarn-unplugged-
+          ${{ runner.os }}/yarn/unplugged/${{ runner.arch }}/
 
     - name: Install dependencies
       shell: bash
-      run: yarn install
+      run: yarn install --inline-builds

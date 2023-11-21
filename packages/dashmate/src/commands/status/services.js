@@ -1,13 +1,21 @@
-const chalk = require('chalk');
+import chalk from 'chalk';
+import { Flags } from '@oclif/core';
+import { OUTPUT_FORMATS } from '../../constants.js';
+import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
+import printArrayOfObjects from '../../printers/printArrayOfObjects.js';
 
-const { Flags } = require('@oclif/core');
-const { OUTPUT_FORMATS } = require('../../constants');
+export default class ServicesStatusCommand extends ConfigBaseCommand {
+  static description = 'Show service status details';
 
-const printArrayOfObjects = require('../../printers/printArrayOfObjects');
+  static flags = {
+    ...ConfigBaseCommand.flags,
+    format: Flags.string({
+      description: 'display output format',
+      default: OUTPUT_FORMATS.PLAIN,
+      options: Object.values(OUTPUT_FORMATS),
+    }),
+  };
 
-const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-
-class ServicesStatusCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -56,16 +64,3 @@ class ServicesStatusCommand extends ConfigBaseCommand {
     printArrayOfObjects(outputRows, flags.format);
   }
 }
-
-ServicesStatusCommand.description = 'Show service status details';
-
-ServicesStatusCommand.flags = {
-  ...ConfigBaseCommand.flags,
-  format: Flags.string({
-    description: 'display output format',
-    default: OUTPUT_FORMATS.PLAIN,
-    options: Object.values(OUTPUT_FORMATS),
-  }),
-};
-
-module.exports = ServicesStatusCommand;

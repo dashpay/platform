@@ -80,7 +80,6 @@ mod tests {
     };
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;

@@ -1,8 +1,8 @@
-const MasternodeSyncAssetEnum = require('../../../src/status/enums/masternodeSyncAsset');
-const ServiceStatusEnum = require('../../../src/status/enums/serviceStatus');
-const DockerStatusEnum = require('../../../src/status/enums/dockerStatus');
-const determineStatus = require('../../../src/status/determineStatus');
-const getConfigMock = require('../../../src/test/mock/getConfigMock');
+import { MasternodeSyncAssetEnum } from '../../../src/status/enums/masternodeSyncAsset.js';
+import { ServiceStatusEnum } from '../../../src/status/enums/serviceStatus.js';
+import { DockerStatusEnum } from '../../../src/status/enums/dockerStatus.js';
+import determineStatus from '../../../src/status/determineStatus.js';
+import getConfigMock from '../../../src/test/mock/getConfigMock.js';
 
 describe('determineStatus', () => {
   describe('#docker', () => {
@@ -32,31 +32,51 @@ describe('determineStatus', () => {
       });
 
       it('should return syncing', async () => {
-        expect(determineStatus.core(DockerStatusEnum.running,
-          MasternodeSyncAssetEnum.MASTERNODE_SYNC_INITIAL)).to.equal(ServiceStatusEnum.syncing);
-        expect(determineStatus.core(DockerStatusEnum.running,
-          MasternodeSyncAssetEnum.MASTERNODE_SYNC_BLOCKCHAIN)).to.equal(ServiceStatusEnum.syncing);
-        expect(determineStatus.core(DockerStatusEnum.running,
-          MasternodeSyncAssetEnum.MASTERNODE_SYNC_GOVERNANCE)).to.equal(ServiceStatusEnum.syncing);
+        expect(determineStatus.core(
+          DockerStatusEnum.running,
+          MasternodeSyncAssetEnum.MASTERNODE_SYNC_INITIAL,
+        )).to.equal(ServiceStatusEnum.syncing);
+        expect(determineStatus.core(
+          DockerStatusEnum.running,
+          MasternodeSyncAssetEnum.MASTERNODE_SYNC_BLOCKCHAIN,
+        )).to.equal(ServiceStatusEnum.syncing);
+        expect(determineStatus.core(
+          DockerStatusEnum.running,
+          MasternodeSyncAssetEnum.MASTERNODE_SYNC_GOVERNANCE,
+        )).to.equal(ServiceStatusEnum.syncing);
       });
 
       it('should return error', async () => {
         expect(determineStatus.core(DockerStatusEnum.running, null))
           .to.equal(ServiceStatusEnum.error);
-        expect(determineStatus.core(DockerStatusEnum.restarting,
-          MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED)).to.equal(ServiceStatusEnum.error);
-        expect(determineStatus.core(DockerStatusEnum.created,
-          MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED)).to.equal(ServiceStatusEnum.error);
-        expect(determineStatus.core(DockerStatusEnum.dead,
-          MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED)).to.equal(ServiceStatusEnum.error);
-        expect(determineStatus.core(DockerStatusEnum.created,
-          MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED)).to.equal(ServiceStatusEnum.error);
-        expect(determineStatus.core(DockerStatusEnum.restarting,
-          MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED)).to.equal(ServiceStatusEnum.error);
-        expect(determineStatus.core(DockerStatusEnum.exited,
-          MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED)).to.equal(ServiceStatusEnum.error);
-        expect(determineStatus.core(DockerStatusEnum.removing,
-          MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED)).to.equal(ServiceStatusEnum.error);
+        expect(determineStatus.core(
+          DockerStatusEnum.restarting,
+          MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED,
+        )).to.equal(ServiceStatusEnum.error);
+        expect(determineStatus.core(
+          DockerStatusEnum.created,
+          MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED,
+        )).to.equal(ServiceStatusEnum.error);
+        expect(determineStatus.core(
+          DockerStatusEnum.dead,
+          MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED,
+        )).to.equal(ServiceStatusEnum.error);
+        expect(determineStatus.core(
+          DockerStatusEnum.created,
+          MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED,
+        )).to.equal(ServiceStatusEnum.error);
+        expect(determineStatus.core(
+          DockerStatusEnum.restarting,
+          MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED,
+        )).to.equal(ServiceStatusEnum.error);
+        expect(determineStatus.core(
+          DockerStatusEnum.exited,
+          MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED,
+        )).to.equal(ServiceStatusEnum.error);
+        expect(determineStatus.core(
+          DockerStatusEnum.removing,
+          MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED,
+        )).to.equal(ServiceStatusEnum.error);
       });
 
       it('should return error', async () => {
@@ -73,12 +93,18 @@ describe('determineStatus', () => {
 
   describe('#platform', () => {
     it('should return syncing', async () => {
-      const syncing = determineStatus.core(DockerStatusEnum.running,
-        MasternodeSyncAssetEnum.MASTERNODE_SYNC_INITIAL);
-      const up = determineStatus.core(DockerStatusEnum.running,
-        MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED);
-      const error = determineStatus.core(DockerStatusEnum.restarting,
-        MasternodeSyncAssetEnum.MASTERNODE_SYNC_INITIAL);
+      const syncing = determineStatus.core(
+        DockerStatusEnum.running,
+        MasternodeSyncAssetEnum.MASTERNODE_SYNC_INITIAL,
+      );
+      const up = determineStatus.core(
+        DockerStatusEnum.running,
+        MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED,
+      );
+      const error = determineStatus.core(
+        DockerStatusEnum.restarting,
+        MasternodeSyncAssetEnum.MASTERNODE_SYNC_INITIAL,
+      );
 
       expect(syncing).to.be.equal(ServiceStatusEnum.syncing);
       expect(up).to.be.equal(ServiceStatusEnum.up);

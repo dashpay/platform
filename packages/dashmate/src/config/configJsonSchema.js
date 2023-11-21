@@ -1,6 +1,6 @@
-const { NETWORKS } = require('../constants');
+import { NETWORKS } from '../constants.js';
 
-module.exports = {
+export default {
   $schema: 'http://json-schema.org/draft-07/schema#',
   type: 'object',
   definitions: {
@@ -118,6 +118,35 @@ module.exports = {
     core: {
       type: 'object',
       properties: {
+        insight: {
+          type: 'object',
+          properties: {
+            enabled: {
+              type: 'boolean',
+            },
+            ui: {
+              type: 'object',
+              properties: {
+                enabled: {
+                  type: 'boolean',
+                },
+                docker: {
+                  $ref: '#/definitions/docker',
+                },
+              },
+              required: ['enabled', 'docker'],
+              additionalProperties: false,
+            },
+            docker: {
+              $ref: '#/definitions/docker',
+            },
+            port: {
+              $ref: '#/definitions/port',
+            },
+          },
+          required: ['enabled', 'docker', 'port', 'ui'],
+          additionalProperties: false,
+        },
         docker: {
           type: 'object',
           properties: {
@@ -299,7 +328,7 @@ module.exports = {
         },
       },
       required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet', 'log',
-        'logIps', 'indexes'],
+        'logIps', 'indexes', 'insight'],
       additionalProperties: false,
     },
     platform: {
@@ -779,7 +808,7 @@ module.exports = {
     },
     network: {
       type: 'string',
-      enum: NETWORKS,
+      enum: Object.values(NETWORKS),
     },
     environment: {
       type: 'string',

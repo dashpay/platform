@@ -1,11 +1,11 @@
-const fs = require('fs');
-const os = require('os');
-const { resolve, join } = require('path');
-const CouldNotCreateHomeDirError = require('./errors/CouldNotCreateHomeDirError');
-const HomeDirIsNotWritableError = require('./errors/HomeDirIsNotWritableError');
-const HomeDirDoesNotExistError = require('./errors/HomeDirDoesNotExistError');
+import fs from 'fs';
+import os from 'os';
+import { resolve, join } from 'path';
+import HomeDirDoesNotExistError from './errors/HomeDirDoesNotExistError.js';
+import HomeDirIsNotWritableError from './errors/HomeDirIsNotWritableError.js';
+import CouldNotCreateHomeDirError from './errors/CouldNotCreateHomeDirError.js';
 
-class HomeDir {
+export default class HomeDir {
   /**
    * @type {string}
    */
@@ -97,5 +97,3 @@ class HomeDir {
     return new HomeDir(fs.mkdtempSync(join(os.tmpdir(), 'dashmate-')));
   }
 }
-
-module.exports = HomeDir;

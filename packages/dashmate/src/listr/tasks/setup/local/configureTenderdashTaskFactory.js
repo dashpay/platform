@@ -1,15 +1,10 @@
-const { Listr } = require('listr2');
-const { getLatestProtocolVersion } = require('@dashevo/wasm-dpp');
+import { Listr } from 'listr2';
+import { getLatestProtocolVersion } from '@dashevo/wasm-dpp';
 
 /**
- * @param {renderServiceTemplates} renderServiceTemplates
- * @param {writeServiceConfigs} writeServiceConfigs
  * @return {configureTenderdashTask}
  */
-function configureTenderdashTaskFactory(
-  renderServiceTemplates,
-  writeServiceConfigs,
-) {
+export default function configureTenderdashTaskFactory() {
   /**
    * @typedef {configureTenderdashTask}
    * @param {Config[]} configGroup
@@ -63,9 +58,6 @@ function configureTenderdashTaskFactory(
                   'platform.drive.tenderdash.genesis.consensus_params.version.app_version',
                   getLatestProtocolVersion().toString(),
                 );
-
-                const configFiles = renderServiceTemplates(config);
-                writeServiceConfigs(config.getName(), configFiles);
               });
             },
           });
@@ -78,5 +70,3 @@ function configureTenderdashTaskFactory(
 
   return configureTenderdashTask;
 }
-
-module.exports = configureTenderdashTaskFactory;

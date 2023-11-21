@@ -12,7 +12,6 @@ const {
 function getBlockByHashFactory(grpcTransport) {
   /**
    * Get block by hash
-   *
    * @typedef {getBlockByHash}
    * @param {string} hash
    * @param {DAPIClientOptions} [options]

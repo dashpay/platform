@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::drive::Drive;
+use crate::drive::{identity::key::fetch::IdentityKeysRequest, Drive};
 
 use crate::error::drive::DriveError;
 
@@ -38,8 +38,8 @@ impl Drive {
     ///
     pub fn verify_identity_keys_by_identity_id(
         proof: &[u8],
+        key_request: IdentityKeysRequest,
         is_proof_subset: bool,
-        identity_id: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<PartialIdentity>), Error> {
         match platform_version
@@ -51,8 +51,8 @@ impl Drive {
         {
             0 => Self::verify_identity_keys_by_identity_id_v0(
                 proof,
+                key_request,
                 is_proof_subset,
-                identity_id,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {

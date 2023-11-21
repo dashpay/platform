@@ -39,27 +39,28 @@ impl Drive {
     /// - The proved key value is not for the correct path or key in balances.
     /// - More than one balance is found.
     ///
-    pub(super) fn verify_identity_balance_for_identity_id_v0(
+    pub(crate) fn verify_identity_balance_for_identity_id_v0(
         proof: &[u8],
         identity_id: [u8; 32],
         verify_subset_of_proof: bool,
     ) -> Result<(RootHash, Option<u64>), Error> {
-        let path_query = Self::identity_balance_query(&identity_id);
+        let mut path_query = Self::identity_balance_query(&identity_id);
+        path_query.query.limit = Some(1);
         let (root_hash, mut proved_key_values) = if verify_subset_of_proof {
-            GroveDb::verify_subset_query(proof, &path_query)?
+            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?
         } else {
-            GroveDb::verify_query(proof, &path_query)?
+            GroveDb::verify_query_with_absence_proof(proof, &path_query)?
         };
         if proved_key_values.len() == 1 {
             let (path, key, maybe_element) = &proved_key_values.remove(0);
             if path != &balance_path() {
                 return Err(Error::Proof(ProofError::CorruptedProof(
-                    "we did not get back an element for the correct path in balances",
+                    "we did not get back an element for the correct path in balances".to_string(),
                 )));
             }
             if key != &identity_id {
                 return Err(Error::Proof(ProofError::CorruptedProof(
-                    "we did not get back an element for the correct key in balances",
+                    "we did not get back an element for the correct key in balances".to_string(),
                 )));
             }
 

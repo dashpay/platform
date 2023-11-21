@@ -6,7 +6,12 @@
  * @param coreBlocks {number} current block height
  * @return {number}
  */
-function calculatePaymentQueuePosition(dmnState, enabledMasternodes, enabledEvonodes, coreBlocks) {
+export default function calculatePaymentQueuePosition(
+  dmnState,
+  enabledMasternodes,
+  enabledEvonodes,
+  coreBlocks,
+) {
   const enabledCount = enabledMasternodes + enabledEvonodes * 4;
 
   let paymentQueuePosition;
@@ -28,5 +33,3 @@ function calculatePaymentQueuePosition(dmnState, enabledMasternodes, enabledEvon
   }
   return paymentQueuePosition;
 }
-
-module.exports = calculatePaymentQueuePosition;

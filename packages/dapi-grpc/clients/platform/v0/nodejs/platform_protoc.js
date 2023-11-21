@@ -140,25 +140,26 @@ goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsRequest.GetProofsReq
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsRequest.VersionCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsResponse', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.ResultCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsResponse.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.ResultCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.ResultCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.ResultCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.ResultCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.VersionCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.KeyRequestType', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.KeyRequestType.RequestCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.Proof', null, { proto });
@@ -1047,7 +1048,7 @@ if (goog.DEBUG && !COMPILED) {
  * @constructor
  */
 proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.oneofGroups_);
 };
 goog.inherits(proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
@@ -1928,16 +1929,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.oneofGroups_);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.oneofGroups_);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest';
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -1949,16 +1950,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0 = function(opt_data) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0 = function(opt_data) {
   jspb.Message.initialize(this, opt_data, 0, -1, null, null);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0';
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -1970,16 +1971,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.oneofGroups_);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.oneofGroups_);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse';
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -1991,16 +1992,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.oneofGroups_);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.oneofGroups_);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0';
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -2012,16 +2013,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.repeatedFields_, null);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.repeatedFields_, null);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions';
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.displayName = 'proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -2033,16 +2034,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry = function(opt_data) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry = function(opt_data) {
   jspb.Message.initialize(this, opt_data, 0, -1, null, null);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry';
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.displayName = 'proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -2054,16 +2055,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.oneofGroups_);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.oneofGroups_);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest';
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -2075,16 +2076,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0 = function(opt_data) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0 = function(opt_data) {
   jspb.Message.initialize(this, opt_data, 0, -1, null, null);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0';
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -2096,16 +2097,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.oneofGroups_);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.oneofGroups_);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse';
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -2117,16 +2118,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.oneofGroups_);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.oneofGroups_);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0';
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -2138,16 +2139,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.repeatedFields_, null);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.repeatedFields_, null);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals';
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.displayName = 'proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -2159,16 +2160,16 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal = function(opt_data) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal = function(opt_data) {
   jspb.Message.initialize(this, opt_data, 0, -1, null, null);
 };
-goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal, jspb.Message);
+goog.inherits(proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
   /**
    * @public
    * @override
    */
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal';
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.displayName = 'proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -10562,6 +10563,31 @@ proto.org.dash.platform.dapi.v0.GetProofsResponse.serializeBinaryToWriter = func
 
 
 
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.oneofGroups_ = [[1]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.ResultCase = {
+  RESULT_NOT_SET: 0,
+  PROOF: 1
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.ResultCase}
+ */
+proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.prototype.getResultCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.oneofGroups_[0]));
+};
+
 
 
 if (jspb.Message.GENERATE_TO_OBJECT) {
@@ -10704,7 +10730,7 @@ proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.prototype.
  * @return {!proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0} returns this
 */
 proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.prototype.setProof = function(value) {
-  return jspb.Message.setWrapperField(this, 1, value);
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.oneofGroups_[0], value);
 };
 
 
@@ -19426,21 +19452,21 @@ proto.org.dash.platform.dapi.v0.GetConsensusParamsResponse.prototype.hasV0 = fun
  * @private {!Array<!Array<number>>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.oneofGroups_ = [[1]];
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.oneofGroups_ = [[1]];
 
 /**
  * @enum {number}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.VersionCase = {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.VersionCase = {
   VERSION_NOT_SET: 0,
   V0: 1
 };
 
 /**
- * @return {proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.VersionCase}
+ * @return {proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.VersionCase}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.oneofGroups_[0]));
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.oneofGroups_[0]));
 };
 
 
@@ -19458,8 +19484,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.toObject(opt_includeInstance, this);
 };
 
 
@@ -19468,13 +19494,13 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.toObject
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.toObject(includeInstance, f)
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -19488,23 +19514,23 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.toObject = functio
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest;
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest;
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -19512,8 +19538,8 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.deserializeBinaryF
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.deserializeBinaryFromReader);
+      var value = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0.deserializeBinaryFromReader);
       msg.setV0(value);
       break;
     default:
@@ -19529,9 +19555,9 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.deserializeBinaryF
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -19539,18 +19565,18 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.serializ
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getV0();
   if (f != null) {
     writer.writeMessage(
       1,
       f,
-      proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.serializeBinaryToWriter
+      proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0.serializeBinaryToWriter
     );
   }
 };
@@ -19572,8 +19598,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0.toObject(opt_includeInstance, this);
 };
 
 
@@ -19582,11 +19608,11 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeS
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0.toObject = function(includeInstance, msg) {
   var f, obj = {
     prove: jspb.Message.getBooleanFieldWithDefault(msg, 1, false)
   };
@@ -19602,23 +19628,23 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeS
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0;
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0;
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -19642,9 +19668,9 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeS
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -19652,11 +19678,11 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeS
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getProve();
   if (f) {
@@ -19672,44 +19698,44 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeS
  * optional bool prove = 1;
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.prototype.getProve = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0.prototype.getProve = function() {
   return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 1, false));
 };
 
 
 /**
  * @param {boolean} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.prototype.setProve = function(value) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0.prototype.setProve = function(value) {
   return jspb.Message.setProto3BooleanField(this, 1, value);
 };
 
 
 /**
- * optional GetVersionUpgradeStateRequestV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0}
+ * optional GetProtocolVersionUpgradeStateRequestV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0, 1));
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0, 1));
 };
 
 
 /**
- * @param {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest} returns this
+ * @param {?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest} returns this
 */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.oneofGroups_[0], value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.clearV0 = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.prototype.clearV0 = function() {
   return this.setV0(undefined);
 };
 
@@ -19718,7 +19744,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.clearV0 
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.hasV0 = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.prototype.hasV0 = function() {
   return jspb.Message.getField(this, 1) != null;
 };
 
@@ -19732,21 +19758,21 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.hasV0 = 
  * @private {!Array<!Array<number>>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.oneofGroups_ = [[1]];
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.oneofGroups_ = [[1]];
 
 /**
  * @enum {number}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.VersionCase = {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.VersionCase = {
   VERSION_NOT_SET: 0,
   V0: 1
 };
 
 /**
- * @return {proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.VersionCase}
+ * @return {proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.VersionCase}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.oneofGroups_[0]));
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.oneofGroups_[0]));
 };
 
 
@@ -19764,8 +19790,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.toObject(opt_includeInstance, this);
 };
 
 
@@ -19774,13 +19800,13 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.toObjec
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.toObject(includeInstance, f)
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -19794,23 +19820,23 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.toObject = functi
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse;
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse;
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -19818,8 +19844,8 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.deserializeBinary
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.deserializeBinaryFromReader);
+      var value = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.deserializeBinaryFromReader);
       msg.setV0(value);
       break;
     default:
@@ -19835,9 +19861,9 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.deserializeBinary
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -19845,18 +19871,18 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.seriali
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getV0();
   if (f != null) {
     writer.writeMessage(
       1,
       f,
-      proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.serializeBinaryToWriter
+      proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.serializeBinaryToWriter
     );
   }
 };
@@ -19871,22 +19897,22 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.serializeBinaryTo
  * @private {!Array<!Array<number>>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.oneofGroups_ = [[1,2]];
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.oneofGroups_ = [[1,2]];
 
 /**
  * @enum {number}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.ResultCase = {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.ResultCase = {
   RESULT_NOT_SET: 0,
   VERSIONS: 1,
   PROOF: 2
 };
 
 /**
- * @return {proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.ResultCase}
+ * @return {proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.ResultCase}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.getResultCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.oneofGroups_[0]));
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.prototype.getResultCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.oneofGroups_[0]));
 };
 
 
@@ -19904,8 +19930,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.toObject(opt_includeInstance, this);
 };
 
 
@@ -19914,13 +19940,13 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.toObject = function(includeInstance, msg) {
   var f, obj = {
-    versions: (f = msg.getVersions()) && proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.toObject(includeInstance, f),
+    versions: (f = msg.getVersions()) && proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.toObject(includeInstance, f),
     proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
     metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
   };
@@ -19936,23 +19962,23 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0;
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0;
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -19960,8 +19986,8 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.deserializeBinaryFromReader);
+      var value = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.deserializeBinaryFromReader);
       msg.setVersions(value);
       break;
     case 2:
@@ -19987,9 +20013,9 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -19997,18 +20023,18 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getVersions();
   if (f != null) {
     writer.writeMessage(
       1,
       f,
-      proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.serializeBinaryToWriter
+      proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.serializeBinaryToWriter
     );
   }
   f = message.getProof();
@@ -20036,7 +20062,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
  * @private {!Array<number>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.repeatedFields_ = [1];
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.repeatedFields_ = [1];
 
 
 
@@ -20053,8 +20079,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.toObject(opt_includeInstance, this);
 };
 
 
@@ -20063,14 +20089,14 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.toObject = function(includeInstance, msg) {
   var f, obj = {
     versionsList: jspb.Message.toObjectList(msg.getVersionsList(),
-    proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.toObject, includeInstance)
+    proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.toObject, includeInstance)
   };
 
   if (includeInstance) {
@@ -20084,23 +20110,23 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions;
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions;
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -20108,8 +20134,8 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.deserializeBinaryFromReader);
+      var value = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.deserializeBinaryFromReader);
       msg.addVersions(value);
       break;
     default:
@@ -20125,9 +20151,9 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -20135,18 +20161,18 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getVersionsList();
   if (f.length > 0) {
     writer.writeRepeatedMessage(
       1,
       f,
-      proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.serializeBinaryToWriter
+      proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.serializeBinaryToWriter
     );
   }
 };
@@ -20154,38 +20180,38 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
 
 /**
  * repeated VersionEntry versions = 1;
- * @return {!Array<!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry>}
+ * @return {!Array<!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry>}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.prototype.getVersionsList = function() {
-  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry>} */ (
-    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry, 1));
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.prototype.getVersionsList = function() {
+  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry>} */ (
+    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry, 1));
 };
 
 
 /**
- * @param {!Array<!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry>} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions} returns this
+ * @param {!Array<!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry>} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions} returns this
 */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.prototype.setVersionsList = function(value) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.prototype.setVersionsList = function(value) {
   return jspb.Message.setRepeatedWrapperField(this, 1, value);
 };
 
 
 /**
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry=} opt_value
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry=} opt_value
  * @param {number=} opt_index
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.prototype.addVersions = function(opt_value, opt_index) {
-  return jspb.Message.addToRepeatedWrapperField(this, 1, opt_value, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry, opt_index);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.prototype.addVersions = function(opt_value, opt_index) {
+  return jspb.Message.addToRepeatedWrapperField(this, 1, opt_value, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry, opt_index);
 };
 
 
 /**
  * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.prototype.clearVersionsList = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.prototype.clearVersionsList = function() {
   return this.setVersionsList([]);
 };
 
@@ -20206,8 +20232,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.toObject(opt_includeInstance, this);
 };
 
 
@@ -20216,11 +20242,11 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.toObject = function(includeInstance, msg) {
   var f, obj = {
     versionNumber: jspb.Message.getFieldWithDefault(msg, 1, 0),
     voteCount: jspb.Message.getFieldWithDefault(msg, 2, 0)
@@ -20237,23 +20263,23 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry;
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry;
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -20281,9 +20307,9 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -20291,11 +20317,11 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getVersionNumber();
   if (f !== 0) {
@@ -20318,16 +20344,16 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
  * optional uint32 version_number = 1;
  * @return {number}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.prototype.getVersionNumber = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.prototype.getVersionNumber = function() {
   return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
 };
 
 
 /**
  * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.prototype.setVersionNumber = function(value) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.prototype.setVersionNumber = function(value) {
   return jspb.Message.setProto3IntField(this, 1, value);
 };
 
@@ -20336,44 +20362,44 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
  * optional uint32 vote_count = 2;
  * @return {number}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.prototype.getVoteCount = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.prototype.getVoteCount = function() {
   return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
 };
 
 
 /**
  * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.prototype.setVoteCount = function(value) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.prototype.setVoteCount = function(value) {
   return jspb.Message.setProto3IntField(this, 2, value);
 };
 
 
 /**
  * optional Versions versions = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions}
+ * @return {?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.getVersions = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions, 1));
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.prototype.getVersions = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions, 1));
 };
 
 
 /**
- * @param {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} returns this
+ * @param {?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0} returns this
 */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.setVersions = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.prototype.setVersions = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.oneofGroups_[0], value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.clearVersions = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.prototype.clearVersions = function() {
   return this.setVersions(undefined);
 };
 
@@ -20382,7 +20408,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.hasVersions = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.prototype.hasVersions = function() {
   return jspb.Message.getField(this, 1) != null;
 };
 
@@ -20391,7 +20417,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
  * optional Proof proof = 2;
  * @return {?proto.org.dash.platform.dapi.v0.Proof}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.getProof = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.prototype.getProof = function() {
   return /** @type{?proto.org.dash.platform.dapi.v0.Proof} */ (
     jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.Proof, 2));
 };
@@ -20399,18 +20425,18 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
 
 /**
  * @param {?proto.org.dash.platform.dapi.v0.Proof|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0} returns this
 */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.setProof = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.prototype.setProof = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.oneofGroups_[0], value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.clearProof = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.prototype.clearProof = function() {
   return this.setProof(undefined);
 };
 
@@ -20419,7 +20445,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.hasProof = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.prototype.hasProof = function() {
   return jspb.Message.getField(this, 2) != null;
 };
 
@@ -20428,7 +20454,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
  * optional ResponseMetadata metadata = 3;
  * @return {?proto.org.dash.platform.dapi.v0.ResponseMetadata}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.getMetadata = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.prototype.getMetadata = function() {
   return /** @type{?proto.org.dash.platform.dapi.v0.ResponseMetadata} */ (
     jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ResponseMetadata, 3));
 };
@@ -20436,18 +20462,18 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
 
 /**
  * @param {?proto.org.dash.platform.dapi.v0.ResponseMetadata|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0} returns this
 */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.setMetadata = function(value) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.prototype.setMetadata = function(value) {
   return jspb.Message.setWrapperField(this, 3, value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.clearMetadata = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.prototype.clearMetadata = function() {
   return this.setMetadata(undefined);
 };
 
@@ -20456,35 +20482,35 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgrade
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.hasMetadata = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.prototype.hasMetadata = function() {
   return jspb.Message.getField(this, 3) != null;
 };
 
 
 /**
- * optional GetVersionUpgradeStateResponseV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0}
+ * optional GetProtocolVersionUpgradeStateResponseV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0, 1));
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0, 1));
 };
 
 
 /**
- * @param {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse} returns this
+ * @param {?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse} returns this
 */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.oneofGroups_[0], value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.clearV0 = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.prototype.clearV0 = function() {
   return this.setV0(undefined);
 };
 
@@ -20493,7 +20519,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.clearV0
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.hasV0 = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.prototype.hasV0 = function() {
   return jspb.Message.getField(this, 1) != null;
 };
 
@@ -20507,21 +20533,21 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.hasV0 =
  * @private {!Array<!Array<number>>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.oneofGroups_ = [[1]];
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.oneofGroups_ = [[1]];
 
 /**
  * @enum {number}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.VersionCase = {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.VersionCase = {
   VERSION_NOT_SET: 0,
   V0: 1
 };
 
 /**
- * @return {proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.VersionCase}
+ * @return {proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.VersionCase}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.oneofGroups_[0]));
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.oneofGroups_[0]));
 };
 
 
@@ -20539,8 +20565,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.toObject(opt_includeInstance, this);
 };
 
 
@@ -20549,13 +20575,13 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.toO
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.toObject(includeInstance, f)
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -20569,23 +20595,23 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.toObject = fu
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest;
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest;
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -20593,8 +20619,8 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.deserializeBi
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.deserializeBinaryFromReader);
+      var value = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.deserializeBinaryFromReader);
       msg.setV0(value);
       break;
     default:
@@ -20610,9 +20636,9 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.deserializeBi
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -20620,18 +20646,18 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.ser
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getV0();
   if (f != null) {
     writer.writeMessage(
       1,
       f,
-      proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.serializeBinaryToWriter
+      proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.serializeBinaryToWriter
     );
   }
 };
@@ -20653,8 +20679,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.toObject(opt_includeInstance, this);
 };
 
 
@@ -20663,11 +20689,11 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpg
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.toObject = function(includeInstance, msg) {
   var f, obj = {
     startProTxHash: msg.getStartProTxHash_asB64(),
     count: jspb.Message.getFieldWithDefault(msg, 2, 0),
@@ -20685,23 +20711,23 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpg
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0;
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0;
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -20733,9 +20759,9 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpg
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -20743,11 +20769,11 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpg
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getStartProTxHash_asU8();
   if (f.length > 0) {
@@ -20777,7 +20803,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpg
  * optional bytes start_pro_tx_hash = 1;
  * @return {string}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.getStartProTxHash = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.prototype.getStartProTxHash = function() {
   return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, ""));
 };
 
@@ -20787,7 +20813,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpg
  * This is a type-conversion wrapper around `getStartProTxHash()`
  * @return {string}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.getStartProTxHash_asB64 = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.prototype.getStartProTxHash_asB64 = function() {
   return /** @type {string} */ (jspb.Message.bytesAsB64(
       this.getStartProTxHash()));
 };
@@ -20800,7 +20826,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpg
  * This is a type-conversion wrapper around `getStartProTxHash()`
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.getStartProTxHash_asU8 = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.prototype.getStartProTxHash_asU8 = function() {
   return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
       this.getStartProTxHash()));
 };
@@ -20808,9 +20834,9 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpg
 
 /**
  * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.setStartProTxHash = function(value) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.prototype.setStartProTxHash = function(value) {
   return jspb.Message.setProto3BytesField(this, 1, value);
 };
 
@@ -20819,16 +20845,16 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpg
  * optional uint32 count = 2;
  * @return {number}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.getCount = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.prototype.getCount = function() {
   return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
 };
 
 
 /**
  * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.setCount = function(value) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.prototype.setCount = function(value) {
   return jspb.Message.setProto3IntField(this, 2, value);
 };
 
@@ -20837,44 +20863,44 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpg
  * optional bool prove = 3;
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.getProve = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.prototype.getProve = function() {
   return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 3, false));
 };
 
 
 /**
  * @param {boolean} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.setProve = function(value) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.prototype.setProve = function(value) {
   return jspb.Message.setProto3BooleanField(this, 3, value);
 };
 
 
 /**
- * optional GetVersionUpgradeVoteStatusRequestV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0}
+ * optional GetProtocolVersionUpgradeVoteStatusRequestV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0, 1));
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0, 1));
 };
 
 
 /**
- * @param {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest} returns this
+ * @param {?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest} returns this
 */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.oneofGroups_[0], value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.clearV0 = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.prototype.clearV0 = function() {
   return this.setV0(undefined);
 };
 
@@ -20883,7 +20909,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.cle
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.hasV0 = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.prototype.hasV0 = function() {
   return jspb.Message.getField(this, 1) != null;
 };
 
@@ -20897,21 +20923,21 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.has
  * @private {!Array<!Array<number>>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.oneofGroups_ = [[1]];
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.oneofGroups_ = [[1]];
 
 /**
  * @enum {number}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.VersionCase = {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.VersionCase = {
   VERSION_NOT_SET: 0,
   V0: 1
 };
 
 /**
- * @return {proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.VersionCase}
+ * @return {proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.VersionCase}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.oneofGroups_[0]));
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.oneofGroups_[0]));
 };
 
 
@@ -20929,8 +20955,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.toObject(opt_includeInstance, this);
 };
 
 
@@ -20939,13 +20965,13 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.to
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.toObject(includeInstance, f)
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -20959,23 +20985,23 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.toObject = f
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse;
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse;
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -20983,8 +21009,8 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.deserializeB
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.deserializeBinaryFromReader);
+      var value = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.deserializeBinaryFromReader);
       msg.setV0(value);
       break;
     default:
@@ -21000,9 +21026,9 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.deserializeB
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -21010,18 +21036,18 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.se
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getV0();
   if (f != null) {
     writer.writeMessage(
       1,
       f,
-      proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.serializeBinaryToWriter
+      proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.serializeBinaryToWriter
     );
   }
 };
@@ -21036,22 +21062,22 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.serializeBin
  * @private {!Array<!Array<number>>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.oneofGroups_ = [[1,2]];
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.oneofGroups_ = [[1,2]];
 
 /**
  * @enum {number}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.ResultCase = {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.ResultCase = {
   RESULT_NOT_SET: 0,
   VERSIONS: 1,
   PROOF: 2
 };
 
 /**
- * @return {proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.ResultCase}
+ * @return {proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.ResultCase}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.getResultCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.oneofGroups_[0]));
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.prototype.getResultCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.oneofGroups_[0]));
 };
 
 
@@ -21069,8 +21095,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.toObject(opt_includeInstance, this);
 };
 
 
@@ -21079,13 +21105,13 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.toObject = function(includeInstance, msg) {
   var f, obj = {
-    versions: (f = msg.getVersions()) && proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.toObject(includeInstance, f),
+    versions: (f = msg.getVersions()) && proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.toObject(includeInstance, f),
     proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
     metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
   };
@@ -21101,23 +21127,23 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0;
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0;
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -21125,8 +21151,8 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.deserializeBinaryFromReader);
+      var value = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.deserializeBinaryFromReader);
       msg.setVersions(value);
       break;
     case 2:
@@ -21152,9 +21178,9 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -21162,18 +21188,18 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getVersions();
   if (f != null) {
     writer.writeMessage(
       1,
       f,
-      proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.serializeBinaryToWriter
+      proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.serializeBinaryToWriter
     );
   }
   f = message.getProof();
@@ -21201,7 +21227,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
  * @private {!Array<number>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.repeatedFields_ = [1];
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.repeatedFields_ = [1];
 
 
 
@@ -21218,8 +21244,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.toObject(opt_includeInstance, this);
 };
 
 
@@ -21228,14 +21254,14 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.toObject = function(includeInstance, msg) {
   var f, obj = {
     versionSignalsList: jspb.Message.toObjectList(msg.getVersionSignalsList(),
-    proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.toObject, includeInstance)
+    proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.toObject, includeInstance)
   };
 
   if (includeInstance) {
@@ -21249,23 +21275,23 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals;
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals;
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -21273,8 +21299,8 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.deserializeBinaryFromReader);
+      var value = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.deserializeBinaryFromReader);
       msg.addVersionSignals(value);
       break;
     default:
@@ -21290,9 +21316,9 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -21300,18 +21326,18 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getVersionSignalsList();
   if (f.length > 0) {
     writer.writeRepeatedMessage(
       1,
       f,
-      proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.serializeBinaryToWriter
+      proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.serializeBinaryToWriter
     );
   }
 };
@@ -21319,38 +21345,38 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
 
 /**
  * repeated VersionSignal version_signals = 1;
- * @return {!Array<!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal>}
+ * @return {!Array<!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal>}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.getVersionSignalsList = function() {
-  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal>} */ (
-    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal, 1));
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.getVersionSignalsList = function() {
+  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal>} */ (
+    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal, 1));
 };
 
 
 /**
- * @param {!Array<!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal>} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals} returns this
+ * @param {!Array<!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal>} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals} returns this
 */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.setVersionSignalsList = function(value) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.setVersionSignalsList = function(value) {
   return jspb.Message.setRepeatedWrapperField(this, 1, value);
 };
 
 
 /**
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal=} opt_value
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal=} opt_value
  * @param {number=} opt_index
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.addVersionSignals = function(opt_value, opt_index) {
-  return jspb.Message.addToRepeatedWrapperField(this, 1, opt_value, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal, opt_index);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.addVersionSignals = function(opt_value, opt_index) {
+  return jspb.Message.addToRepeatedWrapperField(this, 1, opt_value, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal, opt_index);
 };
 
 
 /**
  * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.clearVersionSignalsList = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.clearVersionSignalsList = function() {
   return this.setVersionSignalsList([]);
 };
 
@@ -21371,8 +21397,8 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
  *     http://goto/soy-param-migration
  * @return {!Object}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.toObject(opt_includeInstance, this);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.toObject(opt_includeInstance, this);
 };
 
 
@@ -21381,11 +21407,11 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
  * @param {boolean|undefined} includeInstance Deprecated. Whether to include
  *     the JSPB instance for transitional soy proto support:
  *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal} msg The msg instance to transform.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal} msg The msg instance to transform.
  * @return {!Object}
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.toObject = function(includeInstance, msg) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.toObject = function(includeInstance, msg) {
   var f, obj = {
     proTxHash: msg.getProTxHash_asB64(),
     version: jspb.Message.getFieldWithDefault(msg, 2, 0)
@@ -21402,23 +21428,23 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
 /**
  * Deserializes binary data (in protobuf wire format).
  * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.deserializeBinary = function(bytes) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.deserializeBinary = function(bytes) {
   var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal;
-  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.deserializeBinaryFromReader(msg, reader);
+  var msg = new proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal;
+  return proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.deserializeBinaryFromReader(msg, reader);
 };
 
 
 /**
  * Deserializes binary data (in protobuf wire format) from the
  * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal} msg The message object to deserialize into.
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal} msg The message object to deserialize into.
  * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal}
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.deserializeBinaryFromReader = function(msg, reader) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.deserializeBinaryFromReader = function(msg, reader) {
   while (reader.nextField()) {
     if (reader.isEndGroup()) {
       break;
@@ -21446,9 +21472,9 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
  * Serializes the message to binary data (in protobuf wire format).
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.serializeBinary = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.serializeBinary = function() {
   var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.serializeBinaryToWriter(this, writer);
+  proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.serializeBinaryToWriter(this, writer);
   return writer.getResultBuffer();
 };
 
@@ -21456,11 +21482,11 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
 /**
  * Serializes the given message to binary data (in protobuf wire
  * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal} message
+ * @param {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal} message
  * @param {!jspb.BinaryWriter} writer
  * @suppress {unusedLocalVariables} f is only used for nested messages
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.serializeBinaryToWriter = function(message, writer) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
   f = message.getProTxHash_asU8();
   if (f.length > 0) {
@@ -21483,7 +21509,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
  * optional bytes pro_tx_hash = 1;
  * @return {string}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.getProTxHash = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.getProTxHash = function() {
   return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, ""));
 };
 
@@ -21493,7 +21519,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
  * This is a type-conversion wrapper around `getProTxHash()`
  * @return {string}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.getProTxHash_asB64 = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.getProTxHash_asB64 = function() {
   return /** @type {string} */ (jspb.Message.bytesAsB64(
       this.getProTxHash()));
 };
@@ -21506,7 +21532,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
  * This is a type-conversion wrapper around `getProTxHash()`
  * @return {!Uint8Array}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.getProTxHash_asU8 = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.getProTxHash_asU8 = function() {
   return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
       this.getProTxHash()));
 };
@@ -21514,9 +21540,9 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
 
 /**
  * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.setProTxHash = function(value) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.setProTxHash = function(value) {
   return jspb.Message.setProto3BytesField(this, 1, value);
 };
 
@@ -21525,44 +21551,44 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
  * optional uint32 version = 2;
  * @return {number}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.getVersion = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.getVersion = function() {
   return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
 };
 
 
 /**
  * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.setVersion = function(value) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.setVersion = function(value) {
   return jspb.Message.setProto3IntField(this, 2, value);
 };
 
 
 /**
  * optional VersionSignals versions = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals}
+ * @return {?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.getVersions = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals, 1));
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.prototype.getVersions = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals, 1));
 };
 
 
 /**
- * @param {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} returns this
+ * @param {?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0} returns this
 */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.setVersions = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.prototype.setVersions = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.oneofGroups_[0], value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.clearVersions = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.prototype.clearVersions = function() {
   return this.setVersions(undefined);
 };
 
@@ -21571,7 +21597,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.hasVersions = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.prototype.hasVersions = function() {
   return jspb.Message.getField(this, 1) != null;
 };
 
@@ -21580,7 +21606,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
  * optional Proof proof = 2;
  * @return {?proto.org.dash.platform.dapi.v0.Proof}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.getProof = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.prototype.getProof = function() {
   return /** @type{?proto.org.dash.platform.dapi.v0.Proof} */ (
     jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.Proof, 2));
 };
@@ -21588,18 +21614,18 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
 
 /**
  * @param {?proto.org.dash.platform.dapi.v0.Proof|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0} returns this
 */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.setProof = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.prototype.setProof = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.oneofGroups_[0], value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.clearProof = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.prototype.clearProof = function() {
   return this.setProof(undefined);
 };
 
@@ -21608,7 +21634,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.hasProof = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.prototype.hasProof = function() {
   return jspb.Message.getField(this, 2) != null;
 };
 
@@ -21617,7 +21643,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
  * optional ResponseMetadata metadata = 3;
  * @return {?proto.org.dash.platform.dapi.v0.ResponseMetadata}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.getMetadata = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.prototype.getMetadata = function() {
   return /** @type{?proto.org.dash.platform.dapi.v0.ResponseMetadata} */ (
     jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ResponseMetadata, 3));
 };
@@ -21625,18 +21651,18 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
 
 /**
  * @param {?proto.org.dash.platform.dapi.v0.ResponseMetadata|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0} returns this
 */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.setMetadata = function(value) {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.prototype.setMetadata = function(value) {
   return jspb.Message.setWrapperField(this, 3, value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.clearMetadata = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.prototype.clearMetadata = function() {
   return this.setMetadata(undefined);
 };
 
@@ -21645,35 +21671,35 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUp
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.hasMetadata = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.prototype.hasMetadata = function() {
   return jspb.Message.getField(this, 3) != null;
 };
 
 
 /**
- * optional GetVersionUpgradeVoteStatusResponseV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0}
+ * optional GetProtocolVersionUpgradeVoteStatusResponseV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0, 1));
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0, 1));
 };
 
 
 /**
- * @param {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse} returns this
+ * @param {?proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse} returns this
 */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.oneofGroups_[0], value);
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.oneofGroups_[0], value);
 };
 
 
 /**
  * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse} returns this
+ * @return {!proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse} returns this
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.clearV0 = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.prototype.clearV0 = function() {
   return this.setV0(undefined);
 };
 
@@ -21682,7 +21708,7 @@ proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.cl
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.hasV0 = function() {
+proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.prototype.hasV0 = function() {
   return jspb.Message.getField(this, 1) != null;
 };
 

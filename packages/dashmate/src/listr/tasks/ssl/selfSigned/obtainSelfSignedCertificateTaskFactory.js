@@ -1,4 +1,4 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
 
 /**
  * @param {generateKeyPair} generateKeyPair
@@ -7,7 +7,7 @@ const { Listr } = require('listr2');
  * @param {saveCertificateTask} saveCertificateTask
  * @return {obtainSelfSignedCertificateTask}
  */
-function obtainSelfSignedCertificateTaskFactory(
+export default function obtainSelfSignedCertificateTaskFactory(
   generateKeyPair,
   generateCsr,
   createSelfSignedCertificate,
@@ -36,5 +36,3 @@ function obtainSelfSignedCertificateTaskFactory(
 
   return obtainSelfSignedCertificateTask;
 }
-
-module.exports = obtainSelfSignedCertificateTaskFactory;

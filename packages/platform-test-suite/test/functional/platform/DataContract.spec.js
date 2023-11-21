@@ -219,9 +219,8 @@ describe('Platform', () => {
         },
       );
 
-      const contractHistory = await client.platform.contracts.history(
-        dataContractFixture.getId(), 0, 10, 0,
-      );
+      const contractHistory = await client.platform.contracts
+        .history(dataContractFixture.getId(), 0, 10, 0);
 
       // By default, history is not really sorted, since it's a map
       const historyPairs = Object.entries(contractHistory);

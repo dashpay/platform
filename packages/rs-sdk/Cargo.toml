@@ -1,0 +1,87 @@
+[package]
+name = "rs-sdk"
+version = "0.25.15"
+edition = "2021"
+
+[dependencies]
+dpp = { path = "../rs-dpp", features = [
+    "client",
+    "validation",
+    "identity-value-conversion",
+] }
+dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
+rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
+drive = { path = "../rs-drive", default-features = false, features = [
+    "verify",
+] }
+drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
+# drive-abci is only needed for core rpc; TODO remove once we have correct core rpc impl
+drive-abci = { path = "../rs-drive-abci", default-features = false }
+
+bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
+thiserror = "1.0.47"
+tokio = { version = "1.32.0", features = ["macros"] }
+async-trait = { version = "0.1.73" }
+http = { version = "0.2.9" }
+ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
+serde = { version = "1.0.152", default-features = false, features = ["rc"] }
+serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
+tracing = { version = "0.1.37" }
+hex = { version = "0.4.3", optional = true }
+dotenvy = { version = "0.15.7", optional = true }
+envy = { version = "0.4.2", optional = true }
+futures = { version = "0.3.28" }
+derive_more = { version = "0.99.16" }
+# dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = "master" }
+
+[dev-dependencies]
+rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks"] }
+base64 = { version = "0.21.0" }
+tracing-subscriber = { version = "0.3.16" }
+dpp = { path = "../rs-dpp", features = [
+    "client",
+    "validation",
+    "random-documents",
+] }
+data-contracts = { path = "../data-contracts" }
+
+
+[features]
+default = ["mocks", "offline-testing"]
+mocks = [
+    "dep:serde_json",
+    "rs-dapi-client/mocks",
+    "rs-dapi-client/dump",
+    "dpp/document-cbor-conversion",
+    "dpp/identity-value-conversion",
+    "dpp/random-identities",
+    "drive-proof-verifier/mocks",
+    "dep:bincode",
+    "dep:hex",
+    "dep:dotenvy",
+    "dep:envy",
+]
+
+# Run integration tests using test vectors from `tests/vectors/` instead of connecting to live Dash Platform.
+#
+# This feature is enabled by default to allow testing without connecting to the Dash Platform as
+# part of CI/CD workflows.
+#
+# If both `offline-testing` and `network-testing` are enabled, "offline-testing" will take precedence.
+offline-testing = ["mocks"]
+
+# Run integration tests using a live Dash Platform network.
+#
+# Requires configuration of Dash Platform connectivity.
+# See [README.md] for more details.
+#
+# If both `offline-testing` and `network-testing` are enabled, "offline-testing" will take precedence.
+network-testing = ["mocks"]
+
+# Generate test vectors for offline tests.
+#
+# This will run tests in `network-testing` mode and
+# dump all requests and responses to `tests/vectors/`,
+# so that they can be used later for `offline-testing`.
+generate-test-vectors = ["network-testing"]

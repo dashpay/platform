@@ -30,7 +30,6 @@ class JsonRpcError extends DAPIClientError {
 
   /**
    * Get error message
-   *
    * @returns {string}
    */
   getMessage() {
@@ -39,7 +38,6 @@ class JsonRpcError extends DAPIClientError {
 
   /**
    * Get error data
-   *
    * @returns {object}
    */
   getData() {
@@ -48,7 +46,6 @@ class JsonRpcError extends DAPIClientError {
 
   /**
    * Get original error code
-   *
    * @returns {number}
    */
   getCode() {

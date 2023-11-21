@@ -1,8 +1,8 @@
-const DockerStatusEnum = require('./enums/dockerStatus');
-const ServiceStatusEnum = require('./enums/serviceStatus');
-const MasternodeSyncAssetEnum = require('./enums/masternodeSyncAsset');
+import { DockerStatusEnum } from './enums/dockerStatus.js';
+import { MasternodeSyncAssetEnum } from './enums/masternodeSyncAsset.js';
+import { ServiceStatusEnum } from './enums/serviceStatus.js';
 
-module.exports = {
+export default {
   /**
    * Determine status based on the docker compose output
    * @param dockerCompose {DockerCompose}
