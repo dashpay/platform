@@ -14,7 +14,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::{
-    platform::{identity::IdentityRequest, DocumentQuery, Fetch, FetchMany, Query},
+    platform::{types::identity::IdentityRequest, DocumentQuery, Fetch, FetchMany, Query},
     Error,
 };
 

@@ -144,9 +144,9 @@ impl<'a> Query<DocumentQuery> for DriveQuery<'a> {
     }
 }
 
-/// Wrapper around query that allows to specify limit and offset.
+/// Wrapper around query that allows to specify limit.
 ///
-/// A query that can be used specify limit and offset when fetching multiple objects from the platform
+/// A query that can be used specify limit when fetching multiple objects from the platform
 /// using [`FetchMany`](crate::platform::FetchMany) trait.
 ///
 /// ## Example
@@ -161,7 +161,6 @@ impl<'a> Query<DocumentQuery> for DriveQuery<'a> {
 /// let query = LimitQuery {
 ///    query: 1,
 ///    limit: Some(10),
-///    offset: Some(5),
 /// };
 /// let epoch = ExtendedEpochInfo::fetch_many(&mut sdk, query);
 /// ```
@@ -171,18 +170,11 @@ pub struct LimitQuery<Q> {
     pub query: Q,
     /// Max number of records returned
     pub limit: Option<u32>,
-    /// Start offset. Will return records starting from this offset
-    /// up to `offset+limit`.
-    pub offset: Option<u32>,
 }
 
 impl<Q> From<Q> for LimitQuery<Q> {
     fn from(query: Q) -> Self {
-        Self {
-            query,
-            limit: None,
-            offset: None,
-        }
+        Self { query, limit: None }
     }
 }
 
@@ -191,11 +183,6 @@ impl Query<GetEpochsInfoRequest> for LimitQuery<EpochIndex> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
-
-        if self.offset.is_some() {
-            unimplemented!("offset is not supported for epoch queries");
-        }
-
         Ok(GetEpochsInfoRequest {
             version: Some(proto::get_epochs_info_request::Version::V0(
                 proto::get_epochs_info_request::GetEpochsInfoRequestV0 {

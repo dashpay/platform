@@ -4,7 +4,7 @@ use rs_sdk::platform::FetchMany;
 
 /// Given some existing identity ID, when I fetch the identity keys, I get some of them indexed by key ID.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn test_protocol_version_votes() {
+async fn test_protocol_version_vote_count() {
     setup_logs();
 
     let cfg = Config::new();
