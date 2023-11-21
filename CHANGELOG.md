@@ -1,3 +1,43 @@
+### [0.25.16-rc.1](https://github.com/dashpay/platform/compare/v0.25.15...v0.25.16-rc.1) (2023-11-21)
+
+### ⚠ BREAKING CHANGES
+
+* upgrade to Node.JS v20 (#1562)
+
+### Features
+
+* **dashmate:** insight, core block explorer ([#1581](https://github.com/dashpay/platform/issues/1581))
+* **dashmate:** update core version to 20.0.1 ([#1588](https://github.com/dashpay/platform/issues/1588))
+* **dashmate:** upgrade dashmate to ESM syntax ([#1562](https://github.com/dashpay/platform/issues/1562))
+* **package:** bump rust packages
+* **sdk:** rs-sdk support for ExtendedEpochInfo::fetch()/fetch_many() ([#1576](https://github.com/dashpay/platform/issues/1576))
+
+### Bug Fixes
+
+* **dapi:** failure if bloom filter is not set ([#1572](https://github.com/dashpay/platform/issues/1572))
+* **dashmate:** incorrect block height color on null remote block height ([#1587](https://github.com/dashpay/platform/issues/1587))
+
+
+### Continuous Integration
+
+* arch dependant yarn unplugged cache ([#1580](https://github.com/dashpay/platform/issues/1580))
+* rs-sdk, feature and unnecessary deps testing for rust packages ([#1575](https://github.com/dashpay/platform/issues/1575))
+
+### Miscellaneous Chores
+
+* remove unused dependencies of rust crates ([#1578](https://github.com/dashpay/platform/issues/1578))
+* upgrade to Yarn v4 ([#1562](https://github.com/dashpay/platform/issues/1562))
+* upgrade to Node.JS v20 ([#1562](https://github.com/dashpay/platform/issues/1562))
+
+### [0.25.15](https://github.com/dashpay/platform/compare/v0.25.13...v0.25.15) (2023-11-05)
+
+### What's Changed
+* chore(dpp)!: allow only one document transition by @shumkov in https://github.com/dashpay/platform/pull/1555
+* chore: remove unused and vulnerable github-api package by @shumkov in https://github.com/dashpay/platform/pull/1571
+* build: bump rust packages versions in the release script by @pshenmic in https://github.com/dashpay/platform/pull/1573
+* ci: speed up workflows and reduce costs by @strophy in https://github.com/dashpay/platform/pull/1545
+* feat: rust software development kit for Dash Platform by @lklimek in https://github.com/dashpay/platform/pull/1475
+
 ### [0.25.13](https://github.com/dashpay/platform/compare/v0.25.12...v0.25.13) (2023-11-05)
 
 
