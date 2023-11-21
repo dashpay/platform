@@ -43,7 +43,7 @@
 * ci: speed up workflows and reduce costs ([#1545](https://github.com/dashpay/platform/issues/1545))
 
 ### Features
-* rust sofrware development kit for Dash Platform ([#1475](https://github.com/dashpay/platform/issues/1475))
+* rust software development kit for Dash Platform ([#1475](https://github.com/dashpay/platform/issues/1475))
 
 ### [0.25.13](https://github.com/dashpay/platform/compare/v0.25.12...v0.25.13) (2023-11-05)
 
