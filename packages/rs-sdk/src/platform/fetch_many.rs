@@ -156,15 +156,20 @@ where
     /// ## Parameters
     ///
     /// - `sdk`: An instance of [Sdk].
-    /// - `identifiers`: A collection of [Identifier](crate::platform::Identifier) to fetch.
-    async fn fetch_many_by_identifiers<I: IntoIterator<Item = Identifier>>(
+    /// - `identifiers`: A collection of [Identifiers](crate::platform::Identifier) to fetch.
+    ///
+    /// ## Requirements
+    ///
+    /// `Vec<Identifier>` must implement [Query] for [Self::Request].
+    async fn fetch_by_identifiers<I: IntoIterator<Item = Identifier> + Send>(
         sdk: &mut Sdk,
         identifiers: I,
     ) -> Result<RetrievedObjects<K, Self>, Error>
     where
-        I: Query<<Self as FetchMany<K>>::Request>,
+        Vec<Identifier>: Query<<Self as FetchMany<K>>::Request>,
     {
-        Self::fetch_many(sdk, identifiers).await
+        let ids = identifiers.into_iter().collect::<Vec<Identifier>>();
+        Self::fetch_many(sdk, ids).await
     }
 
     /// Fetch multiple objects from the Platform with limit.

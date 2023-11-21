@@ -38,11 +38,11 @@ async fn test_data_contracts_1_ok_1_nx() {
     let cfg = Config::new();
     let id = cfg.existing_data_contract_id;
     let nx_id = Identifier::from_bytes(&[1; 32]).expect("parse identity id");
-    let ids = vec![id, nx_id];
+    let ids = [id, nx_id];
 
     let mut sdk = cfg.setup_api().await;
 
-    let result = DataContract::fetch_many(&mut sdk, ids)
+    let result = DataContract::fetch_by_identifiers(&mut sdk, ids)
         .await
         .expect("fetch many data contracts");
 
