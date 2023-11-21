@@ -11,12 +11,17 @@ use crate::{
     platform::{document_query::DocumentQuery, query::Query},
     Sdk,
 };
-use dapi_grpc::platform::v0::{GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest};
+use dapi_grpc::platform::v0::{
+    GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest,
+    GetProtocolVersionUpgradeStateRequest,
+};
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::document::Document;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
+use dpp::util::deserializer::ProtocolVersion;
+use drive_proof_verifier::types::{ProtocolVersionVoteCount, RetrievedObjects};
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
@@ -72,7 +77,7 @@ where
     async fn fetch_many<Q: Query<<Self as FetchMany<K>>::Request>>(
         sdk: &mut Sdk,
         query: Q,
-    ) -> Result<BTreeMap<K, Option<Self>>, Error> {
+    ) -> Result<RetrievedObjects<K, Self>, Error> {
         let request = query.query(sdk.prove())?;
 
         let response = request
@@ -126,4 +131,8 @@ impl FetchMany<KeyID> for IdentityPublicKey {
 #[async_trait::async_trait]
 impl FetchMany<EpochIndex> for ExtendedEpochInfo {
     type Request = GetEpochsInfoRequest;
+}
+
+impl FetchMany<ProtocolVersion> for ProtocolVersionVoteCount {
+    type Request = GetProtocolVersionUpgradeStateRequest;
 }
