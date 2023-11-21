@@ -53,9 +53,9 @@ use super::LimitQuery;
 /// * define [Identifier]s of data contracts to fetch,
 /// * create a query by grouping identifiers in a collection, like a [Vec] or a slice,
 /// * call [DataContract::fetch_many()] with the query and an instance of [Sdk].
-/// // TODO: UN-ignore after implementing DataContract::fetch_many
-/// ```rust,ignore
-/// use rs_sdk::{Sdk, platform::{Query, Identifier, Fetch, DataContract}};
+///
+/// ```rust
+/// use rs_sdk::{Sdk, platform::{Query, Identifier, FetchMany, DataContract}};
 ///
 /// # const SOME_IDENTIFIER_1 : [u8; 32] = [1; 32];
 /// # const SOME_IDENTIFIER_2 : [u8; 32] = [2; 32];
