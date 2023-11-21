@@ -305,7 +305,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.25.12': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
-            options.core.insight = base.get('core.insight');
             options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
 
             if (options.network === NETWORK_TESTNET) {
@@ -324,6 +323,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.25.16': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
+            options.core.insight = base.get('core.insight');
             options.core.docker.image = base.get('core.docker.image');
 
             if (options.network === NETWORK_TESTNET && name !== base.getName()) {
