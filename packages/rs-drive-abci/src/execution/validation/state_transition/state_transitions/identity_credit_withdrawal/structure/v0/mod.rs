@@ -13,6 +13,7 @@ use dpp::util::is_fibonacci_number::is_fibonacci_number;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::withdrawal::Pooling;
 
+//todo: Update Withdrawal amount to be more than the Core dust amount x 1000 (conversion to credits)
 const MIN_WITHDRAWAL_AMOUNT: u64 = 1000;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_credit_withdrawal) trait IdentityCreditWithdrawalStateTransitionStructureValidationV0 {
