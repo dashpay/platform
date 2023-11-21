@@ -111,6 +111,10 @@ impl MockDashPlatformSdk {
                     self.load_expectation::<proto::GetDataContractRequest>(filename)
                         .await?
                 }
+                "GetDataContractsRequest" => {
+                    self.load_expectation::<proto::GetDataContractsRequest>(filename)
+                        .await?
+                }
                 "IdentityRequest" => self.load_expectation::<IdentityRequest>(filename).await?,
                 "GetIdentityRequest" => {
                     self.load_expectation::<proto::GetIdentityRequest>(filename)
