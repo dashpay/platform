@@ -1,4 +1,4 @@
-import table from 'table';
+import { table } from 'table';
 import { OUTPUT_FORMATS } from '../constants.js';
 import UnsupportedFormatError from './errors/UnsupportedFormatError.js';
 
