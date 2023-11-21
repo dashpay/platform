@@ -1,6 +1,6 @@
-const { NETWORKS } = require('../constants');
+import { NETWORKS } from '../constants.js';
 
-module.exports = {
+export default {
   $schema: 'http://json-schema.org/draft-07/schema#',
   type: 'object',
   definitions: {
@@ -808,7 +808,7 @@ module.exports = {
     },
     network: {
       type: 'string',
-      enum: NETWORKS,
+      enum: Object.values(NETWORKS),
     },
     environment: {
       type: 'string',

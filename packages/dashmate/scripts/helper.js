@@ -1,11 +1,11 @@
-const dotenv = require('dotenv');
-const { asValue } = require('awilix');
-const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
-const createDIContainer = require('../src/createDIContainer');
+import dotenv from 'dotenv';
+import { asValue } from 'awilix';
+import WasmDPP from '@dashevo/wasm-dpp';
+import createDIContainer from '../src/createDIContainer.js';
 
 (async function main() {
   // Load wasm-dpp for further usage
-  await loadWasmDpp();
+  await WasmDPP.default();
 
   // Read environment variables from .env file
   dotenv.config();
@@ -59,7 +59,8 @@ const createDIContainer = require('../src/createDIContainer');
     await scheduleRenewZeroSslCertificate(config);
   } else {
     // prevent infinite restarts
-    setInterval(() => {}, 60 * 1000);
+    setInterval(() => {
+    }, 60 * 1000);
   }
 
   if (config.get('dashmate.helper.api.enable')) {

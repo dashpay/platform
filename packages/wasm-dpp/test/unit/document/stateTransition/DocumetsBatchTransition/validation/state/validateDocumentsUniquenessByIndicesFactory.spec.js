@@ -55,9 +55,7 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
 
     documentTransitions = documentTransitionsJs.map(
       (transition) => DocumentTransition.fromTransitionCreate(
-        new DocumentCreateTransition(
-          transition.toObject(), dataContract.clone(),
-        ),
+        new DocumentCreateTransition(transition.toObject(), dataContract.clone()),
       ),
     );
 
@@ -71,9 +69,7 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
     });
 
     const documentTransition = DocumentTransition.fromTransitionCreate(
-      new DocumentCreateTransition(
-        noIndexDocumentTransitions[0].toObject(), dataContract,
-      ),
+      new DocumentCreateTransition(noIndexDocumentTransitions[0].toObject(), dataContract),
     );
 
     const result = await validateDocumentsUniquenessByIndices(
@@ -225,7 +221,9 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
   it('should return valid result if Document has undefined field from index - Rust', async () => {
     const indexedDocumentJs = documentsJs[7];
     const indexedDocument = new Document(
-      indexedDocumentJs.toObject(), dataContract.clone(), indexedDocumentJs.getType(),
+      indexedDocumentJs.toObject(),
+      dataContract.clone(),
+      indexedDocumentJs.getType(),
     );
     const indexedDocumentTransitions = getDocumentTransitionsFixture({
       create: [indexedDocumentJs],
@@ -275,7 +273,9 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
   it('should return valid result if Document being created and has createdAt and updatedAt indices - Rust', async () => {
     const [, , , , , , uniqueDatesDocumentJs] = documentsJs;
     const uniqueDatesDocument = new Document(
-      uniqueDatesDocumentJs.toObject(), dataContract.clone(), uniqueDatesDocumentJs.getType(),
+      uniqueDatesDocumentJs.toObject(),
+      dataContract.clone(),
+      uniqueDatesDocumentJs.getType(),
     );
     const uniqueDatesDocumentTransitions = getDocumentTransitionsFixture({
       create: [uniqueDatesDocumentJs],
@@ -317,9 +317,7 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
 
     executionContext.enableDryRun();
     const documentTransition = DocumentTransition.fromTransitionCreate(
-      new DocumentCreateTransition(
-        noIndexDocumentTransitions[0].toObject(), dataContract,
-      ),
+      new DocumentCreateTransition(noIndexDocumentTransitions[0].toObject(), dataContract),
     );
 
     const result = await validateDocumentsUniquenessByIndices(

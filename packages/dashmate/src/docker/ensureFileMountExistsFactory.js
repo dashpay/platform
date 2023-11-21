@@ -1,10 +1,11 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
 
 /**
  * @return {ensureFileMountExists}
  */
-function ensureFileMountExistsFactory() {
+
+export default function ensureFileMountExistsFactory() {
   /**
    * @typedef {ensureFileMountExists}
    * @param {string} filePath
@@ -30,5 +31,3 @@ function ensureFileMountExistsFactory() {
 
   return ensureFileMountExists;
 }
-
-module.exports = ensureFileMountExistsFactory;

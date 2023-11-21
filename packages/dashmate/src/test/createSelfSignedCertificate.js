@@ -1,12 +1,12 @@
-const os = require('os');
-const path = require('path');
-const fs = require('fs');
-const generateKeyPair = require('../ssl/generateKeyPair');
-const generateCsr = require('../ssl/zerossl/generateCsr');
-const createCertificate = require('../ssl/selfSigned/createSelfSignedCertificate');
+import os from 'os';
+import path from 'path';
+import fs from 'fs';
+import generateKeyPair from '../ssl/generateKeyPair.js';
+import generateCsr from '../ssl/zerossl/generateCsr.js';
+import createCertificate from '../ssl/selfSigned/createSelfSignedCertificate.js';
 
 // TODO: Refactor to reuse the logic together with obtainSelfSignedCertificateTask
-async function createSelfSignedCertificate(ip) {
+export default async function createSelfSignedCertificate(ip) {
   const keyPair = await generateKeyPair();
   const csr = await generateCsr(keyPair, ip);
   const certificate = await createCertificate(keyPair, csr);
@@ -18,5 +18,3 @@ async function createSelfSignedCertificate(ip) {
   fs.writeFileSync(privKeyPath, keyPair.privateKey, 'utf8');
   return { certificatePath, privKeyPath };
 }
-
-module.exports = createSelfSignedCertificate;

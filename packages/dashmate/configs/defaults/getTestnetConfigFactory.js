@@ -1,17 +1,16 @@
-const lodashMerge = require('lodash/merge');
-
-const {
+import lodash from 'lodash';
+import {
   NETWORK_TESTNET,
-} = require('../../src/constants');
+} from '../../src/constants.js';
+import Config from '../../src/config/Config.js';
 
-const Config = require('../../src/config/Config');
-
+const { merge: lodashMerge } = lodash;
 /**
  * @param {HomeDir} homeDir
  * @param {getBaseConfig} getBaseConfig
  * @returns {getTestnetConfig}
  */
-function getTestnetConfigFactory(homeDir, getBaseConfig) {
+export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
   /**
    * @typedef {function} getTestnetConfig
    * @returns {Config}
@@ -145,5 +144,3 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
 
   return getTestnetConfig;
 }
-
-module.exports = getTestnetConfigFactory;

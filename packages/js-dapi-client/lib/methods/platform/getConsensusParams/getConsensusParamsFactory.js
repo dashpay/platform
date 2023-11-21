@@ -18,7 +18,6 @@ const {
 function getConsensusParamsFactory(grpcTransport) {
   /**
    * Fetch Consensus params
-   *
    * @typedef getConsensusParams
    * @param {number} [height]
    * @param {prove: boolean} [options]

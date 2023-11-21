@@ -1,8 +1,8 @@
-const { table } = require('table');
+import { table } from 'table';
 
-const { OUTPUT_FORMATS } = require('../constants');
+import { OUTPUT_FORMATS } from '../constants.js';
 
-const UnsupportedFormatError = require('./errors/UnsupportedFormatError');
+import UnsupportedFormatError from './errors/UnsupportedFormatError.js';
 
 /**
  * Prints object using specified output format
@@ -10,7 +10,7 @@ const UnsupportedFormatError = require('./errors/UnsupportedFormatError');
  * @param {[Object[]]} array
  * @param {string} format
  */
-function printArrayOfObjects(array, format) {
+export default function printArrayOfObjects(array, format) {
   let output;
   switch (format) {
     case OUTPUT_FORMATS.PLAIN: {
@@ -39,5 +39,3 @@ function printArrayOfObjects(array, format) {
 
   return output;
 }
-
-module.exports = printArrayOfObjects;

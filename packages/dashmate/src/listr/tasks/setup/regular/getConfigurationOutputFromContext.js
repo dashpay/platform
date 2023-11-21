@@ -1,9 +1,8 @@
-const chalk = require('chalk');
+import chalk from 'chalk';
+import { NODE_TYPE_MASTERNODE } from '../../../../constants.js';
+import getBLSPublicKeyFromPrivateKeyHex from '../../../../core/getBLSPublicKeyFromPrivateKeyHex.js';
 
-const { NODE_TYPE_MASTERNODE } = require('../../../../constants');
-const getBLSPublicKeyFromPrivateKeyHex = require('../../../../core/getBLSPublicKeyFromPrivateKeyHex');
-
-async function getConfigurationOutputFromContext(ctx) {
+export default async function getConfigurationOutputFromContext(ctx) {
   let output = '';
   if (ctx.nodeType === NODE_TYPE_MASTERNODE) {
     const publicKeyHex = await getBLSPublicKeyFromPrivateKeyHex(
@@ -29,5 +28,3 @@ async function getConfigurationOutputFromContext(ctx) {
 
   return output;
 }
-
-module.exports = getConfigurationOutputFromContext;

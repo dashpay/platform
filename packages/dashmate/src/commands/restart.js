@@ -1,11 +1,17 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
 
-const { Flags } = require('@oclif/core');
-const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
+import { Flags } from '@oclif/core';
+import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
+import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
 
-const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
+export default class RestartCommand extends ConfigBaseCommand {
+  static description = 'Restart node';
 
-class RestartCommand extends ConfigBaseCommand {
+  static flags = {
+    ...ConfigBaseCommand.flags,
+    platform: Flags.boolean({ char: 'p', description: 'restart only platform', default: false }),
+  };
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -52,12 +58,3 @@ class RestartCommand extends ConfigBaseCommand {
     }
   }
 }
-
-RestartCommand.description = 'Restart node';
-
-RestartCommand.flags = {
-  ...ConfigBaseCommand.flags,
-  platform: Flags.boolean({ char: 'p', description: 'restart only platform', default: false }),
-};
-
-module.exports = RestartCommand;

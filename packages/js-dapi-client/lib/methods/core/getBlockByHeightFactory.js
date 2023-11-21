@@ -12,7 +12,6 @@ const {
 function getBlockByHeightFactory(grpcTransport) {
   /**
    * Get block by height
-   *
    * @typedef {getBlockByHeight}
    * @param {number} height
    * @param {DAPIClientOptions} [options]

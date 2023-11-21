@@ -1,15 +1,10 @@
-const publicIp = require('public-ip');
+import { publicIp } from 'public-ip';
+import validatePort from './validators/validatePort.js';
+import validateIPv4 from './validators/validateIPv4.js';
+import { PRESET_MAINNET } from '../../constants.js';
+import wait from '../../util/wait.js';
 
-const validateIPv4 = require('./validators/validateIPv4');
-const validatePort = require('./validators/validatePort');
-
-const {
-  PRESET_MAINNET,
-} = require('../../constants');
-
-const wait = require('../../util/wait');
-
-function createIpAndPortsFormFactory(defaultConfigs) {
+export default function createIpAndPortsFormFactory(defaultConfigs) {
   /**
    * @typedef {function} createIpAndPortsForm
    * @param {string} network
@@ -167,5 +162,3 @@ function createIpAndPortsFormFactory(defaultConfigs) {
 
   return createIpAndPortsForm;
 }
-
-module.exports = createIpAndPortsFormFactory;

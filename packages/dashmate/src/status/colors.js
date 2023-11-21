@@ -1,10 +1,9 @@
-const chalk = require('chalk');
-const PortStateEnum = require('./enums/portState');
-const ServiceStatusEnum = require('./enums/serviceStatus');
-const DockerStatusEnum = require('./enums/dockerStatus');
+import chalk from 'chalk';
+import { PortStateEnum } from './enums/portState.js';
+import { ServiceStatusEnum } from './enums/serviceStatus.js';
+import { DockerStatusEnum } from './enums/dockerStatus.js';
 
-module.exports = {
-
+export default {
   /**
    *
    * @param portStateEnum {PortStateEnum}

@@ -17,7 +17,6 @@ class ListDAPIAddressProvider {
 
   /**
    * Get random address
-   *
    * @returns {Promise<DAPIAddress|undefined>}
    */
   async getLiveAddress() {
@@ -47,7 +46,6 @@ class ListDAPIAddressProvider {
 
   /**
    * Get all addresses
-   *
    * @returns {DAPIAddress[]}
    */
   getAllAddresses() {
@@ -56,7 +54,6 @@ class ListDAPIAddressProvider {
 
   /**
    * Set addresses
-   *
    * @param {DAPIAddress[]} addresses
    * @returns {ListDAPIAddressProvider}
    */
@@ -68,7 +65,6 @@ class ListDAPIAddressProvider {
 
   /**
    * Check if we have live addresses left
-   *
    * @returns {Promise<boolean>} - True if there are live address left
    */
   async hasLiveAddresses() {
@@ -79,7 +75,6 @@ class ListDAPIAddressProvider {
 
   /**
    * Get live addresses
-   *
    * @returns {DAPIAddress[]}
    */
   getLiveAddresses() {

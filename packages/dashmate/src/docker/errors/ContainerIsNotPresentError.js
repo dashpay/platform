@@ -1,6 +1,6 @@
-const AbstractError = require('../../errors/AbstractError');
+import AbstractError from '../../errors/AbstractError.js';
 
-class ContainerIsNotPresentError extends AbstractError {
+export default class ContainerIsNotPresentError extends AbstractError {
   /**
    * @param {string} serviceName
    */
@@ -19,5 +19,3 @@ class ContainerIsNotPresentError extends AbstractError {
     return this.serviceName;
   }
 }
-
-module.exports = ContainerIsNotPresentError;

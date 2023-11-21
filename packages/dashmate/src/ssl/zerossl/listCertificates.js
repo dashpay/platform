@@ -1,5 +1,5 @@
-const Certificate = require('./Certificate');
-const requestApi = require('./requestApi');
+import requestApi from './requestApi.js';
+import Certificate from './Certificate.js';
 
 /**
  * List ZeroSSL certificates
@@ -11,7 +11,8 @@ const requestApi = require('./requestApi');
  * @param {string} [search]
  * @return {Promise<Certificate[]>}
  */
-async function listCertificates(apiKey, statuses = [], search = undefined) {
+
+export default async function listCertificates(apiKey, statuses = [], search = undefined) {
   let url = `https://api.zerossl.com/certificates?access_key=${apiKey}&limit=1000`;
 
   if (statuses.length > 0) {
@@ -31,5 +32,3 @@ async function listCertificates(apiKey, statuses = [], search = undefined) {
 
   return data.results.map((certificateData) => new Certificate(certificateData));
 }
-
-module.exports = listCertificates;

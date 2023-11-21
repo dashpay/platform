@@ -1,12 +1,12 @@
-const os = require('os');
-const publicIp = require('public-ip');
-const prettyMs = require('pretty-ms');
-const prettyByte = require('pretty-bytes');
+import os from 'os';
+import { publicIp } from 'public-ip';
+import prettyMs from 'pretty-ms';
+import prettyByte from 'pretty-bytes';
 
 /**
  * @returns {getHostScope}
  */
-function getHostScopeFactory() {
+export default function getHostScopeFactory() {
   /**
    * Get host status scope
    *
@@ -46,5 +46,3 @@ function getHostScopeFactory() {
 
   return getHostScope;
 }
-
-module.exports = getHostScopeFactory;
