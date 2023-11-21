@@ -62,10 +62,11 @@ jobs:
         uses: ./.github/actions/rust
         with:
           components: rustfmt
+          toolchain: nightly
           cache: false
 
       - name: Check formatting
-        run: exit `cargo fmt --check --package=${{ inputs.package }} | wc -l`
+        run: exit `cargo +nightly fmt --check --package=${{ inputs.package }} | wc -l`
 
   unused_deps:
     name: Unused dependencies
