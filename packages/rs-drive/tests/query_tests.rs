@@ -4800,7 +4800,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
 fn test_query_a_b_c_d_e_contract() {
     let tmp_dir = TempDir::new().unwrap();
 
-    let drive: Drive = Drive::open(&tmp_dir, None).expect("expected to open Drive successfully");
+    let drive: Drive = setup_drive(None);
 
     let platform_version = PlatformVersion::latest();
 

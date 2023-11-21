@@ -24,6 +24,8 @@ pub struct DriveCache {
     /// Genesis time in ms
     pub genesis_time_ms: Option<TimestampMillis>,
     /// Lazy loaded counter of votes to upgrade protocol version
+    // TODO: If we persist this in the state and it should be loaded for correct
+    //  use then it's not actually the cache. Move out of cache because it's confusing
     pub protocol_versions_counter: ProtocolVersionsCache,
 }
 

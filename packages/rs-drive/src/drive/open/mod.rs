@@ -4,6 +4,8 @@ use crate::drive::system_contracts_cache::SystemContracts;
 use crate::drive::Drive;
 use crate::error::Error;
 use grovedb::GroveDb;
+use platform_version::version::drive_versions::DriveVersion;
+use platform_version::version::PlatformVersion;
 use std::path::Path;
 use std::sync::RwLock;
 
@@ -23,7 +25,11 @@ impl Drive {
     ///
     /// * `Result<Self, Error>` - On success, returns `Ok(Self)`, where `Self` is a `Drive` instance. On error, returns an `Error`.
     ///
-    pub fn open<P: AsRef<Path>>(path: P, config: Option<DriveConfig>) -> Result<Self, Error> {
+    pub fn open<P: AsRef<Path>>(
+        path: P,
+        config: Option<DriveConfig>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Error> {
         match GroveDb::open(path) {
             Ok(grove) => {
                 let config = config.unwrap_or_default();
@@ -31,11 +37,13 @@ impl Drive {
                 let data_contracts_global_cache_size = config.data_contracts_global_cache_size;
                 let data_contracts_block_cache_size = config.data_contracts_block_cache_size;
 
-                Ok(Drive {
+                let mut drive = Drive {
                     grove,
                     config,
                     //todo: BEFORE MAINNET move this outside of open
-                    system_contracts: SystemContracts::load_genesis_system_contracts(1)?,
+                    system_contracts: SystemContracts::load_genesis_system_contracts(
+                        platform_version.protocol_version,
+                    )?,
                     cache: RwLock::new(DriveCache {
                         cached_contracts: DataContractCache::new(
                             data_contracts_global_cache_size,
@@ -44,7 +52,16 @@ impl Drive {
                         genesis_time_ms,
                         protocol_versions_counter: ProtocolVersionsCache::new(),
                     }),
-                })
+                };
+
+                drive
+                    .cache
+                    .write()
+                    .unwrap()
+                    .protocol_versions_counter
+                    .load_if_needed(&drive, None, &platform_version.drive)?;
+
+                Ok(drive)
             }
             Err(e) => Err(Error::GroveDB(e)),
         }

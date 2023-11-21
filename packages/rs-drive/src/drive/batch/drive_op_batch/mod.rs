@@ -210,19 +210,15 @@ mod tests {
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::drive::Drive;
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
     #[test]
     fn test_add_dashpay_documents() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
-
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
