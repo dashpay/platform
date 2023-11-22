@@ -8,16 +8,16 @@ use bincode::{Decode, Encode};
 use platform_value::Identifier;
 
 #[derive(
-Error,
-Debug,
-Clone,
-PartialEq,
-Eq,
-Default,
-Encode,
-Decode,
-PlatformSerialize,
-PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
 )]
 #[error("missing position is not present for updated document type")]
 #[platform_serialize(unversioned)]
@@ -33,8 +33,7 @@ pub struct MissingPositionsInDocumentTypePropertiesError {
 }
 
 impl MissingPositionsInDocumentTypePropertiesError {
-    pub fn new(missing_position: u32,     contract_id: Identifier,
-               document_type_name: String) -> Self {
+    pub fn new(missing_position: u32, contract_id: Identifier, document_type_name: String) -> Self {
         Self {
             missing_position,
             contract_id,
@@ -45,6 +44,8 @@ impl MissingPositionsInDocumentTypePropertiesError {
 
 impl From<MissingPositionsInDocumentTypePropertiesError> for ConsensusError {
     fn from(err: MissingPositionsInDocumentTypePropertiesError) -> Self {
-        Self::BasicError(BasicError::MissingPositionsInDocumentTypePropertiesError(err))
+        Self::BasicError(BasicError::MissingPositionsInDocumentTypePropertiesError(
+            err,
+        ))
     }
 }

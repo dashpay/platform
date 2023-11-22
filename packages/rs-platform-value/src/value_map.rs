@@ -1,7 +1,7 @@
 use crate::{Error, Value};
+use indexmap::IndexMap;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
-use indexmap::IndexMap;
 
 pub type ValueMap = Vec<(Value, Value)>;
 
@@ -349,8 +349,8 @@ impl Value {
         map: &'a ValueMap,
         sort_key: &'b str,
     ) -> Result<IndexMap<String, &'a Value>, Error>
-        where
-            T: TryFrom<i128>
+    where
+        T: TryFrom<i128>
             + TryFrom<u128>
             + TryFrom<u64>
             + TryFrom<i64>
@@ -360,22 +360,24 @@ impl Value {
             + TryFrom<i16>
             + TryFrom<u8>
             + TryFrom<i8>
-            + Ord {
-        
+            + Ord,
+    {
         // Check if the sort key exists in all values
         for (_, value) in map.iter() {
             value.get_value(sort_key)?;
         }
-        
-        let mut sorted_map : Vec<_> = map.iter().collect();
+
+        let mut sorted_map: Vec<_> = map.iter().collect();
 
         sorted_map.sort_by(|(_, value_1), (_, value_2)| {
-            let pos_1 : T = value_1.get_integer(sort_key).expect("expected sort key");
-            let pos_2 : T = value_2.get_integer(sort_key).expect("expected sort key");
+            let pos_1: T = value_1.get_integer(sort_key).expect("expected sort key");
+            let pos_2: T = value_2.get_integer(sort_key).expect("expected sort key");
             pos_1.cmp(&pos_2)
         });
 
-        sorted_map.into_iter().map(|(key, value)| {
+        sorted_map
+            .into_iter()
+            .map(|(key, value)| {
                 let key = key
                     .to_text()
                     .map_err(|_| Error::StructureError("expected key to be string".to_string()))?;

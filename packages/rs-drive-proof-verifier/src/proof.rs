@@ -351,7 +351,6 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
                                         error: format!("missing requested key type: {}", *kind),
                                     }),
                                 };
-                                
                                 match kt  {
                                     Err(e) => Err(e),
                                     Ok(d) => Ok((*level as u8, d))

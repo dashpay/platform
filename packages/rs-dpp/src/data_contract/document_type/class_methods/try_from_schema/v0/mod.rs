@@ -21,6 +21,8 @@ use crate::data_contract::document_type::schema::{
     traversal_validator, validate_max_depth,
 };
 
+use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
+use crate::consensus::basic::BasicError;
 use crate::data_contract::document_type::schema::enrich_with_base_schema;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
@@ -33,8 +35,6 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
-use crate::consensus::basic::BasicError;
-use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
 
 const UNIQUE_INDEX_LIMIT_V0: usize = 16;
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
@@ -145,9 +145,16 @@ impl DocumentTypeV0 {
             // We should validate that the positions are continuous
             for (pos, value) in property_values.values().enumerate() {
                 if value.get_integer::<u32>(property_names::POSITION)? != pos as u32 {
-                    return Err(ConsensusError::BasicError(BasicError::MissingPositionsInDocumentTypePropertiesError(
-                        MissingPositionsInDocumentTypePropertiesError::new(pos as u32, data_contract_id, name.to_string()),
-                    )).into())
+                    return Err(ConsensusError::BasicError(
+                        BasicError::MissingPositionsInDocumentTypePropertiesError(
+                            MissingPositionsInDocumentTypePropertiesError::new(
+                                pos as u32,
+                                data_contract_id,
+                                name.to_string(),
+                            ),
+                        ),
+                    )
+                    .into());
                 }
             }
         }

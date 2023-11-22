@@ -1,9 +1,9 @@
 use crate::value_map::{ValueMap, ValueMapHelper};
 use crate::{BinaryData, Bytes32, Identifier};
 use crate::{Error, Value};
+use indexmap::IndexMap;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
-use indexmap::IndexMap;
 
 impl Value {
     pub fn has(&self, key: &str) -> Result<bool, Error> {
@@ -652,8 +652,8 @@ impl Value {
         key: &'a str,
         sort_property: &'a str,
     ) -> Result<Option<IndexMap<String, &'a Value>>, Error>
-        where
-            T: TryFrom<i128>
+    where
+        T: TryFrom<i128>
             + TryFrom<u128>
             + TryFrom<u64>
             + TryFrom<i64>
@@ -663,12 +663,16 @@ impl Value {
             + TryFrom<i16>
             + TryFrom<u8>
             + TryFrom<i8>
-            + Ord {
+            + Ord,
+    {
         let Some(key_value) = Self::get_optional_from_map(document_type, key) else {
             return Ok(None);
         };
         if let Value::Map(map_value) = key_value {
-            return Ok(Some(Value::map_ref_into_indexed_string_map::<T>(map_value, sort_property)?));
+            return Ok(Some(Value::map_ref_into_indexed_string_map::<T>(
+                map_value,
+                sort_property,
+            )?));
         }
         Ok(None)
     }
@@ -838,12 +842,8 @@ impl Value {
         map: &'a [(Value, Value)],
         search_key: &'a str,
     ) -> Result<&'a Value, Error> {
-        Self::get_optional_from_map(map, search_key).ok_or_else(|| {
-            Error::StructureError(format!(
-                "{} not found in map",
-                search_key
-            ))
-        })
+        Self::get_optional_from_map(map, search_key)
+            .ok_or_else(|| Error::StructureError(format!("{} not found in map", search_key)))
     }
 
     pub fn get_mut_from_map<'a>(
