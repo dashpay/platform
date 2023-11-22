@@ -33,6 +33,7 @@ pub(self) mod property_names {
         "requiresIdentityDecryptionBoundedKey";
     pub const INDICES: &str = "indices";
     pub const PROPERTIES: &str = "properties";
+    pub const POSITION: &str = "position";
     pub const REQUIRED: &str = "required";
     pub const TYPE: &str = "type";
     pub const REF: &str = "$ref";

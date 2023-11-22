@@ -9,6 +9,7 @@ use platform_value::{Identifier, Value};
 
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::identity::SecurityLevel;
+use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 pub use v0::*;
 
@@ -43,13 +44,13 @@ impl DocumentTypeV0Getters for DocumentType {
         }
     }
 
-    fn flattened_properties(&self) -> &BTreeMap<String, DocumentProperty> {
+    fn flattened_properties(&self) -> &IndexMap<String, DocumentProperty> {
         match self {
             DocumentType::V0(v0) => v0.flattened_properties(),
         }
     }
 
-    fn properties(&self) -> &BTreeMap<String, DocumentProperty> {
+    fn properties(&self) -> &IndexMap<String, DocumentProperty> {
         match self {
             DocumentType::V0(v0) => v0.properties(),
         }
@@ -141,13 +142,13 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
-    fn flattened_properties(&self) -> &BTreeMap<String, DocumentProperty> {
+    fn flattened_properties(&self) -> &IndexMap<String, DocumentProperty> {
         match self {
             DocumentTypeRef::V0(v0) => v0.flattened_properties(),
         }
     }
 
-    fn properties(&self) -> &BTreeMap<String, DocumentProperty> {
+    fn properties(&self) -> &IndexMap<String, DocumentProperty> {
         match self {
             DocumentTypeRef::V0(v0) => v0.properties(),
         }
@@ -239,13 +240,13 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
         }
     }
 
-    fn flattened_properties(&self) -> &BTreeMap<String, DocumentProperty> {
+    fn flattened_properties(&self) -> &IndexMap<String, DocumentProperty> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.flattened_properties(),
         }
     }
 
-    fn properties(&self) -> &BTreeMap<String, DocumentProperty> {
+    fn properties(&self) -> &IndexMap<String, DocumentProperty> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.properties(),
         }

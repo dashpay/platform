@@ -222,6 +222,7 @@ mod test {
         let test_document_properties_alpha_identifier = Value::from([
             ("type", Value::Text("array".to_string())),
             ("byteArray", Value::Bool(true)),
+            ("position", Value::U16(0)),
         ]);
         let test_document_properties_alpha_binary = Value::from([
             ("type", Value::Text("array".to_string())),
@@ -232,6 +233,7 @@ mod test {
                 "contentMediaType",
                 Value::Text("application/x.dash.dpp.identifier".to_string()),
             ),
+            ("position", Value::U16(1)),
         ]);
         let test_document_properties = Value::from([
             ("alphaIdentifier", test_document_properties_alpha_identifier),

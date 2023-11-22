@@ -23,6 +23,7 @@ regex = "1.7.1"
 lazy_static = "1.4.0"
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-version = { path = "../rs-platform-version" }
+indexmap = "2.0.2"
 
 ### FEATURES #################################################################
 

@@ -3,6 +3,7 @@ use crate::{BinaryData, Bytes32, Identifier};
 use crate::{Error, Value};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
+use indexmap::IndexMap;
 
 impl Value {
     pub fn has(&self, key: &str) -> Result<bool, Error> {
@@ -641,6 +642,33 @@ impl Value {
         };
         if let Value::Map(map_value) = key_value {
             return Ok(Some(Value::map_ref_into_btree_string_map(map_value)?));
+        }
+        Ok(None)
+    }
+
+    /// Gets the inner index map sorted my a special
+    pub fn inner_optional_index_map<'a, T>(
+        document_type: &'a [(Value, Value)],
+        key: &'a str,
+        sort_property: &'a str,
+    ) -> Result<Option<IndexMap<String, &'a Value>>, Error>
+        where
+            T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>
+            + Ord {
+        let Some(key_value) = Self::get_optional_from_map(document_type, key) else {
+            return Ok(None);
+        };
+        if let Value::Map(map_value) = key_value {
+            return Ok(Some(Value::map_ref_into_indexed_string_map::<T>(map_value, sort_property)?));
         }
         Ok(None)
     }
