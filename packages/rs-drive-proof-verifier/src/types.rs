@@ -40,7 +40,7 @@ pub type DataContractHistory = BTreeMap<u64, DataContract>;
 ///
 /// Mapping between data contract IDs and data contracts.
 /// If data contract is not found, it is represented as `None`.
-pub type DataContracts = RetrievedObjects<[u8; 32], DataContract>;
+pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
 
 /// Identity balance.
 pub type IdentityBalance = u64;

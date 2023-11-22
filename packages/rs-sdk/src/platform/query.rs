@@ -91,7 +91,21 @@ impl Query<proto::GetDataContractRequest> for Identifier {
         let id = self.to_vec();
         Ok(proto::GetDataContractRequest {
             version: Some(proto::get_data_contract_request::Version::V0(
-                proto::get_data_contract_request::GetDataContractRequestV0 { id, prove: true },
+                proto::get_data_contract_request::GetDataContractRequestV0 { id, prove },
+            )),
+        })
+    }
+}
+
+impl Query<proto::GetDataContractsRequest> for Vec<Identifier> {
+    fn query(self, prove: bool) -> Result<proto::GetDataContractsRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        let ids = self.into_iter().map(|id| id.to_vec()).collect();
+        Ok(proto::GetDataContractsRequest {
+            version: Some(proto::get_data_contracts_request::Version::V0(
+                proto::get_data_contracts_request::GetDataContractsRequestV0 { ids, prove },
             )),
         })
     }

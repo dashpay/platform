@@ -12,12 +12,13 @@ use crate::{
     Sdk,
 };
 use dapi_grpc::platform::v0::{
-    GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest,
+    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
@@ -52,9 +53,9 @@ use super::LimitQuery;
 /// * define [Identifier]s of data contracts to fetch,
 /// * create a query by grouping identifiers in a collection, like a [Vec] or a slice,
 /// * call [DataContract::fetch_many()](FetchMany::fetch_many()) with the query and an instance of [Sdk].
-/// // TODO: UN-ignore after implementing DataContract::fetch_many
-/// ```rust,ignore
-/// use rs_sdk::{Sdk, platform::{Query, Identifier, Fetch, DataContract}};
+///
+/// ```rust
+/// use rs_sdk::{Sdk, platform::{Query, Identifier, FetchMany, DataContract}};
 ///
 /// # const SOME_IDENTIFIER_1 : [u8; 32] = [1; 32];
 /// # const SOME_IDENTIFIER_2 : [u8; 32] = [2; 32];
@@ -155,15 +156,20 @@ where
     /// ## Parameters
     ///
     /// - `sdk`: An instance of [Sdk].
-    /// - `identifiers`: A collection of [Identifier](crate::platform::Identifier) to fetch.
-    async fn fetch_many_by_identifiers<I: IntoIterator<Item = Identifier>>(
+    /// - `identifiers`: A collection of [Identifiers](crate::platform::Identifier) to fetch.
+    ///
+    /// ## Requirements
+    ///
+    /// `Vec<Identifier>` must implement [Query] for [Self::Request].
+    async fn fetch_by_identifiers<I: IntoIterator<Item = Identifier> + Send>(
         sdk: &mut Sdk,
         identifiers: I,
     ) -> Result<RetrievedObjects<K, Self>, Error>
     where
-        I: Query<<Self as FetchMany<K>>::Request>,
+        Vec<Identifier>: Query<<Self as FetchMany<K>>::Request>,
     {
-        Self::fetch_many(sdk, identifiers).await
+        let ids = identifiers.into_iter().collect::<Vec<Identifier>>();
+        Self::fetch_many(sdk, ids).await
     }
 
     /// Fetch multiple objects from the Platform with limit.
@@ -295,4 +301,11 @@ impl FetchMany<ProtocolVersion> for ProtocolVersionVoteCount {
 /// to fetch; see also [FetchMany::fetch_many_with_limit()].
 impl FetchMany<ProTxHash> for MasternodeProtocolVote {
     type Request = GetProtocolVersionUpgradeVoteStatusRequest;
+}
+
+/// Fetch multiple data contracts.
+///
+/// Returns [DataContracts](drive_proof_verifier::types::DataContracts) indexed by [Identifier](dpp::prelude::Identifier).
+impl FetchMany<Identifier> for DataContract {
+    type Request = GetDataContractsRequest;
 }
