@@ -126,11 +126,13 @@ mod tests {
             "type": "object",
             "properties": {
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "position": 0
                 },
                 "newProp": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "position": 1
                 }
             },
             "required": [
@@ -151,7 +153,7 @@ mod tests {
                 .expect("properties to be an object")
                 .insert_string_key_value(
                     format!("newProp{}", i),
-                    platform_value!({"type": "integer", "minimum": 0}),
+                    platform_value!({"type": "integer", "minimum": 0, "position": i + 2}),
                 );
 
             data_contract

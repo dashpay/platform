@@ -838,10 +838,12 @@ impl Value {
         map: &'a [(Value, Value)],
         search_key: &'a str,
     ) -> Result<&'a Value, Error> {
-        Self::get_optional_from_map(map, search_key).ok_or(Error::StructureError(format!(
-            "{} not found in map",
-            search_key
-        )))
+        Self::get_optional_from_map(map, search_key).ok_or_else(|| {
+            Error::StructureError(format!(
+                "{} not found in map",
+                search_key
+            ))
+        })
     }
 
     pub fn get_mut_from_map<'a>(
