@@ -361,6 +361,12 @@ impl Value {
             + TryFrom<u8>
             + TryFrom<i8>
             + Ord {
+        
+        // Check if the sort key exists in all values
+        for (_, value) in map.iter() {
+            value.get_value(sort_key)?;
+        }
+        
         let mut sorted_map : Vec<_> = map.iter().collect();
 
         sorted_map.sort_by(|(_, value_1), (_, value_2)| {

@@ -33,6 +33,8 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
+use crate::consensus::basic::BasicError;
+use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
 
 const UNIQUE_INDEX_LIMIT_V0: usize = 16;
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
@@ -137,6 +139,18 @@ impl DocumentTypeV0 {
             property_names::POSITION,
         )?
         .unwrap_or_default();
+
+        #[cfg(feature = "validation")]
+        if validate {
+            // We should validate that the positions are continuous
+            for (pos, value) in property_values.values().enumerate() {
+                if value.get_integer::<u32>(property_names::POSITION)? != pos as u32 {
+                    return Err(ConsensusError::BasicError(BasicError::MissingPositionsInDocumentTypePropertiesError(
+                        MissingPositionsInDocumentTypePropertiesError::new(pos as u32, data_contract_id, name.to_string()),
+                    )).into())
+                }
+            }
+        }
 
         // Prepare internal data for efficient querying
         let mut flattened_document_properties: IndexMap<String, DocumentProperty> = IndexMap::new();
