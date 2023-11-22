@@ -19,7 +19,7 @@ Decode,
 PlatformSerialize,
 PlatformDeserialize,
 )]
-#[error("$type is not present")]
+#[error("missing position is not present for updated document type")]
 #[platform_serialize(unversioned)]
 pub struct MissingPositionsInDocumentTypePropertiesError {
     /*

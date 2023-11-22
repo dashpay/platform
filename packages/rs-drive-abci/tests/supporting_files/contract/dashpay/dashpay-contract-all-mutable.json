@@ -32,8 +32,8 @@
                 "avatarUrl": {
                     "type": "string",
                     "format": "uri",
-                    "position": 0,
-                    "maxLength": 2048
+                    "maxLength": 2048,
+                    "position": 0
                 },
                 "publicMessage": {
                     "type": "string",

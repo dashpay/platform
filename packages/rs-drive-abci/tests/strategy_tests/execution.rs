@@ -718,6 +718,23 @@ pub(crate) fn continue_chain_for_strategy(
             })
             .unwrap_or_default();
 
+        let expected_validation_errors = strategy
+            .failure_testing
+            .as_ref()
+            .map(|failure_strategy| {
+                let mut codes = failure_strategy
+                    .expect_every_block_errors_with_codes
+                    .clone();
+                if let Some(expected_block_error_codes) = failure_strategy
+                    .expect_specific_block_errors_with_codes
+                    .get(&block_height)
+                {
+                    codes.extend(expected_block_error_codes);
+                }
+                codes
+            })
+            .unwrap_or_default();
+
         let mut block_execution_outcome = None;
         for round in 0..=rounds {
             block_execution_outcome = Some(
@@ -728,11 +745,7 @@ pub(crate) fn continue_chain_for_strategy(
                         proposed_version,
                         block_info.clone(),
                         round,
-                        strategy
-                            .failure_testing
-                            .as_ref()
-                            .map(|a| a.expect_errors_with_codes.clone())
-                            .unwrap_or_default(),
+                        expected_validation_errors.as_slice(),
                         false,
                         state_transitions.clone(),
                         MimicExecuteBlockOptions {
@@ -796,6 +809,7 @@ pub(crate) fn continue_chain_for_strategy(
                 &root_app_hash,
                 &state_transaction_results,
                 &block_info,
+                &expected_validation_errors,
                 platform_version,
             );
         }

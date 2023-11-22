@@ -386,7 +386,8 @@ mod tests {
             failure_testing: Some(FailureStrategy {
                 deterministic_start_seed: None,
                 dont_finalize_block: false,
-                expect_errors_with_codes: vec![],
+                expect_every_block_errors_with_codes: vec![],
+                expect_specific_block_errors_with_codes: Default::default(),
                 rounds_before_successful_block: Some(5),
             }),
             query_testing: None,
@@ -1212,7 +1213,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "dd4c03076d285fdbde3d122aed7251020c0b50740624c3225ac69a3020b5cd9e".to_string()
+            "2274468dacfa43d63477d0fbdb1cac278cce9171f5e9c3c07be6831c49da3755".to_string()
         )
     }
 
@@ -1816,7 +1817,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "f7cce8d0011c526f67bf6d485fdf8bd0293ffef0eae7edf482b504f117a2300c".to_string()
+            "e46b69ffa1e69c5deb5d7f30ba8ca82d97f8285e342eba0529e6030f71756271".to_string()
         )
     }
 
@@ -1924,7 +1925,7 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 417);
+        assert_eq!(outcome.identities.len() as u64, 421);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -2054,7 +2055,7 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 80);
+        assert_eq!(outcome.identities.len() as u64, 86);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
