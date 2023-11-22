@@ -12,7 +12,8 @@ use crate::identity::errors::InvalidIdentityError;
 use crate::identity::state_transition::{
     create_asset_lock_proof_from_wasm_instance, ChainAssetLockProofWasm,
     IdentityCreateTransitionWasm, IdentityCreditTransferTransitionWasm,
-    IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, InstantAssetLockProofWasm,
+    IdentityCreditWithdrawalTransitionWasm, IdentityTopUpTransitionWasm,
+    IdentityUpdateTransitionWasm, InstantAssetLockProofWasm,
 };
 
 use crate::utils::WithJsError;
@@ -20,6 +21,9 @@ use crate::with_js_error;
 use dpp::dashcore::{consensus, InstantLock, Transaction};
 
 use crate::identity::IdentityWasm;
+use dpp::identity::core_script::CoreScript;
+use dpp::prelude::Revision;
+use dpp::withdrawal::Pooling;
 use dpp::NonConsensusError;
 use serde::Deserialize;
 
@@ -189,6 +193,36 @@ impl IdentityFacadeWasm {
 
         self.0
             .create_identity_topup_transition(identity_id.to_owned().into(), asset_lock_proof)
+            .map(Into::into)
+            .with_js_error()
+    }
+
+    #[wasm_bindgen(js_name=createIdentityCreditWithdrawalTransition)]
+    pub fn create_identity_credit_withdrawal_transition(
+        &self,
+        identity_id: &IdentifierWrapper,
+        amount: u64,
+        core_fee_per_byte: u32,
+        pooling: u8,
+        output_script: Vec<u8>,
+        revision: u64,
+    ) -> Result<IdentityCreditWithdrawalTransitionWasm, JsValue> {
+        let pooling = match pooling {
+            0 => Pooling::Never,
+            1 => Pooling::IfAvailable,
+            2 => Pooling::Standard,
+            _ => return Err(JsError::new("Invalid pooling value").into()),
+        };
+
+        self.0
+            .create_identity_credit_withdrawal_transition(
+                identity_id.to_owned().into(),
+                amount,
+                core_fee_per_byte,
+                pooling,
+                CoreScript::from_bytes(output_script),
+                revision as Revision,
+            )
             .map(Into::into)
             .with_js_error()
     }

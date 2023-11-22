@@ -23,6 +23,8 @@ use crate::identity::accessors::IdentityGettersV0;
 
 #[cfg(all(feature = "validation", feature = "identity-value-conversion"))]
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
+use crate::identity::core_script::CoreScript;
+use crate::prelude::Revision;
 #[cfg(all(feature = "identity-serialization", feature = "client"))]
 use crate::serialization::PlatformDeserializable;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
@@ -33,6 +35,8 @@ use crate::state_transition::identity_create_transition::IdentityCreateTransitio
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
@@ -48,6 +52,7 @@ use crate::state_transition::identity_update_transition::IdentityUpdateTransitio
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::version::PlatformVersion;
+use crate::withdrawal::Pooling;
 #[cfg(any(
     all(feature = "identity-serialization", feature = "client"),
     feature = "identity-value-conversion"
@@ -206,6 +211,30 @@ impl IdentityFactory {
 
         Ok(IdentityCreditTransferTransition::from(
             identity_credit_transfer_transition,
+        ))
+    }
+
+    #[cfg(all(feature = "state-transitions", feature = "client"))]
+    pub fn create_identity_credit_withdrawal_transition(
+        &self,
+        identity_id: Identifier,
+        amount: u64,
+        core_fee_per_byte: u32,
+        pooling: Pooling,
+        output_script: CoreScript,
+        revision: Revision,
+    ) -> Result<IdentityCreditWithdrawalTransition, ProtocolError> {
+        let mut identity_credit_withdrawal_transition =
+            IdentityCreditWithdrawalTransitionV0::default();
+        identity_credit_withdrawal_transition.identity_id = identity_id;
+        identity_credit_withdrawal_transition.amount = amount;
+        identity_credit_withdrawal_transition.core_fee_per_byte = core_fee_per_byte;
+        identity_credit_withdrawal_transition.pooling = pooling;
+        identity_credit_withdrawal_transition.output_script = output_script;
+        identity_credit_withdrawal_transition.revision = revision;
+
+        Ok(IdentityCreditWithdrawalTransition::from(
+            identity_credit_withdrawal_transition,
         ))
     }
 

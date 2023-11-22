@@ -1,12 +1,10 @@
 use dashcore::{InstantLock, Transaction};
-use platform_value::Value;
-use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
-use crate::prelude::Identifier;
+use crate::prelude::{Identifier, Revision};
 
 use crate::identity::identity_factory::IdentityFactory;
 #[cfg(feature = "state-transitions")]
@@ -20,7 +18,10 @@ use crate::state_transition::identity_update_transition::IdentityUpdateTransitio
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 
-use crate::{DashPlatformProtocolInitError, ProtocolError};
+use crate::identity::core_script::CoreScript;
+use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use crate::withdrawal::Pooling;
+use crate::ProtocolError;
 
 #[derive(Clone)]
 pub struct IdentityFacade {
@@ -108,6 +109,26 @@ impl IdentityFacade {
     ) -> Result<IdentityCreditTransferTransition, ProtocolError> {
         self.factory
             .create_identity_credit_transfer_transition(identity_id, recipient_id, amount)
+    }
+
+    #[cfg(feature = "state-transitions")]
+    pub fn create_identity_credit_withdrawal_transition(
+        &self,
+        identity_id: Identifier,
+        amount: u64,
+        core_fee_per_byte: u32,
+        pooling: Pooling,
+        output_script: CoreScript,
+        revision: Revision,
+    ) -> Result<IdentityCreditWithdrawalTransition, ProtocolError> {
+        self.factory.create_identity_credit_withdrawal_transition(
+            identity_id,
+            amount,
+            core_fee_per_byte,
+            pooling,
+            output_script,
+            revision,
+        )
     }
 
     #[cfg(feature = "state-transitions")]
