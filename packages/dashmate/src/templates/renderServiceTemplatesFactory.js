@@ -1,5 +1,5 @@
 import dots from 'dot';
-import * as glob from 'glob';
+import glob from 'glob';
 import { TEMPLATES_DIR } from '../constants.js';
 
 /**
