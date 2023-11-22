@@ -1,3 +1,5 @@
+use dpp::ProtocolError;
+
 /// Errors
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
@@ -41,9 +43,9 @@ pub enum Error {
     #[error("decode response: {error}")]
     ResponseDecodeError { error: String },
 
-    /// Error when encoding data
-    #[error("data encoding: {error}")]
-    DataEncodingError { error: String },
+    /// Error when preparing result
+    #[error("result encoding: {error}")]
+    ResultEncodingError { error: String },
 
     /// Cannot generate signature digest for data
     #[error("cannot generate signature digest for data: {error}")]
@@ -76,4 +78,20 @@ pub enum Error {
     /// Invalid version of object in response
     #[error("invalid version of message")]
     InvalidVersion(#[from] dpp::version::PlatformVersionError),
+}
+
+impl From<drive::error::Error> for Error {
+    fn from(error: drive::error::Error) -> Self {
+        Self::DriveError {
+            error: error.to_string(),
+        }
+    }
+}
+
+impl From<ProtocolError> for Error {
+    fn from(error: ProtocolError) -> Self {
+        Self::ProtocolError {
+            error: error.to_string(),
+        }
+    }
 }

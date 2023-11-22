@@ -1,5 +1,5 @@
 import os from 'os';
-import { publicIp } from 'public-ip';
+import { publicIpv4 } from 'public-ip';
 import prettyMs from 'pretty-ms';
 import prettyByte from 'pretty-bytes';
 
@@ -33,7 +33,7 @@ export default function getHostScopeFactory() {
       scope.username = os.userInfo().username;
       scope.memory = `${prettyByte(os.totalmem())} / ${prettyByte(os.freemem())}`;
       scope.cpus = os.cpus().length;
-      scope.ip = await publicIp.v4();
+      scope.ip = await publicIpv4();
     } catch (e) {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console

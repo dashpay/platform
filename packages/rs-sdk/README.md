@@ -51,3 +51,39 @@ Run the offline test using the following command:
 ```bash
 cargo test -p rs-sdk
 ```
+
+## Implementing Fetch and FetchAny on new objects
+
+How to implement `Fetch` and `FetchAny` trait on new object types (`Object`).
+
+It's basically copy-paste and tweaking of existing implementation for another object type.
+
+Definitions:
+
+1. `Request` - gRPC request type, as generated in `packages/dapi-grpc/protos/platform/v0/platform.proto`.
+2. `Response` - gRPC response  type, as generated in `packages/dapi-grpc/protos/platform/v0/platform.proto`.
+3. `Object` - object type that should be returned by rs-sdk, most likely defined in `dpp` crate.
+   In some cases, it can be defined in `packages/rs-drive-proof-verifier/src/types.rs`.
+
+Checklist:
+
+1. [ ] Ensure protobuf messages are defined in `packages/dapi-grpc/protos/platform/v0/platform.proto` and generated
+   correctly in `packages/dapi-grpc/src/platform/proto/org.dash.platform.dapi.v0.rs`.
+2. [ ] In `packages/dapi-grpc/build.rs`, add `Request` to `VERSIONED_REQUESTS` and response `Response` to `VERSIONED_RESPONSES`.
+   This should add derive of `VersionedGrpcMessage` (and some more) in `org.dash.platform.dapi.v0.rs`.
+3. [ ] Link request and response type to dapi-client by adding appropriate invocation of `impl_transport_request_grpc!` macro
+in `packages/rs-dapi-client/src/transport/grpc.rs`.
+4. [ ] If needed, implement new type in `packages/rs-drive-proof-verifier/src/types.rs` to hide complexity of data structures
+   used internally.
+
+   If you intend to implement `FetchMany`, you should define type returned by `fetch_many()` using `RetrievedObjects`
+   that will store collection of  returned objects, indexd by some key.
+5. [ ] Implement `FromProof` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-drive-proof-verifier/src/proof.rs`.
+6. [ ] Implement `Query` trait for the `Request` in `packages/rs-sdk/src/platform/query.rs`.
+7. [ ] Implement `Fetch\<Request\>` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-sdk/src/platform/fetch.rs`.
+8. [ ] Implement `FetchMany\<Request\>` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-sdk/src/platform/fetch_many.rs`.
+9. [ ] Add `mod ...;` clause to `packages/rs-sdk/tests/fetch/main.rs`
+10. [ ] Implement unit tests in `packages/rs-sdk/tests/fetch/*object*.rs`
+11. [ ] Add name of request type to match clause in `packages/rs-sdk/src/mock/sdk.rs` : `load_expectations()`
+12. [ ] Start local devnet with `yarn reset ; yarn setup && yarn start`
+13. [ ] Generate test vectors with script `packages/rs-sdk/scripts/generate_test_vectors.sh`
