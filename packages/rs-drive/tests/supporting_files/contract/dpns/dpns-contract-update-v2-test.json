@@ -2,7 +2,7 @@
   "$format_version": "0",
   "id": "9Lo6Fq1idp7YG3Egqf2YmQk4DQr9P8D543GwXyCJRyG",
   "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
-  "version": 1,
+  "version": 2,
   "documentSchemas": {
     "domain": {
       "type": "object",
@@ -117,6 +117,14 @@
           "required": [
             "allowSubdomains"
           ]
+        },
+        "testNewProperty": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$",
+          "minLength": 3,
+          "maxLength": 5,
+          "position": 6,
+          "description": "A new property to test serialization/deserialization"
         }
       },
       "required": [
