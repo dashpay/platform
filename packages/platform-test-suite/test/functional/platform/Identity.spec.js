@@ -305,6 +305,29 @@ describe('Platform', () => {
       });
     });
 
+    describe.only('Credits withdrawal', () => {
+      const INITIAL_BALANCE = 400000;
+
+      let newIdentity;
+      before(async () => {
+        newIdentity = await client.platform.identities.register(INITIAL_BALANCE);
+
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
+      });
+
+      it('should withdraw credits', async () => {
+        const account = await client.getWalletAccount();
+        const withdrawTo = await account.getUnusedAddress();
+
+        await client.platform.identities.withdrawCredits(
+          newIdentity,
+          BigInt(INITIAL_BALANCE / 2),
+          withdrawTo.address,
+        );
+      });
+    });
+
     describe('Credits', () => {
       let dataContractFixture;
 
