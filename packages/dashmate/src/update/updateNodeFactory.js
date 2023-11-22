@@ -1,4 +1,4 @@
-import * as _ from 'lodash';
+import lodash from 'lodash';
 
 /**
  * @param {getServiceList} getServiceList
@@ -18,7 +18,7 @@ export default function updateNodeFactory(getServiceList, docker) {
     const services = getServiceList(config);
 
     return Promise.all(
-      _.uniqBy(services, 'image')
+      lodash.uniqBy(services, 'image')
         .map(async ({ name, image, title }) => new Promise((resolve, reject) => {
           docker.pull(image, (err, stream) => {
             if (err) {
