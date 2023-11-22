@@ -1,3 +1,9 @@
+### [0.25.16-rc.2](https://github.com/dashpay/platform/compare/v0.25.16-rc.1...v0.25.16-rc.2) (2023-11-22)
+
+### Bug Fixes
+
+* **dashmate:** incorrect imports  ([#1591](https://github.com/dashpay/platform/issues/1591))
+
 ### [0.25.16-rc.1](https://github.com/dashpay/platform/compare/v0.25.15...v0.25.16-rc.1) (2023-11-21)
 
 ### ⚠ BREAKING CHANGES
