@@ -34,7 +34,7 @@ pub fn generate() -> Result<(), std::io::Error> {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 14] = [
+    const VERSIONED_REQUESTS: [&str; 15] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
@@ -49,10 +49,11 @@ pub fn generate() -> Result<(), std::io::Error> {
         "GetProofsRequest",
         "WaitForStateTransitionResultRequest",
         "GetProtocolVersionUpgradeStateRequest",
+        "GetProtocolVersionUpgradeVoteStatusRequest",
     ];
 
     //  "GetConsensusParamsResponse" is excluded as this message does not support proofs
-    const VERSIONED_RESPONSES: [&str; 15] = [
+    const VERSIONED_RESPONSES: [&str; 16] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -68,6 +69,7 @@ pub fn generate() -> Result<(), std::io::Error> {
         "WaitForStateTransitionResultResponse",
         "GetEpochsInfoResponse",
         "GetProtocolVersionUpgradeStateResponse",
+        "GetProtocolVersionUpgradeVoteStatusResponse",
     ];
 
     // Derive VersionedGrpcMessage on requests

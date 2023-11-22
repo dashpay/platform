@@ -85,7 +85,7 @@ impl<T: TransportRequest> DumpData<T> {
 
 impl DapiClient {
     /// Prefix of dump files.
-    pub const DUMP_FILE_PREFIX: &str = "msg";
+    pub const DUMP_FILE_PREFIX: &'static str = "msg";
 
     /// Define directory where dumps of all traffic will be saved.
     ///
