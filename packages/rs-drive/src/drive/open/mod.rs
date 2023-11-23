@@ -4,7 +4,6 @@ use crate::drive::system_contracts_cache::SystemContracts;
 use crate::drive::Drive;
 use crate::error::Error;
 use grovedb::GroveDb;
-use platform_version::version::drive_versions::DriveVersion;
 use platform_version::version::PlatformVersion;
 use std::path::Path;
 use std::sync::RwLock;
@@ -37,10 +36,9 @@ impl Drive {
                 let data_contracts_global_cache_size = config.data_contracts_global_cache_size;
                 let data_contracts_block_cache_size = config.data_contracts_block_cache_size;
 
-                let mut drive = Drive {
+                let drive = Drive {
                     grove,
                     config,
-                    //todo: BEFORE MAINNET move this outside of open
                     system_contracts: SystemContracts::load_genesis_system_contracts(
                         platform_version.protocol_version,
                     )?,
@@ -53,13 +51,6 @@ impl Drive {
                         protocol_versions_counter: ProtocolVersionsCache::new(),
                     }),
                 };
-
-                drive
-                    .cache
-                    .write()
-                    .unwrap()
-                    .protocol_versions_counter
-                    .load_if_needed(&drive, None, &platform_version.drive)?;
 
                 Ok(drive)
             }
