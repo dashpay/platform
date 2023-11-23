@@ -4,6 +4,16 @@ This is the official Rust SDK for the Dash Platform. Dash Platform is a Layer 2 
 
 See Rust documentation of this crate for more details.
 
+## Usage
+
+To use this crate, define it as a dependency in your `Cargo.toml`:
+
+```toml
+[dependencies]
+
+dash-platform-sdk = { git="https://github.com/dashpay/platform"0 }
+```
+
 ## Examples
 
 You can find quick start example in `examples/` folder. Examples must be configured by setting constants.
@@ -12,29 +22,39 @@ You can also inspect tests in `tests/` folder for more detailed examples.
 
 ## Tests
 
-This section provides instructions on how to test the RS-SDK for Dash Platform. The tests can be run in two modes: **offline** (without connectivity to the Dash Platform) and **online** (with connectivity to the Dash Platform). **Offline** mode is the default one.
+This section provides instructions on how to test the RS-SDK for Dash Platform. The tests can be run in two modes: **offline** (without connectivity to the Dash Platform) and **network** (with connectivity to the Dash Platform). **Offline** mode is the default one.
 
-## Online Testing
+If both **network** and **offline** testing is enabled, **offline testing** takes precedence.
 
-Online testing requires connectivity to the Dash Platform and Dash Core. This mode generates new test vectors that can be used in offline mode.
+## Network Testing
 
-Follow these steps to conduct online testing:
+Network testing requires connectivity to the Dash Platform and Dash Core.
 
-1. Configure the environment variables in `packages/dash-platform-sdk/.env`. Refer to the "Test Configuration" section below.
-2. Optionally, you can remove existing test vectors.
-3. Run the test without default features, but with `mocks` feature enabled.
+Follow these steps to conduct network testing:
 
-Use the following commands for the above steps:
+1. Configure platform address and credentials in `packages/rs-sdk/tests/.env`.
+   Note that the `.env` file might already be configured during  project setup (`yarn setup`).
+2. Run the test without default features, but with `network-testing` feature enabled.
 
 ```bash
-cd packages/dash-platform-sdk
-rm tests/vectors/*
-cargo test -p dash-platform-sdk --no-default-features --features mocks
+cd packages/rs-sdk
+cargo test -p rs-sdk --no-default-features --features network-testing
 ```
 
 ## Offline Testing
 
-Offline testing uses the vectors generated in online mode. These vectors must be saved in `packages/dash-platform-sdk/tests/vectors`.
+Offline testing uses the vectors generated using `packages/rs-sdk/scripts/generate_test_vectors.sh` script.
+These vectors must be saved in `packages/rs-sdk/tests/vectors`.
+
+### Generating test vectors
+
+To generate test vectors for offline testing:
+
+1. Configure platform address and credentials in `packages/rs-sdk/tests/.env`.
+   Note that the `.env` file might already be configured during project setup (`yarn setup`).
+2. Run  `packages/rs-sdk/scripts/generate_test_vectors.sh` script.
+
+### Running tests in offline mode
 
 Run the offline test using the following command:
 
@@ -42,35 +62,38 @@ Run the offline test using the following command:
 cargo test -p dash-platform-sdk
 ```
 
-## Test Configuration
+## Implementing Fetch and FetchAny on new objects
 
-For the `offline-testing` feature, you need to set the configuration in the environment variables or in `packages/dash-platform-sdk/.env` file. You can refer to `packages/dash-platform-sdk/.env.example` for the format.
+How to implement `Fetch` and `FetchAny` trait on new object types (`Object`).
 
-The identifiers are generated with the platform test suite. To display them, apply the following diff:
+It's basically copy-paste and tweaking of existing implementation for another object type.
 
-```diff
-diff --git a/packages/platform-test-suite/test/functional/platform/Document.spec.js b/packages/platform-test-suite/test/functional/platform/Document.spec.js
-index 29dca311b..fba0aefc2 100644
---- a/packages/platform-test-suite/test/functional/platform/Document.spec.js
-+++ b/packages/platform-test-suite/test/functional/platform/Document.spec.js
-@@ -180,6 +180,9 @@ describe('Platform', () => {
- 
-       // Additional wait time to mitigate testnet latency
-       await waitForSTPropagated();
-+      console.log("Owner ID: " + document.getOwnerId().toString("base58"));
-+      console.log("Data Contract: " + document.getDataContractId().toString("base58"));
-+      console.log("Document: " + document.getId().toString("base58"));
-     });
- 
-     it('should fetch created document', async () => {
+Definitions:
 
-```
+1. `Request` - gRPC request type, as generated in `packages/dapi-grpc/protos/platform/v0/platform.proto`.
+2. `Response` - gRPC response  type, as generated in `packages/dapi-grpc/protos/platform/v0/platform.proto`.
+3. `Object` - object type that should be returned by rs-sdk, most likely defined in `dpp` crate.
+   In some cases, it can be defined in `packages/rs-drive-proof-verifier/src/types.rs`.
 
-To run the document test, use the following commands:
+Checklist:
 
-```bash
-cd packages/platform-test-suite/
-yarn mocha -b test/functional/platform/Document.spec.js
-```
+1. [ ] Ensure protobuf messages are defined in `packages/dapi-grpc/protos/platform/v0/platform.proto` and generated
+   correctly in `packages/dapi-grpc/src/platform/proto/org.dash.platform.dapi.v0.rs`.
+2. [ ] In `packages/dapi-grpc/build.rs`, add `Request` to `VERSIONED_REQUESTS` and response `Response` to `VERSIONED_RESPONSES`.
+   This should add derive of `VersionedGrpcMessage` (and some more) in `org.dash.platform.dapi.v0.rs`.
+3. [ ] Link request and response type to dapi-client by adding appropriate invocation of `impl_transport_request_grpc!` macro
+in `packages/rs-dapi-client/src/transport/grpc.rs`.
+4. [ ] If needed, implement new type in `packages/rs-drive-proof-verifier/src/types.rs` to hide complexity of data structures
+   used internally.
 
-Find the values in the output and copy them to `packages/dash-platform-sdk/.env`.
+   If you intend to implement `FetchMany`, you should define type returned by `fetch_many()` using `RetrievedObjects`
+   that will store collection of  returned objects, indexd by some key.
+5. [ ] Implement `FromProof` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-drive-proof-verifier/src/proof.rs`.
+6. [ ] Implement `Query` trait for the `Request` in `packages/rs-sdk/src/platform/query.rs`.
+7. [ ] Implement `Fetch\<Request\>` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-sdk/src/platform/fetch.rs`.
+8. [ ] Implement `FetchMany\<Request\>` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-sdk/src/platform/fetch_many.rs`.
+9. [ ] Add `mod ...;` clause to `packages/rs-sdk/tests/fetch/main.rs`
+10. [ ] Implement unit tests in `packages/rs-sdk/tests/fetch/*object*.rs`
+11. [ ] Add name of request type to match clause in `packages/rs-sdk/src/mock/sdk.rs` : `load_expectations()`
+12. [ ] Start local devnet with `yarn reset ; yarn setup && yarn start`
+13. [ ] Generate test vectors with script `packages/rs-sdk/scripts/generate_test_vectors.sh`

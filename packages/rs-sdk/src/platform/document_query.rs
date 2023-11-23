@@ -26,6 +26,8 @@ use rs_dapi_client::transport::{
 
 use super::fetch::Fetch;
 
+// TODO: remove DocumentQuery once ContextProvider that provides data contracts is merged.
+
 /// Request that is used to query documents from the Dash Platform.
 ///
 /// This is an abstraction layer built on top of [GetDocumentsRequest] to address issues with missing details

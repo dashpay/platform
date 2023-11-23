@@ -13,6 +13,14 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
+const {
+  GetIdentityKeysResponseV0,
+} = GetIdentityKeysResponse;
+
+const {
+  Keys,
+} = GetIdentityKeysResponseV0;
+
 /* eslint-disable import/no-extraneous-dependencies */
 const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
@@ -23,14 +31,9 @@ const getIdentityKeysHandlerFactory = require('../../../../../lib/grpcServer/han
 describe('getIdentityKeysHandlerFactory', () => {
   let call;
   let getIdentityKeysHandler;
-  let driveClientMock;
+  let fetchIdentityKeysMock;
   let request;
   let id;
-  let proofFixture;
-  let proofMock;
-  let response;
-  let proofResponse;
-  let keysBytesList;
 
   beforeEach(async function beforeEach() {
     id = await generateRandomIdentifierAsync();
@@ -39,71 +42,66 @@ describe('getIdentityKeysHandlerFactory', () => {
       getProve: this.sinon.stub().returns(true),
     };
 
-    call = new GrpcCallMock(this.sinon, request);
+    call = new GrpcCallMock(this.sinon, {
+      getV0: () => request,
+    });
 
-    proofFixture = {
-      merkleProof: Buffer.alloc(1, 1),
-    };
+    fetchIdentityKeysMock = this.sinon.stub();
 
-    proofMock = new Proof();
-    proofMock.setGrovedbProof(proofFixture.merkleProof);
-
-    keysBytesList = [
-      Buffer.from('key1'),
-    ];
-
-    const keys = new GetIdentityKeysResponse.Keys();
-    keys.setKeysBytesList(keysBytesList);
-
-    response = new GetIdentityKeysResponse();
-    response.setKeys(keys);
-
-    proofResponse = new GetIdentityKeysResponse();
-    proofResponse.setProof(proofMock);
-
-    driveClientMock = {
-      fetchIdentityKeys: this.sinon.stub().resolves(response.serializeBinary()),
-    };
-
-    getIdentityKeysHandler = getIdentityKeysHandlerFactory(driveClientMock);
+    getIdentityKeysHandler = getIdentityKeysHandlerFactory({
+      fetchIdentityKeys: fetchIdentityKeysMock,
+    });
   });
 
   it('should return identity keys', async () => {
+    const keysBytesList = [
+      Buffer.from('key1'),
+    ];
+
+    const keys = new Keys();
+    keys.setKeysBytesList(keysBytesList);
+
+    const response = new GetIdentityKeysResponse()
+      .setV0(new GetIdentityKeysResponseV0().setKeys(keys));
+
+    fetchIdentityKeysMock.resolves(response.serializeBinary());
+
     const result = await getIdentityKeysHandler(call);
 
     expect(result).to.be.an.instanceOf(GetIdentityKeysResponse);
 
-    const keysBytes = result.getKeys().getKeysBytesList();
+    const keysBytes = result.getV0().getKeys().getKeysBytesList();
 
     expect(keysBytes).to.deep.equal(keysBytesList);
 
-    const proof = result.getProof();
-
-    expect(proof).to.be.undefined();
+    expect(fetchIdentityKeysMock).to.be.calledOnceWith(call.request);
   });
 
-  it('should return proof', async function it() {
-    driveClientMock = {
-      fetchIdentityKeys: this.sinon.stub().resolves(proofResponse.serializeBinary()),
+  it('should return proof', async () => {
+    const proofFixture = {
+      merkleProof: Buffer.alloc(1, 1),
     };
 
-    getIdentityKeysHandler = getIdentityKeysHandlerFactory(driveClientMock);
+    const proofMock = new Proof();
+    proofMock.setGrovedbProof(proofFixture.merkleProof);
+
+    const response = new GetIdentityKeysResponse()
+      .setV0(new GetIdentityKeysResponseV0().setProof(proofMock));
+
+    fetchIdentityKeysMock.resolves(response.serializeBinary());
 
     const result = await getIdentityKeysHandler(call);
 
     expect(result).to.be.an.instanceOf(GetIdentityKeysResponse);
 
-    const keysBytes = result.getKeys();
-    expect(keysBytes).to.be.undefined();
-
-    const proof = result.getProof();
+    const proof = result.getV0().getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
     const merkleProof = proof.getGrovedbProof();
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 
-    expect(driveClientMock.fetchIdentityKeys).to.be.calledOnceWith(call.request);
+    expect(fetchIdentityKeysMock).to.be.calledOnceWith(call.request);
   });
 
   it('should throw InvalidArgumentGrpcError error if ids are not specified', async () => {
@@ -116,7 +114,7 @@ describe('getIdentityKeysHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('identity id is not specified');
-      expect(driveClientMock.fetchIdentityKeys).to.be.not.called();
+      expect(fetchIdentityKeysMock).to.be.not.called();
     }
   });
 
@@ -124,7 +122,7 @@ describe('getIdentityKeysHandlerFactory', () => {
     const message = 'Some error';
     const abciResponseError = new Error(message);
 
-    driveClientMock.fetchIdentityKeys.throws(abciResponseError);
+    fetchIdentityKeysMock.throws(abciResponseError);
 
     try {
       await getIdentityKeysHandler(call);

@@ -1,18 +1,15 @@
-const { Listr } = require('listr2');
-const { Observable } = require('rxjs');
+import { Listr } from 'listr2';
+import { Observable } from 'rxjs';
+import DashCoreLib from '@dashevo/dashcore-lib';
+import waitForNodesToHaveTheSameHeight from '../../../../core/waitForNodesToHaveTheSameHeight.js';
+import waitForNodesToHaveTheSameSporks from '../../../../core/waitForNodesToHaveTheSameSporks.js';
 
-const {
-  PrivateKey,
-} = require('@dashevo/dashcore-lib');
+import { NETWORK_LOCAL, HPMN_COLLATERAL_AMOUNT } from '../../../../constants.js';
 
-const waitForNodesToHaveTheSameSporks = require('../../../../core/waitForNodesToHaveTheSameSporks');
-const waitForNodesToHaveTheSameHeight = require('../../../../core/waitForNodesToHaveTheSameHeight');
-
-const { NETWORK_LOCAL, HPMN_COLLATERAL_AMOUNT } = require('../../../../constants');
+const { PrivateKey } = DashCoreLib;
 
 /**
- * @param {renderServiceTemplates} renderServiceTemplates
- * @param {writeServiceConfigs} writeServiceConfigs
+ * @param {writeConfigTemplates} writeConfigTemplates
  * @param {startCore} startCore
  * @param {generateBlocks} generateBlocks
  * @param {waitForCoreSync} waitForCoreSync
@@ -22,11 +19,11 @@ const { NETWORK_LOCAL, HPMN_COLLATERAL_AMOUNT } = require('../../../../constants
  * @param {generateBlsKeys} generateBlsKeys
  * @param {enableCoreQuorumsTask} enableCoreQuorumsTask
  * @param {waitForMasternodesSync} waitForMasternodesSync
+ * @param {ConfigFile} configFile
  * @return {configureCoreTask}
  */
-function configureCoreTaskFactory(
-  renderServiceTemplates,
-  writeServiceConfigs,
+export default function configureCoreTaskFactory(
+  writeConfigTemplates,
   startCore,
   generateBlocks,
   waitForCoreSync,
@@ -36,6 +33,7 @@ function configureCoreTaskFactory(
   generateBlsKeys,
   enableCoreQuorumsTask,
   waitForMasternodesSync,
+  configFile,
 ) {
   const WAIT_FOR_NODES_TIMEOUT = 60 * 5 * 1000;
 
@@ -79,8 +77,7 @@ function configureCoreTaskFactory(
             );
 
             // Write configs
-            const configFiles = renderServiceTemplates(config);
-            writeServiceConfigs(config.getName(), configFiles);
+            writeConfigTemplates(config);
           });
 
           return new Listr([
@@ -173,9 +170,10 @@ function configureCoreTaskFactory(
 
                         config.set('core.masternode.operator.privateKey', ctx.operator.privateKey);
 
+                        configFile.markAsChanged();
+
                         // Write configs
-                        const configFiles = renderServiceTemplates(config);
-                        writeServiceConfigs(config.getName(), configFiles);
+                        writeConfigTemplates(config);
 
                         // eslint-disable-next-line no-param-reassign
                         task.output = `Public key: ${ctx.operator.publicKey}\nPrivate key: ${ctx.operator.privateKey}`;
@@ -414,5 +412,3 @@ function configureCoreTaskFactory(
 
   return configureCoreTask;
 }
-
-module.exports = configureCoreTaskFactory;

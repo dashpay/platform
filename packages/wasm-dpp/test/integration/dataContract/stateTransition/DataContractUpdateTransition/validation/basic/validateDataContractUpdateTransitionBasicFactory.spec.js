@@ -57,7 +57,7 @@ describe.skip('validateDataContractUpdateTransitionBasicFactory', () => {
     const dataContractFactory = new DataContractFactory(getLatestProtocolVersion(), validator);
     const reCreatedDataContract = await dataContractFactory
       .createFromBuffer(dataContract.toBuffer());
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.fetchDataContract.resolves(reCreatedDataContract);
 
     executionContext = new StateTransitionExecutionContext();

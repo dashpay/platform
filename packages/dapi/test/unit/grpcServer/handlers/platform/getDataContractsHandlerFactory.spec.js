@@ -1,3 +1,5 @@
+const { BytesValue } = require('google-protobuf/google/protobuf/wrappers_pb');
+
 const {
   server: {
     error: {
@@ -21,18 +23,19 @@ const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
 const getDataContractsHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/getDataContractsHandlerFactory');
 
+const {
+  DataContractEntry,
+  DataContracts,
+  GetDataContractsResponseV0,
+} = GetDataContractsResponse;
+
 describe('getDataContractsHandlerFactory', () => {
   let call;
   let getDataContractsHandler;
-  let driveClientMock;
   let request;
   let id;
-  let dataContractFixture;
-  let proofFixture;
-  let proofMock;
-  let response;
-  let proofResponse;
   let dataContractEntries;
+  let fetchDataContractsMock;
 
   beforeEach(async function beforeEach() {
     id = await generateRandomIdentifierAsync();
@@ -41,83 +44,73 @@ describe('getDataContractsHandlerFactory', () => {
       getProve: this.sinon.stub().returns(true),
     };
 
-    call = new GrpcCallMock(this.sinon, request);
+    call = new GrpcCallMock(this.sinon, {
+      getV0: () => request,
+    });
 
-    dataContractFixture = await getDataContractFixture();
-    proofFixture = {
-      merkleProof: Buffer.alloc(1, 1),
-    };
+    fetchDataContractsMock = this.sinon.stub();
 
-    proofMock = new Proof();
-    proofMock.setGrovedbProof(proofFixture.merkleProof);
+    getDataContractsHandler = getDataContractsHandlerFactory({
+      fetchDataContracts: fetchDataContractsMock,
+    });
+  });
 
-    response = new GetDataContractsResponse();
+  it('should return data contracts', async () => {
+    const dataContractFixture = await getDataContractFixture();
 
-    const dataContractEntry = new GetDataContractsResponse.DataContractEntry();
-    dataContractEntry.setKey(id.toBuffer());
-    const dataContractValue = new GetDataContractsResponse.DataContractValue();
-    dataContractValue.setValue(dataContractFixture.toBuffer());
-    dataContractEntry.setValue(dataContractValue);
+    const dataContractEntry = new DataContractEntry();
+    dataContractEntry.setIdentifier(id.toBuffer());
+    dataContractEntry.setDataContract(new BytesValue().setValue(dataContractFixture.toBuffer()));
 
     dataContractEntries = [
       dataContractEntry,
     ];
 
-    const dataContracts = new GetDataContractsResponse.DataContracts();
+    const dataContracts = new DataContracts();
     dataContracts.setDataContractEntriesList(dataContractEntries);
 
-    response.setDataContracts(dataContracts);
-
-    proofResponse = new GetDataContractsResponse();
-    proofResponse.setProof(proofMock);
-
-    driveClientMock = {
-      fetchDataContracts: this.sinon.stub().resolves(response.serializeBinary()),
-    };
-
-    getDataContractsHandler = getDataContractsHandlerFactory(
-      driveClientMock,
+    const response = new GetDataContractsResponse().setV0(
+      new GetDataContractsResponseV0().setDataContracts(dataContracts),
     );
-  });
 
-  it('should return data contracts', async () => {
+    fetchDataContractsMock.resolves(response.serializeBinary());
+
     const result = await getDataContractsHandler(call);
 
     expect(result).to.be.an.instanceOf(GetDataContractsResponse);
 
-    const contractBinaries = result.getDataContracts().getDataContractEntriesList();
+    const contractBinaries = result.getV0().getDataContracts().getDataContractEntriesList();
 
     expect(contractBinaries).to.deep.equal(dataContractEntries);
 
-    const proof = result.getProof();
-
-    expect(proof).to.be.undefined();
+    expect(fetchDataContractsMock).to.be.calledOnceWith(call.request);
   });
 
-  it('should return proof', async function it() {
-    driveClientMock = {
-      fetchDataContracts: this.sinon.stub().resolves(proofResponse.serializeBinary()),
+  it('should return proof', async () => {
+    const proofFixture = {
+      merkleProof: Buffer.alloc(1, 1),
     };
 
-    getDataContractsHandler = getDataContractsHandlerFactory(
-      driveClientMock,
-    );
+    const proofMock = new Proof();
+    proofMock.setGrovedbProof(proofFixture.merkleProof);
+
+    const response = new GetDataContractsResponse()
+      .setV0(new GetDataContractsResponseV0().setProof(proofMock));
+
+    fetchDataContractsMock.resolves(response.serializeBinary());
 
     const result = await getDataContractsHandler(call);
 
     expect(result).to.be.an.instanceOf(GetDataContractsResponse);
 
-    const contractsBinary = result.getDataContracts();
-    expect(contractsBinary).to.be.undefined();
-
-    const proof = result.getProof();
+    const proof = result.getV0().getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
     const merkleProof = proof.getGrovedbProof();
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 
-    expect(driveClientMock.fetchDataContracts).to.be.calledOnceWith(call.request);
+    expect(fetchDataContractsMock).to.be.calledOnceWith(call.request);
   });
 
   it('should throw InvalidArgumentGrpcError error if ids are not specified', async () => {
@@ -130,7 +123,7 @@ describe('getDataContractsHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('data contract ids are not specified');
-      expect(driveClientMock.fetchDataContracts).to.be.not.called();
+      expect(fetchDataContractsMock).to.be.not.called();
     }
   });
 
@@ -138,7 +131,7 @@ describe('getDataContractsHandlerFactory', () => {
     const message = 'Some error';
     const abciResponseError = new Error(message);
 
-    driveClientMock.fetchDataContracts.throws(abciResponseError);
+    fetchDataContractsMock.throws(abciResponseError);
 
     try {
       await getDataContractsHandler(call);

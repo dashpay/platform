@@ -1,10 +1,10 @@
-const fs = require('fs');
-const path = require('path');
-const dots = require('dot');
-const os = require('os');
-const { TEMPLATES_DIR } = require('../../../constants');
+import fs from 'fs';
+import path from 'path';
+import dots from 'dot';
+import os from 'os';
+import { TEMPLATES_DIR } from '../../../constants.js';
 
-class VerificationServer {
+export default class VerificationServer {
   /**
    *
    * @param {Docker} docker
@@ -168,5 +168,3 @@ class VerificationServer {
     this.config = null;
   }
 }
-
-module.exports = VerificationServer;

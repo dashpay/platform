@@ -3,6 +3,7 @@ use crate::{Error, Sdk};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
+use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
 
 #[async_trait::async_trait]
@@ -43,6 +44,15 @@ impl BroadcastStateTransition for StateTransition {
 
         let response = request.execute(sdk, RequestSettings::default()).await?;
 
-        todo!("not finished yet");
+        let proof = response.proof_owned()?;
+
+        let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
+            &self,
+            proof.grovedb_proof.as_slice(),
+            &|_| Ok(None),
+            sdk.version(),
+        )?;
+
+        Ok(result)
     }
 }

@@ -1,5 +1,7 @@
 [workspace]
 
+resolver = "2"
+
 members = [
     "packages/dapi-grpc",
     "packages/rs-dapi-grpc-macros",

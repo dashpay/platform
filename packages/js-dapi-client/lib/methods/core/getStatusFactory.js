@@ -13,7 +13,6 @@ const {
 function getStatusFactory(grpcTransport) {
   /**
    * Get Core chain status
-   *
    * @typedef {getStatus}
    * @param {DAPIClientOptions} [options]
    * @returns {Promise<object>}

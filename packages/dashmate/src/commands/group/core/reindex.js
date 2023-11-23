@@ -1,11 +1,27 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
 
-const { Flags } = require('@oclif/core');
+import { Flags } from '@oclif/core';
+import GroupBaseCommand from '../../../oclif/command/GroupBaseCommand.js';
+import MuteOneLineError from '../../../oclif/errors/MuteOneLineError.js';
 
-const MuteOneLineError = require('../../../oclif/errors/MuteOneLineError');
-const GroupBaseCommand = require('../../../oclif/command/GroupBaseCommand');
+export default class GroupReindexCommand extends GroupBaseCommand {
+  static description = 'Reindex group Core data';
 
-class GroupReindexCommand extends GroupBaseCommand {
+  static flags = {
+    ...GroupBaseCommand.flags,
+    verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
+    detach: Flags.boolean({
+      char: 'd',
+      description: 'run the reindex process in the background',
+      default: false,
+    }),
+    force: Flags.boolean({
+      char: 'f',
+      description: 'reindex already running node without confirmation',
+      default: false,
+    }),
+  };
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -29,64 +45,66 @@ class GroupReindexCommand extends GroupBaseCommand {
     configFile,
     configGroup,
   ) {
-    const tasks = new Listr([
-      {
-        title: 'Check services are not running',
-        skip: (ctx) => ctx.isForce,
-        task: async (ctx, task) => {
+    const tasks = new Listr(
+      [
+        {
+          title: 'Check services are not running',
+          skip: (ctx) => ctx.isForce,
+          task: async (ctx, task) => {
           // Check if any of group nodes started
-          const isRunning = await configGroup
-            .reduce(async (acc, config) => (await acc || dockerCompose
-              .isNodeRunning(config)), false);
+            const isRunning = await configGroup
+              .reduce(async (acc, config) => (await acc || dockerCompose
+                .isNodeRunning(config)), false);
 
-          let header;
+            let header;
 
-          if (isRunning) {
-            header = 'Node group is running. The group nodes will be unavailable until reindex is complete.\n';
-          } else {
-            header = 'Node group is stopped. The group nodes will be started in order to complete reindex.\n';
-          }
+            if (isRunning) {
+              header = 'Node group is running. The group nodes will be unavailable until reindex is complete.\n';
+            } else {
+              header = 'Node group is stopped. The group nodes will be started in order to complete reindex.\n';
+            }
 
-          const agreement = await task.prompt({
-            type: 'toggle',
-            name: 'confirm',
-            header,
-            message: 'Start reindex?',
-            enabled: 'Yes',
-            disabled: 'No',
-          });
+            const agreement = await task.prompt({
+              type: 'toggle',
+              name: 'confirm',
+              header,
+              message: 'Start reindex?',
+              enabled: 'Yes',
+              disabled: 'No',
+            });
 
-          if (!agreement) {
-            throw new Error('Operation is cancelled');
-          }
+            if (!agreement) {
+              throw new Error('Operation is cancelled');
+            }
+          },
         },
-      },
-      {
-        title: 'Reindex Core services',
-        task: (ctx, task) => {
-          if (ctx.isDetach) {
+        {
+          title: 'Reindex Core services',
+          task: (ctx, task) => {
+            if (ctx.isDetach) {
             // eslint-disable-next-line no-param-reassign
-            task.title = 'Start Core services in reindex mode';
-          }
+              task.title = 'Start Core services in reindex mode';
+            }
 
-          // Skip prompt for specific node
-          ctx.isForce = true;
+            // Skip prompt for specific node
+            ctx.isForce = true;
 
-          return new Listr(configGroup.map((config) => ({
-            task: () => reindexNodeTask(config),
-          })));
+            return new Listr(configGroup.map((config) => ({
+              task: () => reindexNodeTask(config),
+            })));
+          },
+        },
+      ],
+      {
+        renderer: isVerbose ? 'verbose' : 'default',
+        rendererOptions: {
+          showTimer: isVerbose,
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
         },
       },
-    ],
-    {
-      renderer: isVerbose ? 'verbose' : 'default',
-      rendererOptions: {
-        showTimer: isVerbose,
-        clearOutput: false,
-        collapse: false,
-        showSubtasks: true,
-      },
-    });
+    );
 
     try {
       await tasks.run({
@@ -99,22 +117,3 @@ class GroupReindexCommand extends GroupBaseCommand {
     }
   }
 }
-
-GroupReindexCommand.description = 'Reindex group Core data';
-
-GroupReindexCommand.flags = {
-  ...GroupBaseCommand.flags,
-  verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
-  detach: Flags.boolean({
-    char: 'd',
-    description: 'run the reindex process in the background',
-    default: false,
-  }),
-  force: Flags.boolean({
-    char: 'f',
-    description: 'reindex already running node without confirmation',
-    default: false,
-  }),
-};
-
-module.exports = GroupReindexCommand;

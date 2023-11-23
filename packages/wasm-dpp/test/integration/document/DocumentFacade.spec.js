@@ -34,7 +34,7 @@ describe('DocumentFacade', () => {
       documentSchemas: dataContractObject.documentSchemas,
     });
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
     dpp = new DashPlatformProtocol(

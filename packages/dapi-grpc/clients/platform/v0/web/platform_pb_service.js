@@ -145,22 +145,22 @@ Platform.getConsensusParams = {
   responseType: platform_pb.GetConsensusParamsResponse
 };
 
-Platform.getVersionUpgradeState = {
-  methodName: "getVersionUpgradeState",
+Platform.getProtocolVersionUpgradeState = {
+  methodName: "getProtocolVersionUpgradeState",
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetVersionUpgradeStateRequest,
-  responseType: platform_pb.GetVersionUpgradeStateResponse
+  requestType: platform_pb.GetProtocolVersionUpgradeStateRequest,
+  responseType: platform_pb.GetProtocolVersionUpgradeStateResponse
 };
 
-Platform.getVersionUpgradeVoteStatus = {
-  methodName: "getVersionUpgradeVoteStatus",
+Platform.getProtocolVersionUpgradeVoteStatus = {
+  methodName: "getProtocolVersionUpgradeVoteStatus",
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetVersionUpgradeVoteStatusRequest,
-  responseType: platform_pb.GetVersionUpgradeVoteStatusResponse
+  requestType: platform_pb.GetProtocolVersionUpgradeVoteStatusRequest,
+  responseType: platform_pb.GetProtocolVersionUpgradeVoteStatusResponse
 };
 
 Platform.getEpochsInfo = {
@@ -644,11 +644,11 @@ PlatformClient.prototype.getConsensusParams = function getConsensusParams(reques
   };
 };
 
-PlatformClient.prototype.getVersionUpgradeState = function getVersionUpgradeState(requestMessage, metadata, callback) {
+PlatformClient.prototype.getProtocolVersionUpgradeState = function getProtocolVersionUpgradeState(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
-  var client = grpc.unary(Platform.getVersionUpgradeState, {
+  var client = grpc.unary(Platform.getProtocolVersionUpgradeState, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
@@ -675,11 +675,11 @@ PlatformClient.prototype.getVersionUpgradeState = function getVersionUpgradeStat
   };
 };
 
-PlatformClient.prototype.getVersionUpgradeVoteStatus = function getVersionUpgradeVoteStatus(requestMessage, metadata, callback) {
+PlatformClient.prototype.getProtocolVersionUpgradeVoteStatus = function getProtocolVersionUpgradeVoteStatus(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
-  var client = grpc.unary(Platform.getVersionUpgradeVoteStatus, {
+  var client = grpc.unary(Platform.getProtocolVersionUpgradeVoteStatus, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

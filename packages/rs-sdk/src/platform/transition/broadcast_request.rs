@@ -11,18 +11,12 @@ use dapi_grpc::platform::v0::wait_for_state_transition_result_request::{
     Version, WaitForStateTransitionResultRequestV0,
 };
 use dapi_grpc::platform::v0::{
-    self as proto, BroadcastStateTransitionRequest, WaitForStateTransitionResultRequest,
+    BroadcastStateTransitionRequest, WaitForStateTransitionResultRequest,
 };
-use dpp::dashcore::PrivateKey;
-use dpp::identity::signer::Signer;
-use dpp::prelude::{AssetLockProof, Identity};
+
 use dpp::serialization::PlatformSerializable;
-use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+
 use dpp::state_transition::StateTransition;
-use dpp::version::PlatformVersion;
-use dpp::NativeBlsModule;
-use rs_dapi_client::transport::TransportRequest;
 
 use crate::error::Error;
 

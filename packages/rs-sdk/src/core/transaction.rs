@@ -1,10 +1,11 @@
 use crate::{Error, Sdk};
+use bip37_bloom_filter::{BloomFilter, BloomFilterData};
 use dapi_grpc::core::v0::{
-    transactions_with_proofs_response, TransactionsWithProofsRequest,
-    TransactionsWithProofsResponse,
+    transactions_with_proofs_request, transactions_with_proofs_response, GetStatusRequest,
+    TransactionsWithProofsRequest, TransactionsWithProofsResponse,
 };
 use dpp::dashcore::consensus::Decodable;
-use dpp::dashcore::{InstantLock, Transaction};
+use dpp::dashcore::{InstantLock, Transaction, Txid};
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
 use rs_dapi_client::{Dapi, RequestSettings};
@@ -15,12 +16,43 @@ impl Sdk {
     /// Starts the stream to listen for instant send lock messages
     pub async fn start_instant_send_lock_stream(
         &self,
+        looking_for_transaction_id: Txid,
     ) -> Result<dapi_grpc::tonic::Streaming<TransactionsWithProofsResponse>, Error> {
+        // create the bloom filter
+        let bloom_filter = BloomFilter::builder(1, 0.01)
+            .expect("this FP rate allows up to 10000 items")
+            .add_element(looking_for_transaction_id.as_ref())
+            .build();
+
+        let bloom_filter_proto = {
+            let BloomFilterData {
+                v_data,
+                n_hash_funcs,
+                n_tweak,
+                n_flags,
+            } = bloom_filter.into();
+            dapi_grpc::core::v0::BloomFilter {
+                v_data,
+                n_hash_funcs,
+                n_tweak,
+                n_flags,
+            }
+        };
+
+        let block_hash = self
+            .execute(GetStatusRequest {}, RequestSettings::default())
+            .await?
+            .chain
+            .map(|chain| chain.best_block_hash)
+            .ok_or_else(|| Error::DapiClientError("missing `chain` field".to_owned()))?;
+
         let core_transactions_stream = TransactionsWithProofsRequest {
-            bloom_filter: None,
+            bloom_filter: Some(bloom_filter_proto),
             count: 100,
-            send_transaction_hashes: false,
-            from_block: None,
+            send_transaction_hashes: true,
+            from_block: Some(transactions_with_proofs_request::FromBlock::FromBlockHash(
+                block_hash,
+            )),
         };
         self.execute(core_transactions_stream, RequestSettings::default())
             .await

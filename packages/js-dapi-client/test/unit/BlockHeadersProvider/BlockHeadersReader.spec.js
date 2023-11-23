@@ -42,7 +42,9 @@ describe('BlockHeadersReader - unit', () => {
       });
 
     blockHeadersReader = new BlockHeadersReader(
-      options, createHistoricalSyncStream, createContinuousSyncStream,
+      options,
+      createHistoricalSyncStream,
+      createContinuousSyncStream,
     );
     this.sinon.spy(blockHeadersReader, 'emit');
     this.sinon.spy(blockHeadersReader, 'on');

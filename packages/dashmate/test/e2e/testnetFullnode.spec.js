@@ -1,13 +1,13 @@
-const { asValue } = require('awilix');
+import { asValue } from 'awilix';
 
-const createDIContainer = require('../../src/createDIContainer');
-const { NODE_TYPE_NAMES, getNodeTypeByName } = require('../../src/listr/tasks/setup/nodeTypes');
-const { SSL_PROVIDERS } = require('../../src/constants');
-const generateTenderdashNodeKey = require('../../src/tenderdash/generateTenderdashNodeKey');
-const createSelfSignedCertificate = require('../../src/test/createSelfSignedCertificate');
-const createRpcClient = require('../../src/core/createRpcClient');
-const waitForCoreDataFactory = require('../../src/test/waitForCoreDataFactory');
-const HomeDir = require('../../src/config/HomeDir');
+import { NODE_TYPE_NAMES, getNodeTypeByName } from '../../src/listr/tasks/setup/nodeTypes.js';
+import { SSL_PROVIDERS } from '../../src/constants.js';
+import HomeDir from '../../src/config/HomeDir.js';
+import createDIContainer from '../../src/createDIContainer.js';
+import createSelfSignedCertificate from '../../src/test/createSelfSignedCertificate.js';
+import generateTenderdashNodeKey from '../../src/tenderdash/generateTenderdashNodeKey.js';
+import createRpcClient from '../../src/core/createRpcClient.js';
+import waitForCoreDataFactory from '../../src/test/waitForCoreDataFactory.js';
 
 describe('Testnet Fullnode', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
@@ -95,8 +95,12 @@ describe('Testnet Fullnode', function main() {
 
       config = configFile.getConfig(preset);
 
-      config.set('dashmate.helper.docker.build.enabled', true);
-      config.set('platform.drive.abci.docker.build.enabled', true);
+      if (process.env.DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD !== 'true') {
+        config.set('dashmate.helper.docker.build.enabled', true);
+        config.set('platform.drive.abci.docker.build.enabled', true);
+        config.set('platform.dapi.api.docker.build.enabled', true);
+      }
+
       config.set('docker.network.subnet', '172.27.24.0/24');
       config.set('dashmate.helper.api.port', 40000);
       config.set('core.p2p.port', 40001);
@@ -109,11 +113,8 @@ describe('Testnet Fullnode', function main() {
       // Write configs
       await configFileRepository.write(configFile);
 
-      const renderServiceTemplates = container.resolve('renderServiceTemplates');
-      const writeServiceConfigs = container.resolve('writeServiceConfigs');
-
-      const serviceConfigFiles = renderServiceTemplates(config);
-      writeServiceConfigs(config.getName(), serviceConfigFiles);
+      const writeConfigTemplates = container.resolve('writeConfigTemplates');
+      writeConfigTemplates(config);
     });
   });
 

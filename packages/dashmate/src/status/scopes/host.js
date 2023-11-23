@@ -1,12 +1,12 @@
-const os = require('os');
-const publicIp = require('public-ip');
-const prettyMs = require('pretty-ms');
-const prettyByte = require('pretty-bytes');
+import os from 'os';
+import { publicIpv4 } from 'public-ip';
+import prettyMs from 'pretty-ms';
+import prettyByte from 'pretty-bytes';
 
 /**
  * @returns {getHostScope}
  */
-function getHostScopeFactory() {
+export default function getHostScopeFactory() {
   /**
    * Get host status scope
    *
@@ -33,7 +33,7 @@ function getHostScopeFactory() {
       scope.username = os.userInfo().username;
       scope.memory = `${prettyByte(os.totalmem())} / ${prettyByte(os.freemem())}`;
       scope.cpus = os.cpus().length;
-      scope.ip = await publicIp.v4();
+      scope.ip = await publicIpv4();
     } catch (e) {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
@@ -46,5 +46,3 @@ function getHostScopeFactory() {
 
   return getHostScope;
 }
-
-module.exports = getHostScopeFactory;

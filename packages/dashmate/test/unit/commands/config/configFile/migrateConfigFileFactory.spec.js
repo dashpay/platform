@@ -1,9 +1,11 @@
-const createDIContainer = require('../../../../../src/createDIContainer');
-const getConfigFileDataV0250 = require('../../../../../src/test/fixtures/getConfigFileDataV0250');
-const packageJson = require('../../../../../package.json');
-const HomeDir = require('../../../../../src/config/HomeDir');
+import fs from 'fs';
+import path from 'path';
+import HomeDir from '../../../../../src/config/HomeDir.js';
+import { PACKAGE_ROOT_DIR } from '../../../../../src/constants.js';
+import createDIContainer from '../../../../../src/createDIContainer.js';
+import getConfigFileDataV0250 from '../../../../../src/test/fixtures/getConfigFileDataV0250.js';
 
-describe.skip('migrateConfigFileFactory', () => {
+describe('migrateConfigFileFactory', () => {
   let mockConfigFileData;
   let container;
   let createConfigFile;
@@ -20,18 +22,22 @@ describe.skip('migrateConfigFileFactory', () => {
     mockConfigFileData = getConfigFileDataV0250();
   });
 
-  it('should migrate', async () => {
+  it('should migrate v0.25.0 config file to the latest one', async () => {
     const currentConfigFile = createConfigFile();
     const currentConfigFileData = currentConfigFile.toObject();
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
     const migratedConfigFileData = migrateConfigFile(
       mockConfigFileData,
       mockConfigFileData.configFormatVersion,
-      packageJson.version,
+      version,
     );
 
-    for (const [name, config] of Object.entries(currentConfigFileData.configs)) {
-      expect(config).to.be.deep.equal(migratedConfigFileData.configs[name]);
+    for (const [name, defaultConfig] of Object.entries(currentConfigFileData.configs)) {
+      expect(defaultConfig).to.be.deep.equal(
+        migratedConfigFileData.configs[name],
+        `Migrated and default ${name} config do not match`,
+      );
     }
 
     delete currentConfigFileData.configs;

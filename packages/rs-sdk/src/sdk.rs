@@ -1,7 +1,6 @@
 //! [Sdk] entrypoint to Dash Platform.
 
-use std::fmt::Debug;
-use std::{hash::Hash, num::NonZeroUsize};
+use std::{fmt::Debug,hash::Hash, num::NonZeroUsize};
 #[cfg(feature = "mocks")]
 use std::{
     path::{Path, PathBuf},
@@ -236,7 +235,7 @@ impl Sdk {
             None => return,
         };
 
-        let encoded = serde_json::to_vec_pretty(public_key).expect("encode quorum hash to json");
+        let encoded = serde_json::to_vec(public_key).expect("encode quorum hash to json");
 
         let file = path.join(format!(
             "quorum_pubkey-{}-{}.json",

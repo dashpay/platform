@@ -1,6 +1,6 @@
-const AbstractError = require('../../errors/AbstractError');
+import AbstractError from '../../errors/AbstractError.js';
 
-class InvalidOptionError extends AbstractError {
+export default class InvalidOptionError extends AbstractError {
   /**
    * @param {string} path
    * @param {*} value
@@ -36,5 +36,3 @@ class InvalidOptionError extends AbstractError {
     return this.errors;
   }
 }
-
-module.exports = InvalidOptionError;

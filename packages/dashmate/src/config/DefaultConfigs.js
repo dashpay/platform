@@ -1,8 +1,8 @@
-class DefaultConfigs {
+export default class DefaultConfigs {
   /**
    * @type {Object<string, function(): Config>}
    */
-  #configGetters= {};
+  #configGetters = {};
 
   /**
    * @param {Array<function(): Config>} configGetters
@@ -46,5 +46,3 @@ class DefaultConfigs {
     return Object.prototype.hasOwnProperty.call(this.#configGetters, name);
   }
 }
-
-module.exports = DefaultConfigs;

@@ -49,7 +49,7 @@ describe.skip('validateChainAssetLockProofStructureFactory', () => {
     txId.reverse();
     rawProof.outPoint = Buffer.concat([txId, outputIndex]);
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
 
     stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(42);
     stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.resolves(false);
@@ -67,10 +67,9 @@ describe.skip('validateChainAssetLockProofStructureFactory', () => {
       stateRepositoryMock,
     );
 
-    validateChainAssetLockProofStructure = (
-      proof, context,
-    ) => validator.validate(
-      rawProof, context,
+    validateChainAssetLockProofStructure = (proof, context) => validator.validate(
+      rawProof,
+      context,
     );
   });
 
@@ -327,7 +326,7 @@ describe.skip('validateChainAssetLockProofStructureFactory', () => {
 
       expect(stateRepositoryMock.fetchTransaction).to.be.calledOnceWithExactly(
         transactionHash,
-        this.sinonSandbox.match.instanceOf(StateTransitionExecutionContext),
+        this.sinon.match.instanceOf(StateTransitionExecutionContext),
       );
       expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.calledOnce();
     });
@@ -363,9 +362,7 @@ describe.skip('validateChainAssetLockProofStructureFactory', () => {
         executionContext,
       );
 
-      await expectValidationError(
-        result, InvalidAssetLockProofTransactionHeightError,
-      );
+      await expectValidationError(result, InvalidAssetLockProofTransactionHeightError);
 
       const [error] = result.getErrors();
 
@@ -375,7 +372,7 @@ describe.skip('validateChainAssetLockProofStructureFactory', () => {
 
       expect(stateRepositoryMock.fetchTransaction).to.be.calledOnceWithExactly(
         transactionHash,
-        this.sinonSandbox.match.instanceOf(StateTransitionExecutionContext),
+        this.sinon.match.instanceOf(StateTransitionExecutionContext),
       );
       expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.calledOnce();
     });
@@ -393,7 +390,7 @@ describe.skip('validateChainAssetLockProofStructureFactory', () => {
 
     expect(stateRepositoryMock.fetchTransaction).to.be.calledOnceWithExactly(
       transactionHash,
-      this.sinonSandbox.match.instanceOf(StateTransitionExecutionContext),
+      this.sinon.match.instanceOf(StateTransitionExecutionContext),
     );
 
     expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.calledOnce();

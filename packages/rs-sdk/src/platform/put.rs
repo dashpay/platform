@@ -40,7 +40,7 @@ pub trait Put {
     /// - [`Err(Error)`](Error) when an error occurs
     async fn put(&self, sdk: &Sdk, context: &TransitionContext) -> Result<TxId, Error>;
 
-    ///     Put (create or update) object on the Platform, without waiting for confirmation.
+    /// Put (create or update) object on the Platform, without waiting for confirmation.
     ///
     /// An asynchronous method provided by the Put trait that puts data on Dash Platform.
     /// It locks funds that will be used to pay for the operation, creates a state transition,

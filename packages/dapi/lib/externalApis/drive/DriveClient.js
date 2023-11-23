@@ -34,9 +34,7 @@ class DriveClient {
 
     // Handle JSON RPC error
     if (error) {
-      throw new RPCError(
-        error.code || -32602, error.message || 'Internal error', error.data,
-      );
+      throw new RPCError(error.code || -32602, error.message || 'Internal error', error.data);
     }
 
     // Check and handle ABCI errors
@@ -177,13 +175,13 @@ class DriveClient {
   }
 
   /**
-   * Fetch serialized identity by its public key hashes
+   * Fetch serialized identity by its public key hash
    *
-   * @param {GetIdentityByPublicKeyHashesRequest} request
+   * @param {GetIdentityByPublicKeyHashRequest} request
    *
    * @return {Promise<Buffer[]>}
    */
-  async fetchIdentityByPublicKeyHashes(request) {
+  async fetchIdentityByPublicKeyHash(request) {
     return this.request(
       '/identity/by-public-key-hash',
       request.serializeBinary(),
@@ -234,7 +232,7 @@ class DriveClient {
   /**
    *  Fetch version upgrade vote status
    *
-   * @param {GetVersionUpgradeVoteStatusRequest} request
+   * @param {GetProtocolVersionUpgradeVoteStatusRequest} request
    * @return {Promise<Buffer>}
    */
   async fetchVersionUpgradeVoteStatus(request) {
@@ -247,7 +245,7 @@ class DriveClient {
   /**
    *  Fetch version upgrade state
    *
-   * @param {GetVersionUpgradeStateRequest} request
+   * @param {GetProtocolVersionUpgradeStateRequest} request
    * @return {Promise<Buffer>}
    */
   async fetchVersionUpgradeState(request) {

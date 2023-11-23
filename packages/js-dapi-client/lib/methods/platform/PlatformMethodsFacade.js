@@ -7,8 +7,8 @@ const getIdentitiesByPublicKeyHashesFactory = require('./getIdentitiesByPublicKe
 const waitForStateTransitionResultFactory = require('./waitForStateTransitionResult/waitForStateTransitionResultFactory');
 const getConsensusParamsFactory = require('./getConsensusParams/getConsensusParamsFactory');
 const getEpochsInfoFactory = require('./getEpochsInfo/getEpochsInfoFactory');
-const getVersionUpgradeVoteStatusFactory = require('./getVersionUpgradeVoteStatus/getVersionUpgradeVoteStatusFactory');
-const getVersionUpgradeStateFactory = require('./getVersionUpgradeState/getVersionUpgradeStateFactory');
+const getProtocolVersionUpgradeVoteStatusFactory = require('./getProtocolVersionUpgradeVoteStatus/getProtocolVersionUpgradeVoteStatusFactory');
+const getProtocolVersionUpgradeStateFactory = require('./getProtocolVersionUpgradeState/getProtocolVersionUpgradeStateFactory');
 
 class PlatformMethodsFacade {
   /**
@@ -24,8 +24,10 @@ class PlatformMethodsFacade {
     this.waitForStateTransitionResult = waitForStateTransitionResultFactory(grpcTransport);
     this.getConsensusParams = getConsensusParamsFactory(grpcTransport);
     this.getEpochsInfo = getEpochsInfoFactory(grpcTransport);
-    this.getVersionUpgradeVoteStatus = getVersionUpgradeVoteStatusFactory(grpcTransport);
-    this.getVersionUpgradeState = getVersionUpgradeStateFactory(grpcTransport);
+    this.getProtocolVersionUpgradeVoteStatus = getProtocolVersionUpgradeVoteStatusFactory(
+      grpcTransport,
+    );
+    this.getProtocolVersionUpgradeState = getProtocolVersionUpgradeStateFactory(grpcTransport);
   }
 }
 

@@ -1,4 +1,4 @@
-function getConfigMock(sinon) {
+export default function getConfigMock(sinon) {
   const configMock = {
     get: sinon.stub(),
     getName: sinon.stub(),
@@ -16,5 +16,3 @@ function getConfigMock(sinon) {
 
   return configMock;
 }
-
-module.exports = getConfigMock;

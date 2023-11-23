@@ -1,6 +1,6 @@
 [package]
 name = "dash-platform-sdk"
-version = "0.1.0"
+version = "0.25.16-rc.1"
 edition = "2021"
 
 [dependencies]
@@ -10,8 +10,8 @@ dpp = { path = "../rs-dpp", features = [
     "identity-value-conversion",
     "state-transition-signing",
 ] }
-dapi-grpc = { path = "../dapi-grpc", features = ["client", "mocks"] }
-rs-dapi-client = { path = "../rs-dapi-client" }
+dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
+rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
     "verify",
 ] }
@@ -35,10 +35,11 @@ futures = { version = "0.3.28" }
 derive_more = { version = "0.99.16" }
 lru = { version = "0.12.0" }
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = "feat/get-raw-change-address" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = "master" }
+bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
 
 [dev-dependencies]
-rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks", "dump"] }
+rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks"] }
 base64 = { version = "0.21.0" }
 tracing-subscriber = { version = "0.3.16" }
 dpp = { path = "../rs-dpp", features = [
@@ -46,7 +47,8 @@ dpp = { path = "../rs-dpp", features = [
     "validation",
     "random-documents",
 ] }
-
+data-contracts = { path = "../data-contracts" }
+tokio-test = { version = "0.4.3" }
 
 [features]
 default = ["mocks", "offline-testing"]
@@ -64,10 +66,25 @@ mocks = [
     "dep:envy",
 ]
 
-# Disable this feature to run integration tests against a local Dash Platform
-# and dump all traffic to generate test vectors.
+# Run integration tests using test vectors from `tests/vectors/` instead of connecting to live Dash Platform.
 #
-# This feature is enabled by default because disabling it requires a local Dash Platform
-# node to be running. Configuration of the node is done via environment variables
-# and/or `${CARGO_MAINFEST_DIR}/.env` file; see also `.env.example`.
+# This feature is enabled by default to allow testing without connecting to the Dash Platform as
+# part of CI/CD workflows.
+#
+# If both `offline-testing` and `network-testing` are enabled, "offline-testing" will take precedence.
 offline-testing = ["mocks"]
+
+# Run integration tests using a live Dash Platform network.
+#
+# Requires configuration of Dash Platform connectivity.
+# See [README.md] for more details.
+#
+# If both `offline-testing` and `network-testing` are enabled, "offline-testing" will take precedence.
+network-testing = ["mocks"]
+
+# Generate test vectors for offline tests.
+#
+# This will run tests in `network-testing` mode and
+# dump all requests and responses to `tests/vectors/`,
+# so that they can be used later for `offline-testing`.
+generate-test-vectors = ["network-testing"]

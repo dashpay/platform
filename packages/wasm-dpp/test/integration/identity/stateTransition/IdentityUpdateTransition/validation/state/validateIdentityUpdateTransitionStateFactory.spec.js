@@ -51,13 +51,13 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
     rawIdentity.id = await generateRandomIdentifierAsync();
     identity = new Identity(rawIdentity);
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.fetchIdentity.resolves(identity);
 
     blockTime = Date.now();
     const blsAdapter = await getBlsAdapterMock();
 
-    stateRepositoryMock.fetchLatestPlatformBlockTime = this.sinonSandbox.stub();
+    stateRepositoryMock.fetchLatestPlatformBlockTime = this.sinon.stub();
     stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTime);
 
     executionContext = new StateTransitionExecutionContext();
@@ -72,9 +72,7 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
 
     const privateKey = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
 
-    await stateTransition.signByPrivateKey(
-      Buffer.from(privateKey, 'hex'), IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-    );
+    await stateTransition.signByPrivateKey(Buffer.from(privateKey, 'hex'), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
   });
 
   it('should return InvalidIdentityRevisionError if new revision is not incremented by 1', async () => {
@@ -165,7 +163,7 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(result.isValid()).to.be.true();
 
-    const { match } = this.sinonSandbox;
+    const { match } = this.sinon;
     expect(stateRepositoryMock.fetchIdentity)
       .to.be.calledOnceWithExactly(
         match((val) => val.toBuffer().equals(stateTransition.getIdentityId().toBuffer())),
@@ -184,7 +182,7 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(result.isValid()).to.be.true();
 
-    const { match } = this.sinonSandbox;
+    const { match } = this.sinon;
     expect(stateRepositoryMock.fetchIdentity)
       .to.be.calledOnceWithExactly(
         match((val) => val.toBuffer().equals(stateTransition.getIdentityId().toBuffer())),
@@ -203,7 +201,7 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(result.isValid()).to.be.true();
 
-    const { match } = this.sinonSandbox;
+    const { match } = this.sinon;
     expect(stateRepositoryMock.fetchIdentity)
       .to.be.calledOnceWithExactly(
         match((val) => val.toBuffer().equals(stateTransition.getIdentityId().toBuffer())),
@@ -276,7 +274,7 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(result.isValid()).to.be.true();
 
-    const { match } = this.sinonSandbox;
+    const { match } = this.sinon;
     expect(stateRepositoryMock.fetchIdentity)
       .to.be.calledOnceWithExactly(
         match((val) => val.toBuffer().equals(stateTransition.getIdentityId().toBuffer())),

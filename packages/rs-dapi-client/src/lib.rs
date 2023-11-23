@@ -24,13 +24,13 @@ pub use request_settings::RequestSettings;
 /// A DAPI request could be executed with an initialized [DapiClient].
 ///
 /// # Examples
-/// ```no_run, ignore
-/// use rs_dapi_client::{RequestSettings, AddressList, DapiClient, DapiClientError, DapiRequest};
-/// use dapi_grpc::platform::v0::{self as platform_proto};
+/// ```
+/// use rs_dapi_client::{RequestSettings, AddressList, mock::MockDapiClient, DapiClientError, DapiRequest};
+/// use dapi_grpc::platform::v0::{self as proto};
 ///
 /// # let _ = async {
-/// let mut client = DapiClient::new(AddressList::new(), RequestSettings::default());
-/// let request = platform_proto::GetIdentityRequest { id: b"0".to_vec(), prove: true };
+/// let mut client = MockDapiClient::new();
+/// let request: proto::GetIdentityRequest = proto::get_identity_request::GetIdentityRequestV0 { id: b"0".to_vec(), prove: true }.into();
 /// let response = request.execute(&mut client, RequestSettings::default()).await?;
 /// # Ok::<(), DapiClientError<_>>(())
 /// # };
