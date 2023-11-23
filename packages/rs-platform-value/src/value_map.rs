@@ -364,7 +364,7 @@ impl Value {
     {
         // Check if the sort key exists in all values
         for (_, value) in map.iter() {
-            value.get_value(sort_key)?;
+            value.get_integer::<T>(sort_key)?;
         }
 
         let mut sorted_map: Vec<_> = map.iter().collect();

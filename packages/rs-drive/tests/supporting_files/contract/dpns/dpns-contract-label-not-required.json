@@ -98,6 +98,7 @@
           "$comment": "Constraint with max and min properties ensure that only one identity record is used - either a `dashUniqueIdentityId` or a `dashAliasIdentityId`",
           "minProperties": 1,
           "maxProperties": 1,
+          "position": 4,
           "additionalProperties": false
         },
         "subdomainRules": {
@@ -105,10 +106,12 @@
           "properties": {
             "allowSubdomains": {
               "type": "boolean",
+              "position": 0,
               "description": "This option defines who can create subdomains: true - anyone; false - only the domain owner",
               "$comment": "Only the domain owner is allowed to create subdomains for non top-level domains"
             }
           },
+          "position": 5,
           "description": "Subdomain rules allow domain owners to define rules for subdomains",
           "additionalProperties": false,
           "required": [
