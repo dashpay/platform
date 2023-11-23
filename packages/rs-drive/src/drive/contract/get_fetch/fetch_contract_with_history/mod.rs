@@ -122,7 +122,7 @@ mod tests {
         n: u64,
         platform_version: &PlatformVersion,
     ) {
-        let updated_document_template = platform_value!({
+        let mut updated_document = platform_value!({
             "type": "object",
             "properties": {
                 "name": {
@@ -143,7 +143,6 @@ mod tests {
 
         let mut data_contract = data_contract.clone();
         for i in 0..n {
-            let mut updated_document = updated_document_template.clone();
             updated_document
                 .to_map_mut()
                 .expect("document to be an object")
@@ -157,7 +156,12 @@ mod tests {
                 );
 
             data_contract
-                .set_document_schema("niceDocument", updated_document, true, platform_version)
+                .set_document_schema(
+                    "niceDocument",
+                    updated_document.clone(),
+                    true,
+                    platform_version,
+                )
                 .expect("to be able to set document schema");
 
             data_contract.increment_version();

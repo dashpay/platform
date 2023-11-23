@@ -64,6 +64,13 @@ impl DocumentTypeV0 {
             platform_version,
         )?;
 
+        #[cfg(not(feature = "validation"))]
+        if validate {
+            ProtocolError::CorruptedCodeExecution(
+                "validation is not enabled but is being called on try_from_schema_v0".to_string(),
+            );
+        }
+
         #[cfg(feature = "validation")]
         let json_schema_validator = StatelessJsonSchemaLazyValidator::new();
 
