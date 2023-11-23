@@ -38,6 +38,7 @@ describe('Document', () => {
         properties: {
           name: {
             type: 'string',
+            position: 0,
           },
           dataObject: {
             type: 'object',
@@ -51,18 +52,22 @@ describe('Document', () => {
                     contentMediaType: Identifier.MEDIA_TYPE,
                     minItems: 32,
                     maxItems: 32,
+                    position: 0,
                   },
                   binaryData: {
                     type: 'array',
                     byteArray: true,
                     minItems: 32,
                     maxItems: 32,
+                    position: 1,
                   },
                 },
                 additionalProperties: false,
+                position: 0,
               },
             },
             additionalProperties: false,
+            position: 1,
           },
         },
         additionalProperties: false,
