@@ -23,9 +23,6 @@ pub fn get_dpns_data_contract_fixture(
         .source()
         .expect("should return DPNS data contract source");
 
-    // TODO the pattern is invalid as it's a re2
-    document_schemas["domain"]["properties"]["normalizedParentDomainName"]["pattern"] = json!(".*");
-
     //Todo create config
     factory
         .create_with_value_config(owner_id, document_schemas.into(), None, None)
