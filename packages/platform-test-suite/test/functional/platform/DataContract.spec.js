@@ -171,10 +171,12 @@ describe('Platform', () => {
           firstName: {
             type: 'string',
             maxLength: 63,
+            position: 0,
           },
           lastName: {
             type: 'string',
             maxLength: 63,
+            position: 1,
           },
         },
         required: ['firstName', '$createdAt', '$updatedAt', 'lastName'],
