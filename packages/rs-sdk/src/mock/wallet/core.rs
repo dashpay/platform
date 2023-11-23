@@ -9,7 +9,7 @@ use super::core_client::CoreClient;
 
 /// Core wallet using Core GRPC API.
 pub struct CoreGrpcWallet {
-    core_client: CoreClient,
+    pub(crate) core_client: CoreClient,
 }
 
 impl CoreGrpcWallet {
@@ -22,7 +22,7 @@ impl CoreGrpcWallet {
 
 #[async_trait]
 impl CoreWallet for CoreGrpcWallet {
-    async fn lock_assets(&self, amount: u64) -> Result<(AssetLockProof, PrivateKey), Error> {
+    async fn lock_assets(&self, _amount: u64) -> Result<(AssetLockProof, PrivateKey), Error> {
         todo!("Not yet implemented")
     }
 

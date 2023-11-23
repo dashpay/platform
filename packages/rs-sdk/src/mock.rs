@@ -21,11 +21,13 @@
 
 #[cfg(not(feature = "mocks"))]
 mod noop;
+#[cfg(feature = "mocks")]
 pub mod provider;
 #[cfg(feature = "mocks")]
 mod requests;
 #[cfg(feature = "mocks")]
 pub mod sdk;
+#[cfg(feature = "mocks")]
 pub mod wallet;
 #[cfg(feature = "mocks")]
 // TODO: move Mockable to some crate that can be shared between dapi-grpc, rs-dapi-client, and dash-platform-sdk
@@ -34,6 +36,3 @@ pub use dapi_grpc::mock::Mockable;
 pub use requests::*;
 #[cfg(feature = "mocks")]
 pub use sdk::MockDashPlatformSdk;
-
-#[cfg(not(feature = "mocks"))]
-pub use noop::*;

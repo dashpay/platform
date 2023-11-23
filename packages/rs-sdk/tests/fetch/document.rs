@@ -22,7 +22,7 @@ async fn document_read() {
     let data_contract_id = cfg.existing_data_contract_id;
 
     let contract = Arc::new(
-        DataContract::fetch(&mut sdk, data_contract_id)
+        DataContract::fetch(&sdk, data_contract_id)
             .await
             .expect("fetch data contract")
             .expect("data contract not found"),
@@ -45,7 +45,7 @@ async fn document_read() {
         .expect("create SdkDocumentQuery")
         .with_document_id(&first_doc.id());
 
-    let doc = Document::fetch(&mut sdk, query)
+    let doc = Document::fetch(&sdk, query)
         .await
         .expect("fetch document")
         .expect("document must be found");
@@ -99,9 +99,7 @@ async fn document_read_no_document() {
     .expect("create SdkDocumentQuery")
     .with_document_id(&document_id);
 
-    let doc = Document::fetch(&mut sdk, query)
-        .await
-        .expect("fetch document");
+    let doc = Document::fetch(&sdk, query).await.expect("fetch document");
 
     assert!(doc.is_none(), "document must not be found");
 }
@@ -119,7 +117,7 @@ async fn document_list_drive_query() {
 
     let data_contract_id = cfg.existing_data_contract_id;
 
-    let data_contract = DataContract::fetch(&mut sdk, data_contract_id)
+    let data_contract = DataContract::fetch(&sdk, data_contract_id)
         .await
         .expect("fetch data contract")
         .expect("data contract not found");
@@ -128,7 +126,17 @@ async fn document_list_drive_query() {
         .document_type_for_name(&cfg.existing_document_type_name)
         .expect("document type not found");
 
-    let query = DriveQuery::any_item_query(&data_contract, doctype);
+    let query = DriveQuery {
+        contract: &data_contract,
+        document_type: doctype,
+        internal_clauses: Default::default(),
+        offset: None,
+        limit: Some(1),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: true,
+        block_time_ms: None,
+    };
 
     let docs = <Document>::fetch_many(&mut sdk, query)
         .await
@@ -155,7 +163,7 @@ async fn document_list_document_query() {
     let data_contract_id = cfg.existing_data_contract_id;
 
     let data_contract = Arc::new(
-        DataContract::fetch(&mut sdk, data_contract_id)
+        DataContract::fetch(&sdk, data_contract_id)
             .await
             .expect("fetch data contract")
             .expect("data contra)ct not found"),

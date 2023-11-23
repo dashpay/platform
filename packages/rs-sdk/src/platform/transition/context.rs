@@ -35,7 +35,7 @@ impl<'a> TransitionContext<'a> {
             cancellation_token: CancellationToken::new(),
             asset_lock_proof: None,
             asset_lock_private_key: None,
-            wallet: sdk.wallet.as_ref(),
+            wallet: sdk.wallet.as_ref().expect("Wallet not set in Sdk").as_ref(),
         }
     }
 

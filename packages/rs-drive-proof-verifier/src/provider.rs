@@ -45,6 +45,25 @@ pub trait ContextProvider: Send + Sync {
         -> Result<Option<Arc<DataContract>>, crate::Error>;
 }
 
+impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
+    fn get_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Result<[u8; 48], crate::Error> {
+        self.as_ref()
+            .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+    }
+
+    fn get_data_contract(
+        &self,
+        id: &Identifier,
+    ) -> Result<Option<Arc<DataContract>>, crate::Error> {
+        self.as_ref().get_data_contract(id)
+    }
+}
+
 /// Mock ContextProvider that can read quorum keys from files.
 ///
 /// Use `dash_platform_sdk::SdkBuilder::with_dump_dir()` to generate quorum keys files.

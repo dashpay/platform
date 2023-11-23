@@ -19,10 +19,18 @@ pub struct GrpcContextProvider<'a> {
     core: CoreClient,
     /// Sdk to use when fetching data from Platform
     sdk: &'a Sdk,
+
     /// Data contracts cache.
     ///
     /// Users can insert new data contracts into the cache using [`Cache::put`].
     pub data_contracts: Cache<Identifier, dpp::data_contract::DataContract>,
+
+    /// Quorum public keys cache.
+    ///
+    /// Key is a tuple of quorum hash and quorum type. Value is a quorum public key.
+    ///
+    /// Users can insert new quorum public keys into the cache using [`Cache::put`].
+    pub quorum_public_keys_cache: Cache<([u8; 32], u32), [u8; 48]>,
 }
 
 impl<'a> GrpcContextProvider<'a> {
@@ -34,14 +42,16 @@ impl<'a> GrpcContextProvider<'a> {
         core_port: u16,
         core_user: &str,
         core_password: &str,
+
+        data_contracts_cache_size: NonZeroUsize,
+        quorum_public_keys_cache_size: NonZeroUsize,
     ) -> Result<Self, Error> {
         let core_client = CoreClient::new(core_ip, core_port, core_user, core_password)?;
         Ok(Self {
             core: core_client,
             sdk,
-            data_contracts: Cache::new(NonZeroUsize::new(100).ok_or(Error::Config(
-                "data contracts cache capacity must be greater than zero".to_string(),
-            ))?),
+            data_contracts: Cache::new(data_contracts_cache_size),
+            quorum_public_keys_cache: Cache::new(quorum_public_keys_cache_size),
         })
     }
 }
@@ -53,11 +63,21 @@ impl<'a> ContextProvider for GrpcContextProvider<'a> {
         quorum_hash: [u8; 32], // quorum hash is 32 bytes
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], drive_proof_verifier::Error> {
-        self.core
-            .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
-            .map_err(|e| drive_proof_verifier::Error::InvalidQuorum {
-                error: e.to_string(),
-            })
+        if let Some(key) = self
+            .quorum_public_keys_cache
+            .get(&(quorum_hash, quorum_type))
+        {
+            return Ok(*key);
+        };
+
+        let key =
+            self.core
+                .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)?;
+
+        self.quorum_public_keys_cache
+            .put((quorum_hash, quorum_type), key);
+
+        Ok(key)
     }
 
     fn get_data_contract(

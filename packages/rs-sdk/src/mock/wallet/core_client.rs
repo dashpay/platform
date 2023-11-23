@@ -46,6 +46,7 @@ impl CoreClient {
         })
     }
 }
+
 // Wallet functions
 impl CoreClient {
     /// List unspent transactions

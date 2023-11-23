@@ -15,14 +15,12 @@ pub mod transition;
 pub mod types;
 
 pub use dapi_grpc::platform::v0::{self as proto};
-pub use drive::{
-    dpp::{
-        self as dpp,
-        document::Document,
-        prelude::{DataContract, Identifier, Identity, IdentityPublicKey, Revision},
-    },
-    query::DriveQuery,
+pub use dpp::{
+    self as dpp,
+    document::Document,
+    prelude::{DataContract, Identifier, Identity, IdentityPublicKey, Revision},
 };
+pub use drive::query::DriveQuery;
 pub use {
     document_query::DocumentQuery,
     fetch::Fetch,

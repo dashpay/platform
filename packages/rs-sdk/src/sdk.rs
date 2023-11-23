@@ -1,6 +1,6 @@
 //! [Sdk] entrypoint to Dash Platform.
 
-use std::{fmt::Debug, hash::Hash, num::NonZeroUsize};
+use std::{fmt::Debug, num::NonZeroUsize};
 #[cfg(feature = "mocks")]
 use std::{
     path::{Path, PathBuf},
@@ -10,10 +10,10 @@ use std::{
 #[cfg(feature = "mocks")]
 use crate::mock::MockDashPlatformSdk;
 
-use crate::mock::wallet::core::CoreGrpcWallet;
-use crate::mock::wallet::platform::PlatformSignerWallet;
+use crate::mock::wallet::{core::CoreGrpcWallet};
+use crate::mock::wallet::{platform::PlatformSignerWallet, MockWallet};
 use crate::mock::MockResponse;
-use crate::wallet::{CompositeWallet, Wallet};
+use crate::wallet::Wallet;
 use crate::{error::Error, platform::transition::TransitionContext};
 
 use dapi_grpc::mock::Mockable;
@@ -33,6 +33,11 @@ use rs_dapi_client::{
 };
 #[cfg(feature = "mocks")]
 use tokio::sync::Mutex;
+
+/// How many data contracts fit in the cache.
+pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
+/// How many quorum public keys fit in the cache.
+pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 
 /// Dash Platform SDK
 ///
@@ -61,8 +66,14 @@ pub struct Sdk {
 
     /// Context provider used by the SDK.
     context_provider: Box<dyn ContextProvider>,
+
     /// Default wallet to use when executing various operations.
-    pub(crate) wallet: Box<dyn Wallet>,
+    ///
+    /// Wallet is used to manage keys and sign transactions.
+    /// It can be changed on runtime with set_wallet().
+    ///
+    /// It is Option because we allow delayed initialization of the wallet.
+    pub(crate) wallet: Option<Box<dyn Wallet>>,
 
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
@@ -83,36 +94,6 @@ impl Debug for Sdk {
                 .field("proofs", &self.proofs)
                 .finish(),
         }
-    }
-}
-/// Thread-safe cache of various objects inside the SDK.
-///
-/// This is used to cache objects that are expensive to fetch from the platform, like data contracts.
-pub struct Cache<K: Hash + Eq, V> {
-    // We use a Mutex to allow access to the cache when we don't have mutable &self
-    // And we use Arc to allow multiple threads to access the cache without having to clone it
-    inner: std::sync::RwLock<lru::LruCache<K, Arc<V>>>,
-}
-
-impl<K: Hash + Eq, V> Cache<K, V> {
-    /// Create new cache
-    pub fn new(capacity: NonZeroUsize) -> Self {
-        Self {
-            // inner: std::sync::Mutex::new(lru::LruCache::new(capacity)),
-            inner: std::sync::RwLock::new(lru::LruCache::new(capacity)),
-        }
-    }
-
-    /// Get a reference to the value stored under `k`.
-    pub fn get(&self, k: &K) -> Option<Arc<V>> {
-        let mut guard = self.inner.write().expect("cache lock poisoned");
-        guard.get(k).map(Arc::clone)
-    }
-
-    /// Insert a new value into the cache.
-    pub fn put(&self, k: K, v: V) {
-        let mut guard = self.inner.write().expect("cache lock poisoned");
-        guard.put(k, Arc::new(v));
     }
 }
 
@@ -216,6 +197,16 @@ impl Sdk {
     /// Indicate if the sdk should request and verify proofs.
     pub fn prove(&self) -> bool {
         self.proofs
+    }
+
+    /// Set the wallet to use.
+    ///
+    /// Wallet is used to manage keys and addresses and sign transactions.
+    /// It can be changed on runtime with set_wallet().
+    ///
+    /// Note that this will overwrite any previous wallet.
+    pub fn set_wallet<W: Wallet + 'static>(&mut self, wallet: W) {
+        self.wallet = Some(Box::new(wallet));
     }
 
     /// Save quorum public key to disk.
@@ -332,7 +323,12 @@ pub struct SdkBuilder {
     /// If true, request and verify proofs of the responses.
     proofs: bool,
 
+    /// Platform version to use in this Sdk
     version: &'static PlatformVersion,
+
+    /// Cache settings
+    data_contract_cache_size: NonZeroUsize,
+    quorum_public_keys_cache_size: NonZeroUsize,
 
     /// Wallet used by the SDK.
     wallet: Option<Box<dyn Wallet>>,
@@ -357,6 +353,10 @@ impl Default for SdkBuilder {
             core_user: "".to_string(),
 
             proofs: true,
+
+            data_contract_cache_size: NonZeroUsize::new(DEFAULT_CONTRACT_CACHE_SIZE).expect("data conttact cache size must be positive"),
+            quorum_public_keys_cache_size: NonZeroUsize::new(DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE)
+                .expect("quorum public keys cache size must be positive"),
 
             context_provider: None,
             wallet: None,
@@ -429,7 +429,7 @@ impl SdkBuilder {
     ///
     /// Wallet is used to manage keys and addresses and sign transactions.
     ///
-    /// See [Wallet] for more information and [CompositeWallet] for an example implementation.
+    /// See [Wallet] for more information and [MockWallet] for an example implementation.
     pub fn with_wallet<W: Wallet + 'static>(mut self, wallet: W) -> Self {
         self.wallet = Some(Box::new(wallet));
 
@@ -487,7 +487,7 @@ impl SdkBuilder {
     }
 
     /// Create a new composite wallet using [CoreGrpcWallet] and [PlatformSignerWallet] intended for testing.
-    fn build_core_wallet(&self) -> Result<Box<dyn Wallet>, Error> {
+    fn build_core_wallet(&self) -> Result<MockWallet, Error> {
         let core_wallet = CoreGrpcWallet::new(
             &self.core_ip,
             self.core_port,
@@ -496,7 +496,12 @@ impl SdkBuilder {
         )?;
         let platform_wallet = PlatformSignerWallet::new();
 
-        Ok(Box::new(CompositeWallet::new(core_wallet, platform_wallet)))
+        Ok(MockWallet::new(
+            core_wallet,
+            platform_wallet,
+            self.data_contract_cache_size,
+            self.quorum_public_keys_cache_size,
+        ))
     }
 
     /// Build the Sdk instance.
@@ -509,38 +514,30 @@ impl SdkBuilder {
     pub fn build(self) -> Result<Sdk, Error> {
         PlatformVersion::set_current(self.version);
 
-        let wallet = match self.wallet {
-            Some(wallet) => wallet,
-            None => self.build_core_wallet()?,
-        };
-
+        // TODO decide if we should automatically generate wallet and context provider
         let context_provider = self.context_provider.ok_or(Error::Config(
             "context provider must be configured with SdkBuilder::with_context_provider"
                 .to_string(),
         ))?;
 
-        match self.addresses {
+        let sdk=  match self.addresses {
             Some(addresses) => {
-                if self.core_ip.is_empty() || self.core_port == 0 {
-                    return Err(Error::Config(
-                        "Core must be configured with SdkBuilder::with_core".to_string(),
-                    ));
-                }
                 let dapi = DapiClient::new(addresses, self.settings);
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
-
-                Ok(Sdk{
+               
+                Sdk{
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
-                wallet,context_provider,
+                    context_provider,
+                    wallet: self.wallet,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
-                })
+                }
             },
             #[cfg(feature = "mocks")]
             None =>{ let dapi =Arc::new(Mutex::new(  MockDapiClient::new()));
-                Ok(Sdk{
+                Sdk{
                     inner:SdkInstance::Mock {
                         mock: MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs),
                         dapi,
@@ -548,12 +545,14 @@ impl SdkBuilder {
                     dump_dir: self.dump_dir,
                     proofs:self.proofs,
                     context_provider,
-                    wallet,
-            })},
+                    wallet:None,
+            }},
             #[cfg(not(feature = "mocks"))]
             None => Err(Error::Config(
                 "Mock mode is not available. Please enable `mocks` feature or provide address list.".to_string(),
             )),
-        }
+        };
+
+        Ok(sdk)
     }
 }
