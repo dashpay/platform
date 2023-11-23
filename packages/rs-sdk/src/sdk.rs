@@ -1,6 +1,6 @@
 //! [Sdk] entrypoint to Dash Platform.
 
-use std::{fmt::Debug,hash::Hash, num::NonZeroUsize};
+use std::{fmt::Debug, hash::Hash, num::NonZeroUsize};
 #[cfg(feature = "mocks")]
 use std::{
     path::{Path, PathBuf},
@@ -10,14 +10,14 @@ use std::{
 #[cfg(feature = "mocks")]
 use crate::mock::MockDashPlatformSdk;
 
-use crate::mock::MockResponse;
-use crate::mock::wallet::platform::PlatformSignerWallet;
-use crate::wallet::{CompositeWallet, Wallet};
 use crate::mock::wallet::core::CoreGrpcWallet;
+use crate::mock::wallet::platform::PlatformSignerWallet;
+use crate::mock::MockResponse;
+use crate::wallet::{CompositeWallet, Wallet};
 use crate::{error::Error, platform::transition::TransitionContext};
 
 use dapi_grpc::mock::Mockable;
-use dpp::prelude::{Identifier, DataContract};
+use dpp::prelude::{DataContract, Identifier};
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 #[cfg(feature = "mocks")]
 use drive_proof_verifier::{ContextProvider, FromProof};
@@ -63,7 +63,7 @@ pub struct Sdk {
     context_provider: Box<dyn ContextProvider>,
     /// Default wallet to use when executing various operations.
     pub(crate) wallet: Box<dyn Wallet>,
-   
+
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
 }
@@ -168,9 +168,12 @@ impl Sdk {
         O::Request: Mockable,
     {
         match self.inner {
-            SdkInstance::Dapi { .. } => {
-                O::maybe_from_proof(request, response, self.version(), self.context_provider.as_ref())
-            }
+            SdkInstance::Dapi { .. } => O::maybe_from_proof(
+                request,
+                response,
+                self.version(),
+                self.context_provider.as_ref(),
+            ),
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => mock.parse_proof(request, response),
         }
@@ -249,7 +252,7 @@ impl Sdk {
     }
 
     /// Create a new [`TransitionContext`] with default configuration.
-    /// 
+    ///
     /// This method is used to create a new [`TransitionContext`] that stores various parameters
     /// required to execute a state transition.
     pub fn create_transition_context(&self) -> TransitionContext {
@@ -423,24 +426,27 @@ impl SdkBuilder {
     }
 
     /// Configure wallet to use.
-    /// 
+    ///
     /// Wallet is used to manage keys and addresses and sign transactions.
-    /// 
+    ///
     /// See [Wallet] for more information and [CompositeWallet] for an example implementation.
-    pub fn with_wallet<W:Wallet+'static>(mut self, wallet:W) ->Self{
-        self.wallet=Some(Box::new(wallet));
+    pub fn with_wallet<W: Wallet + 'static>(mut self, wallet: W) -> Self {
+        self.wallet = Some(Box::new(wallet));
 
         self
     }
 
     /// Configure context provider to use.
-    /// 
+    ///
     /// Context provider is used to retrieve data contracts and quorum public keys from application state.
     /// It should be implemented by the user of this SDK to provide stateful information about the application.
-    /// 
+    ///
     /// See [ContextProvider] for more information and [GrpcContextProvider] for an example implementation.
-    pub fn with_context_provider<C:ContextProvider+'static>(mut self, context_provider:C) ->Self{
-        self.context_provider=Some(Box::new(context_provider));
+    pub fn with_context_provider<C: ContextProvider + 'static>(
+        mut self,
+        context_provider: C,
+    ) -> Self {
+        self.context_provider = Some(Box::new(context_provider));
 
         self
     }
@@ -448,17 +454,17 @@ impl SdkBuilder {
     /// Use Dash Core as a wallet and context provider.
     ///
     /// This is a conveniance method that configures the SDK to use Dash Core as a wallet and context provider.
-    /// 
+    ///
     /// For more control over the configuration, use [SdkBuilder::with_wallet()] and [SdkBuilder::with_context_provider()].
-    /// 
+    ///
     /// This is temporary implementation, intended for development purposes.   
-        pub fn with_core(mut self, ip: &str, port: u16, user: &str, password: &str) -> Self {
-            self.core_ip = ip.to_string();
-            self.core_port = port;
-            self.core_user = user.to_string();
-            self.core_password = password.to_string();
-        
-            self
+    pub fn with_core(mut self, ip: &str, port: u16, user: &str, password: &str) -> Self {
+        self.core_ip = ip.to_string();
+        self.core_port = port;
+        self.core_user = user.to_string();
+        self.core_password = password.to_string();
+
+        self
     }
 
     /// Configure directory where dumps of all requests and responses will be saved.
@@ -481,14 +487,16 @@ impl SdkBuilder {
     }
 
     /// Create a new composite wallet using [CoreGrpcWallet] and [PlatformSignerWallet] intended for testing.
-     fn build_core_wallet(& self, 
-    ) -> Result<Box<dyn Wallet>,Error> {
-        let core_wallet = CoreGrpcWallet::new(&self.core_ip, self.core_port, &self.core_user, &self.core_password)?;
+    fn build_core_wallet(&self) -> Result<Box<dyn Wallet>, Error> {
+        let core_wallet = CoreGrpcWallet::new(
+            &self.core_ip,
+            self.core_port,
+            &self.core_user,
+            &self.core_password,
+        )?;
         let platform_wallet = PlatformSignerWallet::new();
 
-       Ok(
-        Box::new(  CompositeWallet::new(core_wallet, platform_wallet)),
-    )
+        Ok(Box::new(CompositeWallet::new(core_wallet, platform_wallet)))
     }
 
     /// Build the Sdk instance.
@@ -501,13 +509,14 @@ impl SdkBuilder {
     pub fn build(self) -> Result<Sdk, Error> {
         PlatformVersion::set_current(self.version);
 
-       let  wallet= match   self.wallet {
-        Some(wallet) => wallet,
-         None =>  self.build_core_wallet()?,
-       };
-       
-        let context_provider= self.context_provider.ok_or(Error::Config(
-            "context provider must be configured with SdkBuilder::with_context_provider".to_string(),
+        let wallet = match self.wallet {
+            Some(wallet) => wallet,
+            None => self.build_core_wallet()?,
+        };
+
+        let context_provider = self.context_provider.ok_or(Error::Config(
+            "context provider must be configured with SdkBuilder::with_context_provider"
+                .to_string(),
         ))?;
 
         match self.addresses {
@@ -520,8 +529,6 @@ impl SdkBuilder {
                 let dapi = DapiClient::new(addresses, self.settings);
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
-
-      
 
                 Ok(Sdk{
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
@@ -537,7 +544,6 @@ impl SdkBuilder {
                     inner:SdkInstance::Mock {
                         mock: MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs),
                         dapi,
-               
                     },
                     dump_dir: self.dump_dir,
                     proofs:self.proofs,

@@ -1,6 +1,5 @@
 //! Verifies the execution of a state transition using a provided proof.
 //!
-use std::sync::Arc;
 use crate::drive::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -10,6 +9,7 @@ use dpp::identifier::Identifier;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 mod v0;
 
 impl Drive {
