@@ -184,7 +184,7 @@ async fn handle_signals(cancel: CancellationToken, logs: Loggers) -> Result<(), 
                 };
             },
           _ = cancel.cancelled() => tracing::trace!("shutting down signal handlers"),
-        };
+        }
     }
 
     Ok(())
@@ -372,9 +372,10 @@ mod test {
         let path = tempdir.join("db");
         fs::create_dir(&path).expect("create db dir");
 
-        let drive = Drive::open(&path, None).expect("open drive");
-
         let platform_version = PlatformVersion::latest();
+
+        let drive = Drive::open(&path, None, platform_version).expect("open drive");
+
         drive
             .create_initial_state_structure(None, platform_version)
             .expect("should create root tree successfully");

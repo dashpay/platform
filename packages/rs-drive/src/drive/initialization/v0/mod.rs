@@ -196,6 +196,7 @@ impl Drive {
 mod tests {
     use crate::drive::{Drive, RootTree};
 
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
     use grovedb::query_result_type::QueryResultType::QueryElementResultType;
     use grovedb::{PathQuery, Query, SizedQuery};
@@ -203,14 +204,10 @@ mod tests {
 
     #[test]
     fn test_create_initial_state_structure() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("should open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
-        let _db_transaction = drive.grove.start_transaction();
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("expected to create structure");
+
         let mut query = Query::new();
         query.insert_all();
         let root_path_query = PathQuery::new(
@@ -236,13 +233,12 @@ mod tests {
 
     #[test]
     fn test_initial_state_structure_proper_heights() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("should open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
+
+        let db_transaction = drive.grove.start_transaction();
+
         let platform_version = PlatformVersion::latest();
         let drive_version = &platform_version.drive;
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("expected to create structure");
 
         // Merk Level 0
         let mut query = Query::new();

@@ -210,19 +210,15 @@ mod tests {
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::drive::Drive;
+    use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
 
     #[test]
     fn test_add_dashpay_documents() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
-
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
@@ -325,23 +321,12 @@ mod tests {
 
     #[test]
     fn test_add_multiple_dashpay_documents_individually_should_succeed() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(
-            tmp_dir,
-            Some(DriveConfig {
-                batching_consistency_verification: true,
-                ..Default::default()
-            }),
-        )
-        .expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
+
         let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
-
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
@@ -442,23 +427,12 @@ mod tests {
 
     #[test]
     fn test_add_multiple_dashpay_documents() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(
-            tmp_dir,
-            Some(DriveConfig {
-                batching_consistency_verification: true,
-                ..Default::default()
-            }),
-        )
-        .expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
+
         let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
-
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
@@ -584,23 +558,12 @@ mod tests {
 
     #[test]
     fn test_add_multiple_family_documents() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(
-            tmp_dir,
-            Some(DriveConfig {
-                batching_consistency_verification: true,
-                ..Default::default()
-            }),
-        )
-        .expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
+
         let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
-
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -705,23 +668,12 @@ mod tests {
 
     #[test]
     fn test_update_multiple_family_documents() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(
-            tmp_dir,
-            Some(DriveConfig {
-                batching_consistency_verification: true,
-                ..Default::default()
-            }),
-        )
-        .expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
+
         let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
-
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -932,23 +884,12 @@ mod tests {
 
     #[test]
     fn test_update_multiple_family_documents_with_index_being_removed_and_added() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(
-            tmp_dir,
-            Some(DriveConfig {
-                batching_consistency_verification: true,
-                ..Default::default()
-            }),
-        )
-        .expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
+
         let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
-
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
