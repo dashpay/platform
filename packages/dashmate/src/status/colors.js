@@ -51,16 +51,15 @@ export default {
     }
     return chalk.red;
   },
-  blockHeight: (blockHeight, headerHeight, remoteBlockHeight) => {
+  blockHeight: (blockHeight, headerHeight, remoteBlockHeight = 0) => {
     if (!blockHeight) {
       return () => null;
     }
-    if ((!remoteBlockHeight && blockHeight === headerHeight)
-      || blockHeight >= remoteBlockHeight) {
+    if (blockHeight === headerHeight && blockHeight >= remoteBlockHeight) {
       return chalk.green;
     }
-    if ((!remoteBlockHeight && (headerHeight - blockHeight < 3))
-      || (remoteBlockHeight - blockHeight) < 3) {
+    if (headerHeight - blockHeight < 3
+      || (remoteBlockHeight > blockHeight && remoteBlockHeight - blockHeight < 3)) {
       return chalk.yellow;
     }
     return chalk.red;
