@@ -474,6 +474,19 @@ impl DocumentPropertyType {
             }
 
             DocumentPropertyType::Object(inner_fields) => {
+                let object_byte_len: usize = buf.read_varint().map_err(|_| {
+                    ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
+                        "error reading varint of object length",
+                    ))
+                })?;
+                let mut object_bytes = vec![0u8; object_byte_len];
+                buf.read_exact(&mut object_bytes).map_err(|_| {
+                    ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
+                        "error reading object bytes",
+                    ))
+                })?;
+                // Wrap the bytes in a BufReader
+                let mut object_buf_reader = BufReader::new(&object_bytes[..]);
                 let mut finished_buffer = false;
                 let values = inner_fields
                     .iter()
@@ -492,7 +505,8 @@ impl DocumentPropertyType {
 
                         let read_value = field
                             .property_type
-                            .read_optionally_from(buf, field.required);
+                            .read_optionally_from(&mut object_buf_reader, field.required);
+
                         match read_value {
                             Ok(read_value) => {
                                 finished_buffer |= read_value.1;
@@ -623,7 +637,9 @@ impl DocumentPropertyType {
                             Ok(())
                         }
                     })?;
-                    Ok(r_vec)
+                    let mut len_prepended_vec = r_vec.len().encode_var_vec();
+                    len_prepended_vec.append(&mut r_vec);
+                    Ok(len_prepended_vec)
                 } else {
                     Err(get_field_type_matching_error())
                 }
@@ -737,7 +753,9 @@ impl DocumentPropertyType {
                         Ok(())
                     }
                 })?;
-                Ok(r_vec)
+                let mut len_prepended_vec = r_vec.len().encode_var_vec();
+                len_prepended_vec.append(&mut r_vec);
+                Ok(len_prepended_vec)
             }
             DocumentPropertyType::Array(array_field_type) => {
                 if let Value::Array(array) = value {
