@@ -32,10 +32,12 @@ describe('DataContract', () => {
       properties: {
         nice: {
           type: 'boolean',
+          position: 0,
         },
         aBinaryProperty: {
           type: 'array',
           byteArray: true,
+          position: 1,
         },
       },
       additionalProperties: false,

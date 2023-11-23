@@ -332,7 +332,7 @@ describe('Document', () => {
     });
   });
 
-  describe('#setData/#getDAta', () => {
+  describe('#setData/#getData', () => {
     it('should call set and get for each document property', () => {
       const data = {
         test1: 1,
@@ -406,7 +406,7 @@ describe('Document', () => {
     it('should return serialized Document', () => {
       const buffer = document.toBuffer();
       expect(buffer).to.be.instanceOf(Buffer);
-      expect(buffer.length).to.equal(564);
+      expect(buffer.length).to.equal(624);
     });
 
     // TODO: remove or replace?

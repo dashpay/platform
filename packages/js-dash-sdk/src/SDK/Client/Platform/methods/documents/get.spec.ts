@@ -209,6 +209,7 @@ describe('Client - Platform - Documents - .get()', () => {
             },
           },
           additionalProperties: false,
+          position: 0,
         },
       },
       additionalProperties: false,
