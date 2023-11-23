@@ -102,16 +102,17 @@ impl<C> Platform<C> {
                     system_identity_public_keys.withdrawals_contract_owner(),
                 ),
             ),
-            (
-                SystemDataContract::FeatureFlags,
-                (
-                    load_system_data_contract(
-                        SystemDataContract::FeatureFlags,
-                        platform_version.protocol_version,
-                    )?,
-                    system_identity_public_keys.feature_flags_contract_owner(),
-                ),
-            ),
+            // TODO: Do we still need feature flags to change consensus params like timeouts and so on?
+            // (
+            //     SystemDataContract::FeatureFlags,
+            //     (
+            //         load_system_data_contract(
+            //             SystemDataContract::FeatureFlags,
+            //             platform_version.protocol_version,
+            //         )?,
+            //         system_identity_public_keys.feature_flags_contract_owner(),
+            //     ),
+            // ),
             (
                 SystemDataContract::Dashpay,
                 (
@@ -316,8 +317,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    153, 189, 142, 116, 200, 232, 184, 243, 200, 66, 54, 210, 25, 3, 35, 2, 73, 24,
-                    70, 226, 156, 101, 203, 28, 42, 22, 32, 50, 92, 148, 98, 218
+                    148, 196, 101, 163, 1, 56, 137, 50, 117, 196, 107, 103, 222, 55, 110, 59, 11,
+                    177, 172, 37, 17, 234, 56, 154, 232, 24, 208, 220, 27, 128, 201, 97
                 ]
             )
         }

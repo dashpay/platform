@@ -1,6 +1,7 @@
 use crate::error::Error;
 use dpp::data_contract::DataContract;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
+use dpp::ProtocolError;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -15,12 +16,16 @@ impl DataContractUpdateStateTransitionStructureValidationV0 for DataContractUpda
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        DataContract::try_from_platform_versioned(
+        match DataContract::try_from_platform_versioned(
             self.data_contract().clone(),
             true,
             platform_version,
-        )?;
-
-        Ok(SimpleConsensusValidationResult::default())
+        ) {
+            Ok(_) => Ok(SimpleConsensusValidationResult::default()),
+            Err(ProtocolError::ConsensusError(e)) => Ok(
+                SimpleConsensusValidationResult::new_with_error(e.as_ref().clone()),
+            ),
+            Err(e) => Err(e.into()),
+        }
     }
 }

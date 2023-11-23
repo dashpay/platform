@@ -242,10 +242,12 @@ mod tests {
             "type": "object",
             "properties": {
                 "last_name": {
-                    "type": "number"
+                    "type": "number",
+                    "position": 0
                 },
                 "first_name": {
-                    "type": "integer"
+                    "type": "integer",
+                    "position": 1
                 }
             },
             "additionalProperties": false,
