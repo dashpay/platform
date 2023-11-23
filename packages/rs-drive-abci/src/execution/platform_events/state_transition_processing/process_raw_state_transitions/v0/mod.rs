@@ -7,6 +7,8 @@ use crate::platform_types::state_transition_execution_result::StateTransitionExe
 };
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore;
+use dpp::dashcore::hashes::Hash;
 use dpp::fee::fee_result::FeeResult;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -69,6 +71,14 @@ where
                     Some(transaction),
                 )?;
 
+                // Tenderdash hex-encoded ST hash
+                let mut st_hash = String::new();
+                if tracing::enabled!(tracing::Level::TRACE) {
+                    st_hash = hex::encode(
+                        dashcore::hashes::sha256::Hash::hash(raw_state_transition).to_byte_array(),
+                    );
+                }
+
                 let execution_result = if state_transition_execution_event.is_valid() {
                     let execution_event = state_transition_execution_event.into_data()?;
 
@@ -79,35 +89,32 @@ where
                         platform_version,
                     )?;
 
-                    // TODO: Provide short details on state transition (hash, type) instead of full print
-                    if tracing::enabled!(tracing::Level::TRACE) {
-                        tracing::trace!(
-                            method = "process_raw_state_transitions_v0",
-                            ?state_transition,
-                            block_platform_state_fingerprint =
-                                hex::encode(block_platform_state.fingerprint()),
-                            "State transition successfully processed",
-                        );
-                    }
+                    tracing::debug!(
+                        method = "process_raw_state_transitions_v0",
+                        "{} state transition ({}) successfully processed",
+                        state_transition.name(),
+                        st_hash,
+                    );
+
+                    tracing::trace!(?state_transition, "State transition");
 
                     result
                 } else {
-                    // Re-enable this to see errors during testing
-                    // dbg!(
-                    //     state_transition,
-                    //     state_transition_execution_event.errors.first().clone()
-                    // );
+                    let first_consensus_error = state_transition_execution_event
+                        .errors
+                        .first()
+                        .expect("first error must be present for invalid result");
 
-                    if tracing::enabled!(tracing::Level::TRACE) {
-                        tracing::trace!(
-                            method = "process_raw_state_transitions_v0",
-                            ?state_transition,
-                            block_platform_state_fingerprint =
-                                hex::encode(block_platform_state.fingerprint()),
-                            "Invalid state transition: {:?}",
-                            state_transition_execution_event.errors.first().clone(),
-                        );
-                    }
+                    tracing::debug!(
+                        errors = ?state_transition_execution_event.errors,
+                        method = "process_raw_state_transitions_v0",
+                        "Invalid {} state transition ({}): {}",
+                        state_transition.name(),
+                        st_hash,
+                        first_consensus_error
+                    );
+
+                    tracing::trace!(?state_transition, "State transition");
 
                     ConsensusExecutionError(SimpleConsensusValidationResult::new_with_errors(
                         state_transition_execution_event.errors,

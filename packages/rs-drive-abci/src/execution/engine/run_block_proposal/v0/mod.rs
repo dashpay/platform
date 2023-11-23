@@ -71,24 +71,14 @@ where
         // Start by getting information from the state
         let state = self.state.read().unwrap();
 
-        if tracing::enabled!(tracing::Level::TRACE) {
-            let root_hash = self
-                .drive
-                .grove
-                .root_hash(Some(transaction))
-                .unwrap()
-                .map_err(|e| Error::Drive(GroveDB(e)))?;
-
-            tracing::trace!(
-                method = "run_block_proposal_v0",
-                ?block_proposal,
-                ?epoch_info,
-                platform_state_fingerprint = hex::encode(state.fingerprint()),
-                app_hash = hex::encode(root_hash),
-                "running a block proposal on epoch {}",
-                epoch_info.current_epoch_index()
-            );
-        }
+        tracing::trace!(
+            method = "run_block_proposal_v0",
+            ?block_proposal,
+            ?epoch_info,
+            "Running a block proposal for height: {}, round: {}",
+            block_proposal.height,
+            block_proposal.round,
+        );
 
         let last_block_time_ms = state.last_block_time_ms();
         let last_block_height =
@@ -330,9 +320,10 @@ where
             tracing::trace!(
                 method = "run_block_proposal_v0",
                 app_hash = hex::encode(root_hash),
-                block_platform_state_fingerprint =
-                    hex::encode(block_execution_context.block_platform_state().fingerprint()),
-                "block proposal executed successfully",
+                platform_state = ?block_execution_context.block_platform_state(),
+                platform_state_fingerprint =
+                hex::encode(block_execution_context.block_platform_state().fingerprint()),
+                "Block proposal executed successfully",
             );
         }
 

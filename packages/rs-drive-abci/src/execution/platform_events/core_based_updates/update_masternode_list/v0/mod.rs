@@ -88,17 +88,6 @@ where
                     &platform_version.drive,
                 )?;
             }
-
-            if tracing::enabled!(tracing::Level::TRACE) {
-                let block_platform_state_fingerprint =
-                    hex::encode(block_platform_state.fingerprint());
-
-                tracing::trace!(
-                    block_platform_state_fingerprint,
-                    method = "update_masternode_list_v0",
-                    "masternode list updated",
-                );
-            }
         }
 
         Ok(())
