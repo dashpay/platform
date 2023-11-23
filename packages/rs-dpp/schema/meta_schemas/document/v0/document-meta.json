@@ -148,7 +148,8 @@
         },
         "items": true,
         "position": {
-          "type": "integer"
+          "type": "integer",
+          "minimum": 0
         }
       },
       "dependentSchemas": {
