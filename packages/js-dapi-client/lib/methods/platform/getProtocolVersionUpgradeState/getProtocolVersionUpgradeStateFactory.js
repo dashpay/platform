@@ -15,7 +15,6 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 function getProtocolVersionUpgradeStateFactory(grpcTransport) {
   /**
    * Fetch the version upgrade state
-   *
    * @typedef {getProtocolVersionUpgradeState}
    * @param {DAPIClientOptions & {prove: boolean}} [options]
    * @returns {Promise<GetProtocolVersionUpgradeStateResponse>}

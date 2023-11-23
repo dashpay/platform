@@ -1,6 +1,6 @@
-const AbstractError = require('../../errors/AbstractError');
+import AbstractError from '../../errors/AbstractError.js';
 
-class OptionIsNotSetError extends AbstractError {
+export default class OptionIsNotSetError extends AbstractError {
   /**
    * @param {Config} config
    * @param {string} path
@@ -33,5 +33,3 @@ class OptionIsNotSetError extends AbstractError {
     return this.errors;
   }
 }
-
-module.exports = OptionIsNotSetError;

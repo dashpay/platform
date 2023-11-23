@@ -6,7 +6,7 @@ class SimplifiedMasternodeListProvider {
    *
    * @param {JsonRpcTransport} jsonRpcTransport - JsonRpcTransport instance
    * @param {object} [options] - Options
-   * @param {number} [options.updateInterval=60000]
+   * @param {number} [options.updateInterval]
    * @param {string} [options.network]
    */
   constructor(jsonRpcTransport, options = {}) {
@@ -26,7 +26,6 @@ class SimplifiedMasternodeListProvider {
 
   /**
    * Returns simplified masternode list
-   *
    * @returns {Promise<SimplifiedMNList>}
    */
   async getSimplifiedMNList() {
@@ -39,7 +38,6 @@ class SimplifiedMasternodeListProvider {
 
   /**
    * Checks whether simplified masternode list needs update
-   *
    * @private
    * @returns {boolean}
    */
@@ -49,7 +47,6 @@ class SimplifiedMasternodeListProvider {
 
   /**
    * Updates simplified masternodes list. No need to call it manually
-   *
    * @private
    */
   async updateMasternodeList() {
@@ -76,7 +73,6 @@ class SimplifiedMasternodeListProvider {
 
   /**
    * Fetches masternode diff from DAPI
-   *
    * @private
    * @returns {Promise<SimplifiedMNListDiff>}
    */
@@ -94,7 +90,6 @@ class SimplifiedMasternodeListProvider {
 
   /**
    * Reset simplifiedMNList
-   *
    * @private
    */
   reset() {

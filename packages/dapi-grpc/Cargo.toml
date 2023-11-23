@@ -1,7 +1,7 @@
 [package]
 name = "dapi-grpc"
 description = "GRPC client for Dash Platform"
-version = "0.25.13"
+version = "0.25.16-rc.1"
 authors = [
     "Samuel Westrich <sam@dash.org>",
     "Igor Markin <igor.markin@dash.org>",
@@ -15,17 +15,13 @@ license = "MIT"
 
 [features]
 default = ["core", "platform", "client", "serde", "mocks"]
-core = ["core_v0"]
-platform = ["platform_v0"]
+core = []
+platform = []
 # Re-export Dash Platform protobuf types as `dapi_grpc::platform::proto`
 tenderdash-proto = []
 client = ["tonic/channel", "tonic/tls", "tonic/tls-roots", "platform"]
 serde = ["dep:serde", "dep:serde_bytes"]
-core_v0 = []
-platform_v0 = []
-
-mocks = ["serde", "serde_json"]
-
+mocks = ["dep:serde_json"]
 
 [dependencies]
 prost = { version = "0.12" }

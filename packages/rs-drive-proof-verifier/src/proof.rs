@@ -1,25 +1,30 @@
-use std::borrow::Cow;
-use std::collections::BTreeMap;
-use std::sync::Arc;
-
 use crate::{types::*, ContextProvider, Error};
-
+use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
+    self, GetProtocolVersionUpgradeVoteStatusRequestV0,
+};
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
 use dapi_grpc::platform::v0::{
     get_data_contract_history_request, get_data_contract_request, get_data_contracts_request,
-    get_identity_balance_and_revision_request, get_identity_balance_request,
-    get_identity_by_public_key_hash_request, get_identity_keys_request, get_identity_request,
+    get_epochs_info_request, get_identity_balance_and_revision_request,
+    get_identity_balance_request, get_identity_by_public_key_hash_request,
+    get_identity_keys_request, get_identity_request, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeVoteStatusResponse,
 };
 use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
     VersionedGrpcResponse,
 };
+use dpp::block::epoch::EpochIndex;
+use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::ProTxHash;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::{DataContract, Identifier, Identity};
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
-use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
+use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
@@ -27,6 +32,10 @@ pub use drive::drive::verify::RootHash;
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::query::DriveQuery;
+use std::array::TryFromSliceError;
+use std::collections::BTreeMap;
+use std::num::TryFromIntError;
+use std::sync::Arc;
 
 use crate::verify::verify_tenderdash_proof;
 
@@ -418,7 +427,7 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
 
         provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
@@ -557,11 +566,24 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        let maybe_contracts = if contracts.count_some() > 0 {
-            Some(contracts)
-        } else {
-            None
-        };
+        let maybe_contracts: Option<BTreeMap<Identifier, Option<DataContract>>> =
+            if !contracts.is_empty() {
+                let contracts: DataContracts = contracts
+                    .into_iter()
+                    .try_fold(DataContracts::new(), |mut acc, (k, v)| {
+                        Identifier::from_bytes(&k).map(|id| {
+                            acc.insert(id, v);
+                            acc
+                        })
+                    })
+                    .map_err(|e| Error::ResultEncodingError {
+                        error: e.to_string(),
+                    })?;
+
+                Some(contracts)
+            } else {
+                None
+            };
 
         Ok(maybe_contracts)
     }
@@ -669,6 +691,213 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
     }
 }
 
+impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfo {
+    type Request = platform::GetEpochsInfoRequest;
+    type Response = platform::GetEpochsInfoResponse;
+
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<Option<Self>, Error>
+    where
+        Self: Sized + 'a,
+    {
+        let epochs =
+            ExtendedEpochInfos::maybe_from_proof(request, response, platform_version, provider)?;
+
+        if let Some(mut e) = epochs {
+            if e.len() != 1 {
+                return Err(Error::RequestDecodeError {
+                    error: format!("expected 1 epoch, got {}", e.len()),
+                });
+            }
+            let epoch = e.pop_first().and_then(|v| v.1);
+            Ok(epoch)
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfos {
+    type Request = platform::GetEpochsInfoRequest;
+    type Response = platform::GetEpochsInfoResponse;
+
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<Option<Self>, Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (start_epoch, count, ascending) = match request.version.ok_or(Error::EmptyVersion)? {
+            get_epochs_info_request::Version::V0(v0) => (v0.start_epoch, v0.count, v0.ascending),
+        };
+
+        let current_epoch: EpochIndex = try_u32_to_u16(mtd.epoch)?;
+        let start_epoch: Option<EpochIndex> = if let Some(epoch) = start_epoch {
+            Some(try_u32_to_u16(epoch)?)
+        } else {
+            None
+        };
+        let count = try_u32_to_u16(count)?;
+
+        let (root_hash, epoch_info) = Drive::verify_epoch_infos(
+            &proof.grovedb_proof,
+            current_epoch,
+            start_epoch,
+            count,
+            ascending,
+            platform_version,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        let epoch_info = epoch_info
+            .into_iter()
+            .map(|v| {
+                #[allow(clippy::infallible_destructuring_match)]
+                let info = match &v {
+                    ExtendedEpochInfo::V0(i) => i,
+                };
+
+                (info.index, Some(v))
+            })
+            .collect::<BTreeMap<EpochIndex, Option<ExtendedEpochInfo>>>();
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let maybe_epoch_info = if epoch_info.count_some() > 0 {
+            Some(epoch_info)
+        } else {
+            None
+        };
+
+        Ok(maybe_epoch_info)
+    }
+}
+
+fn try_u32_to_u16(i: u32) -> Result<u16, Error> {
+    i.try_into()
+        .map_err(|e: TryFromIntError| Error::RequestDecodeError {
+            error: e.to_string(),
+        })
+}
+
+impl FromProof<GetProtocolVersionUpgradeStateRequest> for ProtocolVersionUpgrades {
+    type Request = GetProtocolVersionUpgradeStateRequest;
+    type Response = GetProtocolVersionUpgradeStateResponse;
+
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<Option<Self>, Error>
+    where
+        Self: Sized + 'a,
+    {
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (root_hash, object) =
+            Drive::verify_upgrade_state(&proof.grovedb_proof, platform_version)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        if object.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(
+            object.into_iter().map(|(k, v)| (k, Some(v))).collect(),
+        ))
+    }
+}
+
+impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtocolVotes {
+    type Request = GetProtocolVersionUpgradeVoteStatusRequest;
+    type Response = GetProtocolVersionUpgradeVoteStatusResponse;
+
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<Option<Self>, Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request = request.into();
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let request_v0: GetProtocolVersionUpgradeVoteStatusRequestV0 = match request.version {
+            Some(get_protocol_version_upgrade_vote_status_request::Version::V0(v0)) => v0,
+            None => return Err(Error::EmptyVersion),
+        };
+
+        let start_pro_tx_hash: Option<[u8; 32]> =
+            if request_v0.start_pro_tx_hash.is_empty() {
+                None
+            } else {
+                Some(request_v0.start_pro_tx_hash[..].try_into().map_err(
+                    |e: TryFromSliceError| Error::RequestDecodeError {
+                        error: e.to_string(),
+                    },
+                )?)
+            };
+
+        let (root_hash, objects) = Drive::verify_upgrade_vote_status(
+            &proof.grovedb_proof,
+            start_pro_tx_hash,
+            try_u32_to_u16(request_v0.count)?,
+            platform_version,
+        )?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        if objects.is_empty() {
+            return Ok(None);
+        }
+        let votes: MasternodeProtocolVotes = objects
+            .into_iter()
+            .map(|(key, value)| {
+                ProTxHash::from_slice(&key)
+                    .map(|protxhash| {
+                        (
+                            protxhash,
+                            Some(MasternodeProtocolVote {
+                                pro_tx_hash: protxhash,
+                                voted_version: value,
+                            }),
+                        )
+                    })
+                    .map_err(|e| Error::ResultEncodingError {
+                        error: e.to_string(),
+                    })
+            })
+            .collect::<Result<MasternodeProtocolVotes, Error>>()?;
+
+        Ok(Some(votes))
+    }
+}
 // #[cfg_attr(feature = "mocks", mockall::automock)]
 impl<'dq, Q> FromProof<Q> for Documents
 where

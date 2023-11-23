@@ -9,10 +9,10 @@ mod delegate;
 mod document_query;
 mod fetch;
 mod fetch_many;
-pub mod identity;
 pub mod put;
 mod query;
 pub mod transition;
+pub mod types;
 
 pub use dapi_grpc::platform::v0::{self as proto};
 pub use drive::{
@@ -23,6 +23,11 @@ pub use drive::{
     },
     query::DriveQuery,
 };
-pub use {document_query::DocumentQuery, fetch::Fetch, fetch_many::FetchMany, query::Query};
+pub use {
+    document_query::DocumentQuery,
+    fetch::Fetch,
+    fetch_many::FetchMany,
+    query::{LimitQuery, Query, DEFAULT_EPOCH_QUERY_LIMIT},
+};
 
 pub use rs_dapi_client as dapi;

@@ -1,11 +1,49 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
 
-const featureFlagTypes = require('@dashevo/feature-flags-contract/lib/featureFlagTypes');
+import featureFlagTypes from '@dashevo/feature-flags-contract/lib/featureFlagTypes.js';
+import { Args } from '@oclif/core';
+import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
+import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 
-const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
+export default class FeatureFlagCommand extends ConfigBaseCommand {
+  static description = 'Register feature flags';
 
-class FeatureFlagCommand extends ConfigBaseCommand {
+  static flags = {
+    ...ConfigBaseCommand.flags,
+  };
+
+  static args = {
+    name: Args.string(
+      {
+        name: 'name',
+        required: true,
+        description: 'name of the feature flag to process',
+        options: Object.values(featureFlagTypes),
+      },
+    ),
+    height: Args.string(
+      {
+        name: 'height',
+        required: true,
+        description: 'height at which feature flag should be enabled',
+      },
+    ),
+    'hd-private-key': Args.string(
+      {
+        name: 'hd-private-key',
+        required: true,
+        description: 'feature flag hd private key',
+      },
+    ),
+    'dapi-address': Args.string(
+      {
+        name: 'dapi-address',
+        required: true,
+        description: 'DAPI address to send feature flags transitions to',
+      },
+    ),
+  };
+
   /**
    *
    * @param {Object} args
@@ -27,21 +65,23 @@ class FeatureFlagCommand extends ConfigBaseCommand {
     featureFlagTask,
     config,
   ) {
-    const tasks = new Listr([
+    const tasks = new Listr(
+      [
+        {
+          title: 'Initialize Feature Flags',
+          task: () => featureFlagTask(config),
+        },
+      ],
       {
-        title: 'Initialize Feature Flags',
-        task: () => featureFlagTask(config),
+        renderer: isVerbose ? 'verbose' : 'default',
+        rendererOptions: {
+          showTimer: isVerbose,
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
+        },
       },
-    ],
-    {
-      renderer: isVerbose ? 'verbose' : 'default',
-      rendererOptions: {
-        showTimer: isVerbose,
-        clearOutput: false,
-        collapse: false,
-        showSubtasks: true,
-      },
-    });
+    );
 
     try {
       await tasks.run({
@@ -55,33 +95,3 @@ class FeatureFlagCommand extends ConfigBaseCommand {
     }
   }
 }
-
-FeatureFlagCommand.description = 'Register feature flags';
-
-FeatureFlagCommand.args = [{
-  name: 'name',
-  required: true,
-  description: 'name of the feature flag to process',
-  options: Object.values(featureFlagTypes),
-},
-{
-  name: 'height',
-  required: true,
-  description: 'height at which feature flag should be enabled',
-},
-{
-  name: 'hd-private-key',
-  required: true,
-  description: 'feature flag hd private key',
-},
-{
-  name: 'dapi-address',
-  required: true,
-  description: 'DAPI address to send feature flags transitions to',
-}];
-
-FeatureFlagCommand.flags = {
-  ...ConfigBaseCommand.flags,
-};
-
-module.exports = FeatureFlagCommand;

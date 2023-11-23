@@ -1,3 +1,6 @@
+// todo refactor promise function to fit no-promise-executor-return
+/* eslint-disable no-promise-executor-return */
+
 const { WALLET_TYPES } = require('../../../CONSTANTS');
 const logger = require('../../../logger');
 /**
@@ -58,4 +61,5 @@ async function sweepWallet(opts = {}) {
     }
   });
 }
+
 module.exports = sweepWallet;

@@ -1,6 +1,6 @@
 [package]
 name = "dash-platform-sdk"
-version = "0.1.0"
+version = "0.25.16-rc.1"
 edition = "2021"
 
 [dependencies]
@@ -50,7 +50,7 @@ dpp = { path = "../rs-dpp", features = [
     "random-documents",
 ] }
 data-contracts = { path = "../data-contracts" }
-
+tokio-test = { version = "0.4.3" }
 
 [features]
 default = ["mocks", "offline-testing"]
@@ -73,20 +73,20 @@ mocks = [
 # This feature is enabled by default to allow testing without connecting to the Dash Platform as
 # part of CI/CD workflows.
 #
-# `offline-testing` and `network-testing` are mutually exclusive.
+# If both `offline-testing` and `network-testing` are enabled, "offline-testing" will take precedence.
 offline-testing = ["mocks"]
 
 # Run integration tests using a live Dash Platform network.
 #
-# Requires configuration of Dash Platform connectivity. 
+# Requires configuration of Dash Platform connectivity.
 # See [README.md] for more details.
 #
-# `offline-testing` and `network-testing` are mutually exclusive.
+# If both `offline-testing` and `network-testing` are enabled, "offline-testing" will take precedence.
 network-testing = ["mocks"]
 
 # Generate test vectors for offline tests.
 #
-# This will run tests in `network-testing` mode and 
+# This will run tests in `network-testing` mode and
 # dump all requests and responses to `tests/vectors/`,
 # so that they can be used later for `offline-testing`.
 generate-test-vectors = ["network-testing"]

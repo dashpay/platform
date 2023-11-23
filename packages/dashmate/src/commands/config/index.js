@@ -1,10 +1,21 @@
-const { Flags } = require('@oclif/core');
-const chalk = require('chalk');
-const { inspect } = require('util');
-const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const { OUTPUT_FORMATS } = require('../../constants');
+import { Flags } from '@oclif/core';
+import chalk from 'chalk';
+import { inspect } from 'util';
+import { OUTPUT_FORMATS } from '../../constants.js';
+import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 
-class ConfigCommand extends ConfigBaseCommand {
+export default class ConfigCommand extends ConfigBaseCommand {
+  static description = 'Show default config';
+
+  static flags = {
+    format: Flags.string({
+      description: 'display output format',
+      default: OUTPUT_FORMATS.PLAIN,
+      options: Object.values(OUTPUT_FORMATS),
+    }),
+    ...ConfigBaseCommand.flags,
+  };
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -36,16 +47,3 @@ class ConfigCommand extends ConfigBaseCommand {
     return config.getOptions();
   }
 }
-
-ConfigCommand.description = 'Show default config';
-
-ConfigCommand.flags = {
-  format: Flags.string({
-    description: 'display output format',
-    default: OUTPUT_FORMATS.PLAIN,
-    options: Object.values(OUTPUT_FORMATS),
-  }),
-  ...ConfigBaseCommand.flags,
-};
-
-module.exports = ConfigCommand;

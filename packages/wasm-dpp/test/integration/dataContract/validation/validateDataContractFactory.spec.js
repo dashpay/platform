@@ -1762,7 +1762,8 @@ describe.skip('validateDataContractFactory', () => {
       });
 
       // TODO: support indexed arrays
-      it.skip('should return invalid result if index property is an array of different types',
+      it.skip(
+        'should return invalid result if index property is an array of different types',
         async () => {
           const rawDataContract = dataContract.toObject();
 
@@ -1791,7 +1792,8 @@ describe.skip('validateDataContractFactory', () => {
           expect(error.getPropertyType()).to.equal('array');
           expect(error.getDocumentType()).to.deep.equal('indexedArray');
           expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
-        });
+        },
+      );
 
       // TODO: support indexed arrays
       it.skip('should return invalid result if index property contained prefixItems array of arrays', async () => {
@@ -2134,7 +2136,8 @@ describe.skip('validateDataContractFactory', () => {
   });
 
   // TODO: support indexed arrays
-  it.skip('should return invalid result if indexed array property missing maxItems constraint',
+  it.skip(
+    'should return invalid result if indexed array property missing maxItems constraint',
     async () => {
       const rawDataContract = dataContract.toObject();
       delete rawDataContract.documents.indexedArray.properties.mentions.maxItems;
@@ -2149,7 +2152,8 @@ describe.skip('validateDataContractFactory', () => {
       expect(error.getPropertyName()).to.equal('mentions');
       expect(error.getConstraintName()).to.equal('maxItems');
       expect(error.getReason()).to.equal('should be less or equal 63');
-    });
+    },
+  );
 
   // TODO support indexed arrays
   it.skip('should return invalid result if indexed array property have to big maxItems', async () => {

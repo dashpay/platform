@@ -22,9 +22,7 @@ describe('Platform', () => {
       it('should return a list of searched domains', async () => {
         platformMock.documents.get.resolves([parentDomainDocument]);
 
-        const documentsList = await search.call(
-          platformMock, 'prefix', 'dash',
-        );
+        const documentsList = await search.call(platformMock, 'prefix', 'dash');
 
         expect(platformMock.documents.get.callCount).to.equal(1);
         expect(platformMock.documents.get.getCall(0).args).to.deep.equal([
@@ -44,9 +42,7 @@ describe('Platform', () => {
       it('should return an empty list if no domains where found', async () => {
         platformMock.documents.get.resolves([]);
 
-        const documentsList = await search.call(
-          platformMock, 'prefix', 'dash',
-        );
+        const documentsList = await search.call(platformMock, 'prefix', 'dash');
 
         expect(platformMock.documents.get.callCount).to.equal(1);
         expect(platformMock.documents.get.getCall(0).args).to.deep.equal([

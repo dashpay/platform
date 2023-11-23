@@ -1,22 +1,20 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
 
-const chalk = require('chalk');
+import chalk from 'chalk';
 
-const {
+import {
   NODE_TYPE_MASTERNODE,
-  NODE_TYPE_HPMN,
   NODE_TYPE_FULLNODE,
   PRESET_MAINNET,
-} = require('../../../constants');
+} from '../../../constants.js';
 
-const {
+import {
   NODE_TYPE_NAMES,
   getNodeTypeByName,
   getNodeTypeNameByType,
   isNodeTypeNameHighPerformance,
-} = require('./nodeTypes');
-
-const generateRandomString = require('../../../util/generateRandomString');
+} from './nodeTypes.js';
+import generateRandomString from '../../../util/generateRandomString.js';
 
 /**
  * @param {ConfigFile} configFile
@@ -28,7 +26,7 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {configureSSLCertificateTask} configureSSLCertificateTask
  * @param {DefaultConfigs} defaultConfigs
  */
-function setupRegularPresetTaskFactory(
+export default function setupRegularPresetTaskFactory(
   configFile,
   generateBlsKeys,
   registerMasternodeTask,
@@ -104,7 +102,7 @@ function setupRegularPresetTaskFactory(
         enabled: (ctx) => ctx.nodeType === NODE_TYPE_MASTERNODE,
         task: async (ctx, task) => {
           let header;
-          if (ctx.isHP === NODE_TYPE_HPMN) {
+          if (ctx.isHP) {
             header = `  If your HP masternode is already registered, we will import your masternode
   operator and platform node keys to configure an HP masternode. Please make
   sure your IP address has not changed, otherwise you will need to create a
@@ -167,5 +165,3 @@ function setupRegularPresetTaskFactory(
 
   return setupRegularPresetTask;
 }
-
-module.exports = setupRegularPresetTaskFactory;

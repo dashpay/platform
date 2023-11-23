@@ -15,7 +15,6 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 function getIdentitiesByPublicKeyHashesFactory(grpcTransport) {
   /**
    * Fetch the identities by public key hashes
-   *
    * @typedef {getIdentitiesByPublicKeyHashes}
    * @param {Buffer[]} publicKeyHashes
    * @param {DAPIClientOptions & {prove: boolean}} [options]

@@ -3,6 +3,71 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, DeriveInput, Ident};
 
+/// Versioned gRPC message derive macro
+///
+/// This adds implementation of [dapi_grpc::VersionedGrpcMessage] to the message.
+/// It should be implemented on all gRPC requests and responses that are versioned.
+///
+/// It uses the `grpc_versions` attribute to determine implemented versions.
+///
+/// ## Requirements
+///
+/// * `crate::platform::VersionedGrpcMessage` must be in scope
+///
+#[proc_macro_derive(VersionedGrpcMessage, attributes(grpc_versions))]
+pub fn versioned_grpc_message_derive(input: TokenStream) -> TokenStream {
+    // Parse the input tokens into a syntax tree
+    let input = parse_macro_input!(input as DeriveInput);
+
+    // Extract attributes to find the number of versions
+    let versions: usize = input
+        .attrs
+        .iter()
+        .find_map(|attr| {
+            if attr.path().is_ident("grpc_versions") {
+                // Parse the attribute into a literal integer
+                attr.parse_args::<syn::LitInt>()
+                    .ok()
+                    .and_then(|lit| lit.base10_parse().ok())
+            } else {
+                None
+            }
+        })
+        .expect("Expected a grpc_versions attribute with an integer");
+
+    let name = input.ident;
+    // Generate the names of the nested message and enum types
+    let mod_name = AsSnakeCase(name.to_string()).to_string();
+    let mod_ident = syn::parse_str::<Ident>(&mod_name).expect("parse response ident");
+
+    // Generate match arms for proof and metadata methods
+    let impl_from_arms = (0..=versions).map(|version| {
+        let version_ident = format_ident!("V{}", version);
+        let version_msg_ident = format_ident!("{}V{}", name, version);
+        // Now create an identifier from the constructed string
+        quote! {
+            impl From<#mod_ident::#version_msg_ident> for #name {
+                fn from(inner: #mod_ident::#version_msg_ident) -> Self {
+                    Self {
+                        version: Some(#mod_ident::Version::#version_ident(inner)),
+                    }
+                }
+            }
+            impl crate::platform::VersionedGrpcMessage<#mod_ident::#version_msg_ident> for #name {}
+        }
+    });
+
+    // Generate the implementation
+    let expanded = quote! {
+        #( #impl_from_arms )*
+    };
+
+    // println!("Expanded code for VersionedGrpcMessage: {}", expanded);
+
+    // Return the generated code
+    TokenStream::from(expanded)
+}
+
 /// Implement versioning on gRPC responses
 ///
 /// This adds implementation of [dapi_grpc::VersionedGrpcResponse] to the message:

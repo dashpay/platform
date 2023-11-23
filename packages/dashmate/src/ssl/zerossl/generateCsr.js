@@ -1,4 +1,4 @@
-const forge = require('node-forge');
+import forge from 'node-forge';
 
 /**
  * Generate a CSR
@@ -10,7 +10,7 @@ const forge = require('node-forge');
  * @param {string} externalIp
  * @return {Promise<string>}
  */
-async function generateCsr(
+export default async function generateCsr(
   keyPair,
   externalIp,
 ) {
@@ -25,5 +25,3 @@ async function generateCsr(
 
   return forge.pki.certificationRequestToPem(csr);
 }
-
-module.exports = generateCsr;

@@ -1,14 +1,12 @@
-const { Listr } = require('listr2');
-const { Observable } = require('rxjs');
+import { Listr } from 'listr2';
+import { Observable } from 'rxjs';
+import DashCoreLib from '@dashevo/dashcore-lib';
+import waitForNodesToHaveTheSameHeight from '../../../../core/waitForNodesToHaveTheSameHeight.js';
+import waitForNodesToHaveTheSameSporks from '../../../../core/waitForNodesToHaveTheSameSporks.js';
 
-const {
-  PrivateKey,
-} = require('@dashevo/dashcore-lib');
+import { NETWORK_LOCAL, HPMN_COLLATERAL_AMOUNT } from '../../../../constants.js';
 
-const waitForNodesToHaveTheSameSporks = require('../../../../core/waitForNodesToHaveTheSameSporks');
-const waitForNodesToHaveTheSameHeight = require('../../../../core/waitForNodesToHaveTheSameHeight');
-
-const { NETWORK_LOCAL, HPMN_COLLATERAL_AMOUNT } = require('../../../../constants');
+const { PrivateKey } = DashCoreLib;
 
 /**
  * @param {writeConfigTemplates} writeConfigTemplates
@@ -24,7 +22,7 @@ const { NETWORK_LOCAL, HPMN_COLLATERAL_AMOUNT } = require('../../../../constants
  * @param {ConfigFile} configFile
  * @return {configureCoreTask}
  */
-function configureCoreTaskFactory(
+export default function configureCoreTaskFactory(
   writeConfigTemplates,
   startCore,
   generateBlocks,
@@ -414,5 +412,3 @@ function configureCoreTaskFactory(
 
   return configureCoreTask;
 }
-
-module.exports = configureCoreTaskFactory;

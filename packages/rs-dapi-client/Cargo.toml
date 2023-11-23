@@ -1,15 +1,15 @@
 [package]
 name = "rs-dapi-client"
-version = "0.1.0"
+version = "0.25.16-rc.1"
 edition = "2021"
 
 [features]
-
-default = ["mocks"]
-mocks = ["dep:sha2", "dep:hex"]
+default = ["mocks", "offline-testing"]
+mocks = ["dep:sha2", "dep:hex", "dapi-grpc/mocks"]
 # dump requests and responses to file
-dump = ["mocks", "dep:sha2", "dep:chrono", "dep:hex"]
-platform_integration_tests = []
+dump = ["mocks", "dep:chrono"]
+# skip tests that require connection to the platform; enabled by default
+offline-testing = []
 
 
 [dependencies]

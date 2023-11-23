@@ -1,4 +1,4 @@
-const PortStateEnum = require('./enums/portState');
+import { PortStateEnum } from './enums/portState.js';
 
 const MAX_REQUEST_TIMEOUT = 5000;
 
@@ -40,7 +40,7 @@ const insightURLs = {
   mainnet: 'https://insight.dash.org/insight-api',
 };
 
-module.exports = {
+export default {
   insight: (chain) => ({
     status: async () => {
       if (!insightURLs[chain]) {

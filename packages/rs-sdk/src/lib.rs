@@ -56,7 +56,9 @@
 //!
 //! To enable logging, you can use the `tracing_subscriber` crate which allows applications to customize how events are processed and recorded.
 //! An example can be found in `tests/common.rs:setup_logs()`.
+//!
 #![warn(missing_docs)]
+#![allow(rustdoc::private_intra_doc_links)]
 
 pub mod core;
 pub mod core_client;
@@ -66,3 +68,6 @@ pub mod platform;
 pub mod sdk;
 pub use error::Error;
 pub use sdk::{Sdk, SdkBuilder};
+
+/// Version of the SDK
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");

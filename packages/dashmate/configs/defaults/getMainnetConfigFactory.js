@@ -1,16 +1,19 @@
-const lodashMerge = require('lodash/merge');
+import lodash from 'lodash';
 
-const {
+import {
   NETWORK_MAINNET,
-} = require('../../src/constants');
-const Config = require('../../src/config/Config');
+} from '../../src/constants.js';
+
+import Config from '../../src/config/Config.js';
+
+const { merge: lodashMerge } = lodash;
 
 /**
  * @param {HomeDir} homeDir
  * @param {getBaseConfig} getBaseConfig
  * @returns {getMainnetConfig}
  */
-function getMainnetConfigFactory(homeDir, getBaseConfig) {
+export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
   /**
    * @typedef {function} getMainnetConfig
    * @returns {Config}
@@ -25,7 +28,7 @@ function getMainnetConfigFactory(homeDir, getBaseConfig) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:19.3.0',
+          image: 'dashpay/dashd:20.0.1',
         },
         indexes: false,
         log: {
@@ -45,5 +48,3 @@ function getMainnetConfigFactory(homeDir, getBaseConfig) {
 
   return getMainnetConfig;
 }
-
-module.exports = getMainnetConfigFactory;

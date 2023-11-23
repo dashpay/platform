@@ -1,7 +1,20 @@
-const fs = require('node:fs');
-const BaseCommand = require('../../oclif/command/BaseCommand');
+import fs from 'fs';
+import { Args } from '@oclif/core';
+import BaseCommand from '../../oclif/command/BaseCommand.js';
 
-class ConfigRemoveCommand extends BaseCommand {
+export default class ConfigRemoveCommand extends BaseCommand {
+  static description = 'Remove config';
+
+  static args = {
+    config: Args.string(
+      {
+        name: 'config',
+        required: true,
+        description: 'config name', // only allow input to be from a discrete set
+      },
+    ),
+  };
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -36,13 +49,3 @@ class ConfigRemoveCommand extends BaseCommand {
     console.log(`${configName} removed`);
   }
 }
-
-ConfigRemoveCommand.description = 'Remove config';
-
-ConfigRemoveCommand.args = [{
-  name: 'config',
-  required: true,
-  description: 'config name',
-}];
-
-module.exports = ConfigRemoveCommand;

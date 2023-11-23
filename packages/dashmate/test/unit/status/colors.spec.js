@@ -1,7 +1,7 @@
-const chalk = require('chalk');
-const colors = require('../../../src/status/colors');
-const ServiceStatusEnum = require('../../../src/status/enums/serviceStatus');
-const DockerStatusEnum = require('../../../src/status/enums/dockerStatus');
+import chalk from 'chalk';
+import colors from '../../../src/status/colors.js';
+import { DockerStatusEnum } from '../../../src/status/enums/dockerStatus.js';
+import { ServiceStatusEnum } from '../../../src/status/enums/serviceStatus.js';
 
 describe('colors.js', () => {
   describe('#portState', () => {
@@ -67,12 +67,14 @@ describe('colors.js', () => {
     it('should color green', async () => {
       expect(colors.blockHeight(1337, 1337)).to.be.equal(chalk.green);
       expect(colors.blockHeight(1337, 1337, 1336)).to.be.equal(chalk.green);
+      expect(colors.blockHeight(1337, 1337, null)).to.be.equal(chalk.green);
     });
 
     it('should color yellow', async () => {
       expect(colors.blockHeight(1336, 1337)).to.be.equal(chalk.yellow);
       expect(colors.blockHeight(1337, 1337, 1338)).to.be.equal(chalk.yellow);
       expect(colors.blockHeight(1337, 1337, 1339)).to.be.equal(chalk.yellow);
+      expect(colors.blockHeight(1336, 1337, null)).to.be.equal(chalk.yellow);
     });
 
     it('should color red', async () => {

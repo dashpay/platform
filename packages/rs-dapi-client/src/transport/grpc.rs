@@ -181,6 +181,38 @@ impl_transport_request_grpc!(
     get_identity_keys
 );
 
+impl_transport_request_grpc!(
+    platform_proto::GetEpochsInfoRequest,
+    platform_proto::GetEpochsInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_epochs_info
+);
+
+impl_transport_request_grpc!(
+    platform_proto::GetProtocolVersionUpgradeStateRequest,
+    platform_proto::GetProtocolVersionUpgradeStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_protocol_version_upgrade_state
+);
+
+impl_transport_request_grpc!(
+    platform_proto::GetProtocolVersionUpgradeVoteStatusRequest,
+    platform_proto::GetProtocolVersionUpgradeVoteStatusResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_protocol_version_upgrade_vote_status
+);
+
+impl_transport_request_grpc!(
+    platform_proto::GetDataContractsRequest,
+    platform_proto::GetDataContractsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_data_contracts
+);
+
 // Link to each core gRPC request what client and method to use:
 
 impl_transport_request_grpc!(

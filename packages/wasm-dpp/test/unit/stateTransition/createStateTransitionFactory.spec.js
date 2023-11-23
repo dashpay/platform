@@ -39,7 +39,8 @@ describe.skip('createStateTransitionFactory', () => {
     dataContract = await getDataContractFixture();
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
     createStateTransition = (st) => dpp.stateTransition.createFromObject(
-      st, { skipValidation: true },
+      st,
+      { skipValidation: true },
     );
   });
 
