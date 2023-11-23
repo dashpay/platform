@@ -69,6 +69,7 @@ where
 
         let mut drive_operations = vec![];
 
+        // TODO(withdrawals): review - build core TXs from documents
         let withdrawal_transactions = self.build_withdrawal_transactions_from_documents(
             &documents,
             &mut drive_operations,
@@ -129,6 +130,8 @@ where
         let withdrawal_transactions: Vec<WithdrawalTransactionIdAndBytes> =
             withdrawal_transactions.values().cloned().collect();
 
+        // TODO(withdrawals): saving Core transactions to the drive to be broadcasted
+        //   when platform block is final
         self.drive.add_enqueue_withdrawal_transaction_operations(
             &withdrawal_transactions,
             &mut drive_operations,

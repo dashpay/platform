@@ -42,6 +42,7 @@ pub enum WithdrawalStatus {
     POOLED = 1,
     BROADCASTED = 2,
     COMPLETE = 3,
+    // TODO(withdrawals): do we need it?
     EXPIRED = 4,
 }
 

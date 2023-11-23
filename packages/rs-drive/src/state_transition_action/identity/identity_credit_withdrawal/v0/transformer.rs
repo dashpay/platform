@@ -16,6 +16,8 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
             &withdrawals_contract::ID,
             &identity_credit_withdrawal.identity_id,
             withdrawal::NAME,
+            // TODO(withdrawals): why? If we withdraw to the same address multiple times,
+            //    we will have the same document_id
             identity_credit_withdrawal.output_script.as_bytes(),
         );
 

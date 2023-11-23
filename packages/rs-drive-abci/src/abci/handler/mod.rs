@@ -467,6 +467,7 @@ where
             )))
                 .into())
         } else {
+            // TODO(withdrawals): why do we need to do that?
             // we only want to sign the hash of the transaction
             let extensions = block_execution_context
                 .withdrawal_transactions()

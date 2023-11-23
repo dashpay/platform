@@ -242,10 +242,12 @@ where
 
         let mut block_execution_context: BlockExecutionContext = block_execution_context.into();
 
+        // TODO(withdrawals): check for TX submission?
         // >>>>>> Withdrawal Status Update <<<<<<<
         // Only update the broadcasted withdrawal statuses if the core chain lock height has
         // changed. If it hasn't changed there should be no way a status could update
 
+        // TODO(withdrawals): executed when Core transactions already broadcasted
         if block_execution_context
             .block_state_info()
             .core_chain_locked_height()
@@ -258,6 +260,8 @@ where
             )?;
         }
 
+        // TODO(withdrawals): executed when Core transactions already constructed from
+        //    platform withdrawal documents
         // This takes withdrawals from the transaction queue
         let unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(
@@ -290,6 +294,9 @@ where
 
         let mut block_execution_context: BlockExecutionContext = block_execution_context;
 
+        // TODO(withdrawals): transforms queued withdrawals into core transactions
+        //    updates queued status to pooled, and saves core transactions to drive
+        //    for further usage
         self.pool_withdrawals_into_transactions_queue(
             &block_execution_context,
             transaction,
