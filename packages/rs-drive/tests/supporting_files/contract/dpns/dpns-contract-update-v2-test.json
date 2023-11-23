@@ -93,6 +93,14 @@
               "contentMediaType": "application/x.dash.dpp.identifier",
               "description": "Identity ID to be used to create alias names for the Identity",
               "$comment": "Must be equal to the document owner"
+            },
+            "testNewObjectProperty": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$",
+              "minLength": 3,
+              "maxLength": 5,
+              "position": 2,
+              "description": "A new property to test serialization/deserialization"
             }
           },
           "$comment": "Constraint with max and min properties ensure that only one identity record is used - either a `dashUniqueIdentityId` or a `dashAliasIdentityId`",

@@ -519,9 +519,9 @@ impl DocumentPropertyType {
                     })
                     .collect::<Result<Vec<(Value, Value)>, ProtocolError>>()?;
                 if values.is_empty() {
-                    Ok((None, finished_buffer))
+                    Ok((None, false))
                 } else {
-                    Ok((Some(Value::Map(values)), finished_buffer))
+                    Ok((Some(Value::Map(values)), false))
                 }
             }
             DocumentPropertyType::Array(_array_field_type) => {
