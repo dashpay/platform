@@ -1,3 +1,9 @@
+### [0.25.16-rc.3](https://github.com/dashpay/platform/compare/v0.25.16-rc.2...v0.25.16-rc.3) (2023-11-23)
+
+### Bug Fixes
+
+* **dashmate:** missing choices enumerator ([#1595](https://github.com/dashpay/platform/issues/1595))
+
 ### [0.25.16-rc.2](https://github.com/dashpay/platform/compare/v0.25.16-rc.1...v0.25.16-rc.2) (2023-11-22)
 
 ### Bug Fixes
