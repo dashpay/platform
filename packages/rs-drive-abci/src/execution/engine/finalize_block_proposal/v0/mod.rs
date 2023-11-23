@@ -202,6 +202,8 @@ where
 
         to_commit_block_info.core_height = block_header.core_chain_locked_height;
 
+        // TODO(withdrawals): withdrawal finalization.
+        //    I assume that core TX broadcast should come before this step.
         // // Finalize withdrawal processing
         // our_withdrawals.finalize(Some(transaction), &self.drive, &to_commit_block_info)?;
 
