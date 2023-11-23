@@ -16,6 +16,7 @@ pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
             "a": {
                 "type": "string",
                 "maxLength": 10,
+                "position": 0
             }
         },
         "additionalProperties": false,
