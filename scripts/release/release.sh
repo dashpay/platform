@@ -43,12 +43,12 @@ then
  fi
 fi
 
-UNCOMMITTED_FILES="$(git status -su)"
-if [ -n "$UNCOMMITTED_FILES" ]
-then
-  echo "commit or stash your changes before running this script"
-  exit 1
-fi
+#UNCOMMITTED_FILES="$(git status -su)"
+#if [ -n "$UNCOMMITTED_FILES" ]
+#then
+#  echo "commit or stash your changes before running this script"
+#  exit 1
+#fi
 
 # ensure github authentication
 if ! gh auth status&> /dev/null; then

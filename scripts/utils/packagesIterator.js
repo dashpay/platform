@@ -19,6 +19,13 @@ module.exports = {
   rust: function *() {
     const rootDir = path.join(__dirname, '..', '..');
 
+    const rootCargoPath = path.join(rootDir, 'Cargo.toml');
+    const rootCargoFileString = readFileSync(rootCargoPath);
+
+    const rootCargoFile = TOML.parse(rootCargoFileString);
+    console.dir(rootCargoFile);
+    process.exit(0);
+
     const packagesDir = path.join(rootDir, 'packages')
 
     const allPackages = readdirSync(packagesDir).filter(e => e !== 'README.md')
