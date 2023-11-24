@@ -54,13 +54,16 @@ where
             .core_rpc
             .get_quorum_listextended(Some(core_block_height))?;
 
+        let validator_set_quorum_type = self.config.validator_set_quorum_type();
+        let chain_lock_quorum_type = self.config.chain_lock_quorum_type();
+
         let validator_quorums_list: BTreeMap<_, _> = extended_quorum_list
             .quorums_by_type
-            .remove(&self.config.quorum_type())
+            .remove(&validator_set_quorum_type)
             .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
                 format!(
                     "expected quorums of type {}, but did not receive any from Dash Core",
-                    self.config.quorum_type
+                    self.config.validator_set_quorum_type
                 ),
             )))?
             .into_iter()
@@ -71,17 +74,6 @@ where
             .validator_sets_mut()
             .retain(|quorum_hash, _| {
                 let has_quorum = validator_quorums_list.contains_key::<QuorumHash>(quorum_hash);
-
-                if has_quorum {
-                    tracing::trace!(
-                        ?quorum_hash,
-                        quorum_type = ?self.config.quorum_type(),
-                        "remove validator set {} with quorum type {}",
-                        quorum_hash,
-                        self.config.quorum_type()
-                    )
-                }
-
                 has_quorum
             });
 
@@ -96,7 +88,7 @@ where
             .map(|(key, _)| {
                 let quorum_info_result =
                     self.core_rpc
-                        .get_quorum_info(self.config.quorum_type(), key, None)?;
+                        .get_quorum_info(self.config.validator_set_quorum_type(), key, None)?;
 
                 Ok((*key, quorum_info_result))
             })
@@ -124,10 +116,10 @@ where
                 tracing::trace!(
                     ?validator_set,
                     ?quorum_hash,
-                    quorum_type = ?self.config.quorum_type(),
+                    quorum_type = ?self.config.validator_set_quorum_type(),
                     "add new validator set {} with quorum type {}",
                     quorum_hash,
-                    self.config.quorum_type()
+                    self.config.validator_set_quorum_type()
                 );
 
                 Ok((quorum_hash, validator_set))
@@ -153,6 +145,35 @@ where
                     primary_comparison
                 }
             });
+
+        if validator_set_quorum_type == chain_lock_quorum_type {
+            // Remove validator_sets entries that are no longer valid for the core block height
+            block_platform_state
+                .chain_lock_validating_quorums_mut()
+                .retain(|quorum_hash, _| {
+                    let has_quorum = validator_quorums_list.contains_key::<QuorumHash>(quorum_hash);
+                    has_quorum
+                });
+        } else {
+            let chain_lock_quorums_list: BTreeMap<_, _> = extended_quorum_list
+                .quorums_by_type
+                .remove(&chain_lock_quorum_type)
+                .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
+                    format!(
+                        "expected quorums of type {}, but did not receive any from Dash Core",
+                        self.config.chain_lock_quorum_type
+                    ),
+                )))?
+                .into_iter()
+                .collect();
+
+            block_platform_state
+                .chain_lock_validating_quorums_mut()
+                .retain(|quorum_hash, _| {
+                    let has_quorum = chain_lock_quorums_list.contains_key::<QuorumHash>(quorum_hash);
+                    has_quorum
+                });
+        }
 
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(

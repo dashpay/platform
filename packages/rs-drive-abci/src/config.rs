@@ -190,7 +190,10 @@ pub struct PlatformConfig {
     pub execution: ExecutionConfig,
 
     /// The default quorum type
-    pub quorum_type: String,
+    pub validator_set_quorum_type: String,
+
+    /// The quorum type used for verifying chain locks
+    pub chain_lock_quorum_type: String,
 
     /// The default quorum size
     pub quorum_size: u16,
@@ -237,15 +240,30 @@ impl PlatformConfig {
     }
 
     /// Return type of quorum
-    pub fn quorum_type(&self) -> QuorumType {
-        let found = if let Ok(t) = self.quorum_type.trim().parse::<u32>() {
+    pub fn validator_set_quorum_type(&self) -> QuorumType {
+        let found = if let Ok(t) = self.validator_set_quorum_type.trim().parse::<u32>() {
             QuorumType::from(t)
         } else {
-            QuorumType::from(self.quorum_type.as_str())
+            QuorumType::from(self.validator_set_quorum_type.as_str())
         };
 
         if found == QuorumType::UNKNOWN {
-            panic!("config: unsupported QUORUM_TYPE: {}", self.quorum_type);
+            panic!("config: unsupported QUORUM_TYPE: {}", self.validator_set_quorum_type);
+        }
+
+        found
+    }
+
+    /// Return type of quorum for validating chain locks
+    pub fn chain_lock_quorum_type(&self) -> QuorumType {
+        let found = if let Ok(t) = self.chain_lock_quorum_type.trim().parse::<u32>() {
+            QuorumType::from(t)
+        } else {
+            QuorumType::from(self.chain_lock_quorum_type.as_str())
+        };
+
+        if found == QuorumType::UNKNOWN {
+            panic!("config: unsupported QUORUM_TYPE: {}", self.chain_lock_quorum_type);
         }
 
         found
@@ -289,7 +307,7 @@ impl Default for ExecutionConfig {
 impl Default for PlatformConfig {
     fn default() -> Self {
         Self {
-            quorum_type: "llmq_100_67".to_string(),
+            validator_set_quorum_type: "llmq_100_67".to_string(),
             quorum_size: 100,
             block_spacing_ms: 5000,
             drive: Default::default(),
@@ -361,7 +379,7 @@ mod tests {
 
         let config = super::PlatformConfig::from_env().expect("expected config from env");
         assert!(config.execution.verify_sum_trees);
-        assert_ne!(config.quorum_type(), QuorumType::UNKNOWN);
+        assert_ne!(config.validator_set_quorum_type(), QuorumType::UNKNOWN);
         for id in vectors {
             matches!(config.abci.log[id.0].destination, LogDestination::Bytes);
         }

@@ -20,6 +20,7 @@ use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
+use dpp::bls_signatures::{PublicKey as ThresholdBlsPublicKey};
 
 /// Platform state
 #[derive(Clone)]
@@ -40,6 +41,9 @@ pub struct PlatformStateV0 {
     /// The validator set quorums are a subset of the quorums, but they also contain the list of
     /// all members
     pub validator_sets: IndexMap<QuorumHash, ValidatorSet>,
+
+    /// The current 400 60 quorums used for validating chain locks
+    pub chain_lock_validating_quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
 
     /// current full masternode list
     pub full_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
@@ -111,6 +115,10 @@ pub(super) struct PlatformStateForSavingV0 {
     #[bincode(with_serde)]
     pub validator_sets: Vec<(Bytes32, ValidatorSet)>,
 
+    /// The 400 60 quorums used for validating chain locks
+    #[bincode(with_serde)]
+    pub chain_lock_validating_quorums: Vec<(Bytes32, ThresholdBlsPublicKey)>,
+
     /// current full masternode list
     pub full_masternode_list: BTreeMap<Bytes32, Masternode>,
 
@@ -137,6 +145,11 @@ impl TryFrom<PlatformStateV0> for PlatformStateForSavingV0 {
                 .map(|quorum_hash| quorum_hash.to_byte_array().into()),
             validator_sets: value
                 .validator_sets
+                .into_iter()
+                .map(|(k, v)| (k.to_byte_array().into(), v))
+                .collect(),
+            chain_lock_validating_quorums: value
+                .chain_lock_validating_quorums
                 .into_iter()
                 .map(|(k, v)| (k.to_byte_array().into(), v))
                 .collect(),
@@ -182,6 +195,11 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
                 .into_iter()
                 .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v))
                 .collect(),
+            chain_lock_validating_quorums: value
+                .chain_lock_validating_quorums
+                .into_iter()
+                .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v))
+                .collect(),
             full_masternode_list: value
                 .full_masternode_list
                 .into_iter()
@@ -209,6 +227,7 @@ impl PlatformStateV0 {
             current_validator_set_quorum_hash: QuorumHash::all_zeros(),
             next_validator_set_quorum_hash: None,
             validator_sets: Default::default(),
+            chain_lock_validating_quorums: Default::default(),
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),
             genesis_block_info: None,
@@ -264,6 +283,9 @@ pub trait PlatformStateV0Methods {
     /// Returns the current validator sets.
     fn validator_sets(&self) -> &IndexMap<QuorumHash, ValidatorSet>;
 
+    /// Returns the current 400 60 quorums used to validate chain locks.
+    fn chain_lock_validating_quorums(&self) -> &BTreeMap<QuorumHash, ThresholdBlsPublicKey>;
+
     /// Returns the full list of masternodes.
     fn full_masternode_list(&self) -> &BTreeMap<ProTxHash, MasternodeListItem>;
 
@@ -294,6 +316,9 @@ pub trait PlatformStateV0Methods {
     /// Sets the current validator sets.
     fn set_validator_sets(&mut self, sets: IndexMap<QuorumHash, ValidatorSet>);
 
+    /// Sets the current chain lock validating quorums.
+    fn set_chain_lock_validating_quorums(&mut self, quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>);
+
     /// Sets the full masternode list.
     fn set_full_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>);
 
@@ -319,6 +344,9 @@ pub trait PlatformStateV0Methods {
 
     /// Returns a mutable reference to the current validator sets.
     fn validator_sets_mut(&mut self) -> &mut IndexMap<QuorumHash, ValidatorSet>;
+
+    /// Returns a mutable reference to the current chain lock validating quorums.
+    fn chain_lock_validating_quorums_mut(&mut self) -> &mut BTreeMap<QuorumHash, ThresholdBlsPublicKey>;
 
     /// Returns a mutable reference to the full masternode list.
     fn full_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem>;
@@ -488,6 +516,11 @@ impl PlatformStateV0Methods for PlatformStateV0 {
         &self.validator_sets
     }
 
+    /// Returns the current 400 60 quorums used to validate chain locks.
+    fn chain_lock_validating_quorums(&self) -> &BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
+        &self.chain_lock_validating_quorums
+    }
+
     /// Returns the full list of masternodes.
     fn full_masternode_list(&self) -> &BTreeMap<ProTxHash, MasternodeListItem> {
         &self.full_masternode_list
@@ -538,6 +571,11 @@ impl PlatformStateV0Methods for PlatformStateV0 {
         self.validator_sets = sets;
     }
 
+    /// Sets the current chain lock validating quorums.
+    fn set_chain_lock_validating_quorums(&mut self, quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>) {
+        self.chain_lock_validating_quorums = quorums;
+    }
+
     /// Sets the full masternode list.
     fn set_full_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>) {
         self.full_masternode_list = list;
@@ -575,6 +613,10 @@ impl PlatformStateV0Methods for PlatformStateV0 {
 
     fn validator_sets_mut(&mut self) -> &mut IndexMap<QuorumHash, ValidatorSet> {
         &mut self.validator_sets
+    }
+
+    fn chain_lock_validating_quorums_mut(&mut self) -> &mut BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
+        &mut self.chain_lock_validating_quorums
     }
 
     fn full_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem> {

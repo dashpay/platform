@@ -820,7 +820,7 @@ pub(crate) fn continue_chain_for_strategy(
             query_strategy.query_chain_for_strategy(
                 &ProofVerification {
                     quorum_hash: &current_quorum_with_test_info.quorum_hash.into(),
-                    quorum_type: config.quorum_type(),
+                    quorum_type: config.validator_set_quorum_type(),
                     app_version,
                     chain_id: drive_abci::mimic::CHAIN_ID.to_string(),
                     core_chain_locked_height: state_id.core_chain_locked_height,

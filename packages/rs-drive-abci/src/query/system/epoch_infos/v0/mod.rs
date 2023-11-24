@@ -25,7 +25,7 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
-        let quorum_type = self.config.quorum_type() as u32;
+        let quorum_type = self.config.validator_set_quorum_type() as u32;
         let GetEpochsInfoRequestV0 {
             start_epoch,
             count,

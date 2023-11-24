@@ -308,7 +308,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         // We need to sign the block
 
-        let quorum_type = self.platform.config.quorum_type();
+        let quorum_type = self.platform.config.validator_set_quorum_type();
         let state_id_hash = state_id
             .sha256(CHAIN_ID, height as i64, round as i32)
             .expect("cannot calculate state id hash");

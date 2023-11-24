@@ -22,7 +22,7 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
-        let quorum_type = self.config.quorum_type() as u32;
+        let quorum_type = self.config.validator_set_quorum_type() as u32;
         let GetDataContractRequestV0 { id, prove } = request;
         let contract_id: Identifier =
             check_validation_result_with_data!(id.try_into().map_err(|_| {

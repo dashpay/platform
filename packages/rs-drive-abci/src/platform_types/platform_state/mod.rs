@@ -27,6 +27,7 @@ use crate::error::execution::ExecutionError;
 use dpp::block::block_info::BlockInfo;
 use dpp::util::hash::hash;
 use std::collections::BTreeMap;
+use dpp::bls_signatures::{PublicKey as ThresholdBlsPublicKey};
 
 /// Platform state
 #[derive(Clone, Debug, From)]
@@ -276,12 +277,6 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn epoch_ref(&self) -> &Epoch {
-        match self {
-            PlatformState::V0(v0) => v0.epoch_ref(),
-        }
-    }
-
     fn hpmn_list_len(&self) -> usize {
         match self {
             PlatformState::V0(v0) => v0.hpmn_list_len(),
@@ -294,15 +289,15 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
-        match self {
-            PlatformState::V0(v0) => v0.current_protocol_version_in_consensus(),
-        }
-    }
-
     fn last_committed_block_info(&self) -> &Option<ExtendedBlockInfo> {
         match self {
             PlatformState::V0(v0) => &v0.last_committed_block_info,
+        }
+    }
+
+    fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
+        match self {
+            PlatformState::V0(v0) => v0.current_protocol_version_in_consensus(),
         }
     }
 
@@ -324,9 +319,21 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
+    fn take_next_validator_set_quorum_hash(&mut self) -> Option<QuorumHash> {
+        match self {
+            PlatformState::V0(v0) => v0.take_next_validator_set_quorum_hash(),
+        }
+    }
+
     fn validator_sets(&self) -> &IndexMap<QuorumHash, ValidatorSet> {
         match self {
             PlatformState::V0(v0) => &v0.validator_sets,
+        }
+    }
+
+    fn chain_lock_validating_quorums(&self) -> &IndexMap<QuorumHash, ThresholdBlsPublicKey> {
+        match self {
+            PlatformState::V0(v0) => &v0.chain_lock_validating_quorums,
         }
     }
 
@@ -345,6 +352,12 @@ impl PlatformStateV0Methods for PlatformState {
     fn genesis_block_info(&self) -> Option<&BlockInfo> {
         match self {
             PlatformState::V0(v0) => v0.genesis_block_info.as_ref(),
+        }
+    }
+
+    fn any_block_info(&self) -> &BlockInfo {
+        match self {
+            PlatformState::V0(v0) => v0.any_block_info(),
         }
     }
 
@@ -381,6 +394,12 @@ impl PlatformStateV0Methods for PlatformState {
     fn set_validator_sets(&mut self, sets: IndexMap<QuorumHash, ValidatorSet>) {
         match self {
             PlatformState::V0(v0) => v0.set_validator_sets(sets),
+        }
+    }
+
+    fn set_chain_lock_validating_quorums(&mut self, quorums: IndexMap<QuorumHash, ThresholdBlsPublicKey>) {
+        match self {
+            PlatformState::V0(v0) => v0.set_chain_lock_validating_quorums(quorums),
         }
     }
 
@@ -438,6 +457,12 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
+    fn chain_lock_validating_quorums_mut(&mut self) -> &mut BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
+        match self {
+            PlatformState::V0(v0) => v0.chain_lock_validating_quorums_mut(),
+        }
+    }
+
     fn full_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem> {
         match self {
             PlatformState::V0(v0) => v0.full_masternode_list_mut(),
@@ -450,21 +475,15 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn take_next_validator_set_quorum_hash(&mut self) -> Option<QuorumHash> {
+    fn epoch_ref(&self) -> &Epoch {
         match self {
-            PlatformState::V0(v0) => v0.take_next_validator_set_quorum_hash(),
+            PlatformState::V0(v0) => v0.epoch_ref(),
         }
     }
 
     fn last_block_id_hash(&self) -> [u8; 32] {
         match self {
             PlatformState::V0(v0) => v0.last_block_id_hash(),
-        }
-    }
-
-    fn any_block_info(&self) -> &BlockInfo {
-        match self {
-            PlatformState::V0(v0) => v0.any_block_info(),
         }
     }
 }
