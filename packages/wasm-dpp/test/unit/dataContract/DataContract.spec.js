@@ -32,10 +32,12 @@ describe('DataContract', () => {
       properties: {
         nice: {
           type: 'boolean',
+          position: 0,
         },
         aBinaryProperty: {
           type: 'array',
           byteArray: true,
+          position: 1,
         },
       },
       additionalProperties: false,
@@ -93,7 +95,10 @@ describe('DataContract', () => {
         anotherDocument: {
           type: 'object',
           properties: {
-            name: { type: 'string' },
+            name: {
+              type: 'string',
+              position: 0,
+            },
           },
           additionalProperties: false,
         },
@@ -110,7 +115,10 @@ describe('DataContract', () => {
         anotherDocument: {
           type: 'object',
           properties: {
-            name: { type: 'string' },
+            name: {
+              type: 'string',
+              position: 0,
+            },
           },
           additionalProperties: false,
         },
@@ -143,6 +151,7 @@ describe('DataContract', () => {
         properties: {
           test: {
             type: 'string',
+            position: 0,
           },
         },
         additionalProperties: false,
@@ -183,6 +192,7 @@ describe('DataContract', () => {
           properties: {
             test: {
               type: 'string',
+              position: 0,
             },
           },
           additionalProperties: false,
@@ -261,7 +271,7 @@ describe('DataContract', () => {
     it('should return DataContract as a Buffer', () => {
       const result = dataContract.toBuffer();
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(211);
+      expect(result).to.have.lengthOf(235);
     });
   });
 

@@ -12,15 +12,36 @@ use crate::mock::{MockRequest, MockResponse};
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+use dpp::platform_value::Identifier;
 use dpp::{document::Document, prelude::Identity};
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::fmt::Debug;
 
-use super::identity::IdentityRequest;
+use super::types::identity::IdentityRequest;
 use super::DocumentQuery;
 
 /// Trait implemented by objects that can be fetched from the platform.
+///
+/// To fetch an object from the platform, you need to define some query (criteria that fetched object must match) and
+/// use [Fetch::fetch()] for your object type.
+///
+/// ## Example
+///
+/// A common use case is to fetch an [Identity] object by its [Identifier]. As [Identifier] implements [Query] for
+/// identity requests, you need to:
+/// * create a [Query], which will be an [Identifier] instance that will be used to identify requested [Identity],
+/// * call [Identity::fetch()] with the query and an instance of [Sdk].
+///
+/// ```rust
+/// use rs_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
+///
+/// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
+/// let mut sdk = Sdk::new_mock();
+/// let query = Identifier::new(SOME_IDENTIFIER);
+///
+/// let identity = Identity::fetch(&mut sdk, query);
+/// ```
 #[async_trait::async_trait]
 pub trait Fetch
 where
@@ -44,7 +65,8 @@ where
 
     /// Fetch single object from the Platfom.
     ///
-    /// An asynchronous method provided by the Fetch trait that fetches data from Dash Platform.
+    /// Fetch object from the platform that satisfies provided [Query].
+    /// Most often, the Query is an [Identifier] of the object to be fetched.
     ///
     /// ## Parameters
     ///
@@ -82,34 +104,45 @@ where
             None => Ok(None),
         }
     }
+
+    /// Fetch single object from the Platfom by identifier.
+    ///
+    /// Conveniance method that allows fetching objects by identifier for types that implement [Query] for [Identifier].
+    ///
+    /// See [`Fetch::fetch()`] for more details.
+    ///
+    /// ## Parameters
+    ///
+    /// - `sdk`: An instance of [Sdk].
+    /// - `id`: An [Identifier] of the object to be fetched.
+    async fn fetch_by_identifier(sdk: &mut Sdk, id: Identifier) -> Result<Option<Self>, Error>
+    where
+        Identifier: Query<<Self as Fetch>::Request>,
+    {
+        Self::fetch(sdk, id).await
+    }
 }
 
-#[async_trait::async_trait]
 impl Fetch for Identity {
     type Request = IdentityRequest;
 }
 
-#[async_trait::async_trait]
 impl Fetch for dpp::prelude::DataContract {
     type Request = platform_proto::GetDataContractRequest;
 }
 
-#[async_trait::async_trait]
 impl Fetch for Document {
     type Request = DocumentQuery;
 }
 
-#[async_trait::async_trait]
 impl Fetch for drive_proof_verifier::types::IdentityBalance {
     type Request = platform_proto::GetIdentityBalanceRequest;
 }
 
-#[async_trait::async_trait]
 impl Fetch for drive_proof_verifier::types::IdentityBalanceAndRevision {
     type Request = platform_proto::GetIdentityBalanceAndRevisionRequest;
 }
 
-#[async_trait::async_trait]
 impl Fetch for ExtendedEpochInfo {
     type Request = platform_proto::GetEpochsInfoRequest;
 }

@@ -14,7 +14,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::{
-    platform::{identity::IdentityRequest, DocumentQuery, Fetch, FetchMany, Query},
+    platform::{types::identity::IdentityRequest, DocumentQuery, Fetch, FetchMany, Query},
     Error,
 };
 
@@ -111,6 +111,10 @@ impl MockDashPlatformSdk {
                     self.load_expectation::<proto::GetDataContractRequest>(filename)
                         .await?
                 }
+                "GetDataContractsRequest" => {
+                    self.load_expectation::<proto::GetDataContractsRequest>(filename)
+                        .await?
+                }
                 "IdentityRequest" => self.load_expectation::<IdentityRequest>(filename).await?,
                 "GetIdentityRequest" => {
                     self.load_expectation::<proto::GetIdentityRequest>(filename)
@@ -128,6 +132,16 @@ impl MockDashPlatformSdk {
                 "GetIdentityKeysRequest" => {
                     self.load_expectation::<proto::GetIdentityKeysRequest>(filename)
                         .await?
+                }
+                "GetProtocolVersionUpgradeStateRequest" => {
+                    self.load_expectation::<proto::GetProtocolVersionUpgradeStateRequest>(filename)
+                        .await?
+                }
+                "GetProtocolVersionUpgradeVoteStatusRequest" => {
+                    self.load_expectation::<proto::GetProtocolVersionUpgradeVoteStatusRequest>(
+                        filename,
+                    )
+                    .await?
                 }
                 _ => {
                     return Err(Error::Config(format!(

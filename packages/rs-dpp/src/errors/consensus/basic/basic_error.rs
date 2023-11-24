@@ -24,7 +24,7 @@ use crate::consensus::basic::document::{
     InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
     MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
     MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
-    MissingDocumentTypeError,
+    MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError,
 };
 use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DuplicatedIdentityPublicKeyBasicError,
@@ -174,6 +174,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidDocumentTypeError(InvalidDocumentTypeError),
+
+    #[error(transparent)]
+    MissingPositionsInDocumentTypePropertiesError(MissingPositionsInDocumentTypePropertiesError),
 
     #[error(transparent)]
     MissingDataContractIdBasicError(MissingDataContractIdBasicError),

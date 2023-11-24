@@ -1,7 +1,6 @@
 use crate::state_transition_action::identity::identity_create::v0::IdentityCreateTransitionActionV0;
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
-use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;

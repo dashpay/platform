@@ -4,7 +4,7 @@ use dpp::prelude::IdentityPublicKey;
 use dpp::{identity::hash::IdentityPublicKeyHashMethodsV0, prelude::Identity};
 
 use drive_proof_verifier::types::{IdentityBalance, IdentityBalanceAndRevision};
-use rs_sdk::platform::identity::PublicKeyHash;
+use rs_sdk::platform::types::identity::PublicKeyHash;
 use rs_sdk::platform::{Fetch, FetchMany};
 
 use crate::common::setup_logs;
