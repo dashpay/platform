@@ -66,7 +66,7 @@ import createDIContainer from '../src/createDIContainer.js';
   if (config.get('dashmate.helper.api.enable')) {
     const createHttpApiServer = container.resolve('createHttpApiServer');
 
-    const httpAPIServer = createHttpApiServer();
+    const httpAPIServer = createHttpApiServer(configName);
 
     const port = config.get('dashmate.helper.api.port');
 
