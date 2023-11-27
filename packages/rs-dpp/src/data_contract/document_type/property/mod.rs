@@ -9,6 +9,7 @@ use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use array::ArrayItemType;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use indexmap::IndexMap;
 use integer_encoding::{VarInt, VarIntReader};
 use platform_value::Value;
 use rand::distributions::{Alphanumeric, Standard};
@@ -38,7 +39,7 @@ pub enum DocumentPropertyType {
     Identifier,
     Boolean,
     Date,
-    Object(BTreeMap<String, DocumentProperty>),
+    Object(IndexMap<String, DocumentProperty>),
     Array(ArrayItemType),
     VariableTypeArray(Vec<ArrayItemType>),
 }
@@ -382,19 +383,19 @@ impl DocumentPropertyType {
         }
     }
 
+    /// Reads an optional value from the buffer
+    /// Returns an optional value, as well as a boolean to indicate if we have finished the buffer
     pub fn read_optionally_from(
         &self,
         buf: &mut BufReader<&[u8]>,
         required: bool,
-    ) -> Result<Option<Value>, ProtocolError> {
+    ) -> Result<(Option<Value>, bool), ProtocolError> {
         if !required {
-            let marker = buf.read_u8().map_err(|_| {
-                ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                    "error reading from serialized document",
-                ))
-            })?;
-            if marker == 0 {
-                return Ok(None);
+            let marker = buf.read_u8().ok();
+            match marker {
+                None => return Ok((None, true)), // we have no more data
+                Some(0) => return Ok((None, false)),
+                _ => {}
             }
         }
         match self {
@@ -405,7 +406,7 @@ impl DocumentPropertyType {
                         "error reading string from serialized document",
                     ))
                 })?;
-                Ok(Some(Value::Text(string)))
+                Ok((Some(Value::Text(string)), false))
             }
             DocumentPropertyType::Date | DocumentPropertyType::Number => {
                 let date = buf.read_f64::<BigEndian>().map_err(|_| {
@@ -413,7 +414,7 @@ impl DocumentPropertyType {
                         "error reading date/number from serialized document",
                     ))
                 })?;
-                Ok(Some(Value::Float(date)))
+                Ok((Some(Value::Float(date)), false))
             }
             DocumentPropertyType::Integer => {
                 let integer = buf.read_i64::<BigEndian>().map_err(|_| {
@@ -421,7 +422,7 @@ impl DocumentPropertyType {
                         "error reading integer from serialized document",
                     ))
                 })?;
-                Ok(Some(Value::I64(integer)))
+                Ok((Some(Value::I64(integer)), false))
             }
             DocumentPropertyType::Boolean => {
                 let value = buf.read_u8().map_err(|_| {
@@ -430,8 +431,8 @@ impl DocumentPropertyType {
                     ))
                 })?;
                 match value {
-                    0 => Ok(Some(Value::Bool(false))),
-                    _ => Ok(Some(Value::Bool(true))),
+                    0 => Ok((Some(Value::Bool(false)), false)),
+                    _ => Ok((Some(Value::Bool(true)), false)),
                 }
             }
             DocumentPropertyType::ByteArray(min, max) => {
@@ -448,16 +449,16 @@ impl DocumentPropertyType {
                         // To save space we use predefined types for most popular blob sizes
                         // so we don't need to store the size of the blob
                         match bytes.len() {
-                            32 => Ok(Some(Value::Bytes32(bytes.try_into().unwrap()))),
-                            20 => Ok(Some(Value::Bytes20(bytes.try_into().unwrap()))),
-                            36 => Ok(Some(Value::Bytes36(bytes.try_into().unwrap()))),
-                            _ => Ok(Some(Value::Bytes(bytes))),
+                            32 => Ok((Some(Value::Bytes32(bytes.try_into().unwrap())), false)),
+                            20 => Ok((Some(Value::Bytes20(bytes.try_into().unwrap())), false)),
+                            36 => Ok((Some(Value::Bytes36(bytes.try_into().unwrap())), false)),
+                            _ => Ok((Some(Value::Bytes(bytes)), false)),
                         }
                     }
                     _ => {
                         let bytes = Self::read_varint_value(buf)?;
 
-                        Ok(Some(Value::Bytes(bytes)))
+                        Ok((Some(Value::Bytes(bytes)), false))
                     }
                 }
             }
@@ -469,27 +470,58 @@ impl DocumentPropertyType {
                     )
                 })?;
                 //dbg!(hex::encode(&id));
-                Ok(Some(Value::Identifier(id)))
+                Ok((Some(Value::Identifier(id)), false))
             }
 
             DocumentPropertyType::Object(inner_fields) => {
+                let object_byte_len: usize = buf.read_varint().map_err(|_| {
+                    ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
+                        "error reading varint of object length",
+                    ))
+                })?;
+                let mut object_bytes = vec![0u8; object_byte_len];
+                buf.read_exact(&mut object_bytes).map_err(|_| {
+                    ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
+                        "error reading object bytes",
+                    ))
+                })?;
+                // Wrap the bytes in a BufReader
+                let mut object_buf_reader = BufReader::new(&object_bytes[..]);
+                let mut finished_buffer = false;
                 let values = inner_fields
                     .iter()
                     .filter_map(|(key, field)| {
+                        if finished_buffer {
+                            return if field.required {
+                                Some(Err(ProtocolError::DataContractError(
+                                    DataContractError::CorruptedSerialization(
+                                        "required field after finished buffer in object",
+                                    ),
+                                )))
+                            } else {
+                                None
+                            };
+                        }
+
                         let read_value = field
                             .property_type
-                            .read_optionally_from(buf, field.required);
+                            .read_optionally_from(&mut object_buf_reader, field.required);
+
                         match read_value {
-                            Ok(read_value) => read_value
-                                .map(|read_value| Ok((Value::Text(key.clone()), read_value))),
+                            Ok(read_value) => {
+                                finished_buffer |= read_value.1;
+                                read_value
+                                    .0
+                                    .map(|read_value| Ok((Value::Text(key.clone()), read_value)))
+                            }
                             Err(e) => Some(Err(e)),
                         }
                     })
                     .collect::<Result<Vec<(Value, Value)>, ProtocolError>>()?;
                 if values.is_empty() {
-                    Ok(None)
+                    Ok((None, false))
                 } else {
-                    Ok(Some(Value::Map(values)))
+                    Ok((Some(Value::Map(values)), false))
                 }
             }
             DocumentPropertyType::Array(_array_field_type) => {
@@ -605,7 +637,9 @@ impl DocumentPropertyType {
                             Ok(())
                         }
                     })?;
-                    Ok(r_vec)
+                    let mut len_prepended_vec = r_vec.len().encode_var_vec();
+                    len_prepended_vec.append(&mut r_vec);
+                    Ok(len_prepended_vec)
                 } else {
                     Err(get_field_type_matching_error())
                 }
@@ -719,7 +753,9 @@ impl DocumentPropertyType {
                         Ok(())
                     }
                 })?;
-                Ok(r_vec)
+                let mut len_prepended_vec = r_vec.len().encode_var_vec();
+                len_prepended_vec.append(&mut r_vec);
+                Ok(len_prepended_vec)
             }
             DocumentPropertyType::Array(array_field_type) => {
                 if let Value::Array(array) = value {

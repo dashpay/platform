@@ -184,7 +184,7 @@ async fn handle_signals(cancel: CancellationToken, logs: Loggers) -> Result<(), 
                 };
             },
           _ = cancel.cancelled() => tracing::trace!("shutting down signal handlers"),
-        };
+        }
     }
 
     Ok(())
@@ -372,9 +372,10 @@ mod test {
         let path = tempdir.join("db");
         fs::create_dir(&path).expect("create db dir");
 
-        let drive = Drive::open(&path, None).expect("open drive");
-
         let platform_version = PlatformVersion::latest();
+
+        let drive = Drive::open(&path, None, platform_version).expect("open drive");
+
         drive
             .create_initial_state_structure(None, platform_version)
             .expect("should create root tree successfully");
@@ -408,14 +409,13 @@ mod test {
         db_opts.create_missing_column_families(false);
         db_opts.create_if_missing(false);
 
-        let db = rocksdb::DB::open_cf(&db_opts, &db_path, vec!["roots", "meta", "aux"]).unwrap();
+        let db = rocksdb::DB::open_cf(&db_opts, db_path, vec!["roots", "meta", "aux"]).unwrap();
 
         let cf_handle = db.cf_handle(cf).unwrap();
         let iter = db.iterator_cf(cf_handle, IteratorMode::Start);
 
         // let iter = db.iterator(IteratorMode::Start);
-        let mut i = 0;
-        for item in iter {
+        for (i, item) in iter.enumerate() {
             let (key, mut value) = item.unwrap();
             // println!("{} = {}", hex::encode(&key), hex::encode(value));
             tracing::trace!(cf, key=?hex::encode(&key), value=hex::encode(&value),"found item in rocksdb");
@@ -427,7 +427,6 @@ mod test {
                 tracing::debug!(cf, key=?hex::encode(&key), value=hex::encode(&value), "corrupt_rocksdb_item: corrupting item");
                 return;
             }
-            i += 1;
         }
         panic!(
             "cannot corrupt db: cannot find {}-th item in rocksdb column family {}",

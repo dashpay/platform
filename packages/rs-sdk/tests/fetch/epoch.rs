@@ -57,12 +57,15 @@ fn assert_epochs(
         )
     });
 
-    let last_epoch = if starting_epoch + limit < current_epoch {
-        starting_epoch + limit - 1
+    // last retrieved epoch
+    let (last_epoch, expected_len) = if starting_epoch + limit <= current_epoch {
+        // we have more epochs than we requested
+        (starting_epoch + limit - 1, limit as usize)
     } else {
-        current_epoch
+        // we have less epochs than we requested
+        (current_epoch, (current_epoch - starting_epoch + 1) as usize)
     };
-    assert_eq!(epochs.len(), (last_epoch - starting_epoch + 1) as usize);
+    assert_eq!(epochs.len(), expected_len);
 
     epochs
         .get(&last_epoch)

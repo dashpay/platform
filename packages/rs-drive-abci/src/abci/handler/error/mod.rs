@@ -8,6 +8,8 @@ use tenderdash_abci::proto::abci::ResponseException;
 
 /// ABCI handlers errors
 #[derive(Debug, thiserror::Error)]
+// Allow dead code, as majority of these errors are reserved for future use
+#[allow(dead_code)]
 pub enum HandlerError {
     /// ABCI Handler error (Cancelled)
     #[error("{0}")]

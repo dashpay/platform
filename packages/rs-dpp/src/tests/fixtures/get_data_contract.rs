@@ -23,7 +23,8 @@ pub fn get_data_contract_fixture(
             "type": "object",
             "properties": {
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "position": 0
                 }
             },
             "required": [
@@ -35,7 +36,8 @@ pub fn get_data_contract_fixture(
             "type": "object",
             "properties": {
                 "lastName": {
-                    "$ref": "#/$defs/lastName"
+                    "$ref": "#/$defs/lastName",
+                    "position": 0
                 }
             },
             "required": [
@@ -111,11 +113,13 @@ pub fn get_data_contract_fixture(
             "properties": {
                 "firstName": {
                     "type": "string",
-                    "maxLength": 63u32
+                    "maxLength": 63u32,
+                    "position": 0
                 },
                 "lastName": {
                     "type": "string",
-                    "maxLength": 63u32
+                    "maxLength": 63u32,
+                    "position": 1
                 }
             },
             "required": [
@@ -130,7 +134,8 @@ pub fn get_data_contract_fixture(
             "type": "object",
             "properties": {
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "position": 0
                 },
             },
             "additionalProperties": false
@@ -161,10 +166,12 @@ pub fn get_data_contract_fixture(
             ],
             "properties": {
                 "firstName": {
-                    "type": "string"
+                    "type": "string",
+                    "position": 0
                 },
                 "lastName": {
-                    "type": "string"
+                    "type": "string",
+                    "position": 1
                 }
             },
             "required": [
@@ -191,13 +198,15 @@ pub fn get_data_contract_fixture(
                     "type": "array",
                     "byteArray": true,
                     "maxItems": 16u32,
+                    "position": 0
                 },
                 "identifierField": {
                     "type": "array",
                     "byteArray": true,
                     "contentMediaType": identifier::MEDIA_TYPE,
                     "minItems": 32u32,
-                    "maxItems": 32u32
+                    "maxItems": 32u32,
+                    "position": 1
                 }
             },
             "required": [
@@ -210,19 +219,23 @@ pub fn get_data_contract_fixture(
             "properties": {
                 "firstName": {
                     "type": "string",
-                    "maxLength": 63u32
+                    "maxLength": 63u32,
+                    "position": 0
                 },
                 "lastName": {
                     "type": "string",
-                    "maxLength": 63u32
+                    "maxLength": 63u32,
+                    "position": 1
                 },
                 "country": {
                     "type": "string",
-                    "maxLength": 63u32
+                    "maxLength": 63u32,
+                    "position": 2
                 },
                 "city": {
                     "type": "string",
-                    "maxLength": 63u32
+                    "maxLength": 63u32,
+                    "position": 3
                 }
             },
             "indices": [

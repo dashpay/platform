@@ -6,9 +6,7 @@ use crate::document::factory::DocumentFactoryWASM;
 use crate::document_facade::DocumentFacadeWasm;
 use dpp::dash_platform_protocol::DashPlatformProtocol;
 use dpp::data_contract::DataContractFacade;
-use dpp::identity::IdentityFacade;
-use dpp::prelude::DataContract;
-use dpp::state_transition::state_transition_factory::StateTransitionFactory;
+
 use dpp::version::LATEST_VERSION;
 
 use crate::entropy_generator::ExternalEntropyGenerator;

@@ -288,16 +288,32 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
         let created_at = read_timestamp(&mut buf, document_type, CREATED_AT)?;
         let updated_at = read_timestamp(&mut buf, document_type, UPDATED_AT)?;
 
+        let mut finished_buffer = false;
+
         let properties = document_type
             .properties()
             .iter()
             .filter_map(|(key, property)| {
+                if finished_buffer {
+                    return if property.required {
+                        Some(Err(ProtocolError::DataContractError(
+                            DataContractError::CorruptedSerialization(
+                                "required field after finished buffer",
+                            ),
+                        )))
+                    } else {
+                        None
+                    };
+                }
                 let read_value = property
                     .property_type
                     .read_optionally_from(&mut buf, property.required);
 
                 match read_value {
-                    Ok(read_value) => read_value.map(|read_value| Ok((key.clone(), read_value))),
+                    Ok(read_value) => {
+                        finished_buffer |= read_value.1;
+                        read_value.0.map(|read_value| Ok((key.clone(), read_value)))
+                    }
                     Err(e) => Some(Err(e)),
                 }
             })

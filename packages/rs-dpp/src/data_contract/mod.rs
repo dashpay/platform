@@ -42,7 +42,6 @@ pub use v0::*;
 use crate::data_contract::serialized_version::{
     DataContractInSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,
 };
-use crate::data_contract::v0::data_contract::DataContractV0;
 use crate::util::hash::hash_double_to_vec;
 
 use crate::version::{FeatureVersion, PlatformVersion};

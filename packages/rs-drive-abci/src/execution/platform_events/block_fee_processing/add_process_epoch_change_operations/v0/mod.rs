@@ -36,7 +36,7 @@
 use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
-use dpp::fee::epoch::{perpetual_storage_epochs, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_ERAS};
+use dpp::fee::epoch::{perpetual_storage_epochs, GENESIS_EPOCH_INDEX};
 use dpp::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;

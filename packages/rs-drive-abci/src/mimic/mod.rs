@@ -76,7 +76,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         proposed_version: ProtocolVersion,
         block_info: BlockInfo,
         round: u32,
-        expect_validation_errors: Vec<u32>,
+        expect_validation_errors: &[u32],
         expect_vote_extension_errors: bool,
         state_transitions: Vec<StateTransition>,
         options: MimicExecuteBlockOptions,
