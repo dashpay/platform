@@ -85,13 +85,11 @@ mod tests {
 
     use dpp::block::block_info::BlockInfo;
     use rand::Rng;
-    use tempfile::TempDir;
 
     use crate::common::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-    use crate::drive::Drive;
     use crate::fee::op::LowLevelDriveOperation;
 
     use dpp::block::epoch::Epoch;
@@ -99,6 +97,7 @@ mod tests {
     use dpp::document::Document;
 
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::document::serialization_traits::DocumentCborMethodsV0;
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
@@ -193,15 +192,11 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_documents() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -290,15 +285,11 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_contact_request_with_fee() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -357,15 +348,11 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_profile_with_fee() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -424,15 +411,11 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_profile_average_case_cost_fee() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -491,15 +474,11 @@ mod tests {
 
     #[test]
     fn test_unknown_state_cost_dashpay_fee_for_add_documents() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -569,15 +548,11 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_fee_for_documents_detail() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -666,15 +641,11 @@ mod tests {
 
     #[test]
     fn test_add_dpns_document_with_fee() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -720,11 +691,11 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 1759
+                storage_fee: 1761
                     * Epoch::new(0)
                         .unwrap()
                         .cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
-                processing_fee: 2068590,
+                processing_fee: 2069390,
                 ..Default::default()
             }
         );
@@ -911,15 +882,11 @@ mod tests {
 
     #[test]
     fn test_create_two_documents_with_the_same_index_in_different_transactions() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let created_contract =
             get_dpns_data_contract_fixture(None, platform_version.protocol_version);

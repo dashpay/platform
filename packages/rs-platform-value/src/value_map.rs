@@ -1,4 +1,5 @@
 use crate::{Error, Value};
+use indexmap::IndexMap;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
@@ -336,6 +337,53 @@ impl Value {
                 Ok((key, value))
             })
             .collect::<Result<BTreeMap<String, &Value>, Error>>()
+    }
+
+    /// Takes a ref to a ValueMap which is a `&Vec<(Value, Value)>`
+    /// Also takes a sort_key
+    /// Returns a IndexMap<String, &Value> as long as each Key is a String
+    /// The index map is in the order sorted by the sort key
+    /// The type T is the type of the value of the sort key
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    pub fn map_ref_into_indexed_string_map<'a, 'b, T>(
+        map: &'a ValueMap,
+        sort_key: &'b str,
+    ) -> Result<IndexMap<String, &'a Value>, Error>
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>
+            + Ord,
+    {
+        // Check if the sort key exists in all values
+        for (_, value) in map.iter() {
+            value.get_integer::<T>(sort_key)?;
+        }
+
+        let mut sorted_map: Vec<_> = map.iter().collect();
+
+        sorted_map.sort_by(|(_, value_1), (_, value_2)| {
+            let pos_1: T = value_1.get_integer(sort_key).expect("expected sort key");
+            let pos_2: T = value_2.get_integer(sort_key).expect("expected sort key");
+            pos_1.cmp(&pos_2)
+        });
+
+        sorted_map
+            .into_iter()
+            .map(|(key, value)| {
+                let key = key
+                    .to_text()
+                    .map_err(|_| Error::StructureError("expected key to be string".to_string()))?;
+                Ok((key, value))
+            })
+            .collect::<Result<IndexMap<String, &Value>, Error>>()
     }
 
     /// Takes a ref to a ValueMap which is a `&Vec<(Value, Value)>`

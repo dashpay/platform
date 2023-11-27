@@ -6,153 +6,203 @@
   "documentSchemas": {
     "nest": {
       "type": "object",
+      "position": 0,
       "properties": {
         "abc0": {
           "type": "object",
+          "position": 0,
           "properties": {
             "abc0": {
               "type": "object",
+              "position": 0,
               "properties": {
                 "abc0": {
                   "type": "object",
+                  "position": 0,
                   "properties": {
                     "abc0": {
                       "type": "object",
+                      "position": 0,
                       "properties": {
                         "abc0": {
                           "type": "object",
+           "position": 0,
                           "properties": {
                             "abc0": {
                               "type": "object",
+           "position": 0,
                               "properties": {
                                 "abc0": {
                                   "type": "object",
+           "position": 0,
                                   "properties": {
                                     "abc0": {
                                       "type": "object",
+           "position": 0,
                                       "properties": {
                                         "abc0": {
                                           "type": "object",
+           "position": 0,
                                           "properties": {
                                             "abc0": {
                                               "type": "object",
+           "position": 0,
                                               "properties": {
                                                 "abc0": {
                                                   "type": "object",
+           "position": 0,
                                                   "properties": {
                                                     "abc0": {
                                                       "type": "object",
+           "position": 0,
                                                       "properties": {
                                                         "abc0": {
                                                           "type": "object",
+           "position": 0,
                                                           "properties": {
                                                             "abc0": {
                                                               "type": "object",
+           "position": 0,
                                                               "properties": {
                                                                 "abc0": {
                                                                   "type": "object",
+           "position": 0,
                                                                   "properties": {
                                                                     "abc0": {
                                                                       "type": "object",
+           "position": 0,
                                                                       "properties": {
                                                                         "abc0": {
                                                                           "type": "object",
+           "position": 0,
                                                                           "properties": {
                                                                             "abc0": {
                                                                               "type": "object",
+           "position": 0,
                                                                               "properties": {
                                                                                 "abc0": {
                                                                                   "type": "object",
+           "position": 0,
                                                                                   "properties": {
                                                                                     "abc0": {
                                                                                       "type": "object",
+           "position": 0,
                                                                                       "properties": {
                                                                                         "abc0": {
                                                                                           "type": "object",
+           "position": 0,
                                                                                           "properties": {
                                                                                             "abc0": {
                                                                                               "type": "object",
+           "position": 0,
                                                                                               "properties": {
                                                                                                 "abc0": {
                                                                                                   "type": "object",
+           "position": 0,
                                                                                                   "properties": {
                                                                                                     "abc0": {
                                                                                                       "type": "object",
+           "position": 0,
                                                                                                       "properties": {
                                                                                                         "abc0": {
                                                                                                           "type": "object",
+           "position": 0,
                                                                                                           "properties": {
                                                                                                             "abc0": {
                                                                                                               "type": "object",
+           "position": 0,
                                                                                                               "properties": {
                                                                                                                 "abc0": {
                                                                                                                   "type": "object",
+           "position": 0,
                                                                                                                   "properties": {
                                                                                                                     "abc0": {
                                                                                                                       "type": "object",
+           "position": 0,
                                                                                                                       "properties": {
                                                                                                                         "abc0": {
                                                                                                                           "type": "object",
+           "position": 0,
                                                                                                                           "properties": {
                                                                                                                             "abc0": {
                                                                                                                               "type": "object",
+           "position": 0,
                                                                                                                               "properties": {
                                                                                                                                 "abc0": {
                                                                                                                                   "type": "object",
+           "position": 0,
                                                                                                                                   "properties": {
                                                                                                                                     "abc0": {
                                                                                                                                       "type": "object",
+           "position": 0,
                                                                                                                                       "properties": {
                                                                                                                                         "abc0": {
                                                                                                                                           "type": "object",
+           "position": 0,
                                                                                                                                           "properties": {
                                                                                                                                             "abc0": {
                                                                                                                                               "type": "object",
+           "position": 0,
                                                                                                                                               "properties": {
                                                                                                                                                 "abc0": {
                                                                                                                                                   "type": "object",
+           "position": 0,
                                                                                                                                                   "properties": {
                                                                                                                                                     "abc0": {
                                                                                                                                                       "type": "object",
+           "position": 0,
                                                                                                                                                       "properties": {
                                                                                                                                                         "abc0": {
                                                                                                                                                           "type": "object",
+           "position": 0,
                                                                                                                                                           "properties": {
                                                                                                                                                             "abc0": {
                                                                                                                                                               "type": "object",
+           "position": 0,
                                                                                                                                                               "properties": {
                                                                                                                                                                 "abc0": {
                                                                                                                                                                   "type": "object",
+           "position": 0,
                                                                                                                                                                   "properties": {
                                                                                                                                                                     "abc0": {
                                                                                                                                                                       "type": "object",
+           "position": 0,
                                                                                                                                                                       "properties": {
                                                                                                                                                                         "abc0": {
                                                                                                                                                                           "type": "object",
+           "position": 0,
                                                                                                                                                                           "properties": {
                                                                                                                                                                             "abc0": {
                                                                                                                                                                               "type": "object",
+           "position": 0,
                                                                                                                                                                               "properties": {
                                                                                                                                                                                 "abc0": {
                                                                                                                                                                                   "type": "object",
+           "position": 0,
                                                                                                                                                                                   "properties": {
                                                                                                                                                                                     "abc0": {
                                                                                                                                                                                       "type": "object",
+           "position": 0,
                                                                                                                                                                                       "properties": {
                                                                                                                                                                                         "abc0": {
                                                                                                                                                                                           "type": "object",
+           "position": 0,
                                                                                                                                                                                           "properties": {
                                                                                                                                                                                             "abc0": {
                                                                                                                                                                                               "type": "object",
+           "position": 0,
                                                                                                                                                                                               "properties": {
                                                                                                                                                                                                 "abc0": {
                                                                                                                                                                                                   "type": "object",
+           "position": 0,
                                                                                                                                                                                                   "properties": {
                                                                                                                                                                                                     "abc0": {
                                                                                                                                                                                                       "type": "object",
+           "position": 0,
                                                                                                                                                                                                       "properties": {
                                                                                                                                                                                                         "abc0": {
                                                                                                                                                                                                           "type": "object",
+           "position": 0,
                                                                                                                                                                                                           "properties": {
                                                                                                                                                                                                             "abc0": {
                                                                                                                                                                                                               "type": "string",

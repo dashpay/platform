@@ -2,17 +2,18 @@ use crate::data_contract::document_type::array::ArrayItemType;
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 
+use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
 impl DocumentTypeV0 {
     pub(super) fn find_identifier_and_binary_paths_v0(
-        properties: &BTreeMap<String, DocumentProperty>,
+        properties: &IndexMap<String, DocumentProperty>,
     ) -> (BTreeSet<String>, BTreeSet<String>) {
         Self::find_identifier_and_binary_paths_inner(properties, "")
     }
 
     fn find_identifier_and_binary_paths_inner(
-        properties: &BTreeMap<String, DocumentProperty>,
+        properties: &IndexMap<String, DocumentProperty>,
         current_path: &str,
     ) -> (BTreeSet<String>, BTreeSet<String>) {
         let mut identifier_paths = BTreeSet::new();

@@ -48,18 +48,6 @@ use std::sync::Arc;
 
 #[cfg(feature = "full")]
 use dpp::data_contract::DataContractFactory;
-use rand::random;
-#[cfg(feature = "full")]
-use rand::seq::SliceRandom;
-#[cfg(feature = "full")]
-use rand::{Rng, SeedableRng};
-#[cfg(feature = "full")]
-use serde::{Deserialize, Serialize};
-#[cfg(feature = "full")]
-use serde_json::json;
-#[cfg(feature = "full")]
-use tempfile::TempDir;
-
 #[cfg(feature = "full")]
 use drive::common;
 #[cfg(feature = "full")]
@@ -81,6 +69,15 @@ use drive::query::DriveQuery;
 #[cfg(feature = "full")]
 #[cfg(test)]
 use drive::tests::helpers::setup::setup_drive;
+use rand::random;
+#[cfg(feature = "full")]
+use rand::seq::SliceRandom;
+#[cfg(feature = "full")]
+use rand::{Rng, SeedableRng};
+#[cfg(feature = "full")]
+use serde::{Deserialize, Serialize};
+#[cfg(feature = "full")]
+use serde_json::json;
 
 #[cfg(feature = "full")]
 use dpp::document::Document;
@@ -995,8 +992,8 @@ fn test_family_basic_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        244, 216, 38, 16, 128, 35, 223, 59, 132, 193, 66, 241, 215, 119, 158, 246, 123, 98, 219,
-        31, 214, 181, 122, 100, 118, 162, 141, 147, 140, 251, 210, 250,
+        89, 169, 192, 133, 222, 85, 217, 165, 166, 122, 195, 124, 55, 108, 16, 158, 1, 80, 226, 24,
+        74, 1, 201, 200, 22, 166, 46, 239, 191, 250, 138, 149,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2307,8 +2304,8 @@ fn test_family_basic_queries() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            151, 210, 23, 182, 64, 67, 229, 210, 70, 215, 41, 21, 66, 93, 61, 178, 45, 235, 176,
-            135, 117, 51, 16, 116, 92, 181, 252, 48, 123, 253, 157, 160,
+            193, 111, 116, 17, 191, 90, 126, 227, 215, 15, 15, 21, 221, 30, 4, 212, 128, 169, 25,
+            12, 86, 63, 246, 220, 225, 182, 234, 142, 99, 33, 154, 220
         ],
     );
 }
@@ -2454,8 +2451,8 @@ fn test_family_starts_at_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        244, 216, 38, 16, 128, 35, 223, 59, 132, 193, 66, 241, 215, 119, 158, 246, 123, 98, 219,
-        31, 214, 181, 122, 100, 118, 162, 141, 147, 140, 251, 210, 250,
+        89, 169, 192, 133, 222, 85, 217, 165, 166, 122, 195, 124, 55, 108, 16, 158, 1, 80, 226, 24,
+        74, 1, 201, 200, 22, 166, 46, 239, 191, 250, 138, 149,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2733,7 +2730,7 @@ fn test_family_sql_query() {
     .expect("should build query");
 
     let sql_string = "select * from person order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2757,7 +2754,7 @@ fn test_family_sql_query() {
     .expect("should build query");
 
     let sql_string = "select * from person where firstName = 'Chris'";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2786,7 +2783,7 @@ fn test_family_sql_query() {
 
     let sql_string =
         "select * from person where firstName < 'Chris' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2815,7 +2812,7 @@ fn test_family_sql_query() {
 
     let sql_string =
         "select * from person where firstName like 'C%' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2844,7 +2841,7 @@ fn test_family_sql_query() {
     .expect("should build query");
 
     let sql_string = "select * from person where firstName > 'Chris' and firstName <= 'Noellyn' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2874,7 +2871,7 @@ fn test_family_sql_query() {
 
     let sql_string =
         "select * from person where firstName in ('a', 'b') order by firstName limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2896,8 +2893,8 @@ fn test_family_with_nulls_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        240, 85, 110, 53, 4, 214, 117, 109, 156, 125, 101, 5, 32, 210, 104, 179, 114, 186, 116,
-        133, 140, 167, 4, 114, 173, 230, 209, 172, 146, 141, 129, 36,
+        100, 192, 55, 56, 28, 89, 114, 51, 246, 239, 246, 155, 157, 46, 242, 255, 61, 30, 111, 226,
+        252, 227, 130, 243, 99, 202, 83, 249, 253, 202, 142, 36,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3018,8 +3015,8 @@ fn test_query_with_cached_contract() {
 
     // Make sure the state is deterministic
     let expected_app_hash = vec![
-        244, 216, 38, 16, 128, 35, 223, 59, 132, 193, 66, 241, 215, 119, 158, 246, 123, 98, 219,
-        31, 214, 181, 122, 100, 118, 162, 141, 147, 140, 251, 210, 250,
+        89, 169, 192, 133, 222, 85, 217, 165, 166, 122, 195, 124, 55, 108, 16, 158, 1, 80, 226, 24,
+        74, 1, 201, 200, 22, 166, 46, 239, 191, 250, 138, 149,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3167,8 +3164,8 @@ fn test_dpns_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        175, 16, 44, 105, 4, 45, 179, 128, 145, 189, 165, 121, 188, 122, 142, 185, 121, 41, 55,
-        197, 78, 237, 254, 126, 5, 75, 30, 254, 79, 85, 208, 136,
+        88, 200, 104, 25, 220, 137, 57, 167, 129, 211, 38, 203, 187, 175, 80, 226, 238, 54, 203,
+        58, 54, 63, 242, 12, 23, 205, 202, 0, 188, 153, 218, 1,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3719,8 +3716,8 @@ fn test_dpns_query_start_at() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        175, 16, 44, 105, 4, 45, 179, 128, 145, 189, 165, 121, 188, 122, 142, 185, 121, 41, 55,
-        197, 78, 237, 254, 126, 5, 75, 30, 254, 79, 85, 208, 136,
+        88, 200, 104, 25, 220, 137, 57, 167, 129, 211, 38, 203, 187, 175, 80, 226, 238, 54, 203,
+        58, 54, 63, 242, 12, 23, 205, 202, 0, 188, 153, 218, 1,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -3813,8 +3810,8 @@ fn test_dpns_query_start_after() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        175, 16, 44, 105, 4, 45, 179, 128, 145, 189, 165, 121, 188, 122, 142, 185, 121, 41, 55,
-        197, 78, 237, 254, 126, 5, 75, 30, 254, 79, 85, 208, 136,
+        88, 200, 104, 25, 220, 137, 57, 167, 129, 211, 38, 203, 187, 175, 80, 226, 238, 54, 203,
+        58, 54, 63, 242, 12, 23, 205, 202, 0, 188, 153, 218, 1,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3907,8 +3904,8 @@ fn test_dpns_query_start_at_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        175, 16, 44, 105, 4, 45, 179, 128, 145, 189, 165, 121, 188, 122, 142, 185, 121, 41, 55,
-        197, 78, 237, 254, 126, 5, 75, 30, 254, 79, 85, 208, 136,
+        88, 200, 104, 25, 220, 137, 57, 167, 129, 211, 38, 203, 187, 175, 80, 226, 238, 54, 203,
+        58, 54, 63, 242, 12, 23, 205, 202, 0, 188, 153, 218, 1,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4001,8 +3998,8 @@ fn test_dpns_query_start_after_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        175, 16, 44, 105, 4, 45, 179, 128, 145, 189, 165, 121, 188, 122, 142, 185, 121, 41, 55,
-        197, 78, 237, 254, 126, 5, 75, 30, 254, 79, 85, 208, 136,
+        88, 200, 104, 25, 220, 137, 57, 167, 129, 211, 38, 203, 187, 175, 80, 226, 238, 54, 203,
+        58, 54, 63, 242, 12, 23, 205, 202, 0, 188, 153, 218, 1,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4193,8 +4190,8 @@ fn test_dpns_query_start_at_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        157, 24, 78, 255, 158, 14, 134, 31, 227, 53, 109, 156, 177, 115, 129, 16, 243, 248, 0, 243,
-        152, 151, 97, 130, 198, 243, 52, 158, 115, 66, 144, 223,
+        196, 88, 107, 126, 145, 188, 9, 93, 124, 49, 144, 228, 194, 46, 199, 188, 22, 167, 13, 218,
+        20, 0, 30, 204, 160, 186, 48, 189, 240, 106, 14, 108,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4394,8 +4391,8 @@ fn test_dpns_query_start_after_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        157, 24, 78, 255, 158, 14, 134, 31, 227, 53, 109, 156, 177, 115, 129, 16, 243, 248, 0, 243,
-        152, 151, 97, 130, 198, 243, 52, 158, 115, 66, 144, 223,
+        196, 88, 107, 126, 145, 188, 9, 93, 124, 49, 144, 228, 194, 46, 199, 188, 22, 167, 13, 218,
+        20, 0, 30, 204, 160, 186, 48, 189, 240, 106, 14, 108,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4599,8 +4596,8 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        157, 24, 78, 255, 158, 14, 134, 31, 227, 53, 109, 156, 177, 115, 129, 16, 243, 248, 0, 243,
-        152, 151, 97, 130, 198, 243, 52, 158, 115, 66, 144, 223,
+        196, 88, 107, 126, 145, 188, 9, 93, 124, 49, 144, 228, 194, 46, 199, 188, 22, 167, 13, 218,
+        20, 0, 30, 204, 160, 186, 48, 189, 240, 106, 14, 108,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -4798,15 +4795,9 @@ fn test_dpns_query_start_after_with_null_id_desc() {
 #[cfg(feature = "full")]
 #[test]
 fn test_query_a_b_c_d_e_contract() {
-    let tmp_dir = TempDir::new().unwrap();
-
-    let drive: Drive = Drive::open(&tmp_dir, None).expect("expected to open Drive successfully");
+    let drive: Drive = setup_drive_with_initial_state_structure();
 
     let platform_version = PlatformVersion::latest();
-
-    drive
-        .create_initial_state_structure(None, platform_version)
-        .expect("expected to create root tree successfully");
 
     // Create a contract
 
@@ -4818,19 +4809,24 @@ fn test_query_a_b_c_d_e_contract() {
         "type": "object",
         "properties": {
           "a": {
-            "type": "integer"
+            "type": "integer",
+            "position": 0
           },
           "b": {
-            "type": "integer"
+            "type": "integer",
+            "position": 1
           },
           "c": {
-            "type": "integer"
+            "type": "integer",
+            "position": 2
           },
           "d": {
-            "type": "integer"
+            "type": "integer",
+            "position": 3
           },
           "e": {
-            "type": "integer"
+            "type": "integer",
+            "position": 4
           }
         },
         "additionalProperties": false,
@@ -4938,10 +4934,12 @@ fn test_query_documents_by_created_at() {
                     "firstName": {
                         "type": "string",
                         "maxLength": 63,
+                        "position": 0
                     },
                     "lastName": {
                         "type": "string",
                         "maxLength": 63,
+                        "position": 1
                     }
                 },
                 "required": ["firstName", "$createdAt", "$updatedAt", "lastName"],

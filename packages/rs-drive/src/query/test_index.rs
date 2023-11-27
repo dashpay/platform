@@ -56,18 +56,22 @@ mod tests {
                 "a": {
                     "type": "string",
                     "maxLength": 10,
+                    "position": 0,
                 },
                 "b": {
                     "type": "string",
                     "maxLength": 10,
+                    "position": 1,
                 },
                 "c": {
                     "type": "string",
                     "maxLength": 10,
+                    "position": 2,
                 },
                 "d": {
                     "type": "string",
                     "maxLength": 10,
+                    "position": 3,
                 }
             },
             "additionalProperties": false,

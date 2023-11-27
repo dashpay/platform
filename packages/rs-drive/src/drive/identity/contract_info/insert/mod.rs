@@ -1,15 +1,6 @@
 mod add_potential_contract_info_for_contract_bounded_key;
 
-use crate::drive::batch::DriveOperation;
-use crate::drive::grove_operations::BatchInsertApplyType::StatefulBatchInsert;
-use crate::drive::grove_operations::BatchInsertTreeApplyType::StatefulBatchInsertTree;
 use crate::drive::identity::contract_info::insert::DataContractApplyInfo::ContractBased;
-use crate::drive::identity::IdentityRootStructure::IdentityContractInfo;
-use crate::drive::identity::{
-    identity_contract_info_group_path_vec, identity_contract_info_root_path_vec,
-    identity_key_location_within_identity_vec, identity_path_vec,
-};
-use crate::drive::object_size_info::{PathKeyElementInfo, PathKeyInfo};
 use crate::drive::Drive;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
@@ -19,13 +10,10 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
 use dpp::identity::contract_bounds::ContractBounds;
-use dpp::identity::{IdentityPublicKey, KeyID, Purpose};
+use dpp::identity::{KeyID, Purpose};
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use integer_encoding::VarInt;
-use std::collections::{BTreeMap, HashMap};
+use grovedb::TransactionArg;
+use std::collections::BTreeMap;
 
 pub enum DataContractApplyInfo {
     /// The root_id is either a contract id or an owner id
@@ -99,7 +87,10 @@ impl DataContractApplyInfo {
                 document_type_keys: Default::default(),
                 contract_keys: vec![(key_id, purpose)],
             }),
-            ContractBounds::SingleContractDocumentType { document_type_name: document_type, .. } => {
+            ContractBounds::SingleContractDocumentType {
+                document_type_name: document_type,
+                ..
+            } => {
                 let document_type = contract
                     .document_type_for_name(document_type)
                     .map_err(Error::Protocol)?;
@@ -111,11 +102,10 @@ impl DataContractApplyInfo {
                     )]),
                     contract_keys: vec![],
                 })
-            }
-            // ContractBounds::MultipleContractsOfSameOwner { .. } => Ok(ContractFamilyBased {
-            //     contracts_owner_id: contract.owner_id(),
-            //     family_keys: vec![key_id],
-            // }),
+            } // ContractBounds::MultipleContractsOfSameOwner { .. } => Ok(ContractFamilyBased {
+              //     contracts_owner_id: contract.owner_id(),
+              //     family_keys: vec![key_id],
+              // }),
         }
     }
 }

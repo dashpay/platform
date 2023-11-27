@@ -185,7 +185,9 @@ mod tests {
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
+    use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use crate::tests::json_document::json_document_to_contract;
+    use platform_value::{Bytes32, Identifier};
     use regex::Regex;
 
     #[test]
@@ -206,7 +208,7 @@ mod tests {
             .expect("expected to get a random document");
 
         let document_string = format!("{}", document);
-        let pattern = r#"v\d+ : id:45ZNwGcxeMpLpYmiVEKKBKXbZfinrhjZLkau1GWizPFX owner_id:2vq574DjKi7ZD8kJ6dMHxT5wu6ZKD2bW5xKAyKAGW7qZ created_at:(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) updated_at:(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) avatarUrl:string y8RD1DbW18RuyblDX7hx\[...\(670\)\] displayName:string SvAQrzsslj0ESc15GQB publicMessage:string ccpKt9ckWftHIEKdBlas\[...\(36\)\] .*"#;
+        let pattern = r#"v\d+ : id:45ZNwGcxeMpLpYmiVEKKBKXbZfinrhjZLkau1GWizPFX owner_id:2vq574DjKi7ZD8kJ6dMHxT5wu6ZKD2bW5xKAyKAGW7qZ created_at:(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) updated_at:(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) avatarUrl:string y8RD1DbW18RuyblDX7hx\[...\(670\)\] displayName:string y94Itl6mn1yBE publicMessage:string SvAQrzsslj0ESc15GQBQ\[...\(105\)\] .*"#;
         let re = Regex::new(pattern).unwrap();
         assert!(
             re.is_match(document_string.as_str()),
@@ -214,5 +216,90 @@ mod tests {
             pattern,
             document_string
         );
+    }
+
+    #[test]
+    fn test_serialization_and_deserialization() {
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/dpns/dpns-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to get contract");
+
+        let document_type = contract
+            .document_type_for_name("domain")
+            .expect("expected to get document type");
+        for _ in 0..20 {
+            let document = document_type
+                .random_document(None, platform_version)
+                .expect("expected a document");
+            let serialized = <Document as DocumentPlatformConversionMethodsV0>::serialize(
+                &document,
+                document_type,
+                platform_version,
+            )
+            .expect("should serialize");
+            let _deserialized = Document::from_bytes(&serialized, document_type, platform_version)
+                .expect("expected to deserialize domain document");
+        }
+    }
+
+    #[test]
+    fn test_serialize_deserialize_over_different_versions_of_document_type() {
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/dpns/dpns-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to get contract");
+
+        let updated_contract = json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/dpns/dpns-contract-update-v2-test.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to get contract");
+
+        let document_type = contract
+            .document_type_for_name("domain")
+            .expect("expected to get document type");
+
+        let updated_document_type = updated_contract
+            .document_type_for_name("domain")
+            .expect("expected to get document type");
+
+        // let's test from a document created in the old version, and we try to deserialize it in the new version
+        for _ in 0..20 {
+            let document = document_type
+                .random_document(None, platform_version)
+                .expect("expected a document");
+            let serialized = <Document as DocumentPlatformConversionMethodsV0>::serialize(
+                &document,
+                document_type,
+                platform_version,
+            )
+            .expect("should serialize");
+            let _deserialized =
+                Document::from_bytes(&serialized, updated_document_type, platform_version)
+                    .expect("expected to deserialize domain document");
+        }
+
+        // let's test from a document created in the new version, and we try to deserialize it with the old version
+        for _ in 0..20 {
+            let document = updated_document_type
+                .random_document(None, platform_version)
+                .expect("expected a document");
+            let serialized = <Document as DocumentPlatformConversionMethodsV0>::serialize(
+                &document,
+                document_type,
+                platform_version,
+            )
+            .expect("should serialize");
+            let _deserialized = Document::from_bytes(&serialized, document_type, platform_version)
+                .expect("expected to deserialize domain document");
+        }
     }
 }

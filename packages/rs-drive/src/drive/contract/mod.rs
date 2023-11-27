@@ -66,10 +66,9 @@ pub const MAX_CONTRACT_HISTORY_FETCH_LIMIT: u16 = 10;
 mod tests {
     use dpp::block::block_info::BlockInfo;
     use rand::prelude::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{random, SeedableRng};
     use std::borrow::Cow;
     use std::option::Option::None;
-    use tempfile::TempDir;
 
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::{
@@ -93,17 +92,12 @@ mod tests {
     use dpp::tests::json_document::json_document_to_contract;
 
     use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec};
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
 
     fn setup_deep_nested_50_contract() -> (Drive, DataContract) {
-        // Todo: make TempDir based on _prefix
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-
+        let drive: Drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
         // let's construct the grovedb structure for the dashpay data contract
@@ -125,14 +119,8 @@ mod tests {
 
     #[allow(dead_code)]
     fn setup_deep_nested_10_contract() -> (Drive, DataContract) {
-        // Todo: make TempDir based on _prefix
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
-
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested10.json";
         // let's construct the grovedb structure for the dashpay data contract
@@ -153,13 +141,8 @@ mod tests {
     }
 
     pub(in crate::drive::contract) fn setup_reference_contract() -> (Drive, DataContract) {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
-
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
@@ -181,13 +164,8 @@ mod tests {
     }
 
     pub(in crate::drive::contract) fn setup_dashpay() -> (Drive, DataContract) {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
-
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("expected to create root tree successfully");
 
         // let's construct the grovedb structure for the dashpay data contract
         let contract = get_dashpay_contract_fixture(None, 1).data_contract_owned();
@@ -207,13 +185,8 @@ mod tests {
 
     pub(in crate::drive::contract) fn setup_dashpay_with_generalized_encryption_contract(
     ) -> (Drive, DataContract) {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
-
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("expected to create root tree successfully");
 
         // let's construct the grovedb structure for the dashpay data contract
         let contract = get_dashpay_contract_with_generalized_encryption_key_fixture(None, 1)
@@ -242,10 +215,12 @@ mod tests {
             "type": "object",
             "properties": {
                 "last_name": {
-                    "type": "number"
+                    "type": "number",
+                    "position": 0
                 },
                 "first_name": {
-                    "type": "integer"
+                    "type": "integer",
+                    "position": 1
                 }
             },
             "additionalProperties": false,
@@ -325,7 +300,7 @@ mod tests {
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let random_owner_id = random::<[u8; 32]>();
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
@@ -469,13 +444,8 @@ mod tests {
 
     #[test]
     fn test_create_reference_contract_without_apply() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
-
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
@@ -496,13 +466,8 @@ mod tests {
 
     #[test]
     fn test_create_reference_contract_with_history_without_apply() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
-
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract_path =
             "tests/supporting_files/contract/references/references_with_contract_history.json";
@@ -524,13 +489,8 @@ mod tests {
 
     #[test]
     fn test_update_reference_contract_without_apply() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
-
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/references/references.json";
 

@@ -18,6 +18,7 @@ use crate::errors::consensus::basic::BasicError;
 
 #[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone)]
 #[platform_serialize(limit = 2000)]
+#[error(transparent)]
 pub enum ConsensusError {
     /*
 

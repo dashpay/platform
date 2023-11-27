@@ -83,7 +83,7 @@ export default class SetupCommand extends BaseCommand {
     testnet - Run a node connected to the Dash test network
     local   - Run a full network environment on your machine for local development\n`,
                   message: 'Select preset',
-                  choices: PRESETS,
+                  choices: Object.values(PRESETS),
                   initial: PRESET_MAINNET,
                 },
               ]);
