@@ -334,7 +334,6 @@ where
 mod tests {
     use super::*;
     use crate::fee::epoch::GENESIS_EPOCH_INDEX;
-
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 

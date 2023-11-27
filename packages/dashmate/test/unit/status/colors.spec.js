@@ -67,12 +67,14 @@ describe('colors.js', () => {
     it('should color green', async () => {
       expect(colors.blockHeight(1337, 1337)).to.be.equal(chalk.green);
       expect(colors.blockHeight(1337, 1337, 1336)).to.be.equal(chalk.green);
+      expect(colors.blockHeight(1337, 1337, null)).to.be.equal(chalk.green);
     });
 
     it('should color yellow', async () => {
       expect(colors.blockHeight(1336, 1337)).to.be.equal(chalk.yellow);
       expect(colors.blockHeight(1337, 1337, 1338)).to.be.equal(chalk.yellow);
       expect(colors.blockHeight(1337, 1337, 1339)).to.be.equal(chalk.yellow);
+      expect(colors.blockHeight(1336, 1337, null)).to.be.equal(chalk.yellow);
     });
 
     it('should color red', async () => {

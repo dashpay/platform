@@ -3,7 +3,7 @@ mod tests {
     use crate::execution::run_chain_for_strategy;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
     use strategy_tests::frequency::Frequency;
 
     use crate::strategy::{FailureStrategy, NetworkStrategy};
@@ -17,12 +17,118 @@ mod tests {
     };
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::platform_value::Value;
-    use dpp::prelude::Identity;
+    use dpp::prelude::{Identifier, Identity};
+    use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::version::PlatformVersion;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use simple_signer::signer::SimpleSigner;
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use tenderdash_abci::proto::types::CoreChainLock;
+
+    #[test]
+    fn run_chain_insert_one_new_identity_and_a_contract_with_bad_update() {
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
+            platform_version,
+        )
+        .expect("expected to get contract from a json document");
+
+        let mut contract_update_1 = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-bad-update-skipped-position.json",
+            false,
+            platform_version,
+        )
+            .expect("expected to get contract from a json document");
+
+        //todo: versions should start at 0 (so this should be 1)
+        contract_update_1.data_contract_mut().set_version(2);
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![(
+                    contract,
+                    Some(BTreeMap::from([(3, contract_update_1)])),
+                )],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: Some(FailureStrategy {
+                deterministic_start_seed: None,
+                dont_finalize_block: false,
+                expect_every_block_errors_with_codes: vec![],
+                rounds_before_successful_block: None,
+                expect_specific_block_errors_with_codes: HashMap::from([(3, vec![1067])]), //missing position (we skipped pos 6)
+            }),
+            query_testing: None,
+            verify_state_transition_results: true,
+        };
+        let config = PlatformConfig {
+            quorum_size: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+
+        outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_contract(
+                outcome
+                    .strategy
+                    .strategy
+                    .contracts_with_updates
+                    .first()
+                    .unwrap()
+                    .0
+                    .data_contract()
+                    .id()
+                    .to_buffer(),
+                None,
+                None,
+                None,
+                platform_version,
+            )
+            .unwrap()
+            .expect("expected to execute the fetch of a contract")
+            .expect("expected to get a contract");
+    }
 
     #[test]
     fn run_chain_block_failure_on_genesis_block_correctly_fixes_itself() {
@@ -50,7 +156,8 @@ mod tests {
             failure_testing: Some(FailureStrategy {
                 deterministic_start_seed: Some(99),
                 dont_finalize_block: true,
-                expect_errors_with_codes: vec![],
+                expect_every_block_errors_with_codes: vec![],
+                expect_specific_block_errors_with_codes: Default::default(),
                 rounds_before_successful_block: None,
             }),
             query_testing: None,
@@ -249,8 +356,9 @@ mod tests {
             failure_testing: Some(FailureStrategy {
                 deterministic_start_seed: None,
                 dont_finalize_block: false,
-                expect_errors_with_codes: vec![4009], //duplicate unique index
+                expect_every_block_errors_with_codes: vec![4009], //duplicate unique index
                 rounds_before_successful_block: None,
+                expect_specific_block_errors_with_codes: Default::default(),
             }),
             query_testing: None,
             verify_state_transition_results: true,

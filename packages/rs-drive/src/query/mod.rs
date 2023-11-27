@@ -1964,6 +1964,7 @@ mod tests {
     use serde_json::Value::Null;
 
     use crate::drive::config::DriveConfig;
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::tests::fixtures::get_data_contract_fixture;
@@ -1973,9 +1974,11 @@ mod tests {
 
     fn setup_family_contract() -> (Drive, DataContract) {
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         let platform_version = PlatformVersion::latest();
+
+        let drive: Drive = Drive::open(tmp_dir, None, platform_version)
+            .expect("expected to open Drive successfully");
 
         drive
             .create_initial_state_structure(None, platform_version)
@@ -2003,13 +2006,9 @@ mod tests {
     }
 
     fn setup_family_birthday_contract() -> (Drive, DataContract) {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract_path =
             "tests/supporting_files/contract/family/family-contract-with-birthday.json";

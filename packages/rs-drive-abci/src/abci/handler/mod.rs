@@ -44,9 +44,9 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
 use dpp::errors::consensus::codes::ErrorWithCode;
+use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
-use tenderdash_abci::proto::abci::{self as proto};
 use tenderdash_abci::proto::abci::{
     ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
@@ -93,17 +93,38 @@ where
             )));
         }
 
+        let state_app_hash = state_guard
+            .last_block_app_hash()
+            .map(|app_hash| app_hash.to_vec())
+            .unwrap_or_default();
+
+        let latest_platform_version = PlatformVersion::latest();
+
         let response = proto::ResponseInfo {
             data: "".to_string(),
-            app_version: 1,
+            app_version: latest_platform_version.protocol_version as u64,
             last_block_height: state_guard.last_block_height() as i64,
             version: env!("CARGO_PKG_VERSION").to_string(),
-
-            last_block_app_hash: state_guard
-                .last_block_app_hash()
-                .map(|app_hash| app_hash.to_vec())
-                .unwrap_or_default(),
+            last_block_app_hash: state_app_hash.clone(),
         };
+
+        tracing::info!(
+            protocol_version = latest_platform_version.protocol_version,
+            software_version = env!("CARGO_PKG_VERSION"),
+            block_version = request.block_version,
+            p2p_version = request.p2p_version,
+            app_hash = hex::encode(state_app_hash),
+            height = state_guard.last_block_height(),
+            "Consensus engine is started from block {}",
+            state_guard.last_block_height(),
+        );
+
+        if tracing::enabled!(tracing::Level::TRACE) {
+            tracing::trace!(
+                platform_state_fingerprint = hex::encode(state_guard.fingerprint()),
+                "platform runtime state",
+            );
+        }
 
         Ok(response)
     }
@@ -224,14 +245,18 @@ where
         // We need to let Tenderdash know about the transactions we should remove from execution
         let mut tx_results = Vec::new();
         let mut tx_records = Vec::new();
+        let mut valid_txs_count = 0;
+        let mut invalid_tx_count = 0;
 
         for (tx, state_transition_execution_result) in state_transition_results {
             let tx_result: ExecTxResult =
                 state_transition_execution_result.try_into_platform_versioned(platform_version)?;
 
             let action = if tx_result.code > 0 {
+                invalid_tx_count += 1;
                 TxAction::Removed
             } else {
+                valid_txs_count += 1;
                 TxAction::Unmodified
             } as i32;
 
@@ -256,6 +281,15 @@ where
             .as_mut()
             .expect("expected that a block execution context was set");
         block_execution_context.set_proposer_results(Some(response.clone()));
+
+        tracing::info!(
+            invalid_tx_count,
+            valid_txs_count,
+            "Prepared proposal with {} transitions for height: {}, round: {}",
+            valid_txs_count,
+            request.height,
+            request.round,
+        );
 
         Ok(response)
     }
@@ -322,7 +356,7 @@ where
                         )))?;
                     };
 
-                    tracing::trace!(
+                    tracing::debug!(
                         method = "process_proposal",
                         "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}",
                         proposal_info,
@@ -398,6 +432,14 @@ where
                 status: proto::response_process_proposal::ProposalStatus::Reject.into(),
                 ..Default::default()
             };
+
+            tracing::info!(
+                errors = ?run_result.errors,
+                "Rejected invalid proposal for height: {}, round: {}",
+                request.height,
+                request.round,
+            );
+
             Ok(response)
         } else {
             let block_execution_outcome::v0::BlockExecutionOutcome {
@@ -410,11 +452,20 @@ where
             let platform_version = PlatformVersion::get(protocol_version)
                 .expect("must be set in run block proposer from existing platform version");
 
+            let mut invalid_tx_count = 0;
+            let mut valid_tx_count = 0;
+
             let tx_results = state_transition_results
                 .into_iter()
                 .map(|(_, execution_result)| {
-                    let tx_result =
+                    let tx_result: ExecTxResult =
                         execution_result.try_into_platform_versioned(platform_version)?;
+
+                    if tx_result.code == 0 {
+                        valid_tx_count += 1;
+                    } else {
+                        invalid_tx_count += 1;
+                    }
 
                     Ok(tx_result)
                 })
@@ -428,6 +479,16 @@ where
                 validator_set_update,
                 ..Default::default()
             };
+
+            tracing::info!(
+                invalid_tx_count,
+                valid_tx_count,
+                "Processed proposal with {} transactions for height: {}, round: {}",
+                valid_tx_count,
+                request.height,
+                request.round,
+            );
+
             Ok(response)
         }
     }

@@ -6,8 +6,9 @@ use std::fmt::Debug;
 use dapi_grpc::platform::v0::{
     self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
     AllKeys, GetEpochsInfoRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest,
-    KeyRequestType,
+    GetProtocolVersionUpgradeVoteStatusRequest, KeyRequestType,
 };
+use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};
 use drive::query::DriveQuery;
 use rs_dapi_client::transport::TransportRequest;
@@ -16,7 +17,8 @@ use crate::{error::Error, platform::document_query::DocumentQuery};
 
 /// Default limit of epoch records returned by the platform.
 pub const DEFAULT_EPOCH_QUERY_LIMIT: u32 = 100;
-
+/// Default limit of epoch records returned by the platform.
+pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
 /// Trait implemented by objects that can be used as queries.
 ///
 /// [Query] trait is used to specify criteria for fetching data from the platform.
@@ -89,7 +91,21 @@ impl Query<proto::GetDataContractRequest> for Identifier {
         let id = self.to_vec();
         Ok(proto::GetDataContractRequest {
             version: Some(proto::get_data_contract_request::Version::V0(
-                proto::get_data_contract_request::GetDataContractRequestV0 { id, prove: true },
+                proto::get_data_contract_request::GetDataContractRequestV0 { id, prove },
+            )),
+        })
+    }
+}
+
+impl Query<proto::GetDataContractsRequest> for Vec<Identifier> {
+    fn query(self, prove: bool) -> Result<proto::GetDataContractsRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        let ids = self.into_iter().map(|id| id.to_vec()).collect();
+        Ok(proto::GetDataContractsRequest {
+            version: Some(proto::get_data_contracts_request::Version::V0(
+                proto::get_data_contracts_request::GetDataContractsRequestV0 { ids, prove },
             )),
         })
     }
@@ -128,9 +144,9 @@ impl<'a> Query<DocumentQuery> for DriveQuery<'a> {
     }
 }
 
-/// Wrapper around query that allows to specify limit and offset.
+/// Wrapper around query that allows to specify limit.
 ///
-/// A query that can be used specify limit and offset when fetching multiple objects from the platform
+/// A query that can be used specify limit when fetching multiple objects from the platform
 /// using [`FetchMany`](crate::platform::FetchMany) trait.
 ///
 /// ## Example
@@ -145,7 +161,6 @@ impl<'a> Query<DocumentQuery> for DriveQuery<'a> {
 /// let query = LimitQuery {
 ///    query: 1,
 ///    limit: Some(10),
-///    offset: Some(5),
 /// };
 /// let epoch = ExtendedEpochInfo::fetch_many(&mut sdk, query);
 /// ```
@@ -155,17 +170,11 @@ pub struct LimitQuery<Q> {
     pub query: Q,
     /// Max number of records returned
     pub limit: Option<u32>,
-    /// Start offset. Will return records starting from this offset
-    /// up to `offset+limit`.
-    pub offset: Option<u32>,
 }
+
 impl<Q> From<Q> for LimitQuery<Q> {
     fn from(query: Q) -> Self {
-        Self {
-            query,
-            limit: None,
-            offset: None,
-        }
+        Self { query, limit: None }
     }
 }
 
@@ -174,11 +183,6 @@ impl Query<GetEpochsInfoRequest> for LimitQuery<EpochIndex> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
-
-        if self.offset.is_some() {
-            unimplemented!("offset is not supported for epoch queries");
-        }
-
         Ok(GetEpochsInfoRequest {
             version: Some(proto::get_epochs_info_request::Version::V0(
                 proto::get_epochs_info_request::GetEpochsInfoRequestV0 {
@@ -205,5 +209,45 @@ impl Query<GetProtocolVersionUpgradeStateRequest> for () {
         }
 
         Ok(proto::get_protocol_version_upgrade_state_request::GetProtocolVersionUpgradeStateRequestV0 {prove}.into())
+    }
+}
+
+impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<Option<ProTxHash>> {
+    fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(proto::get_protocol_version_upgrade_vote_status_request::GetProtocolVersionUpgradeVoteStatusRequestV0 {
+            prove,
+            // start_pro_tx_hash == [] means "start from beginning"
+            start_pro_tx_hash: self.query.map(|v|v.to_byte_array().to_vec()).unwrap_or_default(),
+            count: self.limit.unwrap_or(DEFAULT_NODES_VOTING_LIMIT),
+        }
+        .into())
+    }
+}
+
+impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for Option<ProTxHash> {
+    fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
+        LimitQuery::from(self).query(prove)
+    }
+}
+
+/// Conveniance method that allows direct use of a ProTxHash
+impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for ProTxHash {
+    fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
+        Some(self).query(prove)
+    }
+}
+
+/// Conveniance method that allows direct use of a ProTxHash
+impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<ProTxHash> {
+    fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
+        LimitQuery {
+            query: Some(self.query),
+            limit: self.limit,
+        }
+        .query(prove)
     }
 }

@@ -78,6 +78,20 @@ mod test {
     #[test]
     #[cfg(feature = "data-contract-cbor-conversion")]
     fn deserialize_from_cbor_with_contract_inner() {
+        // Uncomment and run to regenerate
+
+        // let platform_version = PlatformVersion::latest();
+        // let dashpay_contract = json_document_to_contract(
+        //     "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        //     false,
+        //     platform_version,
+        // )
+        //     .expect("expected to get cbor document");
+        //
+        // let cbor = dashpay_contract.to_cbor(platform_version).expect("expected cbor");
+        //
+        // std::fs::write("../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-cbor.bin",cbor);
+
         let cbor_bytes = std::fs::read(
             "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-cbor.bin",
         )

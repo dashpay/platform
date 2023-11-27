@@ -180,7 +180,12 @@ impl<C> Platform<C> {
         C: CoreRPCLike,
     {
         let config = config.unwrap_or_default();
-        let drive = Drive::open(path, Some(config.drive.clone())).map_err(Error::Drive)?;
+
+        // TODO: Replace with version from the disk if present or latest?
+        let platform_version = PlatformVersion::latest();
+
+        let drive = Drive::open(path, Some(config.drive.clone()), platform_version)
+            .map_err(Error::Drive)?;
 
         // TODO: factor out key so we don't duplicate
         let maybe_serialized_platform_state = drive

@@ -267,7 +267,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::setup::setup_drive;
+    use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use dpp::identity::Identity;
 
     use dpp::block::block_info::BlockInfo;
@@ -317,17 +317,14 @@ mod tests {
 
     #[test]
     fn test_insert_identity_v0() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-        let platform_version = &PlatformVersion::first();
+        let drive = setup_drive_with_initial_state_structure();
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::latest();
 
         let identity = Identity::random_identity(5, Some(12345), platform_version)
             .expect("expected a random identity");
-        let db_transaction = drive.grove.start_transaction();
-
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         drive
             .add_new_identity_v0(

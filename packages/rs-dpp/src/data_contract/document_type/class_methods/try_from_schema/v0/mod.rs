@@ -1,7 +1,8 @@
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use indexmap::IndexMap;
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
 use std::convert::TryInto;
 
 use crate::consensus::basic::data_contract::{
@@ -20,6 +21,8 @@ use crate::data_contract::document_type::schema::{
     traversal_validator, validate_max_depth,
 };
 
+use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
+use crate::consensus::basic::BasicError;
 use crate::data_contract::document_type::schema::enrich_with_base_schema;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
@@ -60,6 +63,13 @@ impl DocumentTypeV0 {
             schema_defs.map(|defs| Value::from(defs.clone())),
             platform_version,
         )?;
+
+        #[cfg(not(feature = "validation"))]
+        if validate {
+            ProtocolError::CorruptedCodeExecution(
+                "validation is not enabled but is being called on try_from_schema_v0".to_string(),
+            );
+        }
 
         #[cfg(feature = "validation")]
         let json_schema_validator = StatelessJsonSchemaLazyValidator::new();
@@ -130,13 +140,35 @@ impl DocumentTypeV0 {
                 .unwrap_or(default_mutability);
 
         // Extract the properties
-        let property_values =
-            Value::inner_optional_btree_map(schema_map, property_names::PROPERTIES)?
-                .unwrap_or_default();
+        let property_values = Value::inner_optional_index_map::<u64>(
+            schema_map,
+            property_names::PROPERTIES,
+            property_names::POSITION,
+        )?
+        .unwrap_or_default();
+
+        #[cfg(feature = "validation")]
+        if validate {
+            // We should validate that the positions are continuous
+            for (pos, value) in property_values.values().enumerate() {
+                if value.get_integer::<u32>(property_names::POSITION)? != pos as u32 {
+                    return Err(ConsensusError::BasicError(
+                        BasicError::MissingPositionsInDocumentTypePropertiesError(
+                            MissingPositionsInDocumentTypePropertiesError::new(
+                                pos as u32,
+                                data_contract_id,
+                                name.to_string(),
+                            ),
+                        ),
+                    )
+                    .into());
+                }
+            }
+        }
 
         // Prepare internal data for efficient querying
-        let mut flattened_document_properties: BTreeMap<String, DocumentProperty> = BTreeMap::new();
-        let mut document_properties: BTreeMap<String, DocumentProperty> = BTreeMap::new();
+        let mut flattened_document_properties: IndexMap<String, DocumentProperty> = IndexMap::new();
+        let mut document_properties: IndexMap<String, DocumentProperty> = IndexMap::new();
 
         let required_fields = Value::inner_recursive_optional_array_of_strings(
             schema_map,
@@ -367,7 +399,7 @@ impl DocumentTypeV0 {
 }
 
 fn insert_values(
-    document_properties: &mut BTreeMap<String, DocumentProperty>,
+    document_properties: &mut IndexMap<String, DocumentProperty>,
     known_required: &BTreeSet<String>,
     prefix: Option<String>,
     property_key: String,
@@ -503,7 +535,7 @@ fn insert_values(
     Ok(())
 }
 fn insert_values_nested(
-    document_properties: &mut BTreeMap<String, DocumentProperty>,
+    document_properties: &mut IndexMap<String, DocumentProperty>,
     known_required: &BTreeSet<String>,
     property_key: String,
     property_value: &Value,
@@ -568,7 +600,7 @@ fn insert_values_nested(
             }
         }
         "object" => {
-            let mut nested_properties = BTreeMap::new();
+            let mut nested_properties = IndexMap::new();
             if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES) {
                 let properties =
                     properties_as_value
@@ -576,6 +608,18 @@ fn insert_values_nested(
                         .ok_or(ProtocolError::StructureError(
                             StructureError::ValueWrongType("properties must be a map"),
                         ))?;
+
+                let mut sorted_properties: Vec<_> = properties.iter().collect();
+
+                sorted_properties.sort_by(|(_, value_1), (_, value_2)| {
+                    let pos_1: u64 = value_1
+                        .get_integer(property_names::POSITION)
+                        .expect("expected a position");
+                    let pos_2: u64 = value_2
+                        .get_integer(property_names::POSITION)
+                        .expect("expected a position");
+                    pos_1.cmp(&pos_2)
+                });
 
                 // Create a new set with the prefix removed from the keys
                 let stripped_required: BTreeSet<String> = known_required

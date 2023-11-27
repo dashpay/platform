@@ -32,6 +32,8 @@ pub struct DriveCache {
 #[derive(Default)]
 pub struct ProtocolVersionsCache {
     /// The current global cache for protocol versions
+    // TODO: If we persist this in the state and it should be loaded for correct
+    //  use then it's not actually the cache. Move out of cache because it's confusing
     pub global_cache: IntMap<ProtocolVersion, u64>,
     block_cache: IntMap<ProtocolVersion, u64>,
     loaded: bool,

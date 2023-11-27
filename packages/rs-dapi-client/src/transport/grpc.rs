@@ -197,6 +197,22 @@ impl_transport_request_grpc!(
     get_protocol_version_upgrade_state
 );
 
+impl_transport_request_grpc!(
+    platform_proto::GetProtocolVersionUpgradeVoteStatusRequest,
+    platform_proto::GetProtocolVersionUpgradeVoteStatusResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_protocol_version_upgrade_vote_status
+);
+
+impl_transport_request_grpc!(
+    platform_proto::GetDataContractsRequest,
+    platform_proto::GetDataContractsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_data_contracts
+);
+
 // Link to each core gRPC request what client and method to use:
 /*
 TODO: Implement serde on Core gRPC requests and responses

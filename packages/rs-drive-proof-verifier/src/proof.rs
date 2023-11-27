@@ -1,14 +1,19 @@
+use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 
 use crate::{types::*, Error, QuorumInfoProvider};
+use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
+    self, GetProtocolVersionUpgradeVoteStatusRequestV0,
+};
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
 use dapi_grpc::platform::v0::{
     get_data_contract_history_request, get_data_contract_request, get_data_contracts_request,
     get_epochs_info_request, get_identity_balance_and_revision_request,
     get_identity_balance_request, get_identity_by_public_key_hash_request,
     get_identity_keys_request, get_identity_request, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeVoteStatusResponse,
 };
 use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
@@ -16,6 +21,8 @@ use dapi_grpc::platform::{
 };
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::ProTxHash;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::{DataContract, Identifier, Identity};
 use dpp::version::PlatformVersion;
@@ -145,7 +152,7 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(&proof, &mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_identity)
     }
@@ -195,7 +202,7 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(&proof, &mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_identity)
     }
@@ -304,7 +311,7 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
             None
         };
 
-        verify_tenderdash_proof(&proof, &mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_keys)
     }
@@ -345,7 +352,6 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
                                         error: format!("missing requested key type: {}", *kind),
                                     }),
                                 };
-
                                 match kt  {
                                     Err(e) => Err(e),
                                     Ok(d) => Ok((*level as u8, d))
@@ -407,7 +413,7 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(&proof, &mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_identity)
     }
@@ -454,7 +460,7 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
                 error: e.to_string(),
             })?;
 
-        verify_tenderdash_proof(&proof, &mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_identity)
     }
@@ -503,7 +509,7 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(&proof, &mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_contract)
     }
@@ -557,13 +563,26 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(&proof, &mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        let maybe_contracts = if contracts.count_some() > 0 {
-            Some(contracts)
-        } else {
-            None
-        };
+        let maybe_contracts: Option<BTreeMap<Identifier, Option<DataContract>>> =
+            if !contracts.is_empty() {
+                let contracts: DataContracts = contracts
+                    .into_iter()
+                    .try_fold(DataContracts::new(), |mut acc, (k, v)| {
+                        Identifier::from_bytes(&k).map(|id| {
+                            acc.insert(id, v);
+                            acc
+                        })
+                    })
+                    .map_err(|e| Error::ResultEncodingError {
+                        error: e.to_string(),
+                    })?;
+
+                Some(contracts)
+            } else {
+                None
+            };
 
         Ok(maybe_contracts)
     }
@@ -616,7 +635,7 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(&proof, &mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_history)
     }
@@ -760,6 +779,76 @@ impl FromProof<GetProtocolVersionUpgradeStateRequest> for ProtocolVersionUpgrade
     }
 }
 
+impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtocolVotes {
+    type Request = GetProtocolVersionUpgradeVoteStatusRequest;
+    type Response = GetProtocolVersionUpgradeVoteStatusResponse;
+
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn QuorumInfoProvider,
+    ) -> Result<Option<Self>, Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request = request.into();
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let request_v0: GetProtocolVersionUpgradeVoteStatusRequestV0 = match request.version {
+            Some(get_protocol_version_upgrade_vote_status_request::Version::V0(v0)) => v0,
+            None => return Err(Error::EmptyVersion),
+        };
+
+        let start_pro_tx_hash: Option<[u8; 32]> =
+            if request_v0.start_pro_tx_hash.is_empty() {
+                None
+            } else {
+                Some(request_v0.start_pro_tx_hash[..].try_into().map_err(
+                    |e: TryFromSliceError| Error::RequestDecodeError {
+                        error: e.to_string(),
+                    },
+                )?)
+            };
+
+        let (root_hash, objects) = Drive::verify_upgrade_vote_status(
+            &proof.grovedb_proof,
+            start_pro_tx_hash,
+            try_u32_to_u16(request_v0.count)?,
+            platform_version,
+        )?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        if objects.is_empty() {
+            return Ok(None);
+        }
+        let votes: MasternodeProtocolVotes = objects
+            .into_iter()
+            .map(|(key, value)| {
+                ProTxHash::from_slice(&key)
+                    .map(|protxhash| {
+                        (
+                            protxhash,
+                            Some(MasternodeProtocolVote {
+                                pro_tx_hash: protxhash,
+                                voted_version: value,
+                            }),
+                        )
+                    })
+                    .map_err(|e| Error::ResultEncodingError {
+                        error: e.to_string(),
+                    })
+            })
+            .collect::<Result<MasternodeProtocolVotes, Error>>()?;
+
+        Ok(Some(votes))
+    }
+}
+
 // #[cfg_attr(feature = "mocks", mockall::automock)]
 impl<'dq, Q> FromProof<Q> for Documents
 where
@@ -805,7 +894,7 @@ where
             .map(|d| (d.id(), Some(d)))
             .collect::<Documents>();
 
-        verify_tenderdash_proof(&proof, &mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         if documents.is_empty() {
             Ok(None)

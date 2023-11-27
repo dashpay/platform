@@ -87,6 +87,7 @@ mod tests {
 
     use crate::drive::document::tests::setup_dashpay;
     use crate::query::DriveQuery;
+    use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -527,13 +528,9 @@ mod tests {
 
     #[test]
     fn test_create_update_and_delete_document() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-        let _db_transaction = drive.grove.start_transaction();
+        let drive = setup_drive_with_initial_state_structure();
+
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("should create root tree");
 
         let contract = platform_value!({
             "$format_version": "0",
@@ -556,10 +553,12 @@ mod tests {
                         "firstName": {
                             "type": "string",
                             "maxLength": 63,
+                            "position": 0,
                         },
                         "lastName": {
                             "type": "string",
                             "maxLength": 63,
+                            "position": 1,
                         }
                     },
                     "required": ["firstName", "$createdAt", "$updatedAt", "lastName"],
@@ -685,15 +684,11 @@ mod tests {
 
     #[test]
     fn test_modify_dashpay_contact_request() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -775,15 +770,11 @@ mod tests {
 
     #[test]
     fn test_update_dashpay_profile_with_history() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -857,11 +848,10 @@ mod tests {
             default_genesis_time: Some(0),
             ..Default::default()
         };
-        let tmp_dir = TempDir::new().unwrap();
+
         let platform_version = PlatformVersion::latest();
 
-        let drive: Drive =
-            Drive::open(&tmp_dir, Some(config)).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive(Some(config));
 
         let transaction = if using_transaction {
             Some(drive.grove.start_transaction())
@@ -1149,12 +1139,10 @@ mod tests {
             default_genesis_time: Some(0),
             ..Default::default()
         };
-        let tmp_dir = TempDir::new().unwrap();
 
         let platform_version = PlatformVersion::latest();
 
-        let drive: Drive =
-            Drive::open(&tmp_dir, Some(config)).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive(Some(config));
 
         let transaction = if using_transaction {
             Some(drive.grove.start_transaction())
@@ -1345,12 +1333,10 @@ mod tests {
             default_genesis_time: Some(0),
             ..Default::default()
         };
-        let tmp_dir = TempDir::new().unwrap();
 
         let platform_version = PlatformVersion::latest();
 
-        let drive: Drive =
-            Drive::open(&tmp_dir, Some(config)).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive(Some(config));
 
         let transaction = if using_transaction {
             Some(drive.grove.start_transaction())
@@ -1678,12 +1664,10 @@ mod tests {
             default_genesis_time: Some(0),
             ..Default::default()
         };
-        let tmp_dir = TempDir::new().unwrap();
 
         let platform_version = PlatformVersion::latest();
 
-        let drive: Drive =
-            Drive::open(&tmp_dir, Some(config)).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive(Some(config));
 
         let transaction = if using_transaction {
             Some(drive.grove.start_transaction())
@@ -1824,15 +1808,9 @@ mod tests {
 
     #[test]
     fn test_update_document_without_apply_should_calculate_storage_fees() {
-        let tmp_dir = TempDir::new().unwrap();
-
-        let drive: Drive =
-            Drive::open(&tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("expected to create root tree successfully");
 
         // Create a contract
 
@@ -1844,7 +1822,8 @@ mod tests {
                 "type": "object",
                 "properties": {
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "position": 0,
                     }
                 },
                 "required": [

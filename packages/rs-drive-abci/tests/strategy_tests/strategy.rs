@@ -139,7 +139,8 @@ pub enum StrategyMode {
 pub struct FailureStrategy {
     pub deterministic_start_seed: Option<u64>,
     pub dont_finalize_block: bool,
-    pub expect_errors_with_codes: Vec<u32>,
+    pub expect_every_block_errors_with_codes: Vec<u32>,
+    pub expect_specific_block_errors_with_codes: HashMap<u64, Vec<u32>>,
     // 1 here would be round 1 is successful
     pub rounds_before_successful_block: Option<u32>,
 }

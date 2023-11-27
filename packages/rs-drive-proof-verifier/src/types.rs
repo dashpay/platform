@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 use dpp::{
     block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
+    dashcore::ProTxHash,
     document::Document,
     identity::KeyID,
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
@@ -39,7 +40,7 @@ pub type DataContractHistory = BTreeMap<u64, DataContract>;
 ///
 /// Mapping between data contract IDs and data contracts.
 /// If data contract is not found, it is represented as `None`.
-pub type DataContracts = RetrievedObjects<[u8; 32], DataContract>;
+pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
 
 /// Identity balance.
 pub type IdentityBalance = u64;
@@ -73,3 +74,19 @@ pub type ProtocolVersionVoteCount = u64;
 /// * [`ProtocolVersion`] - key determining protocol version
 /// * [`ProtocolVersionVoteCount`] - value, number of votes for the protocol version upgrade
 pub type ProtocolVersionUpgrades = RetrievedObjects<ProtocolVersion, ProtocolVersionVoteCount>;
+
+/// Vote of a masternode for a protocol version.
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug)]
+pub struct MasternodeProtocolVote {
+    /// ProTxHash of the masternode
+    pub pro_tx_hash: ProTxHash,
+    /// Version for which this masternode voted
+    pub voted_version: ProtocolVersion,
+}
+
+/// Information about protocol version voted by each node.
+///
+/// Information about protocol version voted by each node, returned by [ProtocolVersion::fetch_many()].
+/// Indexed by [ProTxHash] of nodes.
+pub type MasternodeProtocolVotes = RetrievedObjects<ProTxHash, MasternodeProtocolVote>;

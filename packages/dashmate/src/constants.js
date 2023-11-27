@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs';
-import * as url from 'url';
+import url from 'url';
 
 export const NETWORK_LOCAL = 'local';
 export const NETWORK_DEVNET = 'devnet';
