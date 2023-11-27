@@ -6,6 +6,7 @@ pub mod put_identity;
 mod txid;
 pub mod top_up_identity;
 pub mod withdraw_from_identity;
+pub mod put_document;
 
 pub use context::*;
 

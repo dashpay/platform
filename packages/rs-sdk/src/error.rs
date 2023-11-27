@@ -20,6 +20,9 @@ pub enum Error {
     /// Proof verification error
     #[error("Proof verification error: {0}")]
     Proof(#[from] drive_proof_verifier::Error),
+    /// Invalid Proved Response error
+    #[error("Invalid Proved Response error: {0}")]
+    InvalidProvedResponse(String),
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
     DapiClientError(String),

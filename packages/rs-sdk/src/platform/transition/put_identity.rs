@@ -14,7 +14,9 @@ use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
 
 #[async_trait::async_trait]
+/// A trait for putting an identity to platform
 pub trait PutIdentity<S: Signer> {
+    /// Puts an identity on platform
     async fn put_to_platform(
         &self,
         sdk: &Sdk,
@@ -22,7 +24,7 @@ pub trait PutIdentity<S: Signer> {
         asset_lock_proof_private_key: &PrivateKey,
         signer: &S,
     ) -> Result<(), Error>;
-
+    /// Puts an identity on platform and waits for the confirmation proof
     async fn put_to_platform_and_wait_for_response(
         &self,
         sdk: &Sdk,
