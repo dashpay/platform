@@ -7,13 +7,11 @@ use crate::platform_types::state_transition_execution_result::StateTransitionExe
 #[cfg(test)]
 use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult::ConsensusExecutionError;
 use crate::rpc::core::CoreRPCLike;
-use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
-use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
-use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
+
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
@@ -31,7 +29,7 @@ where
     pub(in crate::execution) fn execute_tx(
         &self,
         raw_tx: Vec<u8>,
-        block_info: &BlockInfo,
+        block_info: &dpp::block::block_info::BlockInfo,
         transaction: &Transaction,
     ) -> Result<StateTransitionExecutionResult, Error> {
         let state_transition =
@@ -326,7 +324,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let mut platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();

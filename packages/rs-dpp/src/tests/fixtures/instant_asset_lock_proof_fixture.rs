@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use dashcore::bls_sig_utils::BLSSignature;
 use dashcore::hash_types::CycleHash;
-use dashcore::hashes::Hash;
+
 use dashcore::secp256k1::rand::thread_rng;
 use dashcore::secp256k1::Secp256k1;
 use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
