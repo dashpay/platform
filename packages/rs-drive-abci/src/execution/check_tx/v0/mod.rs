@@ -596,10 +596,9 @@ mod tests {
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(
-                identity.clone(),
+                &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
-                &NativeBlsModule,
                 platform_version,
                 None,
             )
@@ -729,10 +728,9 @@ mod tests {
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(
-                identity.clone(),
+                &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
-                &NativeBlsModule,
                 platform_version,
                 None,
             )
@@ -840,10 +838,9 @@ mod tests {
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(
-                identity.clone(),
+                &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
-                &NativeBlsModule,
                 platform_version,
                 None,
             )
@@ -960,10 +957,9 @@ mod tests {
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(
-                identity.clone(),
+                &identity,
                 asset_lock_proof_top_up.clone(),
                 pk.as_slice(),
-                &NativeBlsModule,
                 platform_version,
                 None,
             )

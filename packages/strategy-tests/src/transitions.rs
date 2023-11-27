@@ -232,10 +232,9 @@ pub fn create_identity_top_up_transition(
         instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
 
     IdentityTopUpTransition::try_from_identity(
-        identity.clone(),
+        identity,
         asset_lock_proof,
         secret_key.as_ref(),
-        &NativeBlsModule,
         platform_version,
         None,
     )

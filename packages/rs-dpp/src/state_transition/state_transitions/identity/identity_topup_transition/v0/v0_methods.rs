@@ -1,14 +1,15 @@
+use dashcore::signer;
 use crate::{prelude::Identifier, BlsModule, ProtocolError};
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::Identity;
-use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::AssetLockProof;
 
 use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use crate::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 
 use platform_version::version::PlatformVersion;
+use crate::serialization::Signable;
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::StateTransition;
@@ -17,10 +18,9 @@ use crate::version::FeatureVersion;
 impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity(
-        identity: Identity,
+        identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
-        bls: &impl BlsModule,
         _platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
@@ -32,7 +32,10 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
 
         let mut state_transition: StateTransition = identity_top_up_transition.into();
 
-        state_transition.sign_by_private_key(asset_lock_proof_private_key, ECDSA_HASH160, bls)?;
+        let data = state_transition.signable_bytes()?;
+
+        let signature = signer::sign(&data, asset_lock_proof_private_key)?;
+        state_transition.set_signature(signature.to_vec().into());
 
         Ok(state_transition)
     }

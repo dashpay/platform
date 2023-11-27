@@ -643,7 +643,7 @@ impl<'a> DriveQuery<'a> {
     pub fn from_sql_expr(
         sql_string: &str,
         contract: &'a DataContract,
-        config: &DriveConfig,
+        config: Option<&DriveConfig>,
     ) -> Result<Self, Error> {
         let dialect: GenericDialect = sqlparser::dialect::GenericDialect {};
         let statements: Vec<Statement> = Parser::parse_sql(&dialect, sql_string)
@@ -665,20 +665,34 @@ impl<'a> DriveQuery<'a> {
             "Issue parsing sql",
         )))?;
 
+        let max_limit = config.map(|config| config.max_query_limit).unwrap_or(DriveConfig::default().max_query_limit);
+
         let limit: u16 = if let Some(limit_expr) = &query.limit {
             match limit_expr {
                 ast::Expr::Value(Number(num_string, _)) => {
                     let cast_num_string: &String = num_string;
-                    cast_num_string.parse::<u16>().ok()
+                    let user_limit = cast_num_string.parse::<u16>().map_err(|e| Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                        "limit could not be parsed {}",
+                        e
+                    ))))?;
+                    if user_limit > max_limit {
+                        return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                            "limit {} greater than max limit {}",
+                            user_limit,
+                            max_limit
+                        ))))
+                    }
+                    user_limit
                 }
-                _ => None,
+                result => {
+                    return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                        "expression not a limit {}",
+                        result
+                    ))));
+                }
             }
-            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                "limit greater than max limit {}",
-                config.max_query_limit
-            ))))?
         } else {
-            config.default_query_limit
+            config.map(|config| config.default_query_limit).unwrap_or(DriveConfig::default().default_query_limit)
         };
 
         let order_by: IndexMap<String, OrderClause> = query

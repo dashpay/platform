@@ -7,6 +7,8 @@ use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::PrivateKey;
 use dpp::identity::signer::Signer;
 use dpp::prelude::{AssetLockProof, Identity};
+use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
