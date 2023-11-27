@@ -1,5 +1,9 @@
 //! Platform wallet using [SimpleSigner].
-use dpp::identity::signer::Signer;
+use dpp::{
+    identity::{signer::Signer, IdentityPublicKey},
+    platform_value::BinaryData,
+    ProtocolError,
+};
 use simple_signer::signer::SimpleSigner;
 
 use crate::wallet::PlatformWallet;
@@ -31,8 +35,14 @@ impl From<SimpleSigner> for PlatformSignerWallet {
     }
 }
 
-impl PlatformWallet for PlatformSignerWallet {
-    fn signer(&self) -> &dyn Signer {
-        &self.signer
+impl Signer for PlatformSignerWallet {
+    fn sign(
+        &self,
+        pubkey: &IdentityPublicKey,
+        message: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
+        self.signer.sign(pubkey, message)
     }
 }
+
+impl PlatformWallet for PlatformSignerWallet {}

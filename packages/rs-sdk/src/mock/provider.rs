@@ -18,12 +18,12 @@ pub struct GrpcContextProvider<'a> {
     /// Core client
     core: CoreClient,
     /// Sdk to use when fetching data from Platform
-    sdk: &'a Sdk,
+    sdk: Option<&'a Sdk>,
 
     /// Data contracts cache.
     ///
     /// Users can insert new data contracts into the cache using [`Cache::put`].
-    pub data_contracts: Cache<Identifier, dpp::data_contract::DataContract>,
+    pub data_contracts_cache: Cache<Identifier, dpp::data_contract::DataContract>,
 
     /// Quorum public keys cache.
     ///
@@ -35,9 +35,13 @@ pub struct GrpcContextProvider<'a> {
 
 impl<'a> GrpcContextProvider<'a> {
     /// Create new context provider.
+    ///
+    /// Note that if the `sdk` is `None`, the context provider will not be able to fetch data itself and will rely on
+    /// values set by the user in the caches: `data_contracts_cache`, `quorum_public_keys_cache`.
+    ///
+    /// Sdk can be set later with [`GrpcContextProvider::set_sdk`].
     pub fn new(
-        sdk: &'a Sdk,
-
+        sdk: Option<&'a Sdk>,
         core_ip: &str,
         core_port: u16,
         core_user: &str,
@@ -50,9 +54,18 @@ impl<'a> GrpcContextProvider<'a> {
         Ok(Self {
             core: core_client,
             sdk,
-            data_contracts: Cache::new(data_contracts_cache_size),
+            data_contracts_cache: Cache::new(data_contracts_cache_size),
             quorum_public_keys_cache: Cache::new(quorum_public_keys_cache_size),
         })
+    }
+
+    /// Set the Sdk to use when fetching data from Platform.
+    /// This is useful when the Sdk is created after the ContextProvider.
+    ///
+    /// Note that if the `sdk` is `None`, the context provider will not be able to fetch data itself and will rely on
+    /// values set by the user in the caches: `data_contracts_cache`, `quorum_public_keys_cache`.
+    pub fn set_sdk(&mut self, sdk: Option<&'a Sdk>) {
+        self.sdk = sdk;
     }
 }
 
@@ -84,8 +97,16 @@ impl<'a> ContextProvider for GrpcContextProvider<'a> {
         &self,
         data_contract_id: &Identifier,
     ) -> Result<Option<Arc<DataContract>>, drive_proof_verifier::Error> {
-        if let Some(contract) = self.data_contracts.get(data_contract_id) {
+        if let Some(contract) = self.data_contracts_cache.get(data_contract_id) {
             return Ok(Some(contract));
+        };
+
+        let sdk = match self.sdk {
+            Some(sdk) => sdk,
+            None => {
+                tracing::warn!("data contract cache miss and no sdk provided, skipping fetch");
+                return Ok(None);
+            }
         };
 
         let handle = match tokio::runtime::Handle::try_current() {
@@ -101,13 +122,13 @@ impl<'a> ContextProvider for GrpcContextProvider<'a> {
         };
 
         let data_contract = handle
-            .block_on(DataContract::fetch(self.sdk, *data_contract_id))
+            .block_on(DataContract::fetch(sdk, *data_contract_id))
             .map_err(|e| drive_proof_verifier::Error::InvalidDataContract {
                 error: e.to_string(),
             })?;
 
         if let Some(ref dc) = data_contract {
-            self.data_contracts.put(*data_contract_id, dc.clone());
+            self.data_contracts_cache.put(*data_contract_id, dc.clone());
         };
 
         Ok(data_contract.map(Arc::new))

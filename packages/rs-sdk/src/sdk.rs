@@ -1,6 +1,6 @@
 //! [Sdk] entrypoint to Dash Platform.
 
-use std::{fmt::Debug, num::NonZeroUsize};
+use std::{fmt::Debug, num::NonZeroUsize, rc::Rc};
 #[cfg(feature = "mocks")]
 use std::{
     path::{Path, PathBuf},
@@ -10,15 +10,16 @@ use std::{
 #[cfg(feature = "mocks")]
 use crate::mock::MockDashPlatformSdk;
 
-use crate::mock::wallet::{core::CoreGrpcWallet};
 use crate::mock::wallet::{platform::PlatformSignerWallet, MockWallet};
 use crate::mock::MockResponse;
+use crate::mock::{provider::GrpcContextProvider, wallet::core::CoreGrpcWallet};
 use crate::wallet::Wallet;
 use crate::{error::Error, platform::transition::TransitionContext};
 
-use dapi_grpc::mock::Mockable;
+use dapi_grpc::{mock::Mockable, tonic::client::Grpc};
 use dpp::prelude::{DataContract, Identifier};
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use drive_proof_verifier::MockContextProvider;
 #[cfg(feature = "mocks")]
 use drive_proof_verifier::{ContextProvider, FromProof};
 #[cfg(feature = "mocks")]
@@ -72,7 +73,7 @@ pub struct Sdk {
     /// Wallet is used to manage keys and sign transactions.
     /// It can be changed on runtime with set_wallet().
     ///
-    /// It is Option because we allow delayed initialization of the wallet.
+    /// If wallet is not provided, only read operations will be available.
     pub(crate) wallet: Option<Box<dyn Wallet>>,
 
     #[cfg(feature = "mocks")]
@@ -354,7 +355,8 @@ impl Default for SdkBuilder {
 
             proofs: true,
 
-            data_contract_cache_size: NonZeroUsize::new(DEFAULT_CONTRACT_CACHE_SIZE).expect("data conttact cache size must be positive"),
+            data_contract_cache_size: NonZeroUsize::new(DEFAULT_CONTRACT_CACHE_SIZE)
+                .expect("data conttact cache size must be positive"),
             quorum_public_keys_cache_size: NonZeroUsize::new(DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE)
                 .expect("quorum public keys cache size must be positive"),
 
@@ -504,6 +506,10 @@ impl SdkBuilder {
         ))
     }
 
+    fn is_mock(&self) -> bool {
+        self.addresses.is_none()
+    }
+
     /// Build the Sdk instance.
     ///
     /// This method will create the Sdk instance based on the configuration provided to the builder.
@@ -514,30 +520,49 @@ impl SdkBuilder {
     pub fn build(self) -> Result<Sdk, Error> {
         PlatformVersion::set_current(self.version);
 
-        // TODO decide if we should automatically generate wallet and context provider
-        let context_provider = self.context_provider.ok_or(Error::Config(
-            "context provider must be configured with SdkBuilder::with_context_provider"
-                .to_string(),
-        ))?;
-
-        let sdk=  match self.addresses {
+        let wallet: Option<Box<dyn Wallet>> = if self.is_mock() && self.wallet.as_ref().is_none() {
+            Some(Box::new(self.build_core_wallet()?))
+        } else {
+            self.wallet
+        };
+        let  sdk=  match self.addresses {
+            // non-mock mode
             Some(addresses) => {
-                let dapi = DapiClient::new(addresses, self.settings);
+                let context_provider= if  self.core_ip.is_empty() {
+                    let provider= self.context_provider.ok_or(Error::Config(
+                        "context provider must be configured with SdkBuilder::with_context_provider"
+                    .to_string()))?;
+                    provider
+        } else {
+                    tracing::warn!("ContextProvider not set; mocking with Dash Core. \
+                    Please provide your own ContextProvider with SdkBuilder::with_context_provider().");
+                let provider = GrpcContextProvider::new(None, &self.core_ip, self.core_port, &self.core_user, &self.core_password, self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
+
+                Box::new(provider)
+                };
+
+
+            let dapi = DapiClient::new(addresses, self.settings);
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
-               
+
                 Sdk{
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
                     context_provider,
-                    wallet: self.wallet,
+                    wallet,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
                 }
+                // TODO: if we created CoreGrpcContextProvider ourselves, we should set sdk on it
             },
             #[cfg(feature = "mocks")]
+            // mock mode
             None =>{ let dapi =Arc::new(Mutex::new(  MockDapiClient::new()));
-                Sdk{
+                // We create mock context provider that will use the mock DAPI client to retrieve data contracts.
+                let  context_provider = self.context_provider.unwrap_or(Box::new(MockContextProvider::new()));
+
+              Sdk{
                     inner:SdkInstance::Mock {
                         mock: MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs),
                         dapi,
@@ -545,8 +570,9 @@ impl SdkBuilder {
                     dump_dir: self.dump_dir,
                     proofs:self.proofs,
                     context_provider,
-                    wallet:None,
-            }},
+                    wallet,
+            }
+        },
             #[cfg(not(feature = "mocks"))]
             None => Err(Error::Config(
                 "Mock mode is not available. Please enable `mocks` feature or provide address list.".to_string(),

@@ -48,7 +48,4 @@ pub trait CoreWallet: Send + Sync {
 ///
 /// This trait should be implemented by developers who use the Sdk, to provide interface to Platform
 /// wallet that allows signing of Platform state transitions.
-pub trait PlatformWallet: Send + Sync {
-    /// Return signer that can be used to sign Platform transactions.
-    fn signer(&self) -> &dyn Signer;
-}
+pub trait PlatformWallet: Signer + Send + Sync {}

@@ -6,7 +6,11 @@ use async_trait::async_trait;
 use dashcore_rpc::dashcore_rpc_json::ListUnspentResultEntry;
 use dpp::{
     bls_signatures::PrivateKey,
-    identity::{signer::Signer, state_transition::asset_lock_proof::AssetLockProof},
+    identity::{
+        signer::Signer, state_transition::asset_lock_proof::AssetLockProof, IdentityPublicKey,
+    },
+    platform_value::BinaryData,
+    ProtocolError,
 };
 
 use crate::{
@@ -81,9 +85,15 @@ impl<C: CoreWallet, P: PlatformWallet> CoreWallet for CompositeWallet<C, P> {
     }
 }
 
+impl<C: CoreWallet, P: PlatformWallet> PlatformWallet for CompositeWallet<C, P> {}
+
 #[async_trait]
-impl<C: CoreWallet, P: PlatformWallet> PlatformWallet for CompositeWallet<C, P> {
-    fn signer(&self) -> &dyn Signer {
-        self.platform_wallet.signer()
+impl<C: CoreWallet, P: PlatformWallet> Signer for CompositeWallet<C, P> {
+    fn sign(
+        &self,
+        pubkey: &IdentityPublicKey,
+        message: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
+        self.platform_wallet.sign(pubkey, message)
     }
 }
