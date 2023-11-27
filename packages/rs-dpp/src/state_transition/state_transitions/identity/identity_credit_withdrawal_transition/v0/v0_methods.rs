@@ -12,6 +12,7 @@ use crate::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTr
 use crate::withdrawal::Pooling;
 
 impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTransitionV0 {
+    #[cfg(feature = "state-transition-signing")]
     fn try_from_identity<S: Signer>(identity: &Identity, output_script: CoreScript, amount: u64, pooling: Pooling, core_fee_per_byte: u32, signer: S, _platform_version: &PlatformVersion, _version: Option<FeatureVersion>) -> Result<StateTransition, ProtocolError> {
         let mut transition: StateTransition = IdentityCreditWithdrawalTransitionV0 {
             identity_id: identity.id(),
