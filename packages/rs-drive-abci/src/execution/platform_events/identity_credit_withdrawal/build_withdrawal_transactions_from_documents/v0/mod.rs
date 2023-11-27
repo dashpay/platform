@@ -70,6 +70,7 @@ where
                     ))
                 })?;
 
+            // TODO(withdrawals): is it okay to hardcode this?
             let state_transition_size = 190;
 
             let output_script = ScriptBuf::from_bytes(output_script_bytes);
@@ -88,6 +89,7 @@ where
                 base_payload: AssetUnlockBasePayload {
                     version: 1,
                     index: transaction_index,
+                    // TODO(withdrawals): state_transition_size? and why multiply by 1000?
                     fee: (state_transition_size * core_fee_per_byte * 1000),
                 },
             };

@@ -170,6 +170,7 @@ where
         }
         drop(state_cache);
 
+        // TODO(withdrawals): we have this in verify_vote_extension handler. Do we need it here as well?
         // Verify vote extensions
         // let received_withdrawals = WithdrawalTxs::from(&commit.threshold_vote_extensions);
         // let our_withdrawals = WithdrawalTxs::load(Some(transaction), &self.drive)
@@ -202,6 +203,8 @@ where
 
         to_commit_block_info.core_height = block_header.core_chain_locked_height;
 
+        // Finalize method alters drive state. Are we allowed to do that in finalize block handler?
+        //
         // TODO(withdrawals): withdrawal finalization.
         //    I assume that core TX broadcast should come before this step.
         // // Finalize withdrawal processing

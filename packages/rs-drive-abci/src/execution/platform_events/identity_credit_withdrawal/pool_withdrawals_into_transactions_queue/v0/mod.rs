@@ -84,6 +84,7 @@ where
                 )));
             };
 
+            // TODO(withdrawals): recheck - don't we need to use dashcore x11 hash instead of double sha here?
             let transaction_id = hash::hash_to_vec(transaction_bytes);
 
             document.set_bytes(
