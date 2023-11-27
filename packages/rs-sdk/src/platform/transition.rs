@@ -5,6 +5,7 @@ pub(crate) mod context;
 pub mod put_identity;
 mod txid;
 pub mod top_up_identity;
+pub mod withdraw_from_identity;
 
 pub use context::*;
 

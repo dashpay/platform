@@ -801,6 +801,8 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         },
         state_transition_conversion_versions: StateTransitionConversionVersions {
             identity_to_identity_create_transition: 0,
+            identity_to_identity_top_up_transition: 0,
+            identity_to_identity_withdrawal_transition: 0,
             identity_to_identity_create_transition_with_signer: 0,
         },
         state_transition_method_versions: StateTransitionMethodVersions {

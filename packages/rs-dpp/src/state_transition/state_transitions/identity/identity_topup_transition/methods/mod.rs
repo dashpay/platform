@@ -24,9 +24,8 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransition {
         match version.unwrap_or(
             platform_version
                 .dpp
-                .state_transition_serialization_versions
-                .identity_top_up_state_transition
-                .default_current_version,
+                .state_transition_conversion_versions
+                .identity_to_identity_top_up_transition
         ) {
             0 => Ok(IdentityTopUpTransitionV0::try_from_identity(
                 identity,

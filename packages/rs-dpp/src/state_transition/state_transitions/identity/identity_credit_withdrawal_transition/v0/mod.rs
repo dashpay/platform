@@ -6,6 +6,7 @@ mod types;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
+mod v0_methods;
 
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
