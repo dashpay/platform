@@ -3089,6 +3089,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
           ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
+          ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
           ["assert", "npm:2.0.0"],\
           ["assert-browserify", "npm:2.0.0"],\
           ["browserify-zlib", "npm:0.2.0"],\
