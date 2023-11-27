@@ -1,26 +1,26 @@
-use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
+use dapi_grpc::platform::v0::{
+    get_proofs_request,  GetProofsRequest, GetProofsResponse,
+};
+use dpp::document::Document;
+use dpp::identity::PartialIdentity;
+use dpp::state_transition::StateTransition;
+use drive::drive::Drive;
+use drive::query::SingleDocumentDriveQuery;
+use drive_abci::abci::AbciApplication;
+use drive_abci::platform_types::platform::PlatformRef;
+use drive_abci::rpc::core::MockCoreRPCLike;
 use dapi_grpc::platform::VersionedGrpcResponse;
-
 use dapi_grpc::platform::v0::get_proofs_request::{get_proofs_request_v0, GetProofsRequestV0};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::document::Document;
-use dpp::identity::PartialIdentity;
-use dpp::state_transition::{StateTransition, StateTransitionLike};
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
-use drive::drive::Drive;
-use drive::query::SingleDocumentDriveQuery;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
-use drive_abci::abci::AbciApplication;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
-use drive_abci::rpc::core::MockCoreRPCLike;
 use prost::Message;
 use tenderdash_abci::proto::abci::ExecTxResult;
-
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::prelude::ConsensusValidationResult;

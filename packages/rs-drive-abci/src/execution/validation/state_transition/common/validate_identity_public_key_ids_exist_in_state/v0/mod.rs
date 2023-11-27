@@ -20,7 +20,7 @@ pub(super) fn validate_identity_public_key_ids_exist_in_state_v0(
     identity_id: Identifier,
     key_ids: &[KeyID],
     drive: &Drive,
-    execution_context: &mut StateTransitionExecutionContext,
+    _execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {

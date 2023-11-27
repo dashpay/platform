@@ -1,8 +1,5 @@
 // mod validation;
 
-use std::collections::HashMap;
-use std::hash::Hash;
-
 // pub use validation::*;
 
 use dpp::consensus::ConsensusError;
@@ -14,10 +11,9 @@ use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::state_transition::{StateTransition, StateTransitionValueConvert};
 use dpp::version::PlatformVersion;
 use dpp::{
-    consensus::signature::SignatureError, platform_value, state_transition::StateTransitionLike,
-    ProtocolError,
+    consensus::signature::SignatureError, state_transition::StateTransitionLike, ProtocolError,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::data_contract::DataContractWasm;
@@ -28,7 +24,7 @@ use crate::{
     bls_adapter::{BlsAdapter, JsBlsAdapter},
     utils::WithJsError,
 };
-use crate::{buffer::Buffer, identifier::IdentifierWrapper, with_js_error};
+use crate::{buffer::Buffer, identifier::IdentifierWrapper};
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name=DataContractUpdateTransition)]
@@ -62,8 +58,6 @@ impl DataContractUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=getDataContract)]
     pub fn get_data_contract(&self) -> DataContractWasm {
-        let platform_version = PlatformVersion::first();
-
         DataContractWasm::try_from_serialization_format(self.0.data_contract().clone(), false)
             .expect("should create data contract from serialized format")
     }

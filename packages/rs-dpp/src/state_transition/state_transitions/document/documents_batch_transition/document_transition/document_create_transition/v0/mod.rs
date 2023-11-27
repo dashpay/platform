@@ -21,7 +21,7 @@ use crate::state_transition::documents_batch_transition::document_base_transitio
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use derive_more::Display;
 
-pub(self) mod property_names {
+mod property_names {
     pub const ENTROPY: &str = "$entropy";
     pub const CREATED_AT: &str = "$createdAt";
     pub const UPDATED_AT: &str = "$updatedAt";

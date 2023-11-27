@@ -1,9 +1,8 @@
-use crate::buffer::Buffer;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::identity::identity_public_key_is_read_only_error::IdentityPublicKeyIsReadOnlyError;
 use dpp::consensus::ConsensusError;
 use dpp::identity::KeyID;
-use dpp::serialization::PlatformSerializable;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IdentityPublicKeyIsReadOnlyError)]
