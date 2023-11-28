@@ -7,7 +7,7 @@ use dashcore_rpc::{
     dashcore::{address::NetworkUnchecked, hashes::Hash, Amount, QuorumHash},
     dashcore_rpc_json as json, Auth, Client, RawTx, RpcApi,
 };
-use std::sync::Mutex;
+use std::{fmt::Debug, sync::Mutex};
 
 use crate::error::Error;
 
@@ -18,6 +18,19 @@ use crate::error::Error;
 /// TODO: This is a temporary implementation, effective until we integrate SPV.
 pub(crate) struct CoreClient {
     core: Mutex<Client>,
+    server_address: String,
+    core_user: String,
+    core_port: u16,
+}
+
+impl Debug for CoreClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CoreClient")
+            .field("server_address", &self.server_address)
+            .field("core_user", &self.core_user)
+            .field("core_port", &self.core_port)
+            .finish()
+    }
 }
 
 impl CoreClient {
@@ -41,8 +54,12 @@ impl CoreClient {
             Auth::UserPass(core_user.to_string(), core_password.to_string()),
         )
         .map_err(Error::CoreClientError)?;
+
         Ok(Self {
             core: Mutex::new(core),
+            server_address: server_address.to_string(),
+            core_user: core_user.to_string(),
+            core_port,
         })
     }
 }

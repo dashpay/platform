@@ -8,6 +8,7 @@ use crate::{wallet::CoreWallet, Error};
 use super::core_client::CoreClient;
 
 /// Core wallet using Core GRPC API.
+#[derive(Debug)]
 pub struct CoreGrpcWallet {
     pub(crate) core_client: CoreClient,
 }

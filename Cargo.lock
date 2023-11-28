@@ -1042,6 +1042,7 @@ dependencies = [
  "async-trait",
  "base64 0.21.5",
  "bincode 2.0.0-rc.3",
+ "bincode_derive",
  "bip37-bloom-filter",
  "ciborium",
  "dapi-grpc",

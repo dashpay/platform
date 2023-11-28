@@ -19,6 +19,7 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 simple-signer = { path = "../simple-signer" }
 bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
+bincode_derive = { version = "2.0.0-rc.3", optional = true }
 thiserror = "1.0.47"
 tokio = { version = "1.32.0", features = ["macros"] }
 tokio-util = { version = "0.7.8" }
@@ -61,6 +62,7 @@ mocks = [
     "dpp/random-identities",
     "drive-proof-verifier/mocks",
     "dep:bincode",
+    "dep:bincode_derive",
     "dep:hex",
     "dep:dotenvy",
     "dep:envy",

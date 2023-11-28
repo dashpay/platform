@@ -9,6 +9,7 @@ use simple_signer::signer::SimpleSigner;
 use crate::wallet::PlatformWallet;
 
 /// Platform wallet using [SimpleSigner].
+#[derive(Debug)]
 pub struct PlatformSignerWallet {
     /// Signer used to sign Platform transactions.
     pub signer: SimpleSigner,

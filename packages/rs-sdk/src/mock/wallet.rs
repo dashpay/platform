@@ -10,6 +10,7 @@ use dpp::{
     platform_value::BinaryData,
     ProtocolError,
 };
+use std::fmt::Debug;
 
 use crate::{
     wallet::{CoreWallet, PlatformWallet, Wallet},
@@ -35,12 +36,21 @@ impl Wallet for MockWallet {}
 ///
 /// * [CoreGrpcWallet](crate::mock::wallet::CoreGrpcWallet)
 /// * [PlatformSignerWallet](crate::mock::wallet::PlatformSignerWallet)
-pub struct CompositeWallet<C: CoreWallet, P: PlatformWallet> {
+#[derive(Debug)]
+pub struct CompositeWallet<C: CoreWallet, P: PlatformWallet>
+where
+    C: Debug,
+    P: Debug,
+{
     core_wallet: C,
     platform_wallet: P,
 }
 
-impl<C: CoreWallet, P: PlatformWallet> CompositeWallet<C, P> {
+impl<C: CoreWallet, P: PlatformWallet> CompositeWallet<C, P>
+where
+    C: Debug,
+    P: Debug,
+{
     /// Create new composite wallet.
     ///
     /// Create new composite wallet comprising of Core wallet and Platform wallet.
@@ -64,7 +74,11 @@ impl<C: CoreWallet, P: PlatformWallet> CompositeWallet<C, P> {
     }
 }
 #[async_trait]
-impl<C: CoreWallet, P: PlatformWallet> CoreWallet for CompositeWallet<C, P> {
+impl<C: CoreWallet, P: PlatformWallet> CoreWallet for CompositeWallet<C, P>
+where
+    C: Debug,
+    P: Debug,
+{
     async fn lock_assets(&self, amount: u64) -> Result<(AssetLockProof, PrivateKey), Error> {
         self.core_wallet.lock_assets(amount).await
     }
@@ -78,10 +92,19 @@ impl<C: CoreWallet, P: PlatformWallet> CoreWallet for CompositeWallet<C, P> {
     }
 }
 
-impl<C: CoreWallet, P: PlatformWallet> PlatformWallet for CompositeWallet<C, P> {}
+impl<C: CoreWallet, P: PlatformWallet> PlatformWallet for CompositeWallet<C, P>
+where
+    C: Debug,
+    P: Debug,
+{
+}
 
 #[async_trait]
-impl<C: CoreWallet, P: PlatformWallet> Signer for CompositeWallet<C, P> {
+impl<C: CoreWallet, P: PlatformWallet> Signer for CompositeWallet<C, P>
+where
+    C: Debug,
+    P: Debug,
+{
     fn sign(
         &self,
         pubkey: &IdentityPublicKey,
