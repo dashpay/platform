@@ -3,7 +3,6 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
 use crate::query::QueryValidationResult;
-use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 
 use dpp::version::PlatformVersion;
 

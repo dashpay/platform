@@ -4,7 +4,7 @@ use crate::data_contract::document_type::DocumentType;
 use crate::version::dpp_versions::DocumentTypeVersions;
 use crate::ProtocolError;
 use indexmap::IndexMap;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 mod v0;
 

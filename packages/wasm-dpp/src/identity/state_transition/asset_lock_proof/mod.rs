@@ -7,8 +7,6 @@ use std::convert::TryInto;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::__rt::Ref;
 
-use crate::errors::RustConversionError;
-
 use dpp::identity::errors::UnknownAssetLockProofTypeError;
 use wasm_bindgen::prelude::*;
 
