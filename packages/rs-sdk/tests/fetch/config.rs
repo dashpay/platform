@@ -7,7 +7,7 @@ use dash_platform_sdk::Sdk;
 use dpp::prelude::Identifier;
 use rs_dapi_client::AddressList;
 use serde::Deserialize;
-use std::{path::PathBuf, str::FromStr};
+use std::{path::PathBuf, str::FromStr, sync::Arc};
 
 /// Existing document ID
 ///
@@ -130,7 +130,7 @@ impl Config {
     /// new test vectors during execution
     /// * `offline-testing` is set - use mock implementation and
     /// load existing test vectors from disk
-    pub async fn setup_api(&self) -> dash_platform_sdk::Sdk {
+    pub async fn setup_api(&self) -> Arc<dash_platform_sdk::Sdk> {
         // offline testing takes precedence over network testing
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {

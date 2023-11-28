@@ -1,6 +1,12 @@
 //! [Sdk] entrypoint to Dash Platform.
 
-use std::{fmt::Debug, num::NonZeroUsize, rc::Rc};
+use std::{
+    fmt::Debug,
+    num::NonZeroUsize,
+    ops::{Deref, DerefMut},
+    rc::Rc,
+    sync::MutexGuard,
+};
 #[cfg(feature = "mocks")]
 use std::{
     path::{Path, PathBuf},
@@ -10,11 +16,14 @@ use std::{
 #[cfg(feature = "mocks")]
 use crate::mock::MockDashPlatformSdk;
 
-use crate::mock::wallet::{platform::PlatformSignerWallet, MockWallet};
 use crate::mock::MockResponse;
 use crate::mock::{provider::GrpcContextProvider, wallet::core::CoreGrpcWallet};
 use crate::wallet::Wallet;
 use crate::{error::Error, platform::transition::TransitionContext};
+use crate::{
+    mock::wallet::{platform::PlatformSignerWallet, MockWallet},
+    platform::transition::context,
+};
 
 use dapi_grpc::{mock::Mockable, tonic::client::Grpc};
 use dpp::prelude::{DataContract, Identifier};
@@ -66,7 +75,11 @@ pub struct Sdk {
     proofs: bool,
 
     /// Context provider used by the SDK.
-    context_provider: Box<dyn ContextProvider>,
+    ///
+    /// ## Panics
+    ///
+    /// Note that setting this to None can panic.
+    context_provider: std::sync::Mutex<Option<Box<dyn ContextProvider>>>,
 
     /// Default wallet to use when executing various operations.
     ///
@@ -127,7 +140,7 @@ impl Sdk {
     /// This is a helper method that uses [`SdkBuilder`] to initialize the SDK in mock mode.
     ///
     /// See also [`SdkBuilder`].
-    pub fn new_mock() -> Self {
+    pub fn new_mock() -> Arc<Self> {
         SdkBuilder::default()
             .build()
             .expect("mock should be created")
@@ -149,13 +162,19 @@ impl Sdk {
     where
         O::Request: Mockable,
     {
+        let guard = self
+        .context_provider
+        .lock()
+        .expect("context provider lock poisoned");
+    let provider = guard
+        .as_ref()
+        .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
+
+
         match self.inner {
-            SdkInstance::Dapi { .. } => O::maybe_from_proof(
-                request,
-                response,
-                self.version(),
-                self.context_provider.as_ref(),
-            ),
+            SdkInstance::Dapi { .. } => {
+                O::maybe_from_proof(request, response, self.version(),& provider)
+            }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => mock.parse_proof(request, response),
         }
@@ -187,7 +206,7 @@ impl Sdk {
     ///
     /// This is the version configured in [`SdkBuilder`].
     /// Useful whenever you need to provide [PlatformVersion] to other SDK and DPP methods.
-    pub fn version<'a>(&self) -> &'a PlatformVersion {
+    pub fn version<'v>(&self) -> &'v PlatformVersion {
         match &self.inner {
             SdkInstance::Dapi { version, .. } => version,
             #[cfg(feature = "mocks")]
@@ -259,11 +278,16 @@ impl ContextProvider for Sdk {
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], drive_proof_verifier::Error> {
-        let key: [u8; 48] = self.context_provider.get_quorum_public_key(
-            quorum_type,
-            quorum_hash,
-            core_chain_locked_height,
-        )?;
+        let guard = self
+        .context_provider
+        .lock()
+        .expect("context provider lock poisoned")
+        ; let provider=guard.as_ref()
+        .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
+
+
+        let key: [u8; 48] =
+            provider.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)?;
 
         #[cfg(feature = "mocks")]
         self.dump_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height, &key);
@@ -275,7 +299,13 @@ impl ContextProvider for Sdk {
         &self,
         data_contract_id: &Identifier,
     ) -> Result<Option<Arc<DataContract>>, drive_proof_verifier::Error> {
-        self.context_provider.get_data_contract(data_contract_id)
+        let guard = self
+            .context_provider
+            .lock()
+            .expect("context provider lock poisoned");let provider=guard.as_ref()
+            .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
+
+        provider.get_data_contract(data_contract_id)
     }
 }
 
@@ -517,7 +547,7 @@ impl SdkBuilder {
     /// # Errors
     ///
     /// This method will return an error if the Sdk cannot be created.
-    pub fn build(self) -> Result<Sdk, Error> {
+    pub fn build(self) -> Result<Arc<Sdk>, Error> {
         PlatformVersion::set_current(self.version);
 
         let wallet: Option<Box<dyn Wallet>> = if self.is_mock() && self.wallet.as_ref().is_none() {
@@ -525,36 +555,48 @@ impl SdkBuilder {
         } else {
             self.wallet
         };
+
         let  sdk=  match self.addresses {
             // non-mock mode
             Some(addresses) => {
-                let context_provider= if  self.core_ip.is_empty() {
-                    let provider= self.context_provider.ok_or(Error::Config(
-                        "context provider must be configured with SdkBuilder::with_context_provider"
-                    .to_string()))?;
-                    provider
-        } else {
+                let context_provider:Option<Box<dyn ContextProvider>> = if self.context_provider.is_some() || self.core_ip.is_empty() {
+
+                Some(self.context_provider.ok_or(Error::Config(
+                    "context provider must be configured with SdkBuilder::with_context_provider"
+                .to_string()))?)
+
+                }
+                 else {
                     tracing::warn!("ContextProvider not set; mocking with Dash Core. \
                     Please provide your own ContextProvider with SdkBuilder::with_context_provider().");
-                let provider = GrpcContextProvider::new(None, &self.core_ip, self.core_port, &self.core_user, &self.core_password, self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
 
-                Box::new(provider)
-                };
+                    None
+               } ;
 
-
-            let dapi = DapiClient::new(addresses, self.settings);
+               let dapi = DapiClient::new(addresses, self.settings);
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
 
-                Sdk{
+                let sdk= Sdk{
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
-                    context_provider,
+           context_provider:   std::sync:: Mutex::new(   context_provider),
                     wallet,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
+                };
+                let mut sdk = Arc::new(sdk);
+
+                // if context provider is not set correctly (is None), it means we need to fallback to core wallet
+                if let mut guard = sdk.context_provider.lock().expect("lock poisoned") {
+                    let context_provider = GrpcContextProvider::new(Some(Arc::clone(&sdk)),       
+                        &self.core_ip, self.core_port, &self.core_user, &self.core_password,
+                        self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
+let r= std::mem::replace(guard.deref_mut(), Some(Box::new(context_provider)));
                 }
-                // TODO: if we created CoreGrpcContextProvider ourselves, we should set sdk on it
+             
+
+            sdk
             },
             #[cfg(feature = "mocks")]
             // mock mode
@@ -562,16 +604,17 @@ impl SdkBuilder {
                 // We create mock context provider that will use the mock DAPI client to retrieve data contracts.
                 let  context_provider = self.context_provider.unwrap_or(Box::new(MockContextProvider::new()));
 
-              Sdk{
+          let sdk=    Sdk{
                     inner:SdkInstance::Mock {
                         mock: MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs),
                         dapi,
                     },
                     dump_dir: self.dump_dir,
                     proofs:self.proofs,
-                    context_provider,
+                context_provider:  std::sync:: Mutex::new( Some(context_provider)),
                     wallet,
-            }
+            };
+            Arc::new(sdk)
         },
             #[cfg(not(feature = "mocks"))]
             None => Err(Error::Config(

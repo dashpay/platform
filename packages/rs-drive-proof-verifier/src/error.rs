@@ -82,6 +82,10 @@ pub enum Error {
     /// Invalid version of object in response
     #[error("invalid version of message")]
     InvalidVersion(#[from] dpp::version::PlatformVersionError),
+
+    /// Context provider is not set
+    #[error("context provider is not set")]
+    ContextProviderNotSet,
 }
 
 impl From<drive::error::Error> for Error {

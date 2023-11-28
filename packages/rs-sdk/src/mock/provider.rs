@@ -2,7 +2,7 @@
 
 use std::hash::Hash;
 use std::num::NonZeroUsize;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use dpp::prelude::{DataContract, Identifier};
 use drive_proof_verifier::ContextProvider;
@@ -14,11 +14,16 @@ use crate::{Error, Sdk};
 /// Context provider that uses the Core gRPC API to fetch data from the platform.
 ///
 /// Example [ContextProvider] used by the Sdk for testing purposes.
-pub struct GrpcContextProvider<'a> {
+pub struct GrpcContextProvider {
     /// Core client
     core: CoreClient,
-    /// Sdk to use when fetching data from Platform
-    sdk: Option<&'a Sdk>,
+    /// [Sdk] to use when fetching data from Platform
+    ///
+    /// Note that if the `sdk` is `None`, the context provider will not be able to fetch data itself and will rely on
+    /// values set by the user in the caches: `data_contracts_cache`, `quorum_public_keys_cache`.
+    ///
+    /// We use [Arc] as we have circular dependencies between Sdk and ContextProvider.
+    sdk: Option<Arc<Sdk>>,
 
     /// Data contracts cache.
     ///
@@ -33,7 +38,7 @@ pub struct GrpcContextProvider<'a> {
     pub quorum_public_keys_cache: Cache<([u8; 32], u32), [u8; 48]>,
 }
 
-impl<'a> GrpcContextProvider<'a> {
+impl GrpcContextProvider {
     /// Create new context provider.
     ///
     /// Note that if the `sdk` is `None`, the context provider will not be able to fetch data itself and will rely on
@@ -41,7 +46,7 @@ impl<'a> GrpcContextProvider<'a> {
     ///
     /// Sdk can be set later with [`GrpcContextProvider::set_sdk`].
     pub fn new(
-        sdk: Option<&'a Sdk>,
+        sdk: Option<Arc<Sdk>>,
         core_ip: &str,
         core_port: u16,
         core_user: &str,
@@ -64,12 +69,12 @@ impl<'a> GrpcContextProvider<'a> {
     ///
     /// Note that if the `sdk` is `None`, the context provider will not be able to fetch data itself and will rely on
     /// values set by the user in the caches: `data_contracts_cache`, `quorum_public_keys_cache`.
-    pub fn set_sdk(&mut self, sdk: Option<&'a Sdk>) {
+    pub fn set_sdk(&mut self, sdk: Option<Arc<Sdk>>) {
         self.sdk = sdk;
     }
 }
 
-impl<'a> ContextProvider for GrpcContextProvider<'a> {
+impl ContextProvider for GrpcContextProvider {
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
@@ -101,7 +106,7 @@ impl<'a> ContextProvider for GrpcContextProvider<'a> {
             return Ok(Some(contract));
         };
 
-        let sdk = match self.sdk {
+        let sdk = match &self.sdk {
             Some(sdk) => sdk,
             None => {
                 tracing::warn!("data contract cache miss and no sdk provided, skipping fetch");

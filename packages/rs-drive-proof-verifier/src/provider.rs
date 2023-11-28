@@ -1,4 +1,8 @@
-use std::sync::Arc;
+use std::{
+    ops::{Deref, DerefMut},
+    rc::Rc,
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 use dpp::prelude::{DataContract, Identifier};
 use hex::ToHex;
@@ -154,3 +158,59 @@ impl ContextProvider for MockContextProvider {
         todo!("not implemented yet");
     }
 }
+// the trait `std::convert::AsRef<(dyn drive_proof_verifier::ContextProvider + 'static)>`
+// is not implemented for `std::sync::Arc<mock::provider::GrpcContextProvider<'_>>`
+impl<'a, T: ContextProvider + 'a> AsRef<dyn ContextProvider + 'a> for Arc<T> {
+    fn as_ref(&self) -> &(dyn ContextProvider + 'a) {
+        self.deref()
+    }
+}
+
+// // the trait `std::convert::AsRef<(dyn drive_proof_verifier::ContextProvider + 'static)>`
+// // is not implemented for `tokio::sync::Mutex<mock::provider::GrpcContextProvider<'_>>`
+// impl<'a, T: ContextProvider + 'a> AsRef<dyn ContextProvider + 'a> for std::sync::Mutex<T> {
+//     fn as_ref(&self) -> &(dyn ContextProvider + 'a) {
+//         let lock: &std::sync::MutexGuard<'_, T> = &self.lock().expect("lock poisoned");
+//         lock.deref()
+//     }
+// }
+
+impl<'a, T: ContextProvider + 'a> ContextProvider for Mutex<T>
+where
+    Self: Sync + Send,
+{
+    fn get_data_contract(
+        &self,
+        id: &Identifier,
+    ) -> Result<Option<Arc<DataContract>>, crate::Error> {
+        todo!()
+    }
+    fn get_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32], // quorum hash is 32 bytes
+        core_chain_locked_height: u32,
+    ) -> Result<[u8; 48], crate::Error> {
+        todo!()
+    }
+}
+
+// impl<P: ContextProvider> ContextProvider for Arc<&P> {
+//     fn get_data_contract(
+//         &self,
+//         id: &Identifier,
+//     ) -> Result<Option<Arc<DataContract>>, crate::Error> {
+//         let provider = self.as_ref();
+//         provider.get_data_contract(id)
+//     }
+
+//     fn get_quorum_public_key(
+//         &self,
+//         quorum_type: u32,
+//         quorum_hash: [u8; 32], // quorum hash is 32 bytes
+//         core_chain_locked_height: u32,
+//     ) -> Result<[u8; 48], crate::Error> {
+//         let provider = self.as_ref();
+//         provider.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+//     }
+// }
