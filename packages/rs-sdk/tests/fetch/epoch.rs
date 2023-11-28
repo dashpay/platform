@@ -178,4 +178,6 @@ async fn test_epoch_fetch_current() {
         .expect("fetch current epoch");
 
     assert_eq!(epoch.index(), expected_epoch);
+
+    tracing::info!(epoch = ?epoch, "current epoch");
 }
