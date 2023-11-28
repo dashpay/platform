@@ -260,17 +260,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     }
 
     // notify new txs listener that we've sent historical data
-
     requestLogger.debug(`${blocksSent} historical blocks sent`);
-
-    // Send empty response as a workaround for Rust tonic that expects at least one message
-    // to be sent to establish a stream connection
-    // https://github.com/hyperium/tonic/issues/515
-    if (blocksSent === 0) {
-      requestLogger.debug('send empty response to kick off Rust tonic stream connection');
-      const response = new TransactionsWithProofsResponse();
-      await call.write(response);
-    }
 
     mediator.emit(ProcessMediator.EVENTS.HISTORICAL_DATA_SENT);
 
@@ -285,6 +275,15 @@ function subscribeToTransactionsWithProofsHandlerFactory(
       );
 
       mediator.emit(ProcessMediator.EVENTS.MEMPOOL_DATA_SENT);
+
+      // Send empty response as a workaround for Rust tonic that expects at least one message
+      // to be sent to establish a stream connection
+      // https://github.com/hyperium/tonic/issues/515
+      if (blocksSent === 0 && memPoolTransactions.length === 0) {
+        requestLogger.debug('send empty response to kick off Rust tonic stream connection');
+        const response = new TransactionsWithProofsResponse();
+        await call.write(response);
+      }
     } else {
       requestLogger.debug('close stream');
 
