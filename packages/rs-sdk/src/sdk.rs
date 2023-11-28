@@ -55,6 +55,11 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// * [`SdkBuilder::new_mock()`] Create a mock [SdkBuilder].
 /// * [`Sdk::new_mock()`] Create a mock [Sdk].
 ///
+/// ## Thread safety
+///
+/// Sdk is thread safe and can be shared between threads.
+/// It uses internal locking when needed.
+///
 /// ## Examples
 ///
 /// See tests/ for examples of using the SDK.
