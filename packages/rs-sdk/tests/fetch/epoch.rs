@@ -5,14 +5,16 @@ use dapi_grpc::platform::{
     v0::{get_identity_request::GetIdentityRequestV0, GetIdentityRequest},
     VersionedGrpcResponse,
 };
-use dash_sdk::{
-    platform::{Fetch, FetchMany, LimitQuery, DEFAULT_EPOCH_QUERY_LIMIT},
-    Sdk,
-};
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use rs_dapi_client::{RequestExecutor, RequestSettings};
+use dash_sdk::{
+    platform::{
+        types::epoch::ExtendedEpochInfoEx, Fetch, FetchMany, LimitQuery, DEFAULT_EPOCH_QUERY_LIMIT,
+    },
+    Sdk,
+};
 
 /// Get current epoch index from DAPI response metadata
 async fn get_current_epoch(sdk: &mut Sdk, cfg: &Config) -> EpochIndex {
@@ -81,7 +83,8 @@ async fn test_epoch_list() {
     let mut sdk = cfg.setup_api().await;
 
     // Given some starting epoch and current epoch
-    let starting_epoch: EpochIndex = 0;
+    // Note the devnet does not necessarily start with epoch 0
+    let starting_epoch: EpochIndex = 3;
     let current_epoch = get_current_epoch(&mut sdk, &cfg).await;
 
     // When we fetch epochs from the server, starting with `starting_epoch`
@@ -107,7 +110,8 @@ async fn test_epoch_list_limit() {
     let mut sdk = cfg.setup_api().await;
 
     // Given some starting epoch and current epoch
-    let starting_epoch: EpochIndex = 1;
+    // Note the devnet does not necessarily start with epoch 0
+    let starting_epoch: EpochIndex = 3;
     let current_epoch = get_current_epoch(&mut sdk, &cfg).await;
     let limit = 2;
 
@@ -158,4 +162,24 @@ async fn test_epoch_fetch_future() {
         .expect("list epochs");
 
     assert!(epoch.is_none());
+}
+
+/// Fetch current epoch from the platform.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_epoch_fetch_current() {
+    setup_logs();
+
+    let cfg = Config::new();
+    let mut sdk = cfg.setup_api().await;
+
+    // Given some current epoch
+    let expected_epoch = get_current_epoch(&mut sdk, &cfg).await;
+
+    let epoch = ExtendedEpochInfo::fetch_current(&mut sdk)
+        .await
+        .expect("fetch current epoch");
+
+    assert_eq!(epoch.index(), expected_epoch);
+
+    tracing::info!(epoch = ?epoch, "current epoch");
 }

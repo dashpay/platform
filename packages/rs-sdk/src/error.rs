@@ -38,6 +38,9 @@ pub enum Error {
     /// Dependency not found, for example data contract for a document not found
     #[error("Required {0} not found: {1}")]
     MissingDependency(String, String),
+    /// Epoch not found; we must have at least one epoch
+    #[error("No epoch found on the Platform; it should never happen")]
+    EpochNotFound,
 }
 
 impl<T: Debug> From<DAPIClientError<T>> for Error {
