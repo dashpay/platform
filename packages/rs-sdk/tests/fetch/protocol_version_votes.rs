@@ -44,10 +44,10 @@ async fn test_protocol_version_votes_limit_2() {
     setup_logs();
 
     let cfg = Config::new();
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
     let starting_protxhash = ProTxHash::from_slice(&[0u8; 32]).expect("zero protxhash");
-    let votings = MasternodeProtocolVote::fetch_many_with_limit(&mut sdk, starting_protxhash, 2)
+    let votings = MasternodeProtocolVote::fetch_many_with_limit(&sdk, starting_protxhash, 2)
         .await
         .expect("fetch protocol version votes by node");
 
@@ -65,7 +65,7 @@ async fn test_protocol_version_votes_nx() {
     let mut sdk = cfg.setup_api().await;
 
     let starting_protxhash = Some(ProTxHash::from_slice(&[0xffu8; 32]).expect("zero protxhash"));
-    let votings = MasternodeProtocolVote::fetch_votes(&mut sdk, starting_protxhash, Some(2))
+    let votings = MasternodeProtocolVote::fetch_votes(&sdk, starting_protxhash, Some(2))
         .await
         .expect("fetch protocol version votes by node");
 

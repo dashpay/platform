@@ -15,7 +15,7 @@ use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use rs_dapi_client::{Dapi, RequestSettings};
 
 /// Get current epoch index from DAPI response metadata
-async fn get_current_epoch(sdk: &mut Sdk, cfg: &Config) -> EpochIndex {
+async fn get_current_epoch(sdk: &Sdk, cfg: &Config) -> EpochIndex {
     //  We need existing epoch from metadata, so we'll use low-level API here to get it
     let identity_request: GetIdentityRequest = GetIdentityRequestV0 {
         id: cfg.existing_identity_id.to_vec(),
@@ -79,7 +79,7 @@ async fn test_epoch_list() {
 
     // Given some starting epoch and current epoch
     let starting_epoch: EpochIndex = 0;
-    let current_epoch = get_current_epoch(&mut sdk, &cfg).await;
+    let current_epoch = get_current_epoch(&sdk, &cfg).await;
 
     // When we fetch epochs from the server, starting with `starting_epoch`
     let epochs: BTreeMap<u16, Option<ExtendedEpochInfo>> =

@@ -126,7 +126,7 @@ where
     ///
     /// Any errors encountered during the execution are returned as [`Error`](crate::error::Error) instances.
     async fn fetch_many<Q: Query<<Self as FetchMany<K>>::Request>>(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         query: Q,
     ) -> Result<RetrievedObjects<K, Self>, Error> {
         let request = query.query(sdk.prove())?;
@@ -162,7 +162,7 @@ where
     ///
     /// `Vec<Identifier>` must implement [Query] for [Self::Request].
     async fn fetch_by_identifiers<I: IntoIterator<Item = Identifier> + Send>(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         identifiers: I,
     ) -> Result<RetrievedObjects<K, Self>, Error>
     where
@@ -183,7 +183,7 @@ where
     /// - `query`: A query parameter implementing [`Query`](crate::platform::query::Query) to specify the data to be retrieved.
     /// - `limit`: Maximum number of objects to fetch.
     async fn fetch_many_with_limit<Q: Query<<Self as FetchMany<K>>::Request>>(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         query: Q,
         limit: u32,
     ) -> Result<RetrievedObjects<K, Self>, Error>
@@ -214,7 +214,7 @@ impl FetchMany<Identifier> for Document {
     // TODO: Refactor to use ContextProvider
     type Request = DocumentQuery;
     async fn fetch_many<Q: Query<<Self as FetchMany<Identifier>>::Request>>(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         query: Q,
     ) -> Result<BTreeMap<Identifier, Option<Self>>, Error> {
         let document_query: DocumentQuery = query.query(sdk.prove())?;

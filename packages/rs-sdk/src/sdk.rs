@@ -130,7 +130,7 @@ enum SdkInstance {
         /// Mock DAPI client used to communicate with Dash Platform.
         dapi: Arc<Mutex<MockDapiClient>>,
         /// Mock SDK implementation processing mock expectations and responses.
-        mock: MockDashPlatformSdk,
+        mock: Mutex<MockDashPlatformSdk>,
     },
 }
 
@@ -163,20 +163,22 @@ impl Sdk {
         O::Request: Mockable,
     {
         let guard = self
-        .context_provider
-        .lock()
-        .expect("context provider lock poisoned");
-    let provider = guard
-        .as_ref()
-        .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
-
+            .context_provider
+            .lock()
+            .expect("context provider lock poisoned");
+        let provider = guard
+            .as_ref()
+            .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
         match self.inner {
             SdkInstance::Dapi { .. } => {
-                O::maybe_from_proof(request, response, self.version(),& provider)
+                O::maybe_from_proof(request, response, self.version(), &provider)
             }
             #[cfg(feature = "mocks")]
-            SdkInstance::Mock { ref mock, .. } => mock.parse_proof(request, response),
+            SdkInstance::Mock { ref mock, .. } => {
+                let mock = mock.blocking_lock();
+                mock.parse_proof(request, response)
+            }
         }
     }
 
@@ -188,13 +190,14 @@ impl Sdk {
     ///
     /// Panics if the `self` instance is not a `Mock` variant.
     #[cfg(feature = "mocks")]
-    pub fn mock(&mut self) -> &mut MockDashPlatformSdk {
+    pub fn mock(&self) -> tokio::sync::MutexGuard<MockDashPlatformSdk> {
         if let Sdk {
-            inner: SdkInstance::Mock { ref mut mock, .. },
+            inner: SdkInstance::Mock { ref mock, .. },
             ..
         } = self
         {
-            mock
+            let guard = mock.blocking_lock();
+            guard
         } else {
             panic!("not a mock")
         }
@@ -210,7 +213,10 @@ impl Sdk {
         match &self.inner {
             SdkInstance::Dapi { version, .. } => version,
             #[cfg(feature = "mocks")]
-            SdkInstance::Mock { mock, .. } => mock.version(),
+            SdkInstance::Mock { mock, .. } => {
+                let mock = mock.blocking_lock();
+                mock.version()
+            }
         }
     }
 
@@ -279,12 +285,12 @@ impl ContextProvider for Sdk {
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], drive_proof_verifier::Error> {
         let guard = self
-        .context_provider
-        .lock()
-        .expect("context provider lock poisoned")
-        ; let provider=guard.as_ref()
-        .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
-
+            .context_provider
+            .lock()
+            .expect("context provider lock poisoned");
+        let provider = guard
+            .as_ref()
+            .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
         let key: [u8; 48] =
             provider.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)?;
@@ -302,7 +308,9 @@ impl ContextProvider for Sdk {
         let guard = self
             .context_provider
             .lock()
-            .expect("context provider lock poisoned");let provider=guard.as_ref()
+            .expect("context provider lock poisoned");
+        let provider = guard
+            .as_ref()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
         provider.get_data_contract(data_contract_id)
@@ -571,7 +579,7 @@ impl SdkBuilder {
                     Please provide your own ContextProvider with SdkBuilder::with_context_provider().");
 
                     None
-               } ;
+                } ;
 
                let dapi = DapiClient::new(addresses, self.settings);
                 #[cfg(feature = "mocks")]
@@ -580,21 +588,20 @@ impl SdkBuilder {
                 let sdk= Sdk{
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
-           context_provider:   std::sync:: Mutex::new(   context_provider),
+                      context_provider:   std::sync:: Mutex::new(   context_provider),
                     wallet,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
                 };
-                let mut sdk = Arc::new(sdk);
+                let sdk = Arc::new(sdk);
 
                 // if context provider is not set correctly (is None), it means we need to fallback to core wallet
-                if let mut guard = sdk.context_provider.lock().expect("lock poisoned") {
-                    let context_provider = GrpcContextProvider::new(Some(Arc::clone(&sdk)),       
-                        &self.core_ip, self.core_port, &self.core_user, &self.core_password,
-                        self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
-let r= std::mem::replace(guard.deref_mut(), Some(Box::new(context_provider)));
-                }
-             
+                let mut guard = sdk.context_provider.lock().expect("lock poisoned");
+                let context_provider = GrpcContextProvider::new(Some(Arc::clone(&sdk)),
+                    &self.core_ip, self.core_port, &self.core_user, &self.core_password,
+                    self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
+                let _r= std::mem::replace(guard.deref_mut(), Some(Box::new(context_provider)));
+                drop(guard);
 
             sdk
             },
@@ -606,7 +613,7 @@ let r= std::mem::replace(guard.deref_mut(), Some(Box::new(context_provider)));
 
           let sdk=    Sdk{
                     inner:SdkInstance::Mock {
-                        mock: MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs),
+                        mock:Mutex::new( MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs)),
                         dapi,
                     },
                     dump_dir: self.dump_dir,

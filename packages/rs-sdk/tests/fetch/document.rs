@@ -64,7 +64,7 @@ async fn document_read_no_contract() {
     let data_contract_id = Identifier::from_bytes(&[0; 32]).expect("create Identifier");
 
     let query = DocumentQuery::new_with_data_contract_id(
-        &mut sdk,
+        &sdk,
         data_contract_id,
         &cfg.existing_document_type_name,
     )
@@ -91,7 +91,7 @@ async fn document_read_no_document() {
     let document_id = [0; 32].into();
 
     let query = DocumentQuery::new_with_data_contract_id(
-        &mut sdk,
+        &sdk,
         data_contract_id,
         &cfg.existing_document_type_name,
     )

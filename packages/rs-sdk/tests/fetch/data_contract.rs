@@ -42,7 +42,7 @@ async fn test_data_contracts_1_ok_1_nx() {
 
     let mut sdk = cfg.setup_api().await;
 
-    let result = DataContract::fetch_by_identifiers(&mut sdk, ids)
+    let result = DataContract::fetch_by_identifiers(&sdk, ids)
         .await
         .expect("fetch many data contracts");
 

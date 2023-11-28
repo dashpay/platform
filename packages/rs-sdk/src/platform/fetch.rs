@@ -113,7 +113,7 @@ where
     ///
     /// - `sdk`: An instance of [Sdk].
     /// - `id`: An [Identifier] of the object to be fetched.
-    async fn fetch_by_identifier(sdk: &mut Sdk, id: Identifier) -> Result<Option<Self>, Error>
+    async fn fetch_by_identifier(sdk: &Sdk, id: Identifier) -> Result<Option<Self>, Error>
     where
         Identifier: Query<<Self as Fetch>::Request>,
     {
