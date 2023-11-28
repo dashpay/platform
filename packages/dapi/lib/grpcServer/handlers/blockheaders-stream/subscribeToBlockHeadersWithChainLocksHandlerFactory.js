@@ -165,16 +165,6 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
       call.end();
     }
 
-    if (!bestChainLock && blocksSent === 0 && newHeadersRequested) {
-      // Send empty response as a workaround for Rust tonic that expects at least one message
-      // to be sent to establish a stream connection
-      // https://github.com/hyperium/tonic/issues/515
-      if (blocksSent === 0) {
-        const response = new BlockHeadersWithChainLocksResponse();
-        await call.write(response);
-      }
-    }
-
     call.on('cancelled', () => {
       call.end();
       mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
