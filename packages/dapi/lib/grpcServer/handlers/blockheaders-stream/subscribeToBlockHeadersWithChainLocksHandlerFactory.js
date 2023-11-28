@@ -140,7 +140,6 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
       historicalCount,
     );
 
-    let blocksSent = 0;
     for await (const blockHeaders of historicalDataIterator) {
       // Wait between the calls to Core just to reduce the load
       await wait(50);
@@ -154,8 +153,6 @@ function subscribeToBlockHeadersWithChainLocksHandlerFactory(
           blockHeaders.map((header) => header.hash),
         );
       }
-
-      blocksSent++;
     }
 
     // notify new block headers listener that we've sent historical data
