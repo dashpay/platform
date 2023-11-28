@@ -65,6 +65,7 @@ describe('Platform', () => {
         properties: {
           name: {
             type: 'string',
+            position: 0,
           },
         },
         additionalProperties: false,

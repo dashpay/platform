@@ -21,18 +21,14 @@ use std::convert::TryFrom;
     Ord,
     Encode,
     Decode,
+    Default,
 )]
 pub enum SecurityLevel {
+    #[default]
     MASTER = 0,
     CRITICAL = 1,
     HIGH = 2,
     MEDIUM = 3,
-}
-
-impl Default for SecurityLevel {
-    fn default() -> Self {
-        SecurityLevel::MASTER
-    }
 }
 
 #[cfg(feature = "cbor")]

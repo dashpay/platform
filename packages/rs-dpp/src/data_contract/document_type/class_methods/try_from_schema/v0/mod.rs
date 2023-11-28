@@ -1,6 +1,7 @@
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
+use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::TryInto;
 
@@ -20,6 +21,8 @@ use crate::data_contract::document_type::schema::{
     traversal_validator, validate_max_depth,
 };
 
+use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
+use crate::consensus::basic::BasicError;
 use crate::data_contract::document_type::schema::enrich_with_base_schema;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
@@ -60,6 +63,13 @@ impl DocumentTypeV0 {
             schema_defs.map(|defs| Value::from(defs.clone())),
             platform_version,
         )?;
+
+        #[cfg(not(feature = "validation"))]
+        if validate {
+            ProtocolError::CorruptedCodeExecution(
+                "validation is not enabled but is being called on try_from_schema_v0".to_string(),
+            );
+        }
 
         #[cfg(feature = "validation")]
         let json_schema_validator = StatelessJsonSchemaLazyValidator::new();
@@ -130,13 +140,35 @@ impl DocumentTypeV0 {
                 .unwrap_or(default_mutability);
 
         // Extract the properties
-        let property_values =
-            Value::inner_optional_btree_map(schema_map, property_names::PROPERTIES)?
-                .unwrap_or_default();
+        let property_values = Value::inner_optional_index_map::<u64>(
+            schema_map,
+            property_names::PROPERTIES,
+            property_names::POSITION,
+        )?
+        .unwrap_or_default();
+
+        #[cfg(feature = "validation")]
+        if validate {
+            // We should validate that the positions are continuous
+            for (pos, value) in property_values.values().enumerate() {
+                if value.get_integer::<u32>(property_names::POSITION)? != pos as u32 {
+                    return Err(ConsensusError::BasicError(
+                        BasicError::MissingPositionsInDocumentTypePropertiesError(
+                            MissingPositionsInDocumentTypePropertiesError::new(
+                                pos as u32,
+                                data_contract_id,
+                                name.to_string(),
+                            ),
+                        ),
+                    )
+                    .into());
+                }
+            }
+        }
 
         // Prepare internal data for efficient querying
-        let mut flattened_document_properties: BTreeMap<String, DocumentProperty> = BTreeMap::new();
-        let mut document_properties: BTreeMap<String, DocumentProperty> = BTreeMap::new();
+        let mut flattened_document_properties: IndexMap<String, DocumentProperty> = IndexMap::new();
+        let mut document_properties: IndexMap<String, DocumentProperty> = IndexMap::new();
 
         let required_fields = Value::inner_recursive_optional_array_of_strings(
             schema_map,
@@ -367,7 +399,7 @@ impl DocumentTypeV0 {
 }
 
 fn insert_values(
-    document_properties: &mut BTreeMap<String, DocumentProperty>,
+    document_properties: &mut IndexMap<String, DocumentProperty>,
     known_required: &BTreeSet<String>,
     prefix: Option<String>,
     property_key: String,
@@ -413,10 +445,7 @@ fn insert_values(
                             match inner_properties
                                 .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
                             {
-                                Some(content_media_type)
-                                    if content_media_type
-                                        == "application/x.dash.dpp.identifier" =>
-                                {
+                                Some("application/x.dash.dpp.identifier") => {
                                     DocumentPropertyType::Identifier
                                 }
                                 Some(_) | None => DocumentPropertyType::ByteArray(
@@ -506,7 +535,7 @@ fn insert_values(
     Ok(())
 }
 fn insert_values_nested(
-    document_properties: &mut BTreeMap<String, DocumentProperty>,
+    document_properties: &mut IndexMap<String, DocumentProperty>,
     known_required: &BTreeSet<String>,
     property_key: String,
     property_value: &Value,
@@ -531,33 +560,23 @@ fn insert_values_nested(
 
     let is_required = known_required.contains(&property_key);
 
-    let field_type: DocumentPropertyType;
-
-    match type_value {
-        "integer" => {
-            field_type = DocumentPropertyType::Integer;
-        }
-        "number" => {
-            field_type = DocumentPropertyType::Number;
-        }
-        "string" => {
-            field_type = DocumentPropertyType::String(
-                inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
-                inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
-            );
-        }
+    let field_type = match type_value {
+        "integer" => DocumentPropertyType::Integer,
+        "number" => DocumentPropertyType::Number,
+        "string" => DocumentPropertyType::String(
+            inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
+            inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
+        ),
         "array" => {
             // Only handling bytearrays for v1
             // Return an error if it is not a byte array
-            field_type = match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
+            match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
                 Some(inner_bool) => {
                     if inner_bool {
                         match inner_properties
                             .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
                         {
-                            Some(content_media_type)
-                                if content_media_type == "application/x.dash.dpp.identifier" =>
-                            {
+                            Some("application/x.dash.dpp.identifier") => {
                                 DocumentPropertyType::Identifier
                             }
                             Some(_) | None => DocumentPropertyType::ByteArray(
@@ -578,10 +597,10 @@ fn insert_values_nested(
                 //   This is a temporary workaround to bring back v0.22 behavior and should be
                 //   replaced with a proper array support in future versions
                 None => DocumentPropertyType::Array(ArrayItemType::Boolean),
-            };
+            }
         }
         "object" => {
-            let mut nested_properties = BTreeMap::new();
+            let mut nested_properties = IndexMap::new();
             if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES) {
                 let properties =
                     properties_as_value
@@ -589,6 +608,18 @@ fn insert_values_nested(
                         .ok_or(ProtocolError::StructureError(
                             StructureError::ValueWrongType("properties must be a map"),
                         ))?;
+
+                let mut sorted_properties: Vec<_> = properties.iter().collect();
+
+                sorted_properties.sort_by(|(_, value_1), (_, value_2)| {
+                    let pos_1: u64 = value_1
+                        .get_integer(property_names::POSITION)
+                        .expect("expected a position");
+                    let pos_2: u64 = value_2
+                        .get_integer(property_names::POSITION)
+                        .expect("expected a position");
+                    pos_1.cmp(&pos_2)
+                });
 
                 // Create a new set with the prefix removed from the keys
                 let stripped_required: BTreeSet<String> = known_required
@@ -619,20 +650,17 @@ fn insert_values_nested(
                     )?;
                 }
             }
-            field_type = DocumentPropertyType::Object(nested_properties);
             document_properties.insert(
                 property_key,
                 DocumentProperty {
-                    property_type: field_type,
+                    property_type: DocumentPropertyType::Object(nested_properties),
                     required: is_required,
                 },
             );
             return Ok(());
         }
-        _ => {
-            field_type = DocumentPropertyType::try_from_name(type_value)?;
-        }
-    }
+        _ => DocumentPropertyType::try_from_name(type_value)?,
+    };
 
     document_properties.insert(
         property_key,

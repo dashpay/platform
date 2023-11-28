@@ -1,9 +1,6 @@
 use anyhow::anyhow;
-use dpp::platform_value::ReplacementType;
-use dpp::{
-    document::{document_factory::DocumentFactory, extended_document},
-    ProtocolError,
-};
+
+use dpp::document::document_factory::DocumentFactory;
 use std::collections::HashMap;
 
 use wasm_bindgen::prelude::*;
@@ -13,13 +10,12 @@ use crate::document::platform_value::Bytes32;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
-use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
+
 use dpp::prelude::ExtendedDocument;
-use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+
 use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 use dpp::version::PlatformVersion;
 use std::convert::TryFrom;
-use std::sync::Arc;
 
 use crate::document_batch_transition::DocumentsBatchTransitionWasm;
 use crate::entropy_generator::ExternalEntropyGenerator;
@@ -134,7 +130,7 @@ impl DocumentFactoryWASM {
                     })
                     .collect();
 
-                (action_type.clone(), documents_with_refs)
+                (*action_type, documents_with_refs)
             })
             .collect();
 

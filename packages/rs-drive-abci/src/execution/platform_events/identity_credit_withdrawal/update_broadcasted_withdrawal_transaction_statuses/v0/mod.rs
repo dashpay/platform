@@ -5,8 +5,6 @@ use dpp::data_contracts::withdrawals_contract::WithdrawalStatus;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::platform_value::Bytes32;
-use dpp::prelude::Identifier;
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 use dpp::version::PlatformVersion;
@@ -211,39 +209,34 @@ where
 
 #[cfg(test)]
 mod tests {
-    use dashcore_rpc::dashcore::{hashes::hex::FromHex, BlockHash, QuorumHash};
-    use dashcore_rpc::dashcore_rpc_json::GetTransactionLockedResult;
-    use dpp::{
-        data_contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture,
-    };
-    use drive::tests::helpers::setup::setup_document;
-    use serde_json::json;
-    use std::str::FromStr;
-
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
     use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
     use crate::platform_types::epoch_info::v0::EpochInfoV0;
     use crate::platform_types::platform_state::v0::PlatformStateV0;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
-
+    use dashcore_rpc::dashcore::{BlockHash, QuorumHash};
+    use dashcore_rpc::dashcore_rpc_json::GetTransactionLockedResult;
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::Txid;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-
     use dpp::document::DocumentV0Getters;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;
-
-    use crate::platform_types::platform::Platform;
-    use dpp::dashcore::hashes::Hash;
-    use dpp::dashcore::Txid;
     use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
     use dpp::version::PlatformVersion;
     use dpp::withdrawal::Pooling;
     use dpp::{
+        data_contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture,
+    };
+    use dpp::{
         prelude::Identifier,
         system_data_contracts::{load_system_data_contract, SystemDataContract},
     };
+    use drive::tests::helpers::setup::setup_document;
     use drive::tests::helpers::setup::setup_system_data_contract;
+    use serde_json::json;
+    use std::str::FromStr;
 
     #[test]
     fn test_statuses_are_updated() {

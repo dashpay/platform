@@ -2,7 +2,7 @@ use std::convert::TryInto;
 use std::default::Default;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+
 use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::prelude::*;
 
@@ -11,7 +11,7 @@ use crate::identifier::IdentifierWrapper;
 use crate::{
     buffer::Buffer,
     identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm,
-    identity::IdentityPublicKeyWasm, utils, with_js_error,
+    identity::IdentityPublicKeyWasm, with_js_error,
 };
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
@@ -24,7 +24,7 @@ use dpp::errors::consensus::ConsensusError;
 use dpp::errors::ProtocolError;
 use dpp::identity::{KeyID, KeyType, TimestampMillis};
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::platform_value::{string_encoding, BinaryData, ReplacementType, Value};
+use dpp::platform_value::{string_encoding, BinaryData};
 use dpp::prelude::Revision;
 use dpp::serialization::PlatformSerializable;
 use dpp::serialization::ValueConvertible;
@@ -79,7 +79,7 @@ impl IdentityUpdateTransitionWasm {
         let platform_version =
             &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        IdentityUpdateTransition::default_versioned(&platform_version)
+        IdentityUpdateTransition::default_versioned(platform_version)
             .map(Into::into)
             .map_err(from_dpp_err)
     }
@@ -444,7 +444,7 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(js_name=setSignature)]
     pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
         self.0
-            .set_signature(BinaryData::new(signature.unwrap_or(vec![])))
+            .set_signature(BinaryData::new(signature.unwrap_or_default()))
     }
 
     #[wasm_bindgen(js_name=getRevision)]

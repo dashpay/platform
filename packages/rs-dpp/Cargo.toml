@@ -1,6 +1,6 @@
 [package]
 name = "dpp"
-version = "0.25.15"
+version = "0.25.16-rc.4"
 edition = "2021"
 rust-version = "1.73"
 authors = [
@@ -63,6 +63,7 @@ ed25519-dalek = { version = "2.0.0-rc.2", features = ["rand_core"] }
 nohash-hasher = "0.2.0"
 rust_decimal = "1.29.1"
 rust_decimal_macros = "1.29.1"
+indexmap = { version = "2.0.2", features = ["serde"] }
 
 [dev-dependencies]
 test-case = { version = "2.0" }

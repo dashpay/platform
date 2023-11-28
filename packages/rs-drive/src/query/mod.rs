@@ -1945,10 +1945,9 @@ impl<'a> From<&DriveQuery<'a>> for BTreeMap<String, Value> {
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
-    use dpp::data_contract::data_contract::DataContractV0;
+
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-    use dpp::data_contract::document_type::v0::DocumentTypeV0;
-    use dpp::data_contract::document_type::DocumentType;
+
     use dpp::prelude::Identifier;
     use serde_json::json;
     use std::borrow::Cow;
@@ -1964,6 +1963,7 @@ mod tests {
     use serde_json::Value::Null;
 
     use crate::drive::config::DriveConfig;
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::tests::fixtures::get_data_contract_fixture;
@@ -1973,9 +1973,11 @@ mod tests {
 
     fn setup_family_contract() -> (Drive, DataContract) {
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         let platform_version = PlatformVersion::latest();
+
+        let drive: Drive = Drive::open(tmp_dir, None, platform_version)
+            .expect("expected to open Drive successfully");
 
         drive
             .create_initial_state_structure(None, platform_version)
@@ -2003,13 +2005,9 @@ mod tests {
     }
 
     fn setup_family_birthday_contract() -> (Drive, DataContract) {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract_path =
             "tests/supporting_files/contract/family/family-contract-with-birthday.json";
@@ -2071,7 +2069,7 @@ mod tests {
         assert_eq!(query, deserialized);
 
         assert_eq!(deserialized.start_at, Some(start_after.to_buffer()));
-        assert_eq!(deserialized.start_at_included, false);
+        assert!(!deserialized.start_at_included);
         assert_eq!(deserialized.block_time_ms, Some(13453432u64));
     }
 

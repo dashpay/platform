@@ -1,4 +1,4 @@
-import * as placeholder from 'enquirer/lib/placeholder.js';
+import placeholder from 'enquirer/lib/placeholder.js';
 
 /**
  * @param {string} input

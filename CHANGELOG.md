@@ -1,3 +1,78 @@
+### [0.25.16-rc.4](https://github.com/dashpay/platform/compare/v0.25.16-rc.3...v0.25.16-rc.4) (2023-11-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* data contracts require position to be defined for object properties
+* previously created state is not compatible
+
+### Features
+
+* **platform:** document serialization across versions ([#1594](https://github.com/dashpay/platform/issues/1594))
+
+
+### Bug Fixes
+
+* drive produces wrong app hash after restart ([#1586](https://github.com/dashpay/platform/issues/1586))
+
+
+### [0.25.16-rc.3](https://github.com/dashpay/platform/compare/v0.25.16-rc.2...v0.25.16-rc.3) (2023-11-23)
+
+### Bug Fixes
+
+* **dashmate:** missing choices enumerator ([#1595](https://github.com/dashpay/platform/issues/1595))
+
+### [0.25.16-rc.2](https://github.com/dashpay/platform/compare/v0.25.16-rc.1...v0.25.16-rc.2) (2023-11-22)
+
+### Bug Fixes
+
+* **dashmate:** incorrect imports  ([#1591](https://github.com/dashpay/platform/issues/1591))
+
+### [0.25.16-rc.1](https://github.com/dashpay/platform/compare/v0.25.15...v0.25.16-rc.1) (2023-11-21)
+
+### ⚠ BREAKING CHANGES
+
+* upgrade to Node.JS v20 (#1562)
+
+### Features
+
+* **dashmate:** insight, core block explorer ([#1581](https://github.com/dashpay/platform/issues/1581))
+* **dashmate:** update core version to 20.0.1 ([#1588](https://github.com/dashpay/platform/issues/1588))
+* **dashmate:** upgrade dashmate to ESM syntax ([#1562](https://github.com/dashpay/platform/issues/1562))
+* **package:** bump rust packages
+* **sdk:** rs-sdk support for ExtendedEpochInfo::fetch()/fetch_many() ([#1576](https://github.com/dashpay/platform/issues/1576))
+
+### Bug Fixes
+
+* **dapi:** failure if bloom filter is not set ([#1572](https://github.com/dashpay/platform/issues/1572))
+* **dashmate:** incorrect block height color on null remote block height ([#1587](https://github.com/dashpay/platform/issues/1587))
+
+
+### Continuous Integration
+
+* arch dependant yarn unplugged cache ([#1580](https://github.com/dashpay/platform/issues/1580))
+* rs-sdk, feature and unnecessary deps testing for rust packages ([#1575](https://github.com/dashpay/platform/issues/1575))
+
+### Miscellaneous Chores
+
+* remove unused dependencies of rust crates ([#1578](https://github.com/dashpay/platform/issues/1578))
+* upgrade to Yarn v4 ([#1562](https://github.com/dashpay/platform/issues/1562))
+* upgrade to Node.JS v20 ([#1562](https://github.com/dashpay/platform/issues/1562))
+
+### [0.25.15](https://github.com/dashpay/platform/compare/v0.25.13...v0.25.15) (2023-11-05)
+
+### ⚠ BREAKING CHANGES
+
+* dpp: allow only one document transition ([#1555](https://github.com/dashpay/platform/issues/1555))
+
+### Continuous Integration
+* remove unused and vulnerable github-api package ([#1571](https://github.com/dashpay/platform/issues/1571))
+* bump rust packages versions in the release script by ([#1573](https://github.com/dashpay/platform/issues/1573))
+* speed up workflows and reduce costs ([#1545](https://github.com/dashpay/platform/issues/1545))
+
+### Features
+* rust software development kit for Dash Platform ([#1475](https://github.com/dashpay/platform/issues/1475))
+
 ### [0.25.13](https://github.com/dashpay/platform/compare/v0.25.12...v0.25.13) (2023-11-05)
 
 

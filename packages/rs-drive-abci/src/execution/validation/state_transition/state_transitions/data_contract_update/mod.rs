@@ -203,11 +203,13 @@ mod tests {
                 "type": "object",
                 "properties": {
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "position": 0
                     },
                     "newProp": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "position": 1
                     }
                 },
                 "required": [
@@ -274,11 +276,13 @@ mod tests {
                 "type": "object",
                 "properties": {
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "position": 0
                     },
                     "newProp": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "position": 1
                     }
                 },
                 "required": [
@@ -412,11 +416,13 @@ mod tests {
                 "type": "object",
                 "properties": {
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "position": 0,
                     },
                     "newProp": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "position": 1,
                     }
                 },
                 "required": [

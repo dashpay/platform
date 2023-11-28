@@ -4,7 +4,7 @@ use crate::identity::identity_public_key::contract_bounds::ContractBounds::{
 };
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 pub type ContractBoundsType = u8;
 

@@ -1,6 +1,6 @@
 [package]
 name = "rs-sdk"
-version = "0.25.15"
+version = "0.25.16-rc.4"
 edition = "2021"
 
 [dependencies]
@@ -45,7 +45,7 @@ dpp = { path = "../rs-dpp", features = [
     "random-documents",
 ] }
 data-contracts = { path = "../data-contracts" }
-
+tokio-test = { version = "0.4.3" }
 
 [features]
 default = ["mocks", "offline-testing"]

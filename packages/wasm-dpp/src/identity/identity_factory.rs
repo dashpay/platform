@@ -159,7 +159,7 @@ impl IdentityFactoryWasm {
         identity: &IdentityWasm,
         asset_lock_proof: &JsValue,
     ) -> Result<IdentityCreateTransitionWasm, JsValue> {
-        let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&asset_lock_proof)?;
+        let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(asset_lock_proof)?;
 
         self.0
             .create_identity_create_transition(

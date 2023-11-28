@@ -183,15 +183,18 @@ mod test {
                 "avatarUrl": {
                     "type": "string",
                     "format": "uri",
-                    "maxLength": 2048
+                    "maxLength": 2048,
+                    "position": 0
                 },
                 "publicMessage": {
                     "type": "string",
-                    "maxLength": 140
+                    "maxLength": 140,
+                    "position": 1
                 },
                 "displayName": {
                     "type": "string",
-                    "maxLength": 25
+                    "maxLength": 25,
+                    "position": 2
                 }
             },
             "required": [

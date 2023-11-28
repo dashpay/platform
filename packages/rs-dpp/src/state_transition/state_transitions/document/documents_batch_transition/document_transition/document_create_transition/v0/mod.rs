@@ -21,7 +21,7 @@ use crate::state_transition::documents_batch_transition::document_base_transitio
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use derive_more::Display;
 
-pub(self) mod property_names {
+mod property_names {
     pub const ENTROPY: &str = "$entropy";
     pub const CREATED_AT: &str = "$createdAt";
     pub const UPDATED_AT: &str = "$updatedAt";
@@ -222,6 +222,7 @@ mod test {
         let test_document_properties_alpha_identifier = Value::from([
             ("type", Value::Text("array".to_string())),
             ("byteArray", Value::Bool(true)),
+            ("position", Value::U64(0)),
         ]);
         let test_document_properties_alpha_binary = Value::from([
             ("type", Value::Text("array".to_string())),
@@ -232,6 +233,7 @@ mod test {
                 "contentMediaType",
                 Value::Text("application/x.dash.dpp.identifier".to_string()),
             ),
+            ("position", Value::U64(1)),
         ]);
         let test_document_properties = Value::from([
             ("alphaIdentifier", test_document_properties_alpha_identifier),
