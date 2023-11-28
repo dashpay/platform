@@ -18,9 +18,9 @@ async fn test_identity_read() {
     let cfg = Config::new();
     let id: dpp::prelude::Identifier = cfg.existing_identity_id;
 
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
-    let identity = Identity::fetch(&mut sdk, id)
+    let identity = Identity::fetch(&sdk, id)
         .await
         .expect("fetch identity")
         .expect("found identity");
@@ -34,9 +34,9 @@ async fn test_identity_read_by_key() {
     let cfg = Config::new();
     let id = cfg.existing_identity_id;
 
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
-    let identity = Identity::fetch(&mut sdk, id)
+    let identity = Identity::fetch(&sdk, id)
         .await
         .expect("fetch identity")
         .expect("found identity");
@@ -49,7 +49,7 @@ async fn test_identity_read_by_key() {
         .hash()
         .expect("public key hash");
 
-    let identity2 = Identity::fetch(&mut sdk, PublicKeyHash(key_hash))
+    let identity2 = Identity::fetch(&sdk, PublicKeyHash(key_hash))
         .await
         .expect("fetch identity by key hash")
         .expect("found identity by key hash");
@@ -64,9 +64,9 @@ async fn test_identity_balance_read() {
     let cfg = Config::new();
     let id: dpp::prelude::Identifier = cfg.existing_identity_id;
 
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
-    let balance = IdentityBalance::fetch(&mut sdk, id)
+    let balance = IdentityBalance::fetch(&sdk, id)
         .await
         .expect("fetch identity balance")
         .expect("found identity balance");
@@ -82,9 +82,9 @@ async fn test_identity_balance_revision_read() {
     let cfg = Config::new();
     let id: dpp::prelude::Identifier = cfg.existing_identity_id;
 
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
-    let (balance, revision) = IdentityBalanceAndRevision::fetch(&mut sdk, id)
+    let (balance, revision) = IdentityBalanceAndRevision::fetch(&sdk, id)
         .await
         .expect("fetch identity balance")
         .expect("found identity balance");
@@ -100,9 +100,9 @@ async fn test_identity_public_keys_all_read() {
     let cfg = Config::new();
     let id: dpp::prelude::Identifier = cfg.existing_identity_id;
 
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
-    let public_keys = IdentityPublicKey::fetch_many(&mut sdk, id)
+    let public_keys = IdentityPublicKey::fetch_many(&sdk, id)
         .await
         .expect("fetch identity public keys");
 

@@ -150,7 +150,7 @@ impl Config {
         // offline testing takes precedence over network testing
         #[cfg(feature = "offline-testing")]
         let sdk = {
-            let mut mock_sdk = dash_platform_sdk::SdkBuilder::new_mock()
+            let mock_sdk = dash_platform_sdk::SdkBuilder::new_mock()
                 .build()
                 .expect("initialize api");
 

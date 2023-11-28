@@ -20,7 +20,7 @@ use crate::common::{mock_data_contract, mock_document_type};
 /// document.
 #[tokio::test]
 async fn test_mock_document_fetch_many() {
-    let mut sdk = Sdk::new_mock();
+    let sdk = Sdk::new_mock();
     let document_type: DocumentType = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
 
@@ -42,7 +42,7 @@ async fn test_mock_document_fetch_many() {
         .expect_fetch_many(query.clone(), Some(expected.clone()))
         .await;
 
-    let retrieved = Document::fetch_many(&mut sdk, query).await.unwrap();
+    let retrieved = Document::fetch_many(&sdk, query).await.unwrap();
 
     assert!(!retrieved.is_empty());
     assert_eq!(retrieved, expected);

@@ -2,7 +2,7 @@
 
 use std::hash::Hash;
 use std::num::NonZeroUsize;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use dpp::prelude::{DataContract, Identifier};
 use drive_proof_verifier::ContextProvider;

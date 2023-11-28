@@ -1,3 +1,4 @@
+//! Module containing the Put trait, allowing modification of objects (state transitions) on the Dash Platform.
 use crate::platform::transition::TransitionContext;
 use crate::{Error, Sdk};
 

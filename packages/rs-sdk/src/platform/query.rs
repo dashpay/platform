@@ -44,9 +44,9 @@ pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
 /// use dash_platform_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
-/// let mut sdk = Sdk::new_mock();
+/// let sdk = Sdk::new_mock();
 /// let query = Identifier::new(SOME_IDENTIFIER);
-/// let identity = Identity::fetch(&mut sdk, query);
+/// let identity = Identity::fetch(&sdk, query);
 /// ```
 ///
 /// As [Identifier](crate::platform::Identifier) implements [Query], the `query` variable in the code
@@ -158,12 +158,12 @@ impl<'a> Query<DocumentQuery> for DriveQuery<'a> {
 /// use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
-/// let mut sdk = Sdk::new_mock();
+/// let sdk = Sdk::new_mock();
 /// let query = LimitQuery {
 ///    query: 1,
 ///    limit: Some(10),
 /// };
-/// let epoch = ExtendedEpochInfo::fetch_many(&mut sdk, query);
+/// let epoch = ExtendedEpochInfo::fetch_many(&sdk, query);
 /// ```
 #[derive(Debug, Clone)]
 pub struct LimitQuery<Q> {

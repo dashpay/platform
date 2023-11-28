@@ -8,9 +8,9 @@ async fn test_protocol_version_vote_count() {
     setup_logs();
 
     let cfg = Config::new();
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
-    let votings = ProtocolVersionVoteCount::fetch_many(&mut sdk, ())
+    let votings = ProtocolVersionVoteCount::fetch_many(&sdk, ())
         .await
         .expect("fetch protocol version votes");
 

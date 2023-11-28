@@ -1,12 +1,6 @@
 //! [Sdk] entrypoint to Dash Platform.
 
-use std::{
-    fmt::Debug,
-    num::NonZeroUsize,
-    ops::{Deref, DerefMut},
-    rc::Rc,
-    sync::MutexGuard,
-};
+use std::{fmt::Debug, num::NonZeroUsize, ops::DerefMut};
 #[cfg(feature = "mocks")]
 use std::{
     path::{Path, PathBuf},
@@ -16,16 +10,13 @@ use std::{
 #[cfg(feature = "mocks")]
 use crate::mock::MockDashPlatformSdk;
 
+use crate::mock::wallet::{platform::PlatformSignerWallet, MockWallet};
 use crate::mock::MockResponse;
 use crate::mock::{provider::GrpcContextProvider, wallet::core::CoreGrpcWallet};
 use crate::wallet::Wallet;
 use crate::{error::Error, platform::transition::TransitionContext};
-use crate::{
-    mock::wallet::{platform::PlatformSignerWallet, MockWallet},
-    platform::transition::context,
-};
 
-use dapi_grpc::{mock::Mockable, tonic::client::Grpc};
+use dapi_grpc::mock::Mockable;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive_proof_verifier::MockContextProvider;
@@ -536,12 +527,7 @@ impl SdkBuilder {
         )?;
         let platform_wallet = PlatformSignerWallet::new();
 
-        Ok(MockWallet::new(
-            core_wallet,
-            platform_wallet,
-            self.data_contract_cache_size,
-            self.quorum_public_keys_cache_size,
-        ))
+        Ok(MockWallet::new(core_wallet, platform_wallet))
     }
 
     fn is_mock(&self) -> bool {

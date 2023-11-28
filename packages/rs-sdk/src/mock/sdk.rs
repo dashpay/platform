@@ -215,7 +215,7 @@ impl MockDashPlatformSdk {
     ///     api.mock().expect_fetch(query, Some(expected.clone())).await;
     ///
     ///     // Fetch the identity
-    ///     let retrieved = dpp::prelude::Identity::fetch(&mut api, query)
+    ///     let retrieved = dpp::prelude::Identity::fetch(&api, query)
     ///         .await
     ///         .unwrap()
     ///         .expect("object should exist");

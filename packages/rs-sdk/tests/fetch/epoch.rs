@@ -78,7 +78,7 @@ async fn test_epoch_list() {
     setup_logs();
 
     let cfg = Config::new();
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
     // Given some starting epoch and current epoch
     let starting_epoch: EpochIndex = 0;
@@ -86,7 +86,7 @@ async fn test_epoch_list() {
 
     // When we fetch epochs from the server, starting with `starting_epoch`
     let epochs: BTreeMap<u16, Option<ExtendedEpochInfo>> =
-        ExtendedEpochInfo::fetch_many(&mut sdk, starting_epoch)
+        ExtendedEpochInfo::fetch_many(&sdk, starting_epoch)
             .await
             .expect("list epochs");
 
@@ -104,11 +104,11 @@ async fn test_epoch_list_limit() {
     setup_logs();
 
     let cfg = Config::new();
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
     // Given some starting epoch and current epoch
     let starting_epoch: EpochIndex = 1;
-    let current_epoch = get_current_epoch(&mut sdk, &cfg).await;
+    let current_epoch = get_current_epoch(&sdk, &cfg).await;
     let limit = 2;
 
     let query: LimitQuery<EpochIndex> = LimitQuery {
@@ -116,7 +116,7 @@ async fn test_epoch_list_limit() {
         limit: Some(limit),
     };
 
-    let epochs = ExtendedEpochInfo::fetch_many(&mut sdk, query)
+    let epochs = ExtendedEpochInfo::fetch_many(&sdk, query)
         .await
         .expect("list epochs");
 
@@ -129,12 +129,12 @@ async fn test_epoch_fetch() {
     setup_logs();
 
     let cfg = Config::new();
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
     // Given some current epoch
-    let current_epoch = get_current_epoch(&mut sdk, &cfg).await;
+    let current_epoch = get_current_epoch(&sdk, &cfg).await;
 
-    let epoch = ExtendedEpochInfo::fetch(&mut sdk, current_epoch)
+    let epoch = ExtendedEpochInfo::fetch(&sdk, current_epoch)
         .await
         .expect("list epochs")
         .expect("epoch found");
@@ -148,12 +148,12 @@ async fn test_epoch_fetch_future() {
     setup_logs();
 
     let cfg = Config::new();
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
     // Given some current epoch
-    let current_epoch = get_current_epoch(&mut sdk, &cfg).await;
+    let current_epoch = get_current_epoch(&sdk, &cfg).await;
 
-    let epoch = ExtendedEpochInfo::fetch(&mut sdk, current_epoch + 10)
+    let epoch = ExtendedEpochInfo::fetch(&sdk, current_epoch + 10)
         .await
         .expect("list epochs");
 

@@ -59,14 +59,14 @@ use super::LimitQuery;
 ///
 /// # const SOME_IDENTIFIER_1 : [u8; 32] = [1; 32];
 /// # const SOME_IDENTIFIER_2 : [u8; 32] = [2; 32];
-/// let mut sdk = Sdk::new_mock();
+/// let sdk = Sdk::new_mock();
 ///
 /// let id1 = Identifier::new(SOME_IDENTIFIER_1);
 /// let id2 = Identifier::new(SOME_IDENTIFIER_2);
 ///
 /// let query = vec![id1, id2];
 ///
-/// let data_contract = DataContract::fetch_many(&mut sdk, query);
+/// let data_contract = DataContract::fetch_many(&sdk, query);
 /// ```
 #[async_trait::async_trait]
 pub trait FetchMany<K: Ord>
@@ -277,8 +277,8 @@ impl FetchMany<EpochIndex> for ExtendedEpochInfo {
 /// use drive_proof_verifier::types::ProtocolVersionVoteCount;
 ///
 /// # tokio_test::block_on(async {
-/// let mut sdk = Sdk::new_mock();
-/// let result = ProtocolVersionVoteCount::fetch_many(&mut sdk, ()).await;
+/// let sdk = Sdk::new_mock();
+/// let result = ProtocolVersionVoteCount::fetch_many(&sdk, ()).await;
 /// # });
 /// ```
 impl FetchMany<ProtocolVersion> for ProtocolVersionVoteCount {

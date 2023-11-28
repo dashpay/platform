@@ -1,7 +1,5 @@
 //! Wallet for managing keys assets in Dash Core and Platform.
 
-use std::num::NonZeroUsize;
-
 use async_trait::async_trait;
 use dashcore_rpc::dashcore_rpc_json::ListUnspentResultEntry;
 use dpp::{
@@ -48,12 +46,7 @@ impl<C: CoreWallet, P: PlatformWallet> CompositeWallet<C, P> {
     /// Create new composite wallet comprising of Core wallet and Platform wallet.
     ///
     /// Note that if the `sdk` is `None`, the wallet will not be able to fetch data contracts.
-    pub fn new(
-        core_wallet: C,
-        platform_wallet: P,
-        data_contracts_cache_size: NonZeroUsize,
-        quorum_public_keys_cache_size: NonZeroUsize,
-    ) -> Self {
+    pub fn new(core_wallet: C, platform_wallet: P) -> Self {
         Self {
             core_wallet,
             platform_wallet,
