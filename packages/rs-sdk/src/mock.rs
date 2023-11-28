@@ -12,9 +12,9 @@
 //! ## Example
 //!
 //! ```no_run
-//! let mut sdk = dash_platform_sdk::Sdk::new_mock();
-//! let query = dash_platform_sdk::platform::Identifier::random();
-//! sdk.mock().expect_fetch(query, None as Option<dash_platform_sdk::platform::Identity>);
+//! let mut sdk = dash_sdk::Sdk::new_mock();
+//! let query = dash_sdk::platform::Identifier::random();
+//! sdk.mock().expect_fetch(query, None as Option<dash_sdk::platform::Identity>);
 //! ```
 //!
 //! See tests/mock_*.rs for more detailed examples.
@@ -28,7 +28,7 @@ pub mod sdk;
 mod noop;
 
 #[cfg(feature = "mocks")]
-// TODO: move Mockable to some crate that can be shared between dapi-grpc, rs-dapi-client, and dash-platform-sdk
+// TODO: move Mockable to some crate that can be shared between dapi-grpc, rs-dapi-client, and dash-sdk
 pub use dapi_grpc::mock::Mockable;
 #[cfg(feature = "mocks")]
 pub use requests::*;

@@ -1,5 +1,5 @@
 use crate::{common::setup_logs, config::Config};
-use dash_platform_sdk::platform::{types::version_votes::MasternodeProtocolVoteEx, FetchMany};
+use dash_sdk::platform::{types::version_votes::MasternodeProtocolVoteEx, FetchMany};
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use drive_proof_verifier::types::MasternodeProtocolVote;
 

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use dash_platform_sdk::{
+use dash_sdk::{
     platform::{DocumentQuery, FetchMany},
     Sdk,
 };

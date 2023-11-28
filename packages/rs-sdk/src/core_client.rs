@@ -1,7 +1,7 @@
 //! Core RPC client used to retrieve quorum keys from core.
 //!
 //! TODO: This is a temporary implementation, effective until we integrate SPV
-//! into dash-platform-sdk.
+//! into dash-sdk.
 
 use dashcore_rpc::{
     dashcore::{hashes::Hash, QuorumHash},

@@ -1,8 +1,8 @@
 //! Platform DAPI requests.
 
-// TODO: dash-platform-sdk should define a proper user-facing API hiding transport and serialization
+// TODO: dash-sdk should define a proper user-facing API hiding transport and serialization
 // details, however we don't have any data model yet, so for now it will re-export proto
-// generated types. Later these re-exports could be swapped with actual dash-platform-sdk's requests
+// generated types. Later these re-exports could be swapped with actual dash-sdk's requests
 // and while it will change the substance, the API structure will remain the same.
 
 mod delegate;
