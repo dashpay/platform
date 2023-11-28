@@ -4,12 +4,10 @@ export default function createHttpApiServerFactory() {
   /**
    * @return {HttpServer}
    */
-  function createHttpApiServer(configName) {
+  function createHttpApiServer() {
     const server = new jayson.Server({}, {
       router(method, params) {
         const argv = method.split(' ');
-
-        argv.push(`--config=${configName}`);
 
         // map arguments to argv
         if (Array.isArray(params)) {
