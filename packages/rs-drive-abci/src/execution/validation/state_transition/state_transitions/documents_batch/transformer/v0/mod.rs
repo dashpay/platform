@@ -18,14 +18,14 @@ use dpp::document::{Document, DocumentV0Getters};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{consensus::ConsensusError, prelude::Identifier, validation::ConsensusValidationResult};
 
-use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition};
+use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentTransition, DocumentReplaceTransition, DocumentTransitionV0Methods};
 use dpp::state_transition::StateTransitionLike;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
-use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::{DocumentReplaceTransitionAction, DocumentReplaceTransitionActionAccessorsV0};
+use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
 use drive::state_transition_action::document::documents_batch::v0::DocumentsBatchTransitionActionV0;
@@ -36,8 +36,7 @@ use drive::grovedb::TransactionArg;
 
 use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use drive::drive::contract::DataContractFetchInfo;
-use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext};
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchTransitionTransformerV0
 {
@@ -73,7 +72,7 @@ trait DocumentsBatchTransitionInternalTransformerV0 {
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error>;
     /// The data contract can be of multiple difference versions
-    fn transform_transition_v0<'a>(
+    fn transform_transition_v0(
         validate: bool,
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         transition: &DocumentTransition,

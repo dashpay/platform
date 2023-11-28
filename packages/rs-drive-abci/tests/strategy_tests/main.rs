@@ -386,7 +386,8 @@ mod tests {
             failure_testing: Some(FailureStrategy {
                 deterministic_start_seed: None,
                 dont_finalize_block: false,
-                expect_errors_with_codes: vec![],
+                expect_every_block_errors_with_codes: vec![],
+                expect_specific_block_errors_with_codes: Default::default(),
                 rounds_before_successful_block: Some(5),
             }),
             query_testing: None,
@@ -566,7 +567,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99868671240)
+        assert_eq!(balance, 99869098220)
     }
 
     #[test]
@@ -1212,7 +1213,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "7a1082461952a6eff8af3cd091e27d1c2d804553f0670f55416852759a5cfb5e".to_string()
+            "3fcae6c74a7c0cf2ed8613a6e110f3bdc544a4a7b5b51a2620108f845241c65b".to_string()
         )
     }
 
@@ -1816,7 +1817,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "639802ed1f2491efcd49eb201c2c36de57c18eb6db798143c794caa756ea591a".to_string()
+            "a19831eae73cfd6cb4fcb405e4725495b71f855842761312108c1bfc658417ba".to_string()
         )
     }
 
@@ -1924,7 +1925,7 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 417);
+        assert_eq!(outcome.identities.len() as u64, 421);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -2054,7 +2055,7 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 80);
+        assert_eq!(outcome.identities.len() as u64, 86);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances

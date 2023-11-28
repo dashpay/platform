@@ -3,7 +3,6 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
 use crate::query::QueryValidationResult;
-use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 
 use dpp::version::PlatformVersion;
 
@@ -129,11 +128,13 @@ mod test {
                 "type": "object",
                 "properties": {
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "position": 0
                     },
                     "newProp": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "position": 1
                     }
                 },
                 "required": [

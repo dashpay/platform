@@ -17,22 +17,27 @@
       ],
       "properties": {
         "age": {
-          "type": "integer"
-        },
-        "birthday": {
-          "type": "number"
+          "type": "integer",
+          "position": 0
         },
         "firstName": {
           "type": "string",
-          "maxLength": 50
+          "maxLength": 50,
+          "position": 1
         },
         "middleName": {
           "type": "string",
-          "maxLength": 50
+          "maxLength": 50,
+          "position": 2
         },
         "lastName": {
           "type": "string",
-          "maxLength": 50
+          "maxLength": 50,
+          "position": 3
+        },
+        "birthday": {
+          "type": "number",
+          "position": 4
         }
       },
       "additionalProperties": false

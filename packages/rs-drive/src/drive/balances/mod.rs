@@ -60,19 +60,15 @@ pub(crate) fn balance_path_vec() -> Vec<Vec<u8>> {
 mod tests {
     use crate::drive::Drive;
 
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
-    use tempfile::TempDir;
 
     #[test]
     fn verify_total_credits_structure() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive_with_initial_state_structure();
         let db_transaction = drive.grove.start_transaction();
 
-        let platform_version = PlatformVersion::first();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
+        let platform_version = PlatformVersion::latest();
 
         let credits_match_expected = drive
             .calculate_total_credits_balance(Some(&db_transaction), &platform_version.drive)

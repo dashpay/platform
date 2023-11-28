@@ -1,6 +1,6 @@
 use crate::identity::v0::IdentityV0;
 use crate::identity::{IdentityPublicKey, KeyID};
-use crate::prelude::{AssetLockProof, Revision};
+use crate::prelude::Revision;
 
 use crate::serialization::PlatformSerializable;
 use crate::util::hash;

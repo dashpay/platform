@@ -31,7 +31,7 @@ impl BroadcastStateTransition for StateTransition {
     async fn broadcast_and_wait(
         &self,
         sdk: &mut Sdk,
-        time_out_ms: Option<u64>,
+        _time_out_ms: Option<u64>,
     ) -> Result<StateTransitionProofResult, Error> {
         let request = self.broadcast_request_for_state_transition()?;
 
@@ -47,7 +47,7 @@ impl BroadcastStateTransition for StateTransition {
         let proof = response.proof_owned()?;
 
         let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
-            &self,
+            self,
             proof.grovedb_proof.as_slice(),
             &|_| Ok(None),
             sdk.version(),

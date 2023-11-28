@@ -7,13 +7,11 @@ use crate::platform_types::state_transition_execution_result::StateTransitionExe
 #[cfg(test)]
 use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult::ConsensusExecutionError;
 use crate::rpc::core::CoreRPCLike;
-use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
-use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
-use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
+
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
@@ -31,7 +29,7 @@ where
     pub(in crate::execution) fn execute_tx(
         &self,
         raw_tx: Vec<u8>,
-        block_info: &BlockInfo,
+        block_info: &dpp::block::block_info::BlockInfo,
         transaction: &Transaction,
     ) -> Result<StateTransitionExecutionResult, Error> {
         let state_transition =
@@ -201,8 +199,8 @@ mod tests {
             217, 221, 43, 251, 104, 84, 78, 35, 20, 237, 188, 237, 240, 216, 62, 79, 208, 96, 149,
             116, 62, 82, 187, 135, 219,
         ];
-        let state_transitions = StateTransition::deserialize_many(&vec![tx.clone()])
-            .expect("expected a state transition");
+        let state_transitions =
+            StateTransition::deserialize_many(&[tx.clone()]).expect("expected a state transition");
         let state_transition = state_transitions.first().unwrap();
         let StateTransition::DataContractCreate(contract_create) = state_transition else {
             panic!("expecting a data contract create");
@@ -235,8 +233,9 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let check_result = platform.check_tx(&tx).expect("expected to check tx");
+        assert!(check_result.is_valid());
 
-        let result = platform
+        let _result = platform
             .platform
             .process_raw_state_transitions(
                 &vec![tx],
@@ -325,7 +324,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let mut platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -596,10 +595,9 @@ mod tests {
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(
-                identity.clone(),
+                &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
-                &NativeBlsModule,
                 platform_version,
                 None,
             )
@@ -729,10 +727,9 @@ mod tests {
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(
-                identity.clone(),
+                &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
-                &NativeBlsModule,
                 platform_version,
                 None,
             )
@@ -840,10 +837,9 @@ mod tests {
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(
-                identity.clone(),
+                &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
-                &NativeBlsModule,
                 platform_version,
                 None,
             )
@@ -960,10 +956,9 @@ mod tests {
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(
-                identity.clone(),
+                &identity,
                 asset_lock_proof_top_up.clone(),
                 pk.as_slice(),
-                &NativeBlsModule,
                 platform_version,
                 None,
             )
@@ -1175,7 +1170,7 @@ mod tests {
 
         let high_key_pair = KeyPair::new(&secp, &mut rng);
 
-        let high_secret_key = high_key_pair.secret_key();
+        let _high_secret_key = high_key_pair.secret_key();
 
         let high_public_key = high_key_pair.public_key();
 
@@ -1223,7 +1218,7 @@ mod tests {
             }),
         };
 
-        let signable_bytes = new_key
+        let _signable_bytes = new_key
             .signable_bytes()
             .expect("expected to get signable bytes");
 
@@ -1238,7 +1233,7 @@ mod tests {
         }
         .into();
 
-        let mut update_transition: StateTransition = update_transition.into();
+        let update_transition: StateTransition = update_transition.into();
 
         let signable_bytes = update_transition
             .signable_bytes()

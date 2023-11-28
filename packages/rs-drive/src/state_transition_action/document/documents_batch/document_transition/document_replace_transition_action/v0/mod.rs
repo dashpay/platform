@@ -3,11 +3,11 @@ pub mod transformer;
 use dpp::document::{Document, DocumentV0};
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::{Identifier, Value};
-use dpp::prelude::{DataContract, Revision};
+use dpp::prelude::Revision;
 use dpp::ProtocolError;
 
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_replace_transition::DocumentReplaceTransitionV0;
+
 use std::collections::BTreeMap;
 
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};

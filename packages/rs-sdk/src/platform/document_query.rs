@@ -255,6 +255,34 @@ impl<'a> From<&'a DriveQuery<'a>> for DocumentQuery {
     }
 }
 
+impl<'a> From<DriveQuery<'a>> for DocumentQuery {
+    fn from(value: DriveQuery<'a>) -> Self {
+        let data_contract = value.contract.clone();
+        let document_type_name = value.document_type.name();
+        let where_clauses = value.internal_clauses.clone().into();
+        let order_by_clauses = value.order_by.iter().map(|(_, v)| v.clone()).collect();
+        let limit = value.limit.unwrap_or(0) as u32;
+
+        let start = if let Some(start_at) = value.start_at {
+            match value.start_at_included {
+                true => Some(Start::StartAt(start_at.to_vec())),
+                false => Some(Start::StartAfter(start_at.to_vec())),
+            }
+        } else {
+            None
+        };
+
+        Self {
+            data_contract: Arc::new(data_contract),
+            document_type_name: document_type_name.to_string(),
+            where_clauses,
+            order_by_clauses,
+            limit,
+            start,
+        }
+    }
+}
+
 impl<'a> TryFrom<&'a DocumentQuery> for DriveQuery<'a> {
     type Error = crate::error::Error;
 

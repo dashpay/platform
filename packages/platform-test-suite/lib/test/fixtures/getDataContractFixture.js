@@ -35,6 +35,7 @@ module.exports = async function getDataContractFixture(
       properties: {
         name: {
           type: 'string',
+          position: 0,
         },
       },
       required: ['$createdAt'],
@@ -55,6 +56,7 @@ module.exports = async function getDataContractFixture(
           type: 'array',
           byteArray: true,
           maxItems: 16,
+          position: 0,
         },
         identifierField: {
           type: 'array',
@@ -62,6 +64,7 @@ module.exports = async function getDataContractFixture(
           contentMediaType: Identifier.MEDIA_TYPE,
           minItems: 32,
           maxItems: 32,
+          position: 1,
         },
       },
       required: ['byteArrayField'],
@@ -116,10 +119,12 @@ module.exports = async function getDataContractFixture(
         firstName: {
           type: 'string',
           maxLength: 63,
+          position: 0,
         },
         lastName: {
           type: 'string',
           maxLength: 63,
+          position: 1,
         },
       },
       required: ['firstName', '$createdAt', '$updatedAt', 'lastName'],

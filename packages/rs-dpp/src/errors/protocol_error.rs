@@ -172,7 +172,7 @@ pub enum ProtocolError {
 
     /// Error
     #[error("missing key: {0}")]
-    DocumentKeyMissing(String),
+    DesiredKeyWithTypePurposeSecurityLevelMissing(String),
 
     /// Value error
     #[error("value error: {0}")]

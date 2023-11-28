@@ -18,7 +18,6 @@ use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
-use strategy_tests::Strategy;
 
 use dashcore_rpc::json::{ExtendedQuorumListResult, SoftforkInfo};
 use drive_abci::abci::AbciApplication;
@@ -321,7 +320,7 @@ pub(crate) fn run_chain_for_strategy(
 
     let initial_all_masternodes: Vec<_> = initial_masternodes_with_updates
         .into_iter()
-        .chain(initial_hpmns_with_updates.clone().into_iter())
+        .chain(initial_hpmns_with_updates.clone())
         .collect();
 
     platform
@@ -718,6 +717,23 @@ pub(crate) fn continue_chain_for_strategy(
             })
             .unwrap_or_default();
 
+        let expected_validation_errors = strategy
+            .failure_testing
+            .as_ref()
+            .map(|failure_strategy| {
+                let mut codes = failure_strategy
+                    .expect_every_block_errors_with_codes
+                    .clone();
+                if let Some(expected_block_error_codes) = failure_strategy
+                    .expect_specific_block_errors_with_codes
+                    .get(&block_height)
+                {
+                    codes.extend(expected_block_error_codes);
+                }
+                codes
+            })
+            .unwrap_or_default();
+
         let mut block_execution_outcome = None;
         for round in 0..=rounds {
             block_execution_outcome = Some(
@@ -728,11 +744,7 @@ pub(crate) fn continue_chain_for_strategy(
                         proposed_version,
                         block_info.clone(),
                         round,
-                        strategy
-                            .failure_testing
-                            .as_ref()
-                            .map(|a| a.expect_errors_with_codes.clone())
-                            .unwrap_or_default(),
+                        expected_validation_errors.as_slice(),
                         false,
                         state_transitions.clone(),
                         MimicExecuteBlockOptions {
@@ -796,6 +808,7 @@ pub(crate) fn continue_chain_for_strategy(
                 &root_app_hash,
                 &state_transaction_results,
                 &block_info,
+                &expected_validation_errors,
                 platform_version,
             );
         }

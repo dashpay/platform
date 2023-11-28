@@ -20,7 +20,7 @@ impl From<Metadata> for MetadataWasm {
 
 impl From<&MetadataWasm> for Metadata {
     fn from(v: &MetadataWasm) -> Self {
-        v.0.clone()
+        v.0
     }
 }
 

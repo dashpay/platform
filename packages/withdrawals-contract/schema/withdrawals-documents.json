@@ -70,28 +70,33 @@
         "type": "array",
         "byteArray": true,
         "minItems": 32,
-        "maxItems": 32
+        "maxItems": 32,
+        "position": 0
       },
       "transactionSignHeight": {
         "type": "integer",
         "description": "The Core height on which transaction was signed",
-        "minimum": 1
+        "minimum": 1,
+        "position": 1
       },
       "transactionIndex": {
         "type": "integer",
         "description": "Sequential index used to create withdrawal transaction",
-        "minimum": 1
+        "minimum": 1,
+        "position": 2
       },
       "amount": {
         "type": "integer",
         "description": "The amount to be withdrawn",
-        "minimum": 1000
+        "minimum": 1000,
+        "position": 3
       },
       "coreFeePerByte": {
         "type": "integer",
         "description": "This is the fee that you are willing to spend for this transaction in Duffs/Byte",
         "minimum": 1,
-        "maximum": 4294967295
+        "maximum": 4294967295,
+        "position": 4
       },
       "pooling": {
         "type": "integer",
@@ -100,13 +105,15 @@
           0,
           1,
           2
-        ]
+        ],
+        "position": 5
       },
       "outputScript": {
         "type": "array",
         "byteArray": true,
         "minItems": 23,
-        "maxItems": 25
+        "maxItems": 25,
+        "position": 6
       },
       "status": {
         "type": "integer",
@@ -116,7 +123,8 @@
           2,
           3,
           4
-        ]
+        ],
+        "position": 7
       }
     },
     "additionalProperties": false,

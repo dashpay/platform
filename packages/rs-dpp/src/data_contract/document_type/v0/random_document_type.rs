@@ -106,10 +106,11 @@ use crate::identity::SecurityLevel;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
+use indexmap::IndexMap;
 use platform_value::{Identifier, Value};
 use rand::rngs::StdRng;
 use rand::Rng;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::ops::Range;
 
 impl DocumentTypeV0 {
@@ -200,7 +201,7 @@ impl DocumentTypeV0 {
         let required_field_count =
             rng.gen_range(parameters.new_fields_required_count_range.clone());
 
-        let mut properties = BTreeMap::new();
+        let mut properties = IndexMap::new();
         let mut required_fields = BTreeSet::new();
 
         for _ in 0..optional_field_count {

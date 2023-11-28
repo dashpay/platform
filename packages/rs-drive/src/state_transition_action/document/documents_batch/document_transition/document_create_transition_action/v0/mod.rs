@@ -9,10 +9,7 @@ use dpp::ProtocolError;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use dpp::prelude::DataContract;
-use dpp::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
-use dpp::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransitionV0;
+
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
 
 use dpp::version::PlatformVersion;

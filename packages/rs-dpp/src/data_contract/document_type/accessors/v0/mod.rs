@@ -6,7 +6,8 @@ use platform_value::{Identifier, Value};
 
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::identity::SecurityLevel;
-use std::collections::{BTreeMap, BTreeSet};
+use indexmap::IndexMap;
+use std::collections::BTreeSet;
 
 pub trait DocumentTypeV0Getters {
     /// Returns the name of the document type.
@@ -23,10 +24,10 @@ pub trait DocumentTypeV0Getters {
     fn index_structure(&self) -> &IndexLevel;
 
     /// Returns the flattened properties of the document type.
-    fn flattened_properties(&self) -> &BTreeMap<String, DocumentProperty>;
+    fn flattened_properties(&self) -> &IndexMap<String, DocumentProperty>;
 
     /// Returns the properties of the document type.
-    fn properties(&self) -> &BTreeMap<String, DocumentProperty>;
+    fn properties(&self) -> &IndexMap<String, DocumentProperty>;
 
     /// Returns the identifier paths of the document type.
     fn identifier_paths(&self) -> &BTreeSet<String>;

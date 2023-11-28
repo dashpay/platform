@@ -19,14 +19,13 @@ module.exports = {
   rust: function *() {
     const rootDir = path.join(__dirname, '..', '..');
 
-    const packagesDir = path.join(rootDir, 'packages')
+    const rootCargoPath = path.join(rootDir, 'Cargo.toml');
+    const rootCargoFileString = readFileSync(rootCargoPath);
 
-    const allPackages = readdirSync(packagesDir).filter(e => e !== 'README.md')
+    const { workspace : { members }} = TOML.parse(rootCargoFileString);
 
-    const rustPackages = allPackages.filter(e => readdirSync(path.join(packagesDir, e)).indexOf('Cargo.toml') !== -1)
-
-    for (const rustPackage of rustPackages) {
-      const filename = path.join(packagesDir, rustPackage, 'Cargo.toml');
+    for (const rustPackage of members) {
+      const filename = path.join(rootDir, rustPackage, 'Cargo.toml');
       const cargoFile = readFileSync(filename);
 
       yield {filename, toml: TOML.parse(cargoFile)};

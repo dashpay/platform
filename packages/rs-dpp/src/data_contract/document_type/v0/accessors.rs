@@ -8,7 +8,8 @@ use platform_value::{Identifier, Value};
 
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::identity::SecurityLevel;
-use std::collections::{BTreeMap, BTreeSet};
+use indexmap::IndexMap;
+use std::collections::BTreeSet;
 
 impl DocumentTypeV0Getters for DocumentTypeV0 {
     fn name(&self) -> &String {
@@ -31,11 +32,11 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
         &self.index_structure
     }
 
-    fn flattened_properties(&self) -> &BTreeMap<String, DocumentProperty> {
+    fn flattened_properties(&self) -> &IndexMap<String, DocumentProperty> {
         &self.flattened_properties
     }
 
-    fn properties(&self) -> &BTreeMap<String, DocumentProperty> {
+    fn properties(&self) -> &IndexMap<String, DocumentProperty> {
         &self.properties
     }
 

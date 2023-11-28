@@ -352,7 +352,6 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
                                         error: format!("missing requested key type: {}", *kind),
                                     }),
                                 };
-
                                 match kt  {
                                     Err(e) => Err(e),
                                     Ok(d) => Ok((*level as u8, d))
@@ -427,7 +426,7 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
 
         provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>

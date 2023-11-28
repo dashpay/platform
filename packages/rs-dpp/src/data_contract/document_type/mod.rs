@@ -23,7 +23,7 @@ use derive_more::From;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
-pub(self) mod property_names {
+mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";
     pub const DOCUMENTS_MUTABLE: &str = "documentsMutable";
     pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
@@ -33,6 +33,7 @@ pub(self) mod property_names {
         "requiresIdentityDecryptionBoundedKey";
     pub const INDICES: &str = "indices";
     pub const PROPERTIES: &str = "properties";
+    pub const POSITION: &str = "position";
     pub const REQUIRED: &str = "required";
     pub const TYPE: &str = "type";
     pub const REF: &str = "$ref";
