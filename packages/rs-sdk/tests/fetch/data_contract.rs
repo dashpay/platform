@@ -1,5 +1,5 @@
 use crate::config::Config;
-use dash_platform_sdk::platform::{Fetch, FetchMany};
+use dash_sdk::platform::{Fetch, FetchMany};
 use dpp::prelude::{DataContract, Identifier};
 
 /// Given some dummy data contract ID, when I fetch data contract, I get None because it doesn't exist.
