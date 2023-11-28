@@ -14,7 +14,7 @@ use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTran
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::withdrawal::Pooling;
 use drive::drive::Drive;
-use rs_dapi_client::{DapiRequest, RequestSettings};
+use rs_dapi_client::{DAPIRequest, RequestSettings};
 
 #[async_trait::async_trait]
 pub trait WithdrawFromIdentity {
@@ -71,11 +71,11 @@ impl WithdrawFromIdentity for Identity {
 
         match result {
             StateTransitionProofResult::VerifiedPartialIdentity(identity) => {
-                identity.balance.ok_or(Error::DapiClientError(
+                identity.balance.ok_or(Error::DAPIClientError(
                     "expected an identity balance".to_string(),
                 ))
             }
-            _ => Err(Error::DapiClientError("proved a non identity".to_string())),
+            _ => Err(Error::DAPIClientError("proved a non identity".to_string())),
         }
     }
 }

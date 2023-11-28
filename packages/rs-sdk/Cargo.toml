@@ -1,5 +1,5 @@
 [package]
-name = "dash-platform-sdk"
+name = "dash-sdk"
 version = "0.25.16-rc.4"
 edition = "2021"
 
@@ -29,7 +29,7 @@ http = { version = "0.2.9" }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
 serde = { version = "1.0.152", default-features = false, features = ["rc"] }
 serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
-tracing = { version = "0.1.37" }
+tracing = "0.1.40"
 hex = { version = "0.4.3", optional = true }
 dotenvy = { version = "0.15.7", optional = true }
 envy = { version = "0.4.2", optional = true }

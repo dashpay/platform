@@ -41,7 +41,7 @@ pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
 /// or [FetchMany](crate::platform::FetchMany) trait:
 ///
 /// ```rust
-/// use dash_platform_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
+/// use dash_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
 /// let mut sdk = Sdk::new_mock();
@@ -153,7 +153,7 @@ impl<'a> Query<DocumentQuery> for DriveQuery<'a> {
 /// ## Example
 ///
 /// ```rust
-/// use dash_platform_sdk::{Sdk, platform::{Query, LimitQuery, Identifier, FetchMany, Identity}};
+/// use dash_sdk::{Sdk, platform::{Query, LimitQuery, Identifier, FetchMany, Identity}};
 /// use drive_proof_verifier::types::ExtendedEpochInfos;
 /// use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 ///

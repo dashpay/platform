@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use dash_platform_sdk::platform::Fetch;
+use dash_sdk::platform::Fetch;
 use dpp::prelude::{DataContract, Identifier};
 use rs_dapi_client::AddressList;
 
@@ -12,17 +12,19 @@ pub const PLATFORM_PORT: u16 = 2443;
 
 /// Read data contract.
 ///
-/// This example demonstrates how to connect to running platform and try to read a data contract.
+/// This example demonstrates how to connect to running platform and try to read
+/// a data contract.
 #[tokio::main(flavor = "multi_thread", worker_threads = 1)]
 async fn main() {
     // Replace const below with data contract identifier of data contract, 32 bytes
     const DATA_CONTRACT_ID_BYTES: [u8; 32] = [1; 32];
 
     // Configure the SDK to connect to the Platform.
-    // Note that in future versions of the SDK, core user and password will not be needed.
+    // Note that in future versions of the SDK, core user and password will not be
+    // needed.
     let uri = http::Uri::from_str(&format!("http://{}:{}", PLATFORM_IP, PLATFORM_PORT))
         .expect("platform address uri");
-    let sdk = dash_platform_sdk::SdkBuilder::new(AddressList::from_iter([uri]))
+    let sdk = dash_sdk::SdkBuilder::new(AddressList::from_iter([uri]))
         .with_core(PLATFORM_IP, CORE_PORT, CORE_USER, CORE_PASSWORD)
         .build()
         .expect("cannot initialize api");
@@ -34,7 +36,7 @@ async fn main() {
     let contract: Option<DataContract> =
         DataContract::fetch(&sdk, id).await.expect("fetch identity");
 
-    // Check the result; note that in our case, we expect to not find the data contract, as the
-    // identifier is not valid.
+    // Check the result; note that in our case, we expect to not find the data
+    // contract, as the identifier is not valid.
     assert!(contract.is_none(), "result: {:?}", contract);
 }

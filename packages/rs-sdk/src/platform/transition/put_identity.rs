@@ -10,7 +10,7 @@ use dpp::prelude::{AssetLockProof, Identity};
 
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use drive::drive::Drive;
-use rs_dapi_client::{DapiRequest, RequestSettings};
+use rs_dapi_client::{DAPIRequest, RequestSettings};
 
 #[async_trait::async_trait]
 /// A trait for putting an identity to platform
@@ -85,7 +85,7 @@ impl<S: Signer> PutIdentity<S> for Identity {
             Err(e) => {
                 if e.to_string().contains("already exists") {
                     let identity = Identity::fetch(sdk, identity_id).await?;
-                    return identity.ok_or(Error::DapiClientError(
+                    return identity.ok_or(Error::DAPIClientError(
                         "identity was proved to not exist but was said to exist".to_string(),
                     ));
                 }
@@ -109,7 +109,7 @@ impl<S: Signer> PutIdentity<S> for Identity {
 
         match result {
             StateTransitionProofResult::VerifiedIdentity(identity) => Ok(identity),
-            _ => Err(Error::DapiClientError("proved a non identity".to_string())),
+            _ => Err(Error::DAPIClientError("proved a non identity".to_string())),
         }
     }
 }

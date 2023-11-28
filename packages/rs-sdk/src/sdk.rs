@@ -25,11 +25,11 @@ use drive_proof_verifier::{ContextProvider, FromProof};
 use hex::ToHex;
 pub use http::Uri;
 #[cfg(feature = "mocks")]
-use rs_dapi_client::mock::MockDapiClient;
+use rs_dapi_client::mock::MockDAPIClient;
 pub use rs_dapi_client::AddressList;
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
-    Dapi, DapiClient, DapiClientError, RequestSettings,
+    DAPIClient, DAPIClientError, RequestExecutor, RequestSettings,
 };
 #[cfg(feature = "mocks")]
 use tokio::sync::Mutex;
@@ -104,9 +104,9 @@ impl<K: Hash + Eq, V> Cache<K, V> {
 /// We use it to avoid exposing internals defined below to the public.
 enum SdkInstance {
     /// Real Sdk, using DAPI with gRPC transport
-    Dapi {
+    DAPI {
         /// DAPI client used to communicate with Dash Platform.
-        dapi: DapiClient,
+        dapi: DAPIClient,
         /// Core client used to retrieve quorum keys from core.
         core: CoreClient,
         /// Platform version configured for this Sdk
@@ -116,7 +116,7 @@ enum SdkInstance {
     /// Mock SDK
     Mock {
         /// Mock DAPI client used to communicate with Dash Platform.
-        dapi: Arc<Mutex<MockDapiClient>>,
+        dapi: Arc<Mutex<MockDAPIClient>>,
         /// Mock SDK implementation processing mock expectations and responses.
         mock: MockDashPlatformSdk,
         quorum_provider: MockContextProvider,
@@ -152,7 +152,7 @@ impl Sdk {
         O::Request: Mockable,
     {
         match self.inner {
-            SdkInstance::Dapi { .. } => {
+            SdkInstance::DAPI { .. } => {
                 O::maybe_from_proof(request, response, self.version(), self)
             }
             #[cfg(feature = "mocks")]
@@ -188,7 +188,7 @@ impl Sdk {
     /// Useful whenever you need to provide [PlatformVersion] to other SDK and DPP methods.
     pub fn version<'a>(&self) -> &'a PlatformVersion {
         match &self.inner {
-            SdkInstance::Dapi { version, .. } => version,
+            SdkInstance::DAPI { version, .. } => version,
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { mock, .. } => mock.version(),
         }
@@ -247,7 +247,7 @@ impl ContextProvider for Sdk {
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], drive_proof_verifier::Error> {
         let key: [u8; 48] = match self.inner {
-            SdkInstance::Dapi { ref core, .. } => {
+            SdkInstance::DAPI { ref core, .. } => {
                 core.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)?
             }
             #[cfg(feature = "mocks")]
@@ -302,14 +302,14 @@ impl ContextProvider for Sdk {
 }
 
 #[async_trait::async_trait]
-impl Dapi for Sdk {
+impl RequestExecutor for Sdk {
     async fn execute<R: TransportRequest>(
         &self,
         request: R,
         settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
+    ) -> Result<R::Response, DAPIClientError<<R::Client as TransportClient>::Error>> {
         match self.inner {
-            SdkInstance::Dapi { ref dapi, .. } => dapi.execute(request, settings).await,
+            SdkInstance::DAPI { ref dapi, .. } => dapi.execute(request, settings).await,
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref dapi, .. } => {
                 let dapi_guard = dapi.lock().await;
@@ -440,7 +440,7 @@ impl SdkBuilder {
 
     /// Configure connection to Dash Core
     ///
-    /// TODO: This is temporary implementation, effective until we integrate SPV into dash-platform-sdk.
+    /// TODO: This is temporary implementation, effective until we integrate SPV into dash-sdk.
     pub fn with_core(mut self, ip: &str, port: u16, user: &str, password: &str) -> Self {
         self.core_ip = ip.to_string();
         self.core_port = port;
@@ -491,7 +491,7 @@ impl SdkBuilder {
                         "Core must be configured with SdkBuilder::with_core".to_string(),
                     ));
                 }
-                let dapi = DapiClient::new(addresses, self.settings);
+                let dapi = DAPIClient::new(addresses, self.settings);
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
 
@@ -503,7 +503,7 @@ impl SdkBuilder {
                 )?;
 
                 Ok(Sdk{
-                    inner:SdkInstance::Dapi { dapi, core, version:self.version },
+                    inner:SdkInstance::DAPI { dapi, core, version:self.version },
                     proofs:self.proofs,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
@@ -511,7 +511,7 @@ impl SdkBuilder {
                 })
             },
             #[cfg(feature = "mocks")]
-            None =>{ let dapi =Arc::new(Mutex::new(  MockDapiClient::new()));
+            None =>{ let dapi =Arc::new(Mutex::new(  MockDAPIClient::new()));
                 Ok(Sdk{
                     inner:SdkInstance::Mock {
                         mock: MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs),

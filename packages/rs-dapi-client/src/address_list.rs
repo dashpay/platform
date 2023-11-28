@@ -40,7 +40,7 @@ impl Address {
 }
 
 /// A structure to manage peer's addresses to select from
-/// for [DapiRequest](crate::DapiRequest) execution.
+/// for [DAPIRequest](crate::DAPIRequest) execution.
 #[derive(Debug)]
 pub struct AddressList {
     addresses: Vec<Address>,

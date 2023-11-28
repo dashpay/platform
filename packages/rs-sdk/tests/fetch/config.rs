@@ -1,6 +1,6 @@
-//! Configuration helpers for mocking of dash-platform-sdk.
+//! Configuration helpers for mocking of dash-sdk.
 //!
-//! This module contains [Config] struct that can be used to configure dash-platform-sdk.
+//! This module contains [Config] struct that can be used to configure dash-sdk.
 //! It's mainly used for testing.
 
 use dpp::prelude::Identifier;
@@ -18,7 +18,7 @@ const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
 ];
 
 #[derive(Debug, Deserialize)]
-/// Configuration for dash-platform-sdk.
+/// Configuration for dash-sdk.
 ///
 /// Content of this configuration is loaded from environment variables or `${CARGO_MANIFEST_DIR}/.env` file
 /// when the [Config::new()] is called.
@@ -129,12 +129,12 @@ impl Config {
     /// new test vectors during execution
     /// * `offline-testing` is set - use mock implementation and
     /// load existing test vectors from disk
-    pub async fn setup_api(&self) -> dash_platform_sdk::Sdk {
+    pub async fn setup_api(&self) -> dash_sdk::Sdk {
         // offline testing takes precedence over network testing
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
             // Dump all traffic to disk
-            let builder = dash_platform_sdk::SdkBuilder::new(self.address_list()).with_core(
+            let builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
                 &self.platform_host,
                 self.core_port,
                 &self.core_user,
@@ -150,7 +150,7 @@ impl Config {
         // offline testing takes precedence over network testing
         #[cfg(feature = "offline-testing")]
         let sdk = {
-            let mut mock_sdk = dash_platform_sdk::SdkBuilder::new_mock()
+            let mut mock_sdk = dash_sdk::SdkBuilder::new_mock()
                 .build()
                 .expect("initialize api");
 

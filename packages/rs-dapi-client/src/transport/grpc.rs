@@ -62,6 +62,18 @@ macro_rules! impl_transport_request_grpc {
 
             const SETTINGS_OVERRIDES: RequestSettings = $settings;
 
+            fn request_name(&self) -> &'static str {
+                stringify!($request)
+            }
+
+            fn response_name(&self) -> &'static str {
+                stringify!($response)
+            }
+
+            fn method_name(&self) -> &'static str {
+                stringify!($($method)+)
+            }
+
             fn execute_transport<'c>(
                 self,
                 client: &'c mut Self::Client,
@@ -69,7 +81,10 @@ macro_rules! impl_transport_request_grpc {
             ) -> BoxFuture<'c, Result<Self::Response, <Self::Client as TransportClient>::Error>>
             {
                 let mut grpc_request = self.into_request();
-                grpc_request.set_timeout(settings.timeout);
+
+                if !settings.timeout.is_zero() {
+                    grpc_request.set_timeout(settings.timeout);
+                }
 
                 client
                     .$($method)+(grpc_request)
@@ -243,6 +258,9 @@ impl_transport_request_grpc!(
     core_proto::TransactionsWithProofsRequest,
     Streaming<core_proto::TransactionsWithProofsResponse>,
     CoreGrpcClient,
-    RequestSettings::default(),
+    RequestSettings {
+        timeout: Some(Duration::from_secs(0)), // Disable timeout for this request
+        ..RequestSettings::default()
+    },
     subscribe_to_transactions_with_proofs
 );

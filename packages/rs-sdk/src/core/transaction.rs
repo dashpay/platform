@@ -4,11 +4,13 @@ use dapi_grpc::core::v0::{
     transactions_with_proofs_request, transactions_with_proofs_response, GetStatusRequest,
     TransactionsWithProofsRequest, TransactionsWithProofsResponse,
 };
+use dashcore_rpc::dashcore::consensus::Encodable;
 use dpp::dashcore::consensus::Decodable;
-use dpp::dashcore::{InstantLock, Transaction, Txid};
+use dpp::dashcore::{Address, InstantLock, Transaction, Txid};
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
-use rs_dapi_client::{Dapi, RequestSettings};
+use rs_dapi_client::{RequestExecutor, RequestSettings};
+use serde::Serialize;
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -16,12 +18,14 @@ impl Sdk {
     /// Starts the stream to listen for instant send lock messages
     pub async fn start_instant_send_lock_stream(
         &self,
-        looking_for_transaction_id: Txid,
+        address: &Address,
     ) -> Result<dapi_grpc::tonic::Streaming<TransactionsWithProofsResponse>, Error> {
+        let address_bytes = address.payload().script_pubkey().into_bytes();
+
         // create the bloom filter
-        let bloom_filter = BloomFilter::builder(1, 0.01)
+        let bloom_filter = BloomFilter::builder(1, 0.001)
             .expect("this FP rate allows up to 10000 items")
-            .add_element(looking_for_transaction_id.as_ref())
+            .add_element(&address_bytes)
             .build();
 
         let bloom_filter_proto = {
@@ -44,11 +48,11 @@ impl Sdk {
             .await?
             .chain
             .map(|chain| chain.best_block_hash)
-            .ok_or_else(|| Error::DapiClientError("missing `chain` field".to_owned()))?;
+            .ok_or_else(|| Error::DAPIClientError("missing `chain` field".to_owned()))?;
 
         let core_transactions_stream = TransactionsWithProofsRequest {
             bloom_filter: Some(bloom_filter_proto),
-            count: 100,
+            count: 0, // Subscribing to new transactions as well
             send_transaction_hashes: true,
             from_block: Some(transactions_with_proofs_request::FromBlock::FromBlockHash(
                 block_hash,
@@ -56,7 +60,7 @@ impl Sdk {
         };
         self.execute(core_transactions_stream, RequestSettings::default())
             .await
-            .map_err(|e| Error::DapiClientError(e.to_string()))
+            .map_err(|e| Error::DAPIClientError(e.to_string()))
     }
 
     /// Waits for a response for the asset lock proof
@@ -64,87 +68,125 @@ impl Sdk {
         mut stream: dapi_grpc::tonic::Streaming<TransactionsWithProofsResponse>,
         transaction: &Transaction,
         time_out_ms: Option<u64>,
+        // core_chain_locked_height: u32,
     ) -> Result<AssetLockProof, Error> {
         let transaction_id = transaction.txid();
+
+        let _span = tracing::debug_span!(
+            "wait_for_asset_lock_proof_for_transaction",
+            transaction_id = transaction_id.to_string(),
+        )
+        .entered();
+
+        tracing::debug!("waiting for messages from stream");
 
         // Define an inner async block to handle the stream processing.
         let stream_processing = async {
             loop {
-                if let Some(TransactionsWithProofsResponse { responses }) =
-                    stream
-                        .message()
-                        .await
-                        .map_err(|e| Error::DapiClientError(e.to_string()))?
-                {
-                    match responses {
-                        Some(
-                            transactions_with_proofs_response::Responses::InstantSendLockMessages(
-                                instant_send_lock_messages,
-                            ),
-                        ) => {
-                            match instant_send_lock_messages.messages.into_iter().find_map(
-                                |instant_send_lock_message| match InstantLock::consensus_decode(
-                                    &mut instant_send_lock_message.as_slice(),
-                                )
-                                .map_err(|e| Error::CoreError(e.into()))
-                                {
-                                    Ok(instant_lock) => {
-                                        if instant_lock.txid == transaction_id {
-                                            Some(Ok(AssetLockProof::Instant(
-                                                InstantAssetLockProof {
-                                                    instant_lock,
-                                                    transaction: transaction.clone(),
-                                                    output_index: 0,
-                                                },
-                                            )))
-                                        } else {
-                                            None
-                                        }
-                                    }
-                                    Err(e) => Some(Err(e)),
-                                },
-                            ) {
-                                Some(Ok(found_asset_lock_proof)) => {
-                                    return Ok(found_asset_lock_proof)
-                                }
-                                Some(Err(e)) => return Err(e),
-                                None => (),
-                            }
-                            break;
-                        }
-                        // Some(transactions_with_proofs_response::Responses::RawMerkleBlock(
-                        //          raw_merkle_block,
-                        //      )) => {
-                        //     let merkle_block = MerkleBlock::consensus_decode(&mut raw_merkle_block.as_slice()).map_err(|e| Error::CoreError(e.into()))?;
-                        //     let mut matches: Vec<Txid> = vec![];
-                        //     let mut index: Vec<u32> = vec![];
-                        //     merkle_block.extract_matches(&mut matches, &mut index)?;
-                        //
-                        //     if matches.contains(&transaction_id) {
-                        //         return Ok(AssetLockProof::Chain(ChainAssetLockProof {
-                        //             core_chain_locked_height: 0, //todo
-                        //             out_point: Default::default() //todo
-                        //         }))
-                        //     }
-                        // }
-                        _ => continue,
-                    }
-                } else {
-                    return Err(Error::DapiClientError(
+                // TODO: We should retry if Err is returned
+                let message = stream
+                    .message()
+                    .await
+                    .map_err(|e| Error::DAPIClientError(format!("can't receive message: {e}")))?;
+
+                let Some(TransactionsWithProofsResponse { responses }) = message else {
+                    return Err(Error::DAPIClientError(
                         "stream closed unexpectedly".to_string(),
                     ));
+                };
+
+                match responses {
+                    Some(
+                        transactions_with_proofs_response::Responses::InstantSendLockMessages(
+                            instant_send_lock_messages,
+                        ),
+                    ) => {
+                        tracing::debug!(
+                            "received {} instant lock message(s)",
+                            instant_send_lock_messages.messages.len()
+                        );
+
+                        for instant_lock_bytes in instant_send_lock_messages.messages {
+                            let instant_lock =
+                                InstantLock::consensus_decode(&mut instant_lock_bytes.as_slice())
+                                    .map_err(|e| {
+                                    tracing::error!("invalid asset lock: {}", e);
+
+                                    Error::CoreError(e.into())
+                                })?;
+
+                            if instant_lock.txid == transaction_id {
+                                let asset_lock_proof =
+                                    AssetLockProof::Instant(InstantAssetLockProof {
+                                        instant_lock,
+                                        transaction: transaction.clone(),
+                                        output_index: 0,
+                                    });
+
+                                tracing::debug!(
+                                    ?asset_lock_proof,
+                                    "instant lock is matching to the broadcasted transaction, returning instant asset lock proof"
+                                );
+
+                                return Ok(asset_lock_proof);
+                            } else {
+                                tracing::debug!(
+                                    "instant lock is not matching, waiting for the next message"
+                                );
+                            }
+                        }
+                    } // TODO: Implement chain asset lock proof
+                    Some(transactions_with_proofs_response::Responses::RawMerkleBlock(
+                        raw_merkle_block,
+                    )) => {
+                        tracing::debug!("received merkle block");
+
+                        // let merkle_block =
+                        //     MerkleBlock::consensus_decode(&mut raw_merkle_block.as_slice())
+                        //         .map_err(|e| {
+                        //             tracing::error!("can't decode merkle block: {}", error);
+                        //
+                        //             Error::CoreError(e.into())
+                        //         })?;
+                        //
+                        // let mut matches: Vec<Txid> = vec![];
+                        // let mut index: Vec<u32> = vec![];
+                        //
+                        // merkle_block.extract_matches(&mut matches, &mut index)?;
+                        //
+                        // if matches.contains(&transaction_id) {
+                        //     let asset_lock_proof = AssetLockProof::Chain(ChainAssetLockProof {
+                        //         core_chain_locked_height: 0,   //todo
+                        //         out_point: Default::default(), //todo
+                        //     });
+                        //
+                        //     tracing::debug!(
+                        //               ?asset_lock_proof,
+                        //               "merkle block contains the broadcasted transaction, returning chain asset lock proof"
+                        //           );
+                        //
+                        //     return Ok(asset_lock_proof);
+                        // }
+                    }
+                    _ => {
+                        tracing::debug!("received something else");
+
+                        continue;
+                    }
                 }
             }
-            Err(Error::DapiClientError(
-                "Asset lock proof not found".to_string(),
-            ))
+
+            // Err(Error::DAPIClientError(
+            //     "Asset lock proof not found".to_string(),
+            // ))
         };
 
+        // TODO: Timeout must be set when we open the stream. Tonic will deal with it
         // Apply the timeout if `time_out_ms` is Some, otherwise just await the processing.
         match time_out_ms {
             Some(ms) => timeout(Duration::from_millis(ms), stream_processing)
                 .await
-                .map_err(|_| Error::DapiClientError("Timeout reached".to_string()))?,
+                .map_err(|_| Error::DAPIClientError("Timeout reached".to_string()))?,
             None => stream_processing.await,
         }
     }

@@ -1,10 +1,10 @@
 use dapi_grpc::platform::v0::{GetIdentityRequest, GetIdentityResponse, Proof};
 
-use rs_dapi_client::{mock::MockDapiClient, Dapi, DapiRequest, RequestSettings};
+use rs_dapi_client::{mock::MockDAPIClient, RequestExecutor, DAPIRequest, RequestSettings};
 
 #[tokio::test]
 async fn test_mock_get_identity_dapi_client() {
-    let mut dapi = MockDapiClient::new();
+    let mut dapi = MockDAPIClient::new();
 
     let request = GetIdentityRequest::default();
     let response: GetIdentityResponse = GetIdentityResponse {

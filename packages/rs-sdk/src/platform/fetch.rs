@@ -15,7 +15,7 @@ use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::platform_value::Identifier;
 use dpp::{document::Document, prelude::Identity};
 use drive_proof_verifier::FromProof;
-use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
+use rs_dapi_client::{transport::TransportRequest, DAPIRequest, RequestSettings};
 use std::fmt::Debug;
 
 use super::types::identity::IdentityRequest;
@@ -34,7 +34,7 @@ use super::DocumentQuery;
 /// * call [Identity::fetch()] with the query and an instance of [Sdk].
 ///
 /// ```rust
-/// use dash_platform_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
+/// use dash_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
 /// let mut sdk = Sdk::new_mock();
@@ -51,7 +51,7 @@ where
         + FromProof<
             <Self as Fetch>::Request,
             Request = <Self as Fetch>::Request,
-            Response = <<Self as Fetch>::Request as DapiRequest>::Response,
+            Response = <<Self as Fetch>::Request as DAPIRequest>::Response,
         >,
 {
     /// Type of request used to fetch data from the platform.

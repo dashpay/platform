@@ -3,7 +3,7 @@ mod tests {
     use dapi_grpc::platform::v0::{
         self as platform_proto, get_identity_response, GetIdentityResponse, ResponseMetadata,
     };
-    use rs_dapi_client::{AddressList, DapiClient, DapiRequest, RequestSettings};
+    use rs_dapi_client::{AddressList, DAPIClient, DAPIRequest, RequestSettings};
 
     pub const OWNER_ID_BYTES: [u8; 32] = [
         65, 63, 57, 243, 204, 9, 106, 71, 187, 2, 94, 221, 190, 127, 141, 114, 137, 209, 243, 50,
@@ -15,7 +15,7 @@ mod tests {
         let mut address_list = AddressList::new();
         address_list.add_uri(rs_dapi_client::Uri::from_static("http://127.0.0.1:2443"));
 
-        let mut client = DapiClient::new(address_list, RequestSettings::default());
+        let mut client = DAPIClient::new(address_list, RequestSettings::default());
         let request = platform_proto::GetIdentityRequest {
             version: Some(platform_proto::get_identity_request::Version::V0(
                 platform_proto::get_identity_request::GetIdentityRequestV0 {
