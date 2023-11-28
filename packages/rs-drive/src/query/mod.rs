@@ -647,14 +647,14 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<Self, Error> {
         let dialect: GenericDialect = sqlparser::dialect::GenericDialect {};
         let statements: Vec<Statement> = Parser::parse_sql(&dialect, sql_string)
-            .map_err(|_| Error::Query(QuerySyntaxError::InvalidSQL("Issue parsing sql")))?;
+            .map_err(|e| Error::Query(QuerySyntaxError::SQLParsingError(e)))?;
 
         // Should ideally iterate over each statement
         let first_statement =
             statements
                 .get(0)
                 .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
-                    "Issue parsing sql",
+                    "Issue parsing sql getting first statement".to_string(),
                 )))?;
 
         let query: &ast::Query = match first_statement {
@@ -662,7 +662,7 @@ impl<'a> DriveQuery<'a> {
             _ => None,
         }
         .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
-            "Issue parsing sql",
+            "Issue parsing sql: not a query".to_string(),
         )))?;
 
         let max_limit = config.map(|config| config.max_query_limit).unwrap_or(DriveConfig::default().max_query_limit);
@@ -711,7 +711,7 @@ impl<'a> DriveQuery<'a> {
             _ => None,
         }
         .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
-            "Issue parsing sql",
+            "Issue parsing sql: Not a select".to_string(),
         )))?;
 
         // Get the document type from the 'from' section
@@ -719,7 +719,7 @@ impl<'a> DriveQuery<'a> {
             .from
             .get(0)
             .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
-                "Invalid query: missing from section",
+                "Invalid query: missing from section".to_string(),
             )))?
             .relation
         {
@@ -732,7 +732,7 @@ impl<'a> DriveQuery<'a> {
             _ => None,
         }
         .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
-            "Issue parsing sql: invalid from value",
+            "Issue parsing sql: invalid from value".to_string(),
         )))?;
 
         let document_type =
@@ -759,6 +759,7 @@ impl<'a> DriveQuery<'a> {
         if let Some(selection_tree) = selection_tree {
             WhereClause::build_where_clauses_from_operations(
                 selection_tree,
+                document_type,
                 &mut all_where_clauses,
             )?;
         }

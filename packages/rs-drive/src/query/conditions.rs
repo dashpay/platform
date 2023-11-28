@@ -34,6 +34,7 @@ use grovedb::Query;
 use sqlparser::ast;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 use WhereOperator::{
     Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
@@ -43,7 +44,7 @@ use WhereOperator::{
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::document_type::{DocumentPropertyType, DocumentType, DocumentTypeRef};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::Document;
 use dpp::platform_value::Value;
@@ -252,27 +253,27 @@ impl<'a> WhereClause {
                 bytes.iter().map(|int| Value::U8(*int)).collect(),
             )),
             _ => Err(Error::Query(QuerySyntaxError::InvalidInClause(
-                "when using in operator you must provide an array of values",
+                "when using in operator you must provide an array of values".to_string(),
             ))),
         }?;
 
         let len = in_values.len();
         if len == 0 {
             return Err(Error::Query(QuerySyntaxError::InvalidInClause(
-                "in clause must at least 1 value",
+                "in clause must have at least 1 value".to_string(),
             )));
         }
 
         if len > 100 {
             return Err(Error::Query(QuerySyntaxError::InvalidInClause(
-                "in clause must at most 100 values",
+                "in clause must have at most 100 values".to_string(),
             )));
         }
 
         // Throw an error if there are duplicates
         if (1..in_values.len()).any(|i| in_values[i..].contains(&in_values[i - 1])) {
             return Err(Error::Query(QuerySyntaxError::InvalidInClause(
-                "there should be no duplicates values for In query",
+                "there should be no duplicates values for In query".to_string(),
             )));
         }
         Ok(in_values)
@@ -1078,6 +1079,7 @@ impl<'a> WhereClause {
     /// Build where clauses from operations
     pub(crate) fn build_where_clauses_from_operations(
         binary_operation: &ast::Expr,
+        document_type: &DocumentType,
         where_clauses: &mut Vec<WhereClause>,
     ) -> Result<(), Error> {
         match &binary_operation {
@@ -1092,26 +1094,52 @@ impl<'a> WhereClause {
                     )));
                 }
 
-                let field_name = if let ast::Expr::Identifier(ident) = &**expr {
+                let field_name : String = if let ast::Expr::Identifier(ident) = &**expr {
                     ident.value.clone()
                 } else {
                     return Err(Error::Query(QuerySyntaxError::InvalidInClause(
-                        "Invalid query: in clause should start with an identifier",
+                        "Invalid query: in clause should start with an identifier".to_string(),
                     )));
+                };
+
+                let property_type = match field_name.as_str() {
+                    "$id" | "$ownerId" => {
+                        Cow::Owned(DocumentPropertyType::Identifier)
+                    }
+                    "$createdAt" | "$updatedAt" => {
+                        Cow::Owned(DocumentPropertyType::Date)
+                    }
+                    "$revision" => {
+                        Cow::Owned(DocumentPropertyType::Integer)
+                    }
+                    property_name => {
+                        let Some(property) = document_type.properties().get(property_name) else {
+                            return Err(Error::Query(QuerySyntaxError::InvalidInClause(
+                                "Invalid query: in clause property not in document type".to_string(),
+                            )));
+                        };
+                        Cow::Borrowed(&property.property_type)
+                    }
                 };
 
                 let mut in_values: Vec<Value> = Vec::new();
                 for value in list {
                     if let ast::Expr::Value(sql_value) = value {
-                        let cbor_val = sql_value_to_platform_value(sql_value.clone()).ok_or({
+                        let platform_value = sql_value_to_platform_value(sql_value.clone()).ok_or({
                             Error::Query(QuerySyntaxError::InvalidSQL(
-                                "Invalid query: unexpected value type",
+                                "Invalid query: unexpected value type".to_string(),
                             ))
                         })?;
-                        in_values.push(cbor_val);
+                        let transformed_value = if let Value::Text(text_value) = &platform_value {
+                            property_type.value_from_string(text_value)?
+                        } else {
+                            platform_value
+                        };
+
+                        in_values.push(transformed_value);
                     } else {
                         return Err(Error::Query(QuerySyntaxError::InvalidSQL(
-                            "Invalid query: expected a list of sql values",
+                            "Invalid query: expected a list of sql values".to_string(),
                         )));
                     }
                 }
@@ -1126,8 +1154,8 @@ impl<'a> WhereClause {
             }
             ast::Expr::BinaryOp { left, op, right } => {
                 if *op == ast::BinaryOperator::And {
-                    Self::build_where_clauses_from_operations(left, where_clauses)?;
-                    Self::build_where_clauses_from_operations(right, where_clauses)?;
+                    Self::build_where_clauses_from_operations(left, document_type, where_clauses)?;
+                    Self::build_where_clauses_from_operations(right, document_type, where_clauses)?;
                 } else {
                     let mut where_operator =
                         WhereOperator::from_sql_operator(op.clone()).ok_or(Error::Query(
@@ -1150,25 +1178,52 @@ impl<'a> WhereClause {
                         where_operator = where_operator.flip()?;
                     } else {
                         return Err(Error::Query(QuerySyntaxError::InvalidSQL(
-                            "Invalid query: where clause should have field name and value",
+                            "Invalid query: where clause should have field name and value".to_string(),
                         )));
                     }
 
-                    let field_name = if let ast::Expr::Identifier(ident) = identifier {
+                    let field_name : String = if let ast::Expr::Identifier(ident) = identifier {
                         ident.value.clone()
                     } else {
                         panic!("unreachable: confirmed it's identifier variant");
                     };
 
-                    let value = if let ast::Expr::Value(value) = value_expr {
-                        let cbor_val = sql_value_to_platform_value(value.clone()).ok_or({
+                    let property_type = match field_name.as_str() {
+                        "$id" | "$ownerId" => {
+                            Cow::Owned(DocumentPropertyType::Identifier)
+                        }
+                        "$createdAt" | "$updatedAt" => {
+                            Cow::Owned(DocumentPropertyType::Date)
+                        }
+                        "$revision" => {
+                            Cow::Owned(DocumentPropertyType::Integer)
+                        }
+                        property_name => {
+                            let Some(property) = document_type.properties().get(property_name) else {
+                                return Err(Error::Query(QuerySyntaxError::InvalidSQL(
+                                    format!("Invalid query: property named {} not in document type", field_name.as_str())
+                                )));
+                            };
+                            Cow::Borrowed(&property.property_type)
+                        }
+                    };
+
+                    let transformed_value = if let ast::Expr::Value(value) = value_expr {
+                        let platform_value = sql_value_to_platform_value(value.clone()).ok_or({
                             Error::Query(QuerySyntaxError::InvalidSQL(
-                                "Invalid query: unexpected value type",
+                                "Invalid query: unexpected value type".to_string(),
                             ))
                         })?;
+
+                        let transformed_value = if let Value::Text(text_value) = &platform_value {
+                            property_type.value_from_string(text_value)?
+                        } else {
+                            platform_value
+                        };
+
                         if where_operator == StartsWith {
                             // make sure the value is of the right format i.e prefix%
-                            let inner_text = cbor_val.as_text().ok_or({
+                            let inner_text = transformed_value.as_text().ok_or({
                                 Error::Query(QuerySyntaxError::InvalidStartsWithClause(
                                     "Invalid query: startsWith takes text",
                                 ))
@@ -1185,7 +1240,7 @@ impl<'a> WhereClause {
                                 )));
                             }
                         } else {
-                            cbor_val
+                            transformed_value
                         }
                     } else {
                         panic!("unreachable: confirmed it's value variant");
@@ -1194,13 +1249,13 @@ impl<'a> WhereClause {
                     where_clauses.push(WhereClause {
                         field: field_name,
                         operator: where_operator,
-                        value,
+                        value: transformed_value,
                     });
                 }
                 Ok(())
             }
             _ => Err(Error::Query(QuerySyntaxError::InvalidSQL(
-                "Issue parsing sql: invalid selection format",
+                "Issue parsing sql: invalid selection format".to_string(),
             ))),
         }
     }
