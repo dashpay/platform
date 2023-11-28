@@ -48,7 +48,7 @@ impl Drive {
                 let block_count = u64::from_be_bytes(
                     encoded_block_count.as_slice().try_into().map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(String::from(
-                            String::from("epochs proposer block count must be u64"),
+                            "epochs proposer block count must be u64",
                         )))
                     })?,
                 );
