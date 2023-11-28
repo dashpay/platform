@@ -1,6 +1,6 @@
 //! Verifies the execution of a state transition using a provided proof.
 //!
-use std::borrow::Cow;
+
 use std::sync::Arc;
 
 use crate::drive::verify::RootHash;

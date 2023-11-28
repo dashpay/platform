@@ -3,7 +3,6 @@
 //! This module contains [Config] struct that can be used to configure dash-platform-sdk.
 //! It's mainly used for testing.
 
-use dash_platform_sdk::Sdk;
 use dpp::prelude::Identifier;
 use rs_dapi_client::AddressList;
 use serde::Deserialize;

@@ -665,22 +665,25 @@ impl<'a> DriveQuery<'a> {
             "Issue parsing sql",
         )))?;
 
-        let max_limit = config.map(|config| config.max_query_limit).unwrap_or(DriveConfig::default().max_query_limit);
+        let max_limit = config
+            .map(|config| config.max_query_limit)
+            .unwrap_or(DriveConfig::default().max_query_limit);
 
         let limit: u16 = if let Some(limit_expr) = &query.limit {
             match limit_expr {
                 ast::Expr::Value(Number(num_string, _)) => {
                     let cast_num_string: &String = num_string;
-                    let user_limit = cast_num_string.parse::<u16>().map_err(|e| Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                        "limit could not be parsed {}",
-                        e
-                    ))))?;
+                    let user_limit = cast_num_string.parse::<u16>().map_err(|e| {
+                        Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                            "limit could not be parsed {}",
+                            e
+                        )))
+                    })?;
                     if user_limit > max_limit {
                         return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
                             "limit {} greater than max limit {}",
-                            user_limit,
-                            max_limit
-                        ))))
+                            user_limit, max_limit
+                        ))));
                     }
                     user_limit
                 }
@@ -692,7 +695,9 @@ impl<'a> DriveQuery<'a> {
                 }
             }
         } else {
-            config.map(|config| config.default_query_limit).unwrap_or(DriveConfig::default().default_query_limit)
+            config
+                .map(|config| config.default_query_limit)
+                .unwrap_or(DriveConfig::default().default_query_limit)
         };
 
         let order_by: IndexMap<String, OrderClause> = query

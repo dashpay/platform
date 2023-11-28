@@ -1,14 +1,14 @@
+use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+use crate::{Error, Sdk};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::PrivateKey;
 use dpp::identity::Identity;
 use dpp::prelude::AssetLockProof;
-use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
+use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
-use crate::{Error, Sdk};
-use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 
 #[async_trait::async_trait]
 pub trait TopUpIdentity {
@@ -57,7 +57,11 @@ impl TopUpIdentity for Identity {
         )?;
 
         match result {
-            StateTransitionProofResult::VerifiedPartialIdentity(identity) => identity.balance.ok_or(Error::DapiClientError("expected an identity balance".to_string())),
+            StateTransitionProofResult::VerifiedPartialIdentity(identity) => {
+                identity.balance.ok_or(Error::DapiClientError(
+                    "expected an identity balance".to_string(),
+                ))
+            }
             _ => Err(Error::DapiClientError("proved a non identity".to_string())),
         }
     }

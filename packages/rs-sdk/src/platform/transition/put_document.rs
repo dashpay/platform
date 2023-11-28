@@ -1,16 +1,16 @@
-use std::sync::Arc;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
-use crate::platform::Identifier;
+use std::sync::Arc;
+
 use crate::{Error, Sdk};
 
 use dapi_grpc::platform::VersionedGrpcResponse;
+use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract;
-use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use dpp::document::{Document, DocumentV0Getters};
-use dpp::identity::IdentityPublicKey;
 use dpp::identity::signer::Signer;
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
@@ -49,7 +49,6 @@ impl<S: Signer> PutDocument<S> for Document {
         identity_public_key: IdentityPublicKey,
         signer: &S,
     ) -> Result<(), Error> {
-
         let transition = DocumentsBatchTransition::new_document_creation_transition_from_document(
             self.clone(),
             document_type.as_ref(),
@@ -83,21 +82,22 @@ impl<S: Signer> PutDocument<S> for Document {
         data_contract: Arc<DataContract>,
         signer: &S,
     ) -> Result<Document, Error> {
-        let state_transition = DocumentsBatchTransition::new_document_creation_transition_from_document(
-            self.clone(),
-            document_type.as_ref(),
-            document_state_transition_entropy,
-            &identity_public_key,
-            signer,
-            sdk.version(),
-            None,
-            None,
-            None,
-        )?;
+        let state_transition =
+            DocumentsBatchTransition::new_document_creation_transition_from_document(
+                self.clone(),
+                document_type.as_ref(),
+                document_state_transition_entropy,
+                &identity_public_key,
+                signer,
+                sdk.version(),
+                None,
+                None,
+                None,
+            )?;
 
         let request = state_transition.broadcast_request_for_state_transition()?;
 
-        let response_result = request
+        let _response_result = request
             .clone()
             .execute(sdk, RequestSettings::default())
             .await?;
@@ -128,7 +128,7 @@ impl<S: Signer> PutDocument<S> for Document {
                         "expected there to actually be a document".to_string(),
                     ))?;
                 Ok(document)
-            },
+            }
             _ => Err(Error::DapiClientError("proved a non document".to_string())),
         }
     }

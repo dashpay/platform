@@ -1,20 +1,20 @@
 use dapi_grpc::platform::VersionedGrpcResponse;
-use dpp::dashcore::{Address, PrivateKey};
-use dpp::dashcore::address::NetworkUnchecked;
+use dpp::dashcore::Address;
+
 use dpp::identity::core_script::CoreScript;
-use dpp::identity::Identity;
 use dpp::identity::signer::Signer;
-use dpp::prelude::AssetLockProof;
+use dpp::identity::Identity;
+
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
-use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+
+use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+use crate::{Error, Sdk};
+use dpp::state_transition::identity_credit_withdrawal_transition::methods::IdentityCreditWithdrawalTransitionMethodsV0;
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::withdrawal::Pooling;
 use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
-use crate::{Error, Sdk};
-use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
-use dpp::state_transition::identity_credit_withdrawal_transition::methods::IdentityCreditWithdrawalTransitionMethodsV0;
-use dpp::withdrawal::Pooling;
 
 #[async_trait::async_trait]
 pub trait WithdrawFromIdentity {
@@ -24,7 +24,7 @@ pub trait WithdrawFromIdentity {
         address: Address,
         amount: u64,
         core_fee_per_byte: Option<u32>,
-        signer: S
+        signer: S,
     ) -> Result<u64, Error>;
 }
 
@@ -36,7 +36,7 @@ impl WithdrawFromIdentity for Identity {
         address: Address,
         amount: u64,
         core_fee_per_byte: Option<u32>,
-        signer: S
+        signer: S,
     ) -> Result<u64, Error> {
         let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
             self,
@@ -70,7 +70,11 @@ impl WithdrawFromIdentity for Identity {
         )?;
 
         match result {
-            StateTransitionProofResult::VerifiedPartialIdentity(identity) => identity.balance.ok_or(Error::DapiClientError("expected an identity balance".to_string())),
+            StateTransitionProofResult::VerifiedPartialIdentity(identity) => {
+                identity.balance.ok_or(Error::DapiClientError(
+                    "expected an identity balance".to_string(),
+                ))
+            }
             _ => Err(Error::DapiClientError("proved a non identity".to_string())),
         }
     }
