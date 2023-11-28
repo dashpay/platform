@@ -196,7 +196,6 @@ impl WhereOperator {
             ast::BinaryOperator::GtEq => Some(WhereOperator::GreaterThanOrEquals),
             ast::BinaryOperator::Lt => Some(WhereOperator::LessThan),
             ast::BinaryOperator::LtEq => Some(WhereOperator::LessThanOrEquals),
-            ast::BinaryOperator::Like => Some(WhereOperator::StartsWith),
             _ => None,
         }
     }
@@ -1152,6 +1151,55 @@ impl<'a> WhereClause {
 
                 Ok(())
             }
+            ast::Expr::Like { negated, expr, pattern, escape_char } => {
+                let where_operator = WhereOperator::StartsWith;
+                if *negated {
+                    return Err(Error::Query(QuerySyntaxError::Unsupported(
+                        "Negated Like not supported".to_string(),
+                    )));
+                }
+
+                let field_name : String = if let ast::Expr::Identifier(ident) = &**expr {
+                    ident.value.clone()
+                } else {
+                    panic!("unreachable: confirmed it's identifier variant");
+                };
+
+                let transformed_value = if let ast::Expr::Value(value) = &**pattern {
+                    let platform_value = sql_value_to_platform_value(value.clone()).ok_or({
+                        Error::Query(QuerySyntaxError::InvalidSQL(
+                            "Invalid query: unexpected value type".to_string(),
+                        ))
+                    })?;
+
+                    // make sure the value is of the right format i.e prefix%
+                    let inner_text = platform_value.as_text().ok_or({
+                        Error::Query(QuerySyntaxError::InvalidStartsWithClause(
+                            "Invalid query: startsWith takes text",
+                        ))
+                    })?;
+                    let match_locations: Vec<_> = inner_text.match_indices('%').collect();
+                    if match_locations.len() == 1
+                        && match_locations[0].0 == inner_text.len() - 1
+                    {
+                        Value::Text(String::from(&inner_text[..(inner_text.len() - 1)]))
+                    } else {
+                        return Err(Error::Query(QuerySyntaxError::Unsupported(
+                            "Invalid query: like can only be used to represent startswith"
+                                .to_string(),
+                        )));
+                    }
+                } else {
+                    panic!("unreachable: confirmed it's value variant");
+                };
+
+                where_clauses.push(WhereClause {
+                    field: field_name,
+                    operator: where_operator,
+                    value: transformed_value,
+                });
+                Ok(())
+            }
             ast::Expr::BinaryOp { left, op, right } => {
                 if *op == ast::BinaryOperator::And {
                     Self::build_where_clauses_from_operations(left, document_type, where_clauses)?;
@@ -1215,32 +1263,10 @@ impl<'a> WhereClause {
                             ))
                         })?;
 
-                        let transformed_value = if let Value::Text(text_value) = &platform_value {
+                        if let Value::Text(text_value) = &platform_value {
                             property_type.value_from_string(text_value)?
                         } else {
                             platform_value
-                        };
-
-                        if where_operator == StartsWith {
-                            // make sure the value is of the right format i.e prefix%
-                            let inner_text = transformed_value.as_text().ok_or({
-                                Error::Query(QuerySyntaxError::InvalidStartsWithClause(
-                                    "Invalid query: startsWith takes text",
-                                ))
-                            })?;
-                            let match_locations: Vec<_> = inner_text.match_indices('%').collect();
-                            if match_locations.len() == 1
-                                && match_locations[0].0 == inner_text.len() - 1
-                            {
-                                Value::Text(String::from(&inner_text[..(inner_text.len() - 1)]))
-                            } else {
-                                return Err(Error::Query(QuerySyntaxError::Unsupported(
-                                    "Invalid query: like can only be used to represent startswith"
-                                        .to_string(),
-                                )));
-                            }
-                        } else {
-                            transformed_value
                         }
                     } else {
                         panic!("unreachable: confirmed it's value variant");

@@ -52,7 +52,7 @@ use sqlparser::ast::Value::Number;
 #[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::ast::{OrderByExpr, Select, Statement};
 #[cfg(any(feature = "full", feature = "verify"))]
-use sqlparser::dialect::GenericDialect;
+use sqlparser::dialect::MySqlDialect;
 #[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::parser::Parser;
 
@@ -645,7 +645,7 @@ impl<'a> DriveQuery<'a> {
         contract: &'a DataContract,
         config: Option<&DriveConfig>,
     ) -> Result<Self, Error> {
-        let dialect: GenericDialect = sqlparser::dialect::GenericDialect {};
+        let dialect: MySqlDialect = MySqlDialect {};
         let statements: Vec<Statement> = Parser::parse_sql(&dialect, sql_string)
             .map_err(|e| Error::Query(QuerySyntaxError::SQLParsingError(e)))?;
 
@@ -711,7 +711,7 @@ impl<'a> DriveQuery<'a> {
             .collect::<IndexMap<String, OrderClause>>();
 
         // Grab the select section of the query
-        let select: &Select = match &query.body {
+        let select: &Select = match &*query.body {
             ast::SetExpr::Select(select) => Some(select),
             _ => None,
         }
@@ -730,9 +730,7 @@ impl<'a> DriveQuery<'a> {
         {
             Table {
                 name,
-                alias: _,
-                args: _,
-                with_hints: _,
+                ..
             } => name.0.get(0).as_ref().map(|identifier| &identifier.value),
             _ => None,
         }

@@ -21,7 +21,7 @@ integer-encoding = { version = "4.0.0" }
 rand = { version = "0.8.4", features = ["small_rng"] }
 byteorder = { version = "1.4.3" }
 indexmap = { version = "1.8.0" }
-sqlparser = { version = "0.13.0" }
+sqlparser = { version = "0.38.0" }
 thiserror = { version = "1.0.30" }
 moka = { version = "0.11.1", features = ["future", "futures-util"] }
 nohash-hasher = { version = "0.2.0" }
