@@ -14,12 +14,12 @@ export default function updateNodeFactory(getServiceList, docker) {
    *
    * @return {object[]}
    */
-  function updateNode(config) {
+  async function updateNode(config) {
     const services = getServiceList(config);
 
-    return Promise.all(
+    return await Promise.all(
       lodash.uniqBy(services, 'image')
-        .map(async ({ name, image, title }) => new Promise((resolve, reject) => {
+        .map(async ({name, image, title}) => new Promise((resolve, reject) => {
           docker.pull(image, (err, stream) => {
             if (err) {
               reject(err);
