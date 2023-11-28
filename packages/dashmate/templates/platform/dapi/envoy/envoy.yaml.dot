@@ -69,17 +69,17 @@
                   prefix: "/org.dash.platform.dapi.v0.Core/subscribeToTransactionsWithProofs"
                 route:
                   cluster: tx_filter_stream
-                  timeout: 0s
+                  timeout: 660s
                   max_stream_duration:
-                    grpc_timeout_header_max: 0s
+                    grpc_timeout_header_max: 600s
               # block headers subscription streaming endpoint
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Core/subscribeToBlockHeadersWithChainLocks"
                 route:
                   cluster: tx_filter_stream
-                  timeout: 0s
+                  timeout: 660s
                   max_stream_duration:
-                    grpc_timeout_header_max: 0s
+                    grpc_timeout_header_max: 600s
               # core unary endpoints
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Core"
