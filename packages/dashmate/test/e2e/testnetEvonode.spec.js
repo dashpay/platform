@@ -8,6 +8,9 @@ import generateTenderdashNodeKey from '../../src/tenderdash/generateTenderdashNo
 import createRpcClient from '../../src/core/createRpcClient.js';
 import waitForCoreDataFactory from '../../src/test/waitForCoreDataFactory.js';
 import createSelfSignedCertificate from '../../src/test/createSelfSignedCertificate.js';
+import { DockerStatusEnum } from '../../src/status/enums/dockerStatus.js';
+import { ServiceStatusEnum } from '../../src/status/enums/serviceStatus.js';
+import waitForDashmateHelperAPI from '../../src/helper/waitForDashmateHelperAPI.js';
 
 describe('Testnet Evonode', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
@@ -205,6 +208,63 @@ describe('Testnet Evonode', function main() {
 
       // TODO: Assert all services are running
       await assertServiceRunning(config, 'core', false);
+    });
+  });
+
+  describe('dashmate helper', () => {
+    it('should be able to request HTTP to helper api', async () => {
+      config.set('dashmate.helper.api.port', 41337);
+      config.set('dashmate.helper.api.enable', true);
+
+      await configFileRepository.write(configFile);
+
+      const writeConfigTemplates = container.resolve('writeConfigTemplates');
+
+      writeConfigTemplates(config);
+
+      const startNodeTask = container.resolve('startNodeTask');
+
+      const task = startNodeTask(config);
+
+      await task.run({
+        isVerbose: true,
+      });
+
+      // TODO: Assert all services are running
+      await assertServiceRunning(config, 'core', true);
+      await assertServiceRunning(config, 'dashmate_helper', true);
+
+      // wait for http api to come up
+      await waitForDashmateHelperAPI(config);
+
+      const response = await fetch(`http://127.0.0.1:${config.get('dashmate.helper.api.port')}`, {
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'id',
+          method: 'status',
+          params: {
+            format: 'json',
+            config: config.getName(),
+          },
+        }),
+      });
+
+      expect(response.status).to.equal(200);
+
+      const json = await response.json();
+
+      // eslint-disable-next-line no-unused-expressions
+      expect(json.result).to.be.defined;
+
+      const scope = JSON.parse(json.result);
+
+      expect(scope.core.dockerStatus).to.be.equal(DockerStatusEnum.running);
+      expect(scope.core.serviceStatus).to.be.equal(ServiceStatusEnum.syncing);
+
+      expect(scope.platform.tenderdash.dockerStatus).to.be.equal(DockerStatusEnum.running);
+      expect(scope.platform.tenderdash.serviceStatus).to.be.equal(ServiceStatusEnum.wait_for_core);
     });
   });
 });
