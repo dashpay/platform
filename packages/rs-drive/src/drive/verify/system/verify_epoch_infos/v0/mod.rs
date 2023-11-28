@@ -85,9 +85,7 @@ impl Drive {
             |mut acc, result_item| {
                 let (path, key, element) = result_item;
                 if path.len() == 2 {
-                    acc.entry(path)
-                        .or_insert_with(BTreeMap::new)
-                        .insert(key, element);
+                    acc.entry(path).or_default().insert(key, element);
                 }
                 acc
             },

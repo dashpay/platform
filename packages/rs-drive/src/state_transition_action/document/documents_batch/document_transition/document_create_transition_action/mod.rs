@@ -3,18 +3,18 @@ pub mod transformer;
 mod v0;
 
 use derive_more::From;
-use dpp::data_contract::DataContract;
+
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
 use dpp::document::Document;
-use dpp::state_transition::documents_batch_transition::DocumentCreateTransition;
+
 use dpp::ProtocolError;
 
 pub use v0::*;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction};
-use dpp::version::{PlatformVersion};
+use dpp::version::PlatformVersion;
 
 /// document create transition action
 #[derive(Debug, Clone, From)]

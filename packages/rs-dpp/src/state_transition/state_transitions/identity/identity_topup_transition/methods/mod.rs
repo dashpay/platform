@@ -8,7 +8,7 @@ use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransit
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
-use crate::{BlsModule, ProtocolError};
+use crate::ProtocolError;
 
 use platform_version::version::PlatformVersion;
 
@@ -25,7 +25,7 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransition {
             platform_version
                 .dpp
                 .state_transition_conversion_versions
-                .identity_to_identity_top_up_transition
+                .identity_to_identity_top_up_transition,
         ) {
             0 => Ok(IdentityTopUpTransitionV0::try_from_identity(
                 identity,

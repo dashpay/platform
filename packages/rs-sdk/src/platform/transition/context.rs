@@ -20,7 +20,7 @@ impl TransitionContext for TransitionContextImpl {
 
 pub struct TransitionContextBuilder {}
 impl TransitionContextBuilder {
-    pub fn new(sdk: &Sdk) -> Self {
+    pub fn new(_sdk: &Sdk) -> Self {
         Self {}
     }
 

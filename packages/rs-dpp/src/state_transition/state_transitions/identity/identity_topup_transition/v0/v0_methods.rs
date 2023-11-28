@@ -1,5 +1,5 @@
+use crate::{prelude::Identifier, ProtocolError};
 use dashcore::signer;
-use crate::{prelude::Identifier, BlsModule, ProtocolError};
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::Identity;
@@ -8,8 +8,8 @@ use crate::prelude::AssetLockProof;
 use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use crate::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 
-use platform_version::version::PlatformVersion;
 use crate::serialization::Signable;
+use platform_version::version::PlatformVersion;
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::StateTransition;

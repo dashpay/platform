@@ -71,7 +71,13 @@ impl KeyType {
 
     /// All key types
     pub fn all_key_types() -> [KeyType; 5] {
-        [Self::ECDSA_SECP256K1, Self::BLS12_381, Self::ECDSA_HASH160, Self::BIP13_SCRIPT_HASH, Self::EDDSA_25519_HASH160]
+        [
+            Self::ECDSA_SECP256K1,
+            Self::BLS12_381,
+            Self::ECDSA_HASH160,
+            Self::BIP13_SCRIPT_HASH,
+            Self::EDDSA_25519_HASH160,
+        ]
     }
 
     /// Are keys of this type unique?

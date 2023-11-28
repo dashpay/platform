@@ -1,7 +1,7 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::block::epoch::{Epoch, EpochIndex, EPOCH_KEY_OFFSET};
+use dpp::block::epoch::{EpochIndex, EPOCH_KEY_OFFSET};
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::ProtocolError;
@@ -75,9 +75,7 @@ impl Drive {
                 if let QueryResultElement::PathKeyElementTrioResultItem((path, key, element)) =
                     result_item
                 {
-                    acc.entry(path)
-                        .or_insert_with(BTreeMap::new)
-                        .insert(key, element);
+                    acc.entry(path).or_default().insert(key, element);
                 }
                 acc
             },

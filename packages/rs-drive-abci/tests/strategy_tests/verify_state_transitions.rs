@@ -1,29 +1,27 @@
-use dapi_grpc::platform::v0::{
-    get_proofs_request,  GetProofsRequest, GetProofsResponse,
-};
-use dpp::document::Document;
-use dpp::identity::PartialIdentity;
-use dpp::state_transition::StateTransition;
-use drive::drive::Drive;
-use drive::query::SingleDocumentDriveQuery;
-use drive_abci::abci::AbciApplication;
-use drive_abci::platform_types::platform::PlatformRef;
-use drive_abci::rpc::core::MockCoreRPCLike;
-use dapi_grpc::platform::VersionedGrpcResponse;
 use dapi_grpc::platform::v0::get_proofs_request::{get_proofs_request_v0, GetProofsRequestV0};
+use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
+use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::document::Document;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::PartialIdentity;
+use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
+use drive::drive::Drive;
+use drive::query::SingleDocumentDriveQuery;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
+use drive_abci::abci::AbciApplication;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
+use drive_abci::rpc::core::MockCoreRPCLike;
 use prost::Message;
 use tenderdash_abci::proto::abci::ExecTxResult;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::prelude::ConsensusValidationResult;
+
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransitionAction;
@@ -34,7 +32,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     expected_root_hash: &[u8; 32],
     state_transitions: &[(StateTransition, ExecTxResult)],
     block_info: &BlockInfo,
-    expected_validation_errors: &Vec<u32>,
+    expected_validation_errors: &[u32],
     platform_version: &PlatformVersion,
 ) -> bool {
     let state = abci_app.platform.state.read().unwrap();
@@ -85,7 +83,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
         })
         .collect::<Vec<_>>();
 
-    for (state_transition, action, was_executed) in &actions {
+    for (_state_transition, action, was_executed) in &actions {
         let mut proofs_request = GetProofsRequestV0 {
             identities: vec![],
             contracts: vec![],
@@ -302,92 +300,92 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             platform.state.last_committed_block_info()
                         );
 
-                    match document_transition_action {
-                        DocumentTransitionAction::CreateAction(creation_action) => {
-                            if *was_executed {
-                                let document = document.expect("expected a document");
-                                // dbg!(
-                                //     &document,
-                                //     Document::try_from_create_transition(
-                                //         creation_action,
-                                //         documents_batch_transition.owner_id(),
-                                //         platform_version,
-                                //     )
-                                //     .expect("expected to get document")
-                                // );
-                                assert_eq!(
-                                    document,
-                                    Document::try_from_create_transition_action(
-                                        creation_action,
-                                        documents_batch_transition.owner_id(),
-                                        platform_version,
-                                    )
-                                    .expect("expected to get document")
-                                );
-                            } else {
-                                //there is the possibility that the state transition was not executed because it already existed,
-                                // we can discount that for now in tests
+                        match document_transition_action {
+                            DocumentTransitionAction::CreateAction(creation_action) => {
+                                if *was_executed {
+                                    let document = document.expect("expected a document");
+                                    // dbg!(
+                                    //     &document,
+                                    //     Document::try_from_create_transition(
+                                    //         creation_action,
+                                    //         documents_batch_transition.owner_id(),
+                                    //         platform_version,
+                                    //     )
+                                    //     .expect("expected to get document")
+                                    // );
+                                    assert_eq!(
+                                        document,
+                                        Document::try_from_create_transition_action(
+                                            creation_action,
+                                            documents_batch_transition.owner_id(),
+                                            platform_version,
+                                        )
+                                        .expect("expected to get document")
+                                    );
+                                } else {
+                                    //there is the possibility that the state transition was not executed because it already existed,
+                                    // we can discount that for now in tests
+                                    assert!(document.is_none());
+                                }
+                            }
+                            DocumentTransitionAction::ReplaceAction(replace_action) => {
+                                if *was_executed {
+                                    // it's also possible we deleted something we replaced
+                                    if let Some(document) = document {
+                                        assert_eq!(
+                                            document,
+                                            Document::try_from_replace_transition_action(
+                                                replace_action,
+                                                documents_batch_transition.owner_id(),
+                                                platform_version,
+                                            )
+                                            .expect("expected to get document")
+                                        );
+                                    }
+                                } else {
+                                    //there is the possibility that the state transition was not executed and the state is equal to the previous
+                                    // state, aka there would have been no change anyways, we can discount that for now
+                                    if let Some(document) = document {
+                                        assert_ne!(
+                                            document,
+                                            Document::try_from_replace_transition_action(
+                                                replace_action,
+                                                documents_batch_transition.owner_id(),
+                                                platform_version,
+                                            )
+                                            .expect("expected to get document")
+                                        );
+                                    }
+                                }
+                            }
+                            DocumentTransitionAction::DeleteAction(_) => {
+                                // we expect no document
                                 assert!(document.is_none());
                             }
                         }
-                        DocumentTransitionAction::ReplaceAction(replace_action) => {
-                            if *was_executed {
-                                // it's also possible we deleted something we replaced
-                                if let Some(document) = document {
-                                    assert_eq!(
-                                        document,
-                                        Document::try_from_replace_transition_action(
-                                            replace_action,
-                                            documents_batch_transition.owner_id(),
-                                            platform_version,
-                                        )
-                                        .expect("expected to get document")
-                                    );
-                                }
-                            } else {
-                                //there is the possibility that the state transition was not executed and the state is equal to the previous
-                                // state, aka there would have been no change anyways, we can discount that for now
-                                if let Some(document) = document {
-                                    assert_ne!(
-                                        document,
-                                        Document::try_from_replace_transition_action(
-                                            replace_action,
-                                            documents_batch_transition.owner_id(),
-                                            platform_version,
-                                        )
-                                        .expect("expected to get document")
-                                    );
-                                }
-                            }
-                        }
-                        DocumentTransitionAction::DeleteAction(_) => {
-                            // we expect no document
-                            assert!(document.is_none());
-                        }
                     }
                 }
-            }
-            StateTransitionAction::IdentityCreateAction(identity_create_transition) => {
-                proofs_request
-                    .identities
-                    .push(get_proofs_request_v0::IdentityRequest {
-                        identity_id: identity_create_transition.identity_id().to_vec(),
-                        request_type: get_proofs_request_v0::identity_request::Type::FullIdentity
-                            .into(),
-                    });
-                let versioned_request = GetProofsRequest {
-                    version: Some(get_proofs_request::Version::V0(proofs_request)),
-                };
-                let result = abci_app
-                    .platform
-                    .query(
-                        "/proofs",
-                        &versioned_request.encode_to_vec(),
-                        platform_version,
-                    )
-                    .expect("expected to query proofs");
-                let serialized_get_proofs_response =
-                    result.into_data().expect("expected queries to be valid");
+                StateTransitionAction::IdentityCreateAction(identity_create_transition) => {
+                    proofs_request
+                        .identities
+                        .push(get_proofs_request_v0::IdentityRequest {
+                            identity_id: identity_create_transition.identity_id().to_vec(),
+                            request_type:
+                                get_proofs_request_v0::identity_request::Type::FullIdentity.into(),
+                        });
+                    let versioned_request = GetProofsRequest {
+                        version: Some(get_proofs_request::Version::V0(proofs_request)),
+                    };
+                    let result = abci_app
+                        .platform
+                        .query(
+                            "/proofs",
+                            &versioned_request.encode_to_vec(),
+                            platform_version,
+                        )
+                        .expect("expected to query proofs");
+                    let serialized_get_proofs_response =
+                        result.into_data().expect("expected queries to be valid");
 
                     let response =
                         GetProofsResponse::decode(serialized_get_proofs_response.as_slice())

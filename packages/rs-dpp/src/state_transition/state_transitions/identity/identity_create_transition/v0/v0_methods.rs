@@ -1,7 +1,4 @@
-use crate::{
-    prelude::Identifier, state_transition::StateTransitionType, BlsModule, NonConsensusError,
-    ProtocolError,
-};
+use crate::{prelude::Identifier, state_transition::StateTransitionType, BlsModule, ProtocolError};
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
