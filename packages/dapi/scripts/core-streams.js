@@ -31,14 +31,14 @@ const {
   getCoreDefinition,
 } = require('@dashevo/dapi-grpc');
 
-const ChainDataProvider = require('../lib/chainDataProvider/ChainDataProvider');
-
 // Load config from .env
 dotenv.config();
 
+const ChainDataProvider = require('../lib/chainDataProvider/ChainDataProvider');
+
 const config = require('../lib/config');
 const { validateConfig } = require('../lib/config/validator');
-const log = require('../lib/log');
+const logger = require('../lib/logger');
 
 const BlockHeadersCache = require('../lib/chainDataProvider/BlockHeadersCache');
 const ZmqClient = require('../lib/externalApis/dashcore/ZmqClient');
@@ -63,8 +63,8 @@ async function main() {
   // Validate config
   const configValidationResult = validateConfig(config);
   if (!configValidationResult.isValid) {
-    configValidationResult.validationErrors.forEach(log.error);
-    log.error('Aborting DAPI startup due to config validation errors');
+    configValidationResult.validationErrors.forEach(logger.fatal.bind(logger));
+    logger.error('Aborting DAPI startup due to config validation errors');
     process.exit();
   }
 
@@ -74,16 +74,16 @@ async function main() {
   const dashCoreZmqClient = new ZmqClient(config.dashcore.zmq.host, config.dashcore.zmq.port);
 
   // Bind logs on ZMQ connection events
-  dashCoreZmqClient.on(ZmqClient.events.DISCONNECTED, log.warn);
-  dashCoreZmqClient.on(ZmqClient.events.CONNECTION_DELAY, log.warn);
-  dashCoreZmqClient.on(ZmqClient.events.MONITOR_ERROR, log.warn);
+  dashCoreZmqClient.on(ZmqClient.events.DISCONNECTED, logger.warn.bind(logger));
+  dashCoreZmqClient.on(ZmqClient.events.CONNECTION_DELAY, logger.warn.bind(logger));
+  dashCoreZmqClient.on(ZmqClient.events.MONITOR_ERROR, logger.warn.bind(logger));
 
   // Wait until zmq connection is established
-  log.info(`Connecting to dashcore ZMQ on ${dashCoreZmqClient.connectionString}`);
+  logger.info(`Connecting to dashcore ZMQ on ${dashCoreZmqClient.connectionString}`);
 
   await dashCoreZmqClient.start();
 
-  log.info('Connection to ZMQ established.');
+  logger.info('Connection to ZMQ established.');
 
   // Add ZMQ event listeners
   const bloomFilterEmitterCollection = new BloomFilterEmitterCollection();
@@ -128,9 +128,9 @@ async function main() {
   await chainDataProvider.init();
 
   // Start GRPC server
-  log.info('Starting GRPC server');
+  logger.info('Starting GRPC server');
 
-  const wrapInErrorHandler = wrapInErrorHandlerFactory(log, isProductionEnvironment);
+  const wrapInErrorHandler = wrapInErrorHandlerFactory(logger, isProductionEnvironment);
 
   const getHistoricalTransactionsIterator = getHistoricalTransactionsIteratorFactory(
     dashCoreRpcClient,
@@ -202,14 +202,14 @@ async function main() {
     },
   );
 
-  log.info(`GRPC server is listening on port ${config.txFilterStream.grpcServer.port}`);
+  logger.info(`GRPC server is listening on port ${config.txFilterStream.grpcServer.port}`);
 
   // Display message that everything is ok
-  log.info(`DAPI TxFilterStream process is up and running in ${config.livenet ? 'livenet' : 'testnet'} mode`);
-  log.info(`Network is ${config.network}`);
+  logger.info(`DAPI TxFilterStream process is up and running in ${config.livenet ? 'livenet' : 'testnet'} mode`);
+  logger.info(`Network is ${config.network}`);
 }
 
 main().catch((e) => {
-  log.error(e.stack);
+  logger.error(e.stack);
   process.exit();
 });

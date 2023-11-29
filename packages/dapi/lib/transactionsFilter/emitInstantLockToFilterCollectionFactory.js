@@ -1,4 +1,5 @@
 const { Transaction, InstantLock } = require('@dashevo/dashcore-lib');
+const logger = require('../logger');
 
 /**
  * @param {BloomFilterEmitterCollection} bloomFilterEmitterCollection
@@ -17,6 +18,10 @@ function emitInstantLockToFilterCollectionFactory(bloomFilterEmitterCollection) 
     const txLockBuffer = rawTransactionLock.slice(txBuffer.length, rawTransactionLock.length);
 
     const instantLock = new InstantLock(txLockBuffer);
+
+    logger.debug({
+      instantLock,
+    }, `instant lock received for ${transaction.hash}`);
 
     bloomFilterEmitterCollection.emit('instantLock', {
       transaction,
