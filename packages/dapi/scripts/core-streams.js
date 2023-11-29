@@ -31,10 +31,10 @@ const {
   getCoreDefinition,
 } = require('@dashevo/dapi-grpc');
 
-const ChainDataProvider = require('../lib/chainDataProvider/ChainDataProvider');
-
 // Load config from .env
 dotenv.config();
+
+const ChainDataProvider = require('../lib/chainDataProvider/ChainDataProvider');
 
 const config = require('../lib/config');
 const { validateConfig } = require('../lib/config/validator');

@@ -18,10 +18,10 @@ const { default: loadWasmDpp, DashPlatformProtocol } = require('@dashevo/wasm-dp
 
 const { client: RpcClient } = require('jayson/promise');
 
-const WsClient = require('../lib/externalApis/tenderdash/WsClient');
-
 // Load config from .env
 dotenv.config();
+
+const WsClient = require('../lib/externalApis/tenderdash/WsClient');
 
 const config = require('../lib/config');
 const { validateConfig } = require('../lib/config/validator');
