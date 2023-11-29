@@ -8,7 +8,7 @@ on:
       - master
       - v[0-9]+\.[0-9]+-dev
       # TODO: remove this line after the feature is merged
-      - feat/register
+      - "feat/register"
   push:
     branches:
       - master
@@ -23,13 +23,7 @@ concurrency:
 jobs:
   changes:
     name: Determine changed packages
-    if: >
-      ${{ github.event_name == 'push' 
-        || github.event_name == 'workflow_dispatch' 
-        || github.event_name == 'schedule' 
-        || !github.event.pull_request.draft 
-        || contains(github.event.pull_request.labels.*.name, 'run-tests') 
-      }}
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft || contains(github.event.pull_request.labels.*.name, 'run-tests') }}
     runs-on: ubuntu-22.04
     outputs:
       js-packages: ${{ steps.filter-js.outputs.changes }}
