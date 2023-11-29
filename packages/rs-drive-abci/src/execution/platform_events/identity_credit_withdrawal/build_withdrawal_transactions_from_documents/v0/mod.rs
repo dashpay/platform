@@ -89,8 +89,7 @@ where
                 base_payload: AssetUnlockBasePayload {
                     version: 1,
                     index: transaction_index,
-                    // TODO(withdrawals): state_transition_size? and why multiply by 1000?
-                    fee: (state_transition_size * core_fee_per_byte * 1000),
+                    fee: state_transition_size * core_fee_per_byte,
                 },
             };
 
