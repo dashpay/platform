@@ -33,6 +33,3 @@ node_modules
 
 # Rust build artifacts
 /target
-
-# Test vectors
-/packages/dash-platform-sdk/tests/vectors/*
