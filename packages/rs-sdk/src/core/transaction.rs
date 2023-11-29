@@ -9,7 +9,7 @@ use dpp::dashcore::consensus::Decodable;
 use dpp::dashcore::{Address, InstantLock, Transaction, Txid};
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
-use rs_dapi_client::{RequestExecutor, RequestSettings};
+use rs_dapi_client::{Dapi, RequestSettings};
 use serde::Serialize;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -48,7 +48,7 @@ impl Sdk {
             .await?
             .chain
             .map(|chain| chain.best_block_hash)
-            .ok_or_else(|| Error::DAPIClientError("missing `chain` field".to_owned()))?;
+            .ok_or_else(|| Error::DapiClientError("missing `chain` field".to_owned()))?;
 
         let core_transactions_stream = TransactionsWithProofsRequest {
             bloom_filter: Some(bloom_filter_proto),
@@ -60,7 +60,7 @@ impl Sdk {
         };
         self.execute(core_transactions_stream, RequestSettings::default())
             .await
-            .map_err(|e| Error::DAPIClientError(e.to_string()))
+            .map_err(|e| Error::DapiClientError(e.to_string()))
     }
 
     /// Waits for a response for the asset lock proof
@@ -87,10 +87,10 @@ impl Sdk {
                 let message = stream
                     .message()
                     .await
-                    .map_err(|e| Error::DAPIClientError(format!("can't receive message: {e}")))?;
+                    .map_err(|e| Error::DapiClientError(format!("can't receive message: {e}")))?;
 
                 let Some(TransactionsWithProofsResponse { responses }) = message else {
-                    return Err(Error::DAPIClientError(
+                    return Err(Error::DapiClientError(
                         "stream closed unexpectedly".to_string(),
                     ));
                 };
@@ -176,7 +176,7 @@ impl Sdk {
                 }
             }
 
-            // Err(Error::DAPIClientError(
+            // Err(Error::DapiClientError(
             //     "Asset lock proof not found".to_string(),
             // ))
         };
@@ -186,7 +186,7 @@ impl Sdk {
         match time_out_ms {
             Some(ms) => timeout(Duration::from_millis(ms), stream_processing)
                 .await
-                .map_err(|_| Error::DAPIClientError("Timeout reached".to_string()))?,
+                .map_err(|_| Error::DapiClientError("Timeout reached".to_string()))?,
             None => stream_processing.await,
         }
     }

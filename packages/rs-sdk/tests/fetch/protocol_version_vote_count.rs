@@ -1,5 +1,5 @@
 use crate::{common::setup_logs, config::Config};
-use dash_sdk::platform::FetchMany;
+use dash_platform_sdk::platform::FetchMany;
 use drive_proof_verifier::types::ProtocolVersionVoteCount;
 
 /// Given some existing identity ID, when I fetch the identity keys, I get some of them indexed by key ID.

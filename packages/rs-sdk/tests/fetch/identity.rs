@@ -1,5 +1,5 @@
-use dash_sdk::platform::types::identity::PublicKeyHash;
-use dash_sdk::platform::{Fetch, FetchMany};
+use dash_platform_sdk::platform::types::identity::PublicKeyHash;
+use dash_platform_sdk::platform::{Fetch, FetchMany};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::prelude::IdentityPublicKey;

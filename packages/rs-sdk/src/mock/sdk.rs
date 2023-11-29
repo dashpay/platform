@@ -8,9 +8,9 @@ use dapi_grpc::{
 use dpp::version::PlatformVersion;
 use drive_proof_verifier::{FromProof, MockContextProvider};
 use rs_dapi_client::{
-    mock::{Key, MockDAPIClient},
+    mock::{Key, MockDapiClient},
     transport::TransportRequest,
-    DAPIClient, DumpData,
+    DapiClient, DumpData,
 };
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
@@ -35,7 +35,7 @@ use super::MockResponse;
 pub struct MockDashPlatformSdk {
     from_proof_expectations: BTreeMap<Key, Vec<u8>>,
     platform_version: &'static PlatformVersion,
-    dapi: Arc<Mutex<MockDAPIClient>>,
+    dapi: Arc<Mutex<MockDapiClient>>,
     prove: bool,
     quorum_provider: Option<MockContextProvider>,
 }
@@ -43,7 +43,7 @@ pub struct MockDashPlatformSdk {
 impl MockDashPlatformSdk {
     pub(crate) fn new(
         version: &'static PlatformVersion,
-        dapi: Arc<Mutex<MockDAPIClient>>,
+        dapi: Arc<Mutex<MockDapiClient>>,
         prove: bool,
     ) -> Self {
         Self {
@@ -72,13 +72,13 @@ impl MockDashPlatformSdk {
 
     /// Load all expectations from files in a directory.
     ///
-    /// Expectation files must be prefixed with [DAPIClient::DUMP_FILE_PREFIX] and
+    /// Expectation files must be prefixed with [DapiClient::DUMP_FILE_PREFIX] and
     /// have `.json` extension.
     pub async fn load_expectations<P: AsRef<std::path::Path>>(
         &mut self,
         dir: P,
     ) -> Result<&mut Self, Error> {
-        let prefix = DAPIClient::DUMP_FILE_PREFIX;
+        let prefix = DapiClient::DUMP_FILE_PREFIX;
 
         let entries = dir.as_ref().read_dir().map_err(|e| {
             Error::Config(format!(
@@ -202,7 +202,7 @@ impl MockDashPlatformSdk {
     /// # let r = tokio::runtime::Runtime::new().unwrap();
     /// #
     /// # r.block_on(async {
-    ///     use dash_sdk::{Sdk, platform::{Identity, Fetch, dpp::identity::accessors::IdentityGettersV0}};
+    ///     use dash_platform_sdk::{Sdk, platform::{Identity, Fetch, dpp::identity::accessors::IdentityGettersV0}};
     ///
     ///     let mut api = Sdk::new_mock();
     ///     // Define expected response

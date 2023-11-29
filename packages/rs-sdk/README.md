@@ -11,7 +11,7 @@ To use this crate, define it as a dependency in your `Cargo.toml`:
 ```toml
 [dependencies]
 
-dash-sdk = { git="https://github.com/dashpay/platform"0 }
+dash-platform-sdk = { git="https://github.com/dashpay/platform"0 }
 ```
 
 ## Examples
@@ -64,7 +64,7 @@ To generate test vectors:
 Run the offline test using the following command:
 
 ```bash
-cargo test -p dash-sdk
+cargo test -p dash-platform-sdk
 ```
 
 ## Implementing Fetch and FetchAny on new objects
