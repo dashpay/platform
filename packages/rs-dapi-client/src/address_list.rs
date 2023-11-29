@@ -1,5 +1,6 @@
 //! Subsystem to manage peers.
 
+use std::str::FromStr;
 use std::time;
 
 use http::Uri;
@@ -93,6 +94,17 @@ impl AddressList {
                     .unwrap_or(true)
             })
             .choose(&mut rng)
+    }
+}
+
+impl From<&str> for AddressList {
+    fn from(value: &str) -> Self {
+        let uri_list: Vec<Uri> = value
+            .split(',')
+            .map(|uri| Uri::from_str(uri).expect("invalid uri"))
+            .collect();
+
+        Self::from_iter(uri_list)
     }
 }
 

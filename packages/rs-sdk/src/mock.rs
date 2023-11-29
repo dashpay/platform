@@ -21,6 +21,8 @@
 
 #[cfg(not(feature = "mocks"))]
 mod noop;
+#[cfg(not(feature = "mocks"))]
+mod noop;
 #[cfg(feature = "mocks")]
 pub mod provider;
 #[cfg(feature = "mocks")]
@@ -29,8 +31,10 @@ mod requests;
 pub mod sdk;
 #[cfg(feature = "mocks")]
 pub mod wallet;
-#[cfg(feature = "mocks")]
-// TODO: move Mockable to some crate that can be shared between dapi-grpc, rs-dapi-client, and dash-platform-sdk
+
+// Mockable reexport is needed even if mocks feature is disabled - it just does nothing.
+// Otherwise  dapi_grpc_macros::Mockable fails.
+// TODO: move Mockable to some crate that can be shared between dapi-grpc, rs-dapi-client, and dash-sdk
 pub use dapi_grpc::mock::Mockable;
 #[cfg(feature = "mocks")]
 pub use requests::*;

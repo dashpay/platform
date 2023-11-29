@@ -51,21 +51,6 @@ pub trait Dapi {
         R::Response: Mockable;
 }
 
-#[async_trait]
-impl<D: Dapi + Send + Sync> Dapi for &mut D {
-    async fn execute<R>(
-        &self,
-        request: R,
-        settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
-    where
-        R: TransportRequest + Mockable,
-        R::Response: Mockable,
-    {
-        self.execute(request, settings).await
-    }
-}
-
 /// Access point to DAPI.
 #[derive(Debug)]
 pub struct DapiClient {
@@ -123,6 +108,20 @@ impl Dapi for DapiClient {
                 DapiClientError::<<R::Client as TransportClient>::Error>::NoAvailableAddresses,
             );
 
+            let _span = tracing::debug_span!(
+                "execute request",
+                ?request,
+                ?address,
+                settings = ?applied_settings,
+                method = request.method_name(),
+            );
+
+            tracing::debug!(
+                "calling {} with {} request",
+                request.method_name(),
+                request.request_name(),
+            );
+
             // Get a transport client requried by the DAPI request from this DAPI client.
             // It stays wrapped in `Result` since we want to return
             // `impl Future<Output = Result<...>`, not a `Result` itself.
@@ -132,13 +131,18 @@ impl Dapi for DapiClient {
 
             // Create a future using `async` block that will be returned from the closure on
             // each retry. Could be just a request future, but need to unpack client first.
+            let response_name = request.response_name();
             async move {
-                transport_request
+                let response = transport_request
                     .execute_transport(&mut transport_client?, &applied_settings)
                     .await
                     .map_err(|e| {
                         DapiClientError::<<R::Client as TransportClient>::Error>::Transport(e)
-                    })
+                    });
+
+                tracing::debug!(?response, "received {} response", response_name);
+
+                response
             }
         };
 

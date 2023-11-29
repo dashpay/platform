@@ -130,6 +130,18 @@ impl TransportRequest for DocumentQuery {
     const SETTINGS_OVERRIDES: rs_dapi_client::RequestSettings =
         <GetDocumentsRequest as TransportRequest>::SETTINGS_OVERRIDES;
 
+    fn request_name(&self) -> &'static str {
+        "GetDocumentsRequest"
+    }
+
+    fn response_name(&self) -> &'static str {
+        "GetDocumentsResponse"
+    }
+
+    fn method_name(&self) -> &'static str {
+        "get_documents"
+    }
+
     fn execute_transport<'c>(
         self,
         client: &'c mut Self::Client,

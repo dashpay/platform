@@ -16,6 +16,8 @@ use rs_dapi_client::transport::TransportRequest;
 
 use crate::{error::Error, platform::document_query::DocumentQuery};
 
+use super::types::epoch::EpochQuery;
+
 /// Default limit of epoch records returned by the platform.
 pub const DEFAULT_EPOCH_QUERY_LIMIT: u32 = 100;
 /// Default limit of epoch records returned by the platform.
@@ -179,18 +181,19 @@ impl<Q> From<Q> for LimitQuery<Q> {
     }
 }
 
-impl Query<GetEpochsInfoRequest> for LimitQuery<EpochIndex> {
+impl<E: Into<EpochQuery> + Clone + Debug + Send> Query<GetEpochsInfoRequest> for LimitQuery<E> {
     fn query(self, prove: bool) -> Result<GetEpochsInfoRequest, Error> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
+        let inner: EpochQuery = self.query.into();
         Ok(GetEpochsInfoRequest {
             version: Some(proto::get_epochs_info_request::Version::V0(
                 proto::get_epochs_info_request::GetEpochsInfoRequestV0 {
                     prove,
-                    start_epoch: Some(self.query.into()),
+                    start_epoch: inner.start.map(|v| v as u32),
                     count: self.limit.unwrap_or(DEFAULT_EPOCH_QUERY_LIMIT),
-                    ascending: true,
+                    ascending: inner.ascending,
                 },
             )),
         })

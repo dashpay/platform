@@ -1,7 +1,6 @@
 //! [Sdk] entrypoint to Dash Platform.
 
 use std::{fmt::Debug, num::NonZeroUsize, ops::DerefMut};
-#[cfg(feature = "mocks")]
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
