@@ -13,7 +13,6 @@ process.env.NODE_ENV = 'test';
 
 // eslint-disable-next-line import/prefer-default-export
 export const mochaHooks = {
-  beforeAll: WasmDPP.default,
   beforeEach() {
     if (!this.sinon) {
       this.sinon = sinon.createSandbox();

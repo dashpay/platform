@@ -23,9 +23,6 @@ export default class BaseCommand extends Command {
   };
 
   async init() {
-    // Load wasm-dpp for further usage
-    await WasmDPP.default();
-
     // Read environment variables from .env file
     dotenv.config();
 
