@@ -51,6 +51,7 @@ module.exports = (config) => {
           events: require.resolve('events/'),
           assert: require.resolve('assert/'),
           string_decoder: require.resolve('string_decoder/'),
+          process: require.resolve('process/browser'),
         },
       },
     },

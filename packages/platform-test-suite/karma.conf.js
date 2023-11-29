@@ -92,6 +92,7 @@ module.exports = (config) => {
           crypto: require.resolve('crypto-browserify'),
           events: require.resolve('events/'),
           util: require.resolve('util/'),
+          process: require.resolve('process/browser'),
         },
         extensions: ['.ts', '.js', '.json'],
       },
