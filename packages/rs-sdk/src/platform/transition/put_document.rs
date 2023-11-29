@@ -13,7 +13,7 @@ use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBat
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use drive::drive::Drive;
-use rs_dapi_client::{DAPIRequest, RequestSettings};
+use rs_dapi_client::{DapiRequest, RequestSettings};
 
 #[async_trait::async_trait]
 /// A trait for putting an identity to platform
@@ -129,7 +129,7 @@ impl<S: Signer> PutDocument<S> for Document {
                     ))?;
                 Ok(document)
             }
-            _ => Err(Error::DAPIClientError("proved a non document".to_string())),
+            _ => Err(Error::DapiClientError("proved a non document".to_string())),
         }
     }
 }

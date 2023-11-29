@@ -27,7 +27,7 @@ use drive_proof_verifier::types::{
     MasternodeProtocolVote, ProtocolVersionVoteCount, RetrievedObjects,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
-use rs_dapi_client::{transport::TransportRequest, DAPIRequest, RequestSettings};
+use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
 
 use super::LimitQuery;
@@ -55,7 +55,7 @@ use super::LimitQuery;
 /// * call [DataContract::fetch_many()](FetchMany::fetch_many()) with the query and an instance of [Sdk].
 ///
 /// ```rust
-/// use dash_sdk::{Sdk, platform::{Query, Identifier, FetchMany, DataContract}};
+/// use dash_platform_sdk::{Sdk, platform::{Query, Identifier, FetchMany, DataContract}};
 ///
 /// # const SOME_IDENTIFIER_1 : [u8; 32] = [1; 32];
 /// # const SOME_IDENTIFIER_2 : [u8; 32] = [2; 32];
@@ -174,7 +174,7 @@ where
 
     /// Fetch multiple objects from the Platform with limit.
     ///
-    /// Fetches up to `limit` objects matching the `query`.
+    /// Fetches up to `limit` objects matching the `query`.    
     /// See [FetchMany] and [FetchMany::fetch_many()] for more detailed documentation.
     ///
     /// ## Parameters
@@ -273,7 +273,7 @@ impl FetchMany<EpochIndex> for ExtendedEpochInfo {
 /// ## Example
 ///
 /// ```rust
-/// use dash_sdk::{Sdk, platform::FetchMany};
+/// use dash_platform_sdk::{Sdk, platform::FetchMany};
 /// use drive_proof_verifier::types::ProtocolVersionVoteCount;
 ///
 /// # tokio_test::block_on(async {

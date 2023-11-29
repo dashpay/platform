@@ -1,19 +1,19 @@
 //! Mock implementation of rs-dapi-client for testing
 //!
 //! rs-dapi-client provides `mocks` feature that makes it possible to mock the transport layer.
-//! Core concept of the mocks is a [MockDAPIClient] that mimics [DAPIClient](crate::DAPIClient) behavior and allows
-//! to define expectations for requests and responses using [`MockDAPIClient::expect`] function.
+//! Core concept of the mocks is a [MockDapiClient] that mimics [DapiClient](crate::DapiClient) behavior and allows
+//! to define expectations for requests and responses using [`MockDapiClient::expect`] function.
 //!
 //! In order to use the mocking feature, you need to:
 //!
 //! 1. Define your requests and responses.
-//! 2. Create a [MockDAPIClient] and use it instead of [DAPIClient](crate::DAPIClient) in your tests.
+//! 2. Create a [MockDapiClient] and use it instead of [DapiClient](crate::DapiClient) in your tests.
 //!
 //! See `tests/mock_dapi_client.rs` for an example.
 
 use crate::{
     transport::{TransportClient, TransportRequest},
-    DAPIClientError, RequestExecutor, RequestSettings,
+    Dapi, DapiClientError, RequestSettings,
 };
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
@@ -23,14 +23,14 @@ use std::{any::type_name, collections::HashMap, fmt::Display};
 
 /// Mock DAPI client.
 ///
-/// This is a mock implmeneation of [RequestExecutor] that can be used for testing.
+/// This is a mock implmeneation of [Dapi] that can be used for testing.
 ///
 /// See `tests/mock_dapi_client.rs` for an example.
 #[derive(Default)]
-pub struct MockDAPIClient {
+pub struct MockDapiClient {
     expectations: Expectations,
 }
-impl MockDAPIClient {
+impl MockDapiClient {
     /// Create a new mock client
     pub fn new() -> Self {
         Self::default()
@@ -57,7 +57,7 @@ impl MockDAPIClient {
     /// Load expectation from file.
     ///
     /// The file must contain JSON structure.
-    /// See [DumpData](crate::DumpData) and [DAPIClient::dump_dir()](crate::DAPIClient::dump_dir()) more for details.
+    /// See [DumpData](crate::DumpData) and [DapiClient::dump_dir()](crate::DapiClient::dump_dir()) more for details.
     ///
     /// # Panics
     ///
@@ -85,12 +85,12 @@ impl MockDAPIClient {
 }
 
 #[async_trait]
-impl RequestExecutor for MockDAPIClient {
+impl Dapi for MockDapiClient {
     async fn execute<R: TransportRequest>(
         &self,
         request: R,
         _settings: RequestSettings,
-    ) -> Result<R::Response, DAPIClientError<<R::Client as TransportClient>::Error>>
+    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
     where
         R: Mockable,
         R::Response: Mockable,
@@ -108,8 +108,8 @@ impl RequestExecutor for MockDAPIClient {
         return if let Some(response) = response {
             Ok(response)
         } else {
-            Err(DAPIClientError::MockExpectationNotFound(format!(
-                "unexpected mock request with key {}, use MockDAPIClient::expect(): {:?}",
+            Err(DapiClientError::MockExpectationNotFound(format!(
+                "unexpected mock request with key {}, use MockDapiClient::expect(): {:?}",
                 key, request
             )))
         };

@@ -4,7 +4,7 @@ use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
-use rs_dapi_client::{DAPIRequest, RequestSettings};
+use rs_dapi_client::{DapiRequest, RequestSettings};
 
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {

@@ -9,8 +9,8 @@ const DEFAULT_RETRIES: usize = 5;
 ///
 /// There are four levels of settings where each next level can override all previous ones:
 /// 1. Defaults for this library;
-/// 2. [crate::DAPIClient] settings;
-/// 3. [crate::DAPIRequest]-specific settings;
+/// 2. [crate::DapiClient] settings;
+/// 3. [crate::DapiRequest]-specific settings;
 /// 4. settings for an exact request execution call.
 #[derive(Debug, Clone, Copy)]
 pub struct RequestSettings {
