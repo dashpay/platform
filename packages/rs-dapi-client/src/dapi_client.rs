@@ -51,21 +51,6 @@ pub trait RequestExecutor {
         R::Response: Mockable;
 }
 
-#[async_trait]
-impl<D: RequestExecutor + Send + Sync> RequestExecutor for &mut D {
-    async fn execute<R>(
-        &self,
-        request: R,
-        settings: RequestSettings,
-    ) -> Result<R::Response, DAPIClientError<<R::Client as TransportClient>::Error>>
-    where
-        R: TransportRequest + Mockable,
-        R::Response: Mockable,
-    {
-        self.execute(request, settings).await
-    }
-}
-
 /// Access point to DAPI.
 #[derive(Debug)]
 pub struct DAPIClient {
