@@ -3,7 +3,7 @@ name: Tests
 on:
   workflow_dispatch:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - master
       - "feat/register"
@@ -23,7 +23,7 @@ concurrency:
 jobs:
   changes:
     name: Determine changed packages
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft || contains(github.event.pull_request.labels.*.name, 'run-tests') }}
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     runs-on: ubuntu-22.04
     outputs:
       js-packages: ${{ steps.filter-js.outputs.changes }}
