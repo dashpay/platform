@@ -54,7 +54,7 @@ rs-dapi-client: &dapi_client
   - packages/rs-dapi-client/**
   - *dapi_grpc
 
-rs-sdk:
+dash-sdk:
   - .github/workflows/tests*
   - packages/rs-drive-proof-verifier/**
   - packages/rs-sdk/**
