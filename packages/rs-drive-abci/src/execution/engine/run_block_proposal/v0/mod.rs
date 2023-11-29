@@ -252,11 +252,11 @@ where
 
         // This checks for broadcasted core transactions and updates the withdrawal statuses
         // from queued to broadcasted
-        self.update_queued_withdrawal_transaction_statuses(
-            &block_execution_context,
-            transaction,
-            platform_version,
-        )?;
+        // self.update_queued_withdrawal_transaction_statuses(
+        //     &block_execution_context,
+        //     transaction,
+        //     platform_version,
+        // )?;
 
         // TODO(withdrawals): executed when Core transactions already constructed from
         //    platform withdrawal documents
