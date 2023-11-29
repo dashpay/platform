@@ -2,5 +2,6 @@ exit: true
 timeout: 650000
 require:
   - ./lib/test/bootstrap.js
-parallel: true
+# TODO: restore to true once we resolved concurrency issues with js walleet
+parallel: false
 jobs: 2
