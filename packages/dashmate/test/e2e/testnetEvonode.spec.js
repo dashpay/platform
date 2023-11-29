@@ -171,46 +171,6 @@ describe('Testnet Evonode', function main() {
     });
   });
 
-  describe('stop', () => {
-    it('should stop only platform', async () => {
-      const stopNodeTask = container.resolve('stopNodeTask');
-      const startNodeTask = container.resolve('startNodeTask');
-
-      let task = stopNodeTask(config);
-
-      await task.run({
-        isVerbose: true,
-        platformOnly: true,
-      });
-
-      await assertServiceRunning(config, 'core', true);
-      await assertServiceRunning(config, 'drive_abci', false);
-
-      task = startNodeTask(config);
-
-      await task.run({
-        isVerbose: true,
-        platformOnly: true,
-      });
-
-      await assertServiceRunning(config, 'core', true);
-      await assertServiceRunning(config, 'drive_abci', true);
-    });
-
-    it('should stop fullnode', async () => {
-      const stopNodeTask = container.resolve('stopNodeTask');
-
-      const task = stopNodeTask(config);
-
-      await task.run({
-        isVerbose: true,
-      });
-
-      // TODO: Assert all services are running
-      await assertServiceRunning(config, 'core', false);
-    });
-  });
-
   describe('dashmate helper', () => {
     it('should be able to request HTTP to helper api', async () => {
       config.set('dashmate.helper.api.port', 41337);
@@ -265,6 +225,46 @@ describe('Testnet Evonode', function main() {
 
       expect(scope.platform.tenderdash.dockerStatus).to.be.equal(DockerStatusEnum.running);
       expect(scope.platform.tenderdash.serviceStatus).to.be.equal(ServiceStatusEnum.wait_for_core);
+    });
+  });
+
+  describe('stop', () => {
+    it('should stop only platform', async () => {
+      const stopNodeTask = container.resolve('stopNodeTask');
+      const startNodeTask = container.resolve('startNodeTask');
+
+      let task = stopNodeTask(config);
+
+      await task.run({
+        isVerbose: true,
+        platformOnly: true,
+      });
+
+      await assertServiceRunning(config, 'core', true);
+      await assertServiceRunning(config, 'drive_abci', false);
+
+      task = startNodeTask(config);
+
+      await task.run({
+        isVerbose: true,
+        platformOnly: true,
+      });
+
+      await assertServiceRunning(config, 'core', true);
+      await assertServiceRunning(config, 'drive_abci', true);
+    });
+
+    it('should stop fullnode', async () => {
+      const stopNodeTask = container.resolve('stopNodeTask');
+
+      const task = stopNodeTask(config);
+
+      await task.run({
+        isVerbose: true,
+      });
+
+      // TODO: Assert all services are running
+      await assertServiceRunning(config, 'core', false);
     });
   });
 });
