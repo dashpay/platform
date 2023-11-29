@@ -24,7 +24,9 @@ where
         Ok(transactions_are_chain_locked_result
             .into_iter()
             .zip(transaction_identifiers)
+            .filter(|(lock_result, _)| lock_result.is_some())
             .map(|(lock_result, identifier)| {
+                let lock_result = lock_result.unwrap();
                 let Some(mined_height) = lock_result.height else {
                     return (identifier, false);
                 };

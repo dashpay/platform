@@ -208,8 +208,11 @@ where
         // // Finalize withdrawal processing
         // our_withdrawals.finalize(Some(transaction), &self.drive, &to_commit_block_info)?;
 
-        // At the end we update the state cache
+        for (_, tx) in block_execution_context.withdrawal_transactions() {
+            self.core_rpc.send_raw_transaction(tx)?;
+        }
 
+        // At the end we update the state cache
         drop(guarded_block_execution_context);
 
         let extended_block_info = ExtendedBlockInfoV0 {

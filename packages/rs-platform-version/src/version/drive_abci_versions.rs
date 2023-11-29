@@ -235,6 +235,7 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
     pub fetch_transactions_block_inclusion_status: FeatureVersion,
     pub pool_withdrawals_into_transactions_queue: FeatureVersion,
     pub update_broadcasted_withdrawal_transaction_statuses: FeatureVersion,
+    pub update_queued_withdrawal_transaction_statuses: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

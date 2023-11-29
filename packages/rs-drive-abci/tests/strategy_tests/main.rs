@@ -74,6 +74,7 @@ mod tests {
         DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
     };
 
+    use dpp::dashcore::Txid;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
@@ -2380,6 +2381,17 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_send_raw_transaction()
+            .returning(move |_| Ok(Txid::all_zeros()));
+
+        platform
+            .core_rpc
+            .expect_get_transactions_are_chain_locked()
+            .returning(move |txids| Ok(txids.iter().map(|_| None).collect()));
+
         platform
             .core_rpc
             .expect_get_best_chain_lock()

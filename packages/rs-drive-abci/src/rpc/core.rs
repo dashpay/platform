@@ -34,7 +34,7 @@ pub trait CoreRPCLike {
     fn get_transactions_are_chain_locked(
         &self,
         tx_ids: Vec<Txid>,
-    ) -> Result<Vec<GetTransactionLockedResult>, Error>;
+    ) -> Result<Vec<Option<GetTransactionLockedResult>>, Error>;
 
     /// Get transaction
     fn get_transaction_extended_info(&self, tx_id: &Txid)
@@ -119,6 +119,9 @@ pub trait CoreRPCLike {
 
     /// Returns masternode sync status
     fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error>;
+
+    /// Sends raw transaction to the network
+    fn send_raw_transaction(&self, transaction: &Vec<u8>) -> Result<Txid, Error>;
 }
 
 #[derive(Debug)]
@@ -224,7 +227,7 @@ impl CoreRPCLike for DefaultCoreRPC {
     fn get_transactions_are_chain_locked(
         &self,
         tx_ids: Vec<Txid>,
-    ) -> Result<Vec<GetTransactionLockedResult>, Error> {
+    ) -> Result<Vec<Option<GetTransactionLockedResult>>, Error> {
         retry!(self.inner.get_transaction_are_locked(&tx_ids))
     }
 
@@ -318,5 +321,9 @@ impl CoreRPCLike for DefaultCoreRPC {
     /// Returns masternode sync status
     fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error> {
         retry!(self.inner.mnsync_status())
+    }
+
+    fn send_raw_transaction(&self, transaction: &Vec<u8>) -> Result<Txid, Error> {
+        retry!(self.inner.send_raw_transaction(transaction.as_slice()))
     }
 }

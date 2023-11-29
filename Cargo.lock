@@ -1042,16 +1042,45 @@ source = "git+https://github.com/dashpay/rust-dashcore?branch=master#43ffb72915a
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.1"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#d6eb09d3cb4f11f57901bed5f3ab2f9657848e2e"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc#56c4ee7e363f59e37dcb36297b67444750d0c5b9"
 dependencies = [
  "dashcore-private",
- "dashcore-rpc-json",
+ "dashcore-rpc-json 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc)",
  "env_logger 0.10.0",
  "hex",
  "jsonrpc",
  "log",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "dashcore-rpc"
+version = "0.15.1"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#d6eb09d3cb4f11f57901bed5f3ab2f9657848e2e"
+dependencies = [
+ "dashcore-private",
+ "dashcore-rpc-json 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=master)",
+ "env_logger 0.10.0",
+ "hex",
+ "jsonrpc",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "dashcore-rpc-json"
+version = "0.15.1"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc#56c4ee7e363f59e37dcb36297b67444750d0c5b9"
+dependencies = [
+ "bincode 2.0.0-rc.3",
+ "dashcore",
+ "hex",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "serde_with 2.3.3",
 ]
 
 [[package]]
@@ -1285,7 +1314,7 @@ dependencies = [
  "ciborium",
  "clap 4.4.7",
  "dapi-grpc",
- "dashcore-rpc",
+ "dashcore-rpc 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc)",
  "delegate",
  "derive_more",
  "dotenvy",
@@ -3485,7 +3514,7 @@ dependencies = [
  "bincode 2.0.0-rc.3",
  "ciborium",
  "dapi-grpc",
- "dashcore-rpc",
+ "dashcore-rpc 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=master)",
  "data-contracts",
  "derive_more",
  "dotenvy",
@@ -3929,7 +3958,7 @@ version = "0.25.16-rc.4"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
- "dashcore-rpc",
+ "dashcore-rpc 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=master)",
  "dpp",
 ]
 
