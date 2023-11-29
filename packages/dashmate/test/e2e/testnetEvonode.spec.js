@@ -112,6 +112,8 @@ describe('Testnet Evonode', function main() {
       config.set('platform.drive.tenderdash.p2p.port', 40004);
       config.set('platform.drive.tenderdash.rpc.port', 40005);
       config.set('platform.drive.tenderdash.pprof.port', 40006);
+      config.set('dashmate.helper.api.port', 41337);
+      config.set('dashmate.helper.api.enable', true);
 
       // Write configs
       await configFileRepository.write(configFile);
@@ -173,25 +175,6 @@ describe('Testnet Evonode', function main() {
 
   describe('dashmate helper', () => {
     it('should be able to request HTTP to helper api', async () => {
-      config.set('dashmate.helper.api.port', 41337);
-      config.set('dashmate.helper.api.enable', true);
-
-      await configFileRepository.write(configFile);
-
-      const writeConfigTemplates = container.resolve('writeConfigTemplates');
-
-      writeConfigTemplates(config);
-
-      const startNodeTask = container.resolve('startNodeTask');
-
-      const task = startNodeTask(config);
-
-      await task.run({
-        isVerbose: true,
-      });
-
-      // TODO: Assert all services are running
-      await assertServiceRunning(config, 'core', true);
       await assertServiceRunning(config, 'dashmate_helper', true);
 
       // wait for http api to come up
