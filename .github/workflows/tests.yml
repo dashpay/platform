@@ -7,6 +7,7 @@ on:
     branches:
       - master
       - v[0-9]+\.[0-9]+-dev
+      - feat/register # TODO: remove this line after the feature is merged
   push:
     branches:
       - master
