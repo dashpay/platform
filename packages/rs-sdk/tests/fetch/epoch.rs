@@ -84,7 +84,7 @@ async fn test_epoch_list() {
 
     // Given some starting epoch and current epoch
     // Note the devnet does not necessarily start with epoch 0
-    let starting_epoch: EpochIndex = 3;
+    let starting_epoch: EpochIndex = 185;
     let current_epoch = get_current_epoch(&mut sdk, &cfg).await;
 
     // When we fetch epochs from the server, starting with `starting_epoch`
@@ -111,7 +111,7 @@ async fn test_epoch_list_limit() {
 
     // Given some starting epoch and current epoch
     // Note the devnet does not necessarily start with epoch 0
-    let starting_epoch: EpochIndex = 3;
+    let starting_epoch: EpochIndex = 193;
     let current_epoch = get_current_epoch(&mut sdk, &cfg).await;
     let limit = 2;
 
