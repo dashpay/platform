@@ -3,7 +3,6 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import dirtyChai from 'dirty-chai';
 import chaiAsPromised from 'chai-as-promised';
-import WasmDPP from '@dashevo/wasm-dpp';
 
 use(sinonChai);
 use(chaiAsPromised);
