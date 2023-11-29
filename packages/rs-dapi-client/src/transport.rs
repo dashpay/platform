@@ -19,7 +19,7 @@ pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
     /// Transport layer response.
     type Response: Mockable + Send + Debug;
 
-    /// Settings that will override [DAPIClient](crate::DAPIClient)'s ones each time the request is executed.
+    /// Settings that will override [DapiClient](crate::DapiClient)'s ones each time the request is executed.
     const SETTINGS_OVERRIDES: RequestSettings;
 
     /// gRPC request name

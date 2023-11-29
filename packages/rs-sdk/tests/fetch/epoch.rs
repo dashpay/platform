@@ -5,7 +5,7 @@ use dapi_grpc::platform::{
     v0::{get_identity_request::GetIdentityRequestV0, GetIdentityRequest},
     VersionedGrpcResponse,
 };
-use dash_sdk::{
+use dash_platform_sdk::{
     platform::{
         types::epoch::ExtendedEpochInfoEx, Fetch, FetchMany, LimitQuery, DEFAULT_EPOCH_QUERY_LIMIT,
     },
@@ -14,7 +14,7 @@ use dash_sdk::{
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
-use rs_dapi_client::{RequestExecutor, RequestSettings};
+use rs_dapi_client::{Dapi, RequestSettings};
 
 /// Get current epoch index from DAPI response metadata
 async fn get_current_epoch(sdk: &Sdk, cfg: &Config) -> EpochIndex {

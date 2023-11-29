@@ -3,7 +3,7 @@ use std::fmt::Debug;
 
 use dpp::version::PlatformVersionError;
 use dpp::ProtocolError;
-use rs_dapi_client::DAPIClientError;
+use rs_dapi_client::DapiClientError;
 
 /// Error type for the SDK
 #[derive(Debug, thiserror::Error)]
@@ -24,8 +24,8 @@ pub enum Error {
     #[error("Invalid Proved Response error: {0}")]
     InvalidProvedResponse(String),
     /// DAPI client error, for example, connection error
-    #[error("DAPI client error: {0}")]
-    DAPIClientError(String),
+    #[error("Dapi client error: {0}")]
+    DapiClientError(String),
     /// Dash core error
     #[error("Dash core error: {0}")]
     CoreError(#[from] dpp::dashcore::Error),
@@ -43,9 +43,9 @@ pub enum Error {
     EpochNotFound,
 }
 
-impl<T: Debug> From<DAPIClientError<T>> for Error {
-    fn from(value: DAPIClientError<T>) -> Self {
-        Self::DAPIClientError(format!("{:?}", value))
+impl<T: Debug> From<DapiClientError<T>> for Error {
+    fn from(value: DapiClientError<T>) -> Self {
+        Self::DapiClientError(format!("{:?}", value))
     }
 }
 

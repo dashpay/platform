@@ -1,4 +1,4 @@
-//! [DAPIClient] definition.
+//! [DapiClient] definition.
 
 use backon::{ExponentialBuilder, Retryable};
 use dapi_grpc::mock::Mockable;
@@ -12,7 +12,7 @@ use crate::{
 
 /// General DAPI request error type.
 #[derive(Debug, thiserror::Error)]
-pub enum DAPIClientError<TE> {
+pub enum DapiClientError<TE> {
     /// The error happened on transport layer
     #[error("transport error: {0}")]
     Transport(TE),
@@ -25,9 +25,9 @@ pub enum DAPIClientError<TE> {
     MockExpectationNotFound(String),
 }
 
-impl<TE: CanRetry> CanRetry for DAPIClientError<TE> {
+impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
     fn can_retry(&self) -> bool {
-        use DAPIClientError::*;
+        use DapiClientError::*;
         match self {
             NoAvailableAddresses => false,
             Transport(transport_error) => transport_error.can_retry(),
@@ -39,13 +39,13 @@ impl<TE: CanRetry> CanRetry for DAPIClientError<TE> {
 
 #[async_trait]
 /// DAPI client trait.
-pub trait RequestExecutor {
+pub trait Dapi {
     /// Execute request using this DAPI client.
     async fn execute<R>(
         &self,
         request: R,
         settings: RequestSettings,
-    ) -> Result<R::Response, DAPIClientError<<R::Client as TransportClient>::Error>>
+    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
     where
         R: TransportRequest + Mockable,
         R::Response: Mockable;
@@ -53,15 +53,15 @@ pub trait RequestExecutor {
 
 /// Access point to DAPI.
 #[derive(Debug)]
-pub struct DAPIClient {
+pub struct DapiClient {
     address_list: AddressList,
     settings: RequestSettings,
     #[cfg(feature = "dump")]
     pub(crate) dump_dir: Option<std::path::PathBuf>,
 }
 
-impl DAPIClient {
-    /// Initialize new [DAPIClient] and optionally override default settings.
+impl DapiClient {
+    /// Initialize new [DapiClient] and optionally override default settings.
     pub fn new(address_list: AddressList, settings: RequestSettings) -> Self {
         Self {
             address_list,
@@ -73,13 +73,13 @@ impl DAPIClient {
 }
 
 #[async_trait]
-impl RequestExecutor for DAPIClient {
-    /// Execute the [DAPIRequest](crate::DAPIRequest).
+impl Dapi for DapiClient {
+    /// Execute the [DapiRequest](crate::DapiRequest).
     async fn execute<R>(
         &self,
         request: R,
         settings: RequestSettings,
-    ) -> Result<R::Response, DAPIClientError<<R::Client as TransportClient>::Error>>
+    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
     where
         R: TransportRequest + Mockable,
         R::Response: Mockable,
@@ -105,7 +105,7 @@ impl RequestExecutor for DAPIClient {
         let routine = move || {
             // Try to get an address to initialize transport on:
             let address = self.address_list.get_live_address().ok_or(
-                DAPIClientError::<<R::Client as TransportClient>::Error>::NoAvailableAddresses,
+                DapiClientError::<<R::Client as TransportClient>::Error>::NoAvailableAddresses,
             );
 
             let _span = tracing::debug_span!(
@@ -137,7 +137,7 @@ impl RequestExecutor for DAPIClient {
                     .execute_transport(&mut transport_client?, &applied_settings)
                     .await
                     .map_err(|e| {
-                        DAPIClientError::<<R::Client as TransportClient>::Error>::Transport(e)
+                        DapiClientError::<<R::Client as TransportClient>::Error>::Transport(e)
                     });
 
                 tracing::debug!(?response, "received {} response", response_name);
