@@ -1,3 +1,16 @@
+### [0.25.16-rc.5](https://github.com/dashpay/platform/compare/v0.25.16-rc.4...v0.25.16-rc.5) (2023-11-29)
+
+
+### Bug Fixes
+
+* **dapi:** tonik streams hang until first message sent ([#1605](https://github.com/dashpay/platform/issues/1605))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** add platform testnet-37 support ([#1603](https://github.com/dashpay/platform/issues/1603))
+
+
 ### [0.25.16-rc.4](https://github.com/dashpay/platform/compare/v0.25.16-rc.3...v0.25.16-rc.4) (2023-11-24)
 
 

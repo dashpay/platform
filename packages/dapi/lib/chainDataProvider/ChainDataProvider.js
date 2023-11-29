@@ -1,7 +1,7 @@
 const ChainLockSigMessage = require('@dashevo/dashcore-lib/lib/zmqMessages/ChainLockSigMessage');
 const { EventEmitter } = require('events');
 const { BlockHeader, ChainLock } = require('@dashevo/dashcore-lib');
-const log = require('../log');
+const logger = require('../logger');
 
 const REORG_SAFE_DEPTH = 6;
 
@@ -78,7 +78,7 @@ class ChainDataProvider extends EventEmitter {
       this.chainLockHandler(chainLock);
     } catch (e) {
       if (e.code === -32603) {
-        log.info('No chain lock available in dashcore node');
+        logger.info('No chain lock available in dashcore node');
       } else {
         throw e;
       }

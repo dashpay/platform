@@ -70,7 +70,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const log = require('../../../log');
+const logger = require('../../../logger');
 
 const createGrpcErrorFromDriveResponse = require('../createGrpcErrorFromDriveResponse');
 
@@ -152,7 +152,7 @@ function platformHandlersFactory(
   dpp,
   isProductionEnvironment,
 ) {
-  const wrapInErrorHandler = wrapInErrorHandlerFactory(log, isProductionEnvironment);
+  const wrapInErrorHandler = wrapInErrorHandlerFactory(logger, isProductionEnvironment);
 
   // broadcastStateTransition
   const broadcastStateTransitionHandler = broadcastStateTransitionHandlerFactory(
