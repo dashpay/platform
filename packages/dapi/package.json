@@ -39,7 +39,7 @@
     "@dashevo/dashd-rpc": "^18.2.0",
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
-    "@grpc/grpc-js": "^1.9.12",
+    "@grpc/grpc-js": "1.4.4",
     "@pshenmic/zeromq": "6.0.0-beta.22",
     "ajv": "^8.6.0",
     "bs58": "^4.0.1",

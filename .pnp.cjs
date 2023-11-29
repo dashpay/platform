@@ -2739,7 +2739,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
-          ["@grpc/grpc-js", "npm:1.9.12"],\
+          ["@grpc/grpc-js", "npm:1.4.4"],\
           ["@pshenmic/zeromq", "npm:6.0.0-beta.22"],\
           ["ajv", "npm:8.8.1"],\
           ["bs58", "npm:4.0.1"],\
@@ -2837,7 +2837,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/protobufjs", "npm:6.10.5"],\
-          ["@grpc/grpc-js", "npm:1.9.12"],\
+          ["@grpc/grpc-js", "npm:1.4.4"],\
           ["@improbable-eng/grpc-web", "virtual:c60802fb91064892a66eac238372b1f92273bed401eb316b63f9eae73923158c5dcd2982eb1e735f7e36e089d74b3ee3773666256e3b50594593c762aa939877#npm:0.15.0"],\
           ["chai", "npm:4.3.10"],\
           ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
@@ -3022,7 +3022,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/protobufjs", "npm:6.10.5"],\
-          ["@grpc/grpc-js", "npm:1.9.12"],\
+          ["@grpc/grpc-js", "npm:1.4.4"],\
           ["@grpc/proto-loader", "npm:0.5.6"],\
           ["cbor", "npm:8.1.0"],\
           ["chai", "npm:4.3.10"],\
@@ -3426,11 +3426,11 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@grpc/grpc-js", [\
-      ["npm:1.9.12", {\
-        "packageLocation": "./.yarn/cache/@grpc-grpc-js-npm-1.9.12-cb97be6754-fe13b04844.zip/node_modules/@grpc/grpc-js/",\
+      ["npm:1.4.4", {\
+        "packageLocation": "./.yarn/cache/@grpc-grpc-js-npm-1.4.4-f333f82239-9d9c1aad22.zip/node_modules/@grpc/grpc-js/",\
         "packageDependencies": [\
-          ["@grpc/grpc-js", "npm:1.9.12"],\
-          ["@grpc/proto-loader", "npm:0.7.10"],\
+          ["@grpc/grpc-js", "npm:1.4.4"],\
+          ["@grpc/proto-loader", "npm:0.6.13"],\
           ["@types/node", "npm:17.0.21"]\
         ],\
         "linkType": "HARD"\
@@ -3446,14 +3446,15 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "HARD"\
       }],\
-      ["npm:0.7.10", {\
-        "packageLocation": "./.yarn/cache/@grpc-proto-loader-npm-0.7.10-6c8b35c47b-1fdc0b1048.zip/node_modules/@grpc/proto-loader/",\
+      ["npm:0.6.13", {\
+        "packageLocation": "./.yarn/cache/@grpc-proto-loader-npm-0.6.13-658ac26dfb-a881bea00a.zip/node_modules/@grpc/proto-loader/",\
         "packageDependencies": [\
-          ["@grpc/proto-loader", "npm:0.7.10"],\
+          ["@grpc/proto-loader", "npm:0.6.13"],\
+          ["@types/long", "npm:4.0.1"],\
           ["lodash.camelcase", "npm:4.3.0"],\
-          ["long", "npm:5.2.3"],\
+          ["long", "npm:4.0.0"],\
           ["protobufjs", "npm:6.11.4"],\
-          ["yargs", "npm:17.7.2"]\
+          ["yargs", "npm:16.2.0"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -7836,16 +7837,6 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/cliui-npm-7.0.4-d6b8a9edb6-db858c49af.zip/node_modules/cliui/",\
         "packageDependencies": [\
           ["cliui", "npm:7.0.4"],\
-          ["string-width", "npm:4.2.3"],\
-          ["strip-ansi", "npm:6.0.1"],\
-          ["wrap-ansi", "npm:7.0.0"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
-      ["npm:8.0.1", {\
-        "packageLocation": "./.yarn/cache/cliui-npm-8.0.1-3b029092cf-eaa5561aeb.zip/node_modules/cliui/",\
-        "packageDependencies": [\
-          ["cliui", "npm:8.0.1"],\
           ["string-width", "npm:4.2.3"],\
           ["strip-ansi", "npm:6.0.1"],\
           ["wrap-ansi", "npm:7.0.0"]\
@@ -13735,13 +13726,6 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/long-npm-5.2.0-bbbd23a9e6-9bb47091fe.zip/node_modules/long/",\
         "packageDependencies": [\
           ["long", "npm:5.2.0"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
-      ["npm:5.2.3", {\
-        "packageLocation": "./.yarn/cache/long-npm-5.2.3-61dddb7586-9167ec6947.zip/node_modules/long/",\
-        "packageDependencies": [\
-          ["long", "npm:5.2.3"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -20750,20 +20734,6 @@ const RAW_RUNTIME_STATE =
           ["yargs-parser", "npm:20.2.9"]\
         ],\
         "linkType": "HARD"\
-      }],\
-      ["npm:17.7.2", {\
-        "packageLocation": "./.yarn/cache/yargs-npm-17.7.2-80b62638e1-abb3e37678.zip/node_modules/yargs/",\
-        "packageDependencies": [\
-          ["yargs", "npm:17.7.2"],\
-          ["cliui", "npm:8.0.1"],\
-          ["escalade", "npm:3.1.1"],\
-          ["get-caller-file", "npm:2.0.5"],\
-          ["require-directory", "npm:2.1.1"],\
-          ["string-width", "npm:4.2.3"],\
-          ["y18n", "npm:5.0.8"],\
-          ["yargs-parser", "npm:21.1.1"]\
-        ],\
-        "linkType": "HARD"\
       }]\
     ]],\
     ["yargs-parser", [\
@@ -20787,13 +20757,6 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/yargs-parser-npm-20.2.9-a1d19e598d-0188f430a0.zip/node_modules/yargs-parser/",\
         "packageDependencies": [\
           ["yargs-parser", "npm:20.2.9"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
-      ["npm:21.1.1", {\
-        "packageLocation": "./.yarn/cache/yargs-parser-npm-21.1.1-8fdc003314-9dc2c217ea.zip/node_modules/yargs-parser/",\
-        "packageDependencies": [\
-          ["yargs-parser", "npm:21.1.1"]\
         ],\
         "linkType": "HARD"\
       }]\
