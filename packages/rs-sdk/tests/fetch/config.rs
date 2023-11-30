@@ -40,6 +40,9 @@ pub struct Config {
     /// Password for Dash Core RPC interface
     #[serde(default)]
     pub core_password: String,
+    /// When true, use SSL for the Dash Platform node grpc interface
+    #[serde(default)]
+    pub platform_ssl: bool,
 
     /// Directory where all generated test vectors will be saved.
     ///
@@ -114,7 +117,12 @@ impl Config {
     #[allow(unused)]
     /// Create list of Platform addresses from the configuration
     pub fn address_list(&self) -> AddressList {
-        let address: String = format!("http://{}:{}", self.platform_host, self.platform_port);
+        let scheme = match self.platform_ssl {
+            true => "https",
+            false => "http",
+        };
+
+        let address: String = format!("{}://{}:{}", scheme, self.platform_host, self.platform_port);
 
         AddressList::from_iter(vec![http::Uri::from_str(&address).expect("valid uri")])
     }
