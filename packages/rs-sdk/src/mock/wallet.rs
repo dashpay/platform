@@ -97,6 +97,9 @@ where
     C: Debug,
     P: Debug,
 {
+    fn identity_public_key(&self, purpose: &dpp::identity::Purpose) -> Option<IdentityPublicKey> {
+        self.platform_wallet.identity_public_key(purpose)
+    }
 }
 
 #[async_trait]

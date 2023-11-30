@@ -728,10 +728,7 @@ impl<'a> DriveQuery<'a> {
             )))?
             .relation
         {
-            Table {
-                name,
-                ..
-            } => name.0.get(0).as_ref().map(|identifier| &identifier.value),
+            Table { name, .. } => name.0.get(0).as_ref().map(|identifier| &identifier.value),
             _ => None,
         }
         .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(

@@ -1,3 +1,4 @@
+//! Save Identity to the platform
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::Fetch;

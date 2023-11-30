@@ -1,15 +1,16 @@
-use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+//! Top up identity balance
+use super::broadcast::BroadcastStateTransition;
 use crate::{Error, Sdk};
-use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::PrivateKey;
 use dpp::identity::Identity;
 use dpp::prelude::AssetLockProof;
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use drive::drive::Drive;
-use rs_dapi_client::{DapiRequest, RequestSettings};
 
+/// Top up an identity
+///
+/// Increase balance of the identity by the amount specified in the asset lock proof
 #[async_trait::async_trait]
 pub trait TopUpIdentity {
     async fn top_up_identity(
@@ -36,25 +37,7 @@ impl TopUpIdentity for Identity {
             None,
         )?;
 
-        let request = state_transition.broadcast_request_for_state_transition()?;
-
-        request
-            .clone()
-            .execute(sdk, RequestSettings::default())
-            .await?;
-
-        let request = state_transition.wait_for_state_transition_result_request()?;
-
-        let response = request.execute(sdk, RequestSettings::default()).await?;
-
-        let proof = response.proof_owned()?;
-
-        let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
-            &state_transition,
-            proof.grovedb_proof.as_slice(),
-            &|_| Ok(None),
-            sdk.version(),
-        )?;
+        let result = state_transition.broadcast_and_wait(sdk, None).await?;
 
         match result {
             StateTransitionProofResult::VerifiedPartialIdentity(identity) => {

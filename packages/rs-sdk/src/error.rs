@@ -1,6 +1,7 @@
 //! Definitions of errors
 use std::fmt::Debug;
 
+use dpp::bls_signatures::BlsError;
 use dpp::version::PlatformVersionError;
 use dpp::ProtocolError;
 use rs_dapi_client::DapiClientError;
@@ -41,6 +42,10 @@ pub enum Error {
     /// Epoch not found; we must have at least one epoch
     #[error("No epoch found on the Platform; it should never happen")]
     EpochNotFound,
+
+    /// Cryptographic error
+    #[error("Cryptographic error: {0}")]
+    CryptoError(#[from] BlsError),
 }
 
 impl<T: Debug> From<DapiClientError<T>> for Error {

@@ -3,8 +3,10 @@
 use async_trait::async_trait;
 use dashcore_rpc::dashcore_rpc_json::ListUnspentResultEntry;
 use dpp::bls_signatures::PrivateKey;
-pub use dpp::identity::signer::Signer;
+use dpp::identity::{signer::Signer, IdentityPublicKey, Purpose};
+use dpp::platform_value::BinaryData;
 use dpp::prelude::AssetLockProof;
+use dpp::ProtocolError;
 
 use crate::Error;
 
@@ -17,6 +19,16 @@ use crate::Error;
 /// * Platform operations, as defined in [PlatformWallet]
 ///
 pub trait Wallet: CoreWallet + PlatformWallet + Send + Sync {}
+
+impl Signer for Box<dyn Wallet> {
+    fn sign(
+        &self,
+        pubkey: &IdentityPublicKey,
+        message: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
+        self.as_ref().sign(pubkey, message)
+    }
+}
 
 /// Core Wallet manages Dash Core keys, addresses and signs transactions.
 ///
@@ -48,4 +60,7 @@ pub trait CoreWallet: Send + Sync {
 ///
 /// This trait should be implemented by developers who use the Sdk, to provide interface to Platform
 /// wallet that allows signing of Platform state transitions.
-pub trait PlatformWallet: Signer + Send + Sync {}
+pub trait PlatformWallet: Signer + Send + Sync {
+    /// Return default identity public key for the provided purpose.
+    fn identity_public_key(&self, purpose: &Purpose) -> Option<IdentityPublicKey>;
+}

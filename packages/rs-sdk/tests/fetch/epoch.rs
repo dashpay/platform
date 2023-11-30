@@ -170,7 +170,7 @@ async fn test_epoch_fetch_current() {
     setup_logs();
 
     let cfg = Config::new();
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
     // Given some current epoch
     let expected_epoch = get_current_epoch(&sdk, &cfg).await;

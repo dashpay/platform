@@ -94,7 +94,7 @@ impl CoreClient {
     /// Sign raw transaction with wallet
     ///
     /// See https://docs.dash.org/projects/core/en/stable/docs/api/remote-procedure-calls-wallet.html#signrawtransactionwithwallet
-    pub fn sign_raw_transaction_with_wallet<R: RawTx>(
+    pub fn _sign_raw_transaction_with_wallet<R: RawTx>(
         &self,
         tx: R,
         utxos: Option<&[json::SignRawTransactionInput]>,
@@ -108,7 +108,7 @@ impl CoreClient {
     }
 
     /// Return address to which change of transaction can be sent.
-    pub fn change_address(&self) -> Result<dpp::dashcore::Address<NetworkUnchecked>, Error> {
+    pub fn _change_address(&self) -> Result<dpp::dashcore::Address<NetworkUnchecked>, Error> {
         self.core
             .lock()
             .expect("Core lock poisoned")

@@ -529,7 +529,7 @@ impl SdkBuilder {
             &self.core_user,
             &self.core_password,
         )?;
-        let platform_wallet = PlatformSignerWallet::new();
+        let platform_wallet = PlatformSignerWallet::new_mock()?;
 
         Ok(MockWallet::new(core_wallet, platform_wallet))
     }
@@ -578,7 +578,7 @@ impl SdkBuilder {
                 let sdk= Sdk{
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
-                      context_provider:   std::sync:: Mutex::new(   context_provider),
+                    context_provider: std::sync:: Mutex::new(context_provider),
                     wallet,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,

@@ -12,7 +12,7 @@ const DEFAULT_RETRIES: usize = 5;
 /// 2. [crate::DapiClient] settings;
 /// 3. [crate::DapiRequest]-specific settings;
 /// 4. settings for an exact request execution call.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct RequestSettings {
     /// Timeout for a request.
     pub timeout: Option<Duration>,

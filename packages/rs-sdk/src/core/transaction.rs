@@ -4,13 +4,13 @@ use dapi_grpc::core::v0::{
     transactions_with_proofs_request, transactions_with_proofs_response, GetStatusRequest,
     TransactionsWithProofsRequest, TransactionsWithProofsResponse,
 };
-use dashcore_rpc::dashcore::consensus::Encodable;
+
 use dpp::dashcore::consensus::Decodable;
-use dpp::dashcore::{Address, InstantLock, Transaction, Txid};
+use dpp::dashcore::{Address, InstantLock, Transaction};
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
 use rs_dapi_client::{Dapi, RequestSettings};
-use serde::Serialize;
+
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -137,7 +137,7 @@ impl Sdk {
                         }
                     } // TODO: Implement chain asset lock proof
                     Some(transactions_with_proofs_response::Responses::RawMerkleBlock(
-                        raw_merkle_block,
+                        _raw_merkle_block,
                     )) => {
                         tracing::debug!("received merkle block");
 

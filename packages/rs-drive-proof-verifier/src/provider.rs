@@ -1,8 +1,4 @@
-use std::{
-    ops::{Deref, DerefMut},
-    rc::Rc,
-    sync::{Arc, Mutex, MutexGuard},
-};
+use std::{ops::Deref, sync::Arc};
 
 use dpp::prelude::{DataContract, Identifier};
 use hex::ToHex;
@@ -65,6 +61,28 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
         id: &Identifier,
     ) -> Result<Option<Arc<DataContract>>, crate::Error> {
         self.as_ref().get_data_contract(id)
+    }
+}
+
+impl<'a, T: ContextProvider + 'a> ContextProvider for std::sync::Mutex<T>
+where
+    Self: Sync + Send,
+{
+    fn get_data_contract(
+        &self,
+        id: &Identifier,
+    ) -> Result<Option<Arc<DataContract>>, crate::Error> {
+        let lock = self.lock().expect("lock poisoned");
+        lock.get_data_contract(id)
+    }
+    fn get_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32], // quorum hash is 32 bytes
+        core_chain_locked_height: u32,
+    ) -> Result<[u8; 48], crate::Error> {
+        let lock = self.lock().expect("lock poisoned");
+        lock.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
 }
 
@@ -174,26 +192,6 @@ impl<'a, T: ContextProvider + 'a> AsRef<dyn ContextProvider + 'a> for Arc<T> {
 //         lock.deref()
 //     }
 // }
-
-impl<'a, T: ContextProvider + 'a> ContextProvider for Mutex<T>
-where
-    Self: Sync + Send,
-{
-    fn get_data_contract(
-        &self,
-        id: &Identifier,
-    ) -> Result<Option<Arc<DataContract>>, crate::Error> {
-        todo!()
-    }
-    fn get_quorum_public_key(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32], // quorum hash is 32 bytes
-        core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], crate::Error> {
-        todo!()
-    }
-}
 
 // impl<P: ContextProvider> ContextProvider for Arc<&P> {
 //     fn get_data_contract(
