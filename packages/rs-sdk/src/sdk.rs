@@ -31,7 +31,6 @@ use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
     Dapi, DapiClient, DapiClientError, RequestSettings,
 };
-#[cfg(feature = "mocks")]
 use tokio::sync::Mutex;
 
 /// How many data contracts fit in the cache.
@@ -123,9 +122,11 @@ enum SdkInstance {
     /// Mock SDK
     Mock {
         /// Mock DAPI client used to communicate with Dash Platform.
+        ///
+        /// Dapi client is wrapped in a tokio [Mutex](tokio::sync::Mutex) as it's used in async context.
         dapi: Arc<Mutex<MockDapiClient>>,
         /// Mock SDK implementation processing mock expectations and responses.
-        mock: Mutex<MockDashPlatformSdk>,
+        mock: std::sync::Mutex<MockDashPlatformSdk>,
     },
 }
 
@@ -170,10 +171,7 @@ impl Sdk {
                 O::maybe_from_proof(request, response, self.version(), &provider)
             }
             #[cfg(feature = "mocks")]
-            SdkInstance::Mock { ref mock, .. } => {
-                let mock = mock.blocking_lock();
-                mock.parse_proof(request, response)
-            }
+            SdkInstance::Mock { .. } => self.mock().parse_proof(request, response),
         }
     }
 
@@ -185,14 +183,13 @@ impl Sdk {
     ///
     /// Panics if the `self` instance is not a `Mock` variant.
     #[cfg(feature = "mocks")]
-    pub fn mock(&self) -> tokio::sync::MutexGuard<MockDashPlatformSdk> {
+    pub fn mock(&self) -> std::sync::MutexGuard<MockDashPlatformSdk> {
         if let Sdk {
             inner: SdkInstance::Mock { ref mock, .. },
             ..
         } = self
         {
-            let guard = mock.blocking_lock();
-            guard
+            mock.lock().expect("mock lock poisoned")
         } else {
             panic!("not a mock")
         }
@@ -208,10 +205,7 @@ impl Sdk {
         match &self.inner {
             SdkInstance::Dapi { version, .. } => version,
             #[cfg(feature = "mocks")]
-            SdkInstance::Mock { mock, .. } => {
-                let mock = mock.blocking_lock();
-                mock.version()
-            }
+            SdkInstance::Mock { .. } => self.mock().version(),
         }
     }
 
@@ -548,7 +542,7 @@ impl SdkBuilder {
     pub fn build(self) -> Result<Arc<Sdk>, Error> {
         PlatformVersion::set_current(self.version);
 
-        let wallet: Option<Box<dyn Wallet>> = if self.is_mock() && self.wallet.as_ref().is_none() {
+        let wallet: Option<Box<dyn Wallet>> = if !self.is_mock() && self.wallet.as_ref().is_none() {
             Some(Box::new(self.build_core_wallet()?))
         } else {
             self.wallet
@@ -597,13 +591,13 @@ impl SdkBuilder {
             },
             #[cfg(feature = "mocks")]
             // mock mode
-            None =>{ let dapi =Arc::new(Mutex::new(  MockDapiClient::new()));
+            None =>{ let dapi =Arc::new(tokio::sync::Mutex::new(  MockDapiClient::new()));
                 // We create mock context provider that will use the mock DAPI client to retrieve data contracts.
                 let  context_provider = self.context_provider.unwrap_or(Box::new(MockContextProvider::new()));
 
           let sdk=    Sdk{
                     inner:SdkInstance::Mock {
-                        mock:Mutex::new( MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs)),
+                        mock: std::sync::Mutex::new( MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs)),
                         dapi,
                     },
                     dump_dir: self.dump_dir,
