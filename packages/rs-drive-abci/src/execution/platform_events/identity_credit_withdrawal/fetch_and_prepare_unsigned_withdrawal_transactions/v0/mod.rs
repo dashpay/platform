@@ -78,6 +78,8 @@ where
             return Ok(Vec::new());
         }
 
+        let mut untied_tx_hashes = vec![];
+        let mut unsigned_tx_hashes = vec![];
         // Appending request_height and quorum_hash to withdrawal transaction
         // and pass it to JS Drive for singing and broadcasting
         let (unsigned_withdrawal_transactions, documents_to_update): (Vec<_>, Vec<_>) =
@@ -107,6 +109,9 @@ where
                     let original_transaction_id = hash::hash_to_vec(untied_transaction_bytes);
                     let update_transaction_id =
                         hash::hash_to_vec(unsigned_transaction_bytes.clone());
+
+                    untied_tx_hashes.push(original_transaction_id.clone());
+                    unsigned_tx_hashes.push(update_transaction_id.clone());
 
                     let mut document = self.drive.find_withdrawal_document_by_transaction_id(
                         &original_transaction_id,
@@ -139,6 +144,9 @@ where
                 .collect::<Result<Vec<(Vec<u8>, Document)>, Error>>()?
                 .into_iter()
                 .unzip();
+
+        println!("3.1. untied txids: {:?}", untied_tx_hashes);
+        println!("3.1. unsigned txids: {:?}", unsigned_tx_hashes);
 
         self.drive.add_update_multiple_documents_operations(
             &documents_to_update,

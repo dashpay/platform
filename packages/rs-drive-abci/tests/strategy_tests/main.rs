@@ -62,12 +62,13 @@ pub type BlockHeight = u64;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
+    use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy, GENESIS_TIME_MS};
     use crate::query::QueryStrategy;
     use crate::strategy::{FailureStrategy, MasternodeListChangesStrategy};
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
+    use dashcore_rpc::json::GetTransactionLockedResult;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use strategy_tests::operations::DocumentAction::DocumentActionReplace;
     use strategy_tests::operations::{
@@ -81,6 +82,7 @@ mod tests {
     };
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::system_data_contracts::withdrawals_contract;
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
@@ -2325,6 +2327,7 @@ mod tests {
 
     #[test]
     fn run_chain_top_up_and_withdraw_from_identities() {
+        let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 contracts_with_updates: vec![],
@@ -2387,10 +2390,41 @@ mod tests {
             .expect_send_raw_transaction()
             .returning(move |_| Ok(Txid::all_zeros()));
 
+        let mut call_num = 0;
         platform
             .core_rpc
             .expect_get_transactions_are_chain_locked()
-            .returning(move |txids| Ok(txids.iter().map(|_| None).collect()));
+            .times(2)
+            .returning(move |txids| {
+                call_num += 1;
+                if call_num == 1 {
+                    Ok(txids.iter().map(|_| None).collect())
+                } else if call_num == 2 {
+                    Ok(txids
+                        .iter()
+                        .map(|_| {
+                            Some(GetTransactionLockedResult {
+                                height: -1,
+                                chain_lock: false,
+                            })
+                        })
+                        .collect())
+                } else {
+                    panic!("unexpected call to get_transactions_are_chain_locked")
+                }
+            });
+        // .returning(move |txids| {
+        //     println!("second call!");
+        //     Ok(txids
+        //         .iter()
+        //         .map(|_| {
+        //             Some(GetTransactionLockedResult {
+        //                 height: -1,
+        //                 chain_lock: false,
+        //             })
+        //         })
+        //         .collect())
+        // });
 
         platform
             .core_rpc
@@ -2402,10 +2436,177 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
-        assert_eq!(outcome.identities.len(), 10);
-        assert_eq!(outcome.withdrawals.len(), 18);
+        // Run first two blocks:
+        // - Block 1: creates identity
+        // - Block 2: tops up identity and initiates withdrawals
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            ..
+        } = {
+            let outcome =
+                run_chain_for_strategy(&mut platform, 2, strategy.clone(), config.clone(), 1);
+
+            // Withdrawal transactions are not populated to block execution context yet
+            assert_eq!(outcome.withdrawals.len(), 0);
+
+            // Withdrawal documents with queued status should exist
+            let withdrawal_documents_pooled = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::QUEUED.into(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+            assert!(withdrawal_documents_pooled.len() > 0);
+
+            outcome
+        };
+
+        // Run block 3
+        // Should change queued status of withdrawals to pooled and
+        // broadcast transactions to core
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            withdrawals,
+            ..
+        } = {
+            let outcome = continue_chain_for_strategy(
+                abci_app,
+                ChainExecutionParameters {
+                    block_start: 3,
+                    core_height_start: 1,
+                    block_count: 1,
+                    proposers,
+                    quorums,
+                    current_quorum_hash,
+                    current_proposer_versions: Some(current_proposer_versions),
+                    start_time_ms: GENESIS_TIME_MS,
+                    current_time_ms: end_time_ms,
+                },
+                strategy.clone(),
+                config.clone(),
+                StrategyRandomness::SeedEntropy(2),
+            );
+
+            assert!(outcome.withdrawals.len() > 0);
+
+            // Withdrawal documents with queued status should exist
+            let withdrawal_documents_pooled = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+            assert_eq!(withdrawal_documents_pooled.len(), outcome.withdrawals.len());
+
+            outcome
+        };
+
+        let latest_withdrawals = withdrawals.len();
+        // Run block 4
+        // Should change pooled status to broadcasted
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            ..
+        } = {
+            let outcome = continue_chain_for_strategy(
+                abci_app,
+                ChainExecutionParameters {
+                    block_start: 4,
+                    core_height_start: 1,
+                    block_count: 1,
+                    proposers,
+                    quorums,
+                    current_quorum_hash,
+                    current_proposer_versions: Some(current_proposer_versions),
+                    start_time_ms: GENESIS_TIME_MS,
+                    current_time_ms: end_time_ms + 1000,
+                },
+                strategy,
+                config,
+                StrategyRandomness::SeedEntropy(3),
+            );
+
+            // Withdrawal documents with queued status should exist
+            let withdrawal_documents_broadcasted = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+            assert_eq!(
+                withdrawal_documents_broadcasted.len(),
+                outcome.withdrawals.len()
+            );
+
+            // assert!(outcome.withdrawals.len() > 0);
+            //
+            // // Withdrawal documents with queued status should exist
+            // let withdrawal_documents_pooled = outcome
+            //     .abci_app
+            //     .platform
+            //     .drive
+            //     .fetch_withdrawal_documents_by_status(
+            //         withdrawals_contract::WithdrawalStatus::POOLED.into(),
+            //         None,
+            //         platform_version,
+            //     )
+            //     .unwrap();
+            // assert_eq!(withdrawal_documents_pooled.len(), outcome.withdrawals.len());
+
+            outcome
+        };
+
+        // assert!(outcome.withdrawals.len() > 0);
+        //
+        // // But withdrawal documents with pooled status should exist
+        // let withdrawal_documents_pooled = outcome
+        //     .abci_app
+        //     .platform
+        //     .drive
+        //     .fetch_withdrawal_documents_by_status(
+        //         withdrawals_contract::WithdrawalStatus::POOLED.into(),
+        //         None,
+        //         platform_version,
+        //     )
+        //     .unwrap();
+        // assert!(withdrawal_documents_pooled.len() > 0);
+        //
+        // for withdrawalTx in outcome.withdrawals {
+        //     let txid = withdrawalTx.txid();
+        //     // assert_eq!(withdrawal.amount, 1000000000);
+        // }
+
+        println!("End");
+        // assert_eq!(outcome.identities.len(), 10);
+        // assert_eq!(outcome.withdrawals.len(), 18);
     }
 
     #[test]

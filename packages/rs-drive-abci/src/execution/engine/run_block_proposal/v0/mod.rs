@@ -237,50 +237,77 @@ where
         // Only update the broadcasted withdrawal statuses if the core chain lock height has
         // changed. If it hasn't changed there should be no way a status could update
 
-        // TODO(withdrawals): executed when Core transactions already broadcasted
-        if block_execution_context
-            .block_state_info()
-            .core_chain_locked_height()
-            != last_block_core_height
+        // TODO(withdrawals): transforms queued withdrawals into core transactions
+        //    updates queued status to pooled, and saves core transactions to drive
+        //    for further usage
+        // TODO(withdrawals): it seems that this function is called right after withdrawal state transition action execution,
+        //   and we are changing status of withdrawals from queued to pooled right away in the same block.
+        //   Perhaps it makes sens to save them as pooled right away in state transition action?
+
+        // Withdrawal logic is started taking effect on the Block-W + 1
+        // Block-W is where IdentityCreditWithdrawal transitions were processed
+
+        // Block-W + 1 - Pool withdrawals into transactions and prepare them for signing and broadcasting
         {
-            self.update_broadcasted_withdrawal_transaction_statuses(
+            // Takes queued withdrawals, creates L1 withdrawal transactions info and saves them to drive,
+            // and changes withdrawal documents from queued to pooled
+            self.pool_withdrawals_into_transactions_queue(
                 &block_execution_context,
                 transaction,
                 platform_version,
             )?;
+
+            // TODO(withdrawals): can't we do this in a previous step before saving newly created
+            //   L1 tx info to drive?
+            //
+            // Takes L1 withdrawal transactions info from drive, appends request info to them,
+            // and saves them back to drive
+            let unsigned_withdrawal_transaction_bytes = self
+                .fetch_and_prepare_unsigned_withdrawal_transactions(
+                    validator_set_quorum_hash,
+                    &block_execution_context,
+                    transaction,
+                    platform_version,
+                )?;
+
+            // Save unsigned transaction bytes to block execution context
+            // to be signed and broadcasted later (extend_vote and finalize_block)
+            block_execution_context.set_withdrawal_transactions(
+                unsigned_withdrawal_transaction_bytes
+                    .into_iter()
+                    .map(|withdrawal_transaction| {
+                        (
+                            Txid::hash(withdrawal_transaction.as_slice()),
+                            withdrawal_transaction,
+                        )
+                    })
+                    .collect(),
+            );
         }
+
+        // Block-W + 2 - Update statuses of pooled withdrawals to broadcasted considering
+        // that transactions were broadcasted in the previous block
+        self.update_queued_withdrawal_transaction_statuses(
+            &block_execution_context,
+            transaction,
+            platform_version,
+        )?;
+
+        // TODO(withdrawals): executed when Core transactions already broadcasted
+        // if block_execution_context
+        //     .block_state_info()
+        //     .core_chain_locked_height()
+        //     != last_block_core_height
+        // {
+        //     self.update_broadcasted_withdrawal_transaction_statuses(
+        //         &block_execution_context,
+        //         transaction,
+        //         platform_version,
+        //     )?;
+        // }
 
         // This checks for broadcasted core transactions and updates the withdrawal statuses
         // from queued to broadcasted
-        // self.update_queued_withdrawal_transaction_statuses(
-        //     &block_execution_context,
-        //     transaction,
-        //     platform_version,
-        // )?;
-
-        // TODO(withdrawals): executed when Core transactions already constructed from
-        //    platform withdrawal documents
-        // This takes withdrawals from the transaction queue
-        let unsigned_withdrawal_transaction_bytes = self
-            .fetch_and_prepare_unsigned_withdrawal_transactions(
-                validator_set_quorum_hash,
-                &block_execution_context,
-                transaction,
-                platform_version,
-            )?;
-
-        // Set the withdrawal transactions that were done in the previous block
-        block_execution_context.set_withdrawal_transactions(
-            unsigned_withdrawal_transaction_bytes
-                .into_iter()
-                .map(|withdrawal_transaction| {
-                    (
-                        Txid::hash(withdrawal_transaction.as_slice()),
-                        withdrawal_transaction,
-                    )
-                })
-                .collect(),
-        );
 
         let (block_fees, state_transition_results) = self.process_raw_state_transitions(
             raw_state_transitions,
@@ -291,15 +318,6 @@ where
         )?;
 
         let mut block_execution_context: BlockExecutionContext = block_execution_context;
-
-        // TODO(withdrawals): transforms queued withdrawals into core transactions
-        //    updates queued status to pooled, and saves core transactions to drive
-        //    for further usage
-        self.pool_withdrawals_into_transactions_queue(
-            &block_execution_context,
-            transaction,
-            platform_version,
-        )?;
 
         // while we have the state transitions executed, we now need to process the block fees
 

@@ -208,9 +208,13 @@ where
         // // Finalize withdrawal processing
         // our_withdrawals.finalize(Some(transaction), &self.drive, &to_commit_block_info)?;
 
-        for (_, tx) in block_execution_context.withdrawal_transactions() {
+        let mut txids_to_broadcast = vec![];
+        for (txid, tx) in block_execution_context.withdrawal_transactions() {
+            txids_to_broadcast.push(txid.clone());
             self.core_rpc.send_raw_transaction(tx)?;
         }
+
+        println!("4. broadcasted txids: {:?}", txids_to_broadcast);
 
         // At the end we update the state cache
         drop(guarded_block_execution_context);

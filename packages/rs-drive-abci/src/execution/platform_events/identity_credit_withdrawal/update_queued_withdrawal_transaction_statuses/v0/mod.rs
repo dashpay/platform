@@ -66,6 +66,11 @@ where
             platform_version,
         )?;
 
+        if pooled_withdrawal_documents.is_empty() {
+            println!("pooled_withdrawal_documents");
+            return Ok(());
+        }
+
         // Collecting only documents that have been updated
         let transactions_to_check: Vec<[u8; 32]> = pooled_withdrawal_documents
             .iter()
@@ -80,6 +85,11 @@ where
                     })
             })
             .collect::<Result<Vec<[u8; 32]>, Error>>()?;
+
+        println!(
+            "5. check for broadcasted transactions (with pooled status): {:?}",
+            transactions_to_check
+        );
 
         let core_transactions_statuses = if transactions_to_check.is_empty() {
             BTreeMap::new()
@@ -128,6 +138,11 @@ where
             .flatten()
             .collect();
 
+        if !documents_to_update.is_empty() {
+            println!("documents_to_update");
+        }
+
+        // TODO(withdrawals): should we check if documents_to_update is not empty?
         self.drive.add_update_multiple_documents_operations(
             &documents_to_update,
             &contract_fetch_info.contract,

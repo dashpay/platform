@@ -38,6 +38,8 @@ use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::serializers::timestamp::FromMilis;
 use tenderdash_abci::Application;
 
+pub const GENESIS_TIME_MS: u64 = 1681094380000;
+
 pub(crate) fn run_chain_for_strategy(
     platform: &mut Platform<MockCoreRPCLike>,
     block_count: u64,
@@ -581,8 +583,8 @@ pub(crate) fn start_chain_for_strategy(
             quorums,
             current_quorum_hash,
             current_proposer_versions: None,
-            start_time_ms: 1681094380000,
-            current_time_ms: 1681094380000,
+            start_time_ms: GENESIS_TIME_MS,
+            current_time_ms: GENESIS_TIME_MS,
         },
         strategy,
         config,

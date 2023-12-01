@@ -1042,7 +1042,7 @@ source = "git+https://github.com/dashpay/rust-dashcore?branch=master#43ffb72915a
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.1"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc#56c4ee7e363f59e37dcb36297b67444750d0c5b9"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc#b9482f1d02b469f146404f9ee6d9d9fe68d3b99a"
 dependencies = [
  "dashcore-private",
  "dashcore-rpc-json 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc)",
@@ -1072,7 +1072,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.15.1"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc#56c4ee7e363f59e37dcb36297b67444750d0c5b9"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc#b9482f1d02b469f146404f9ee6d9d9fe68d3b99a"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dashcore",

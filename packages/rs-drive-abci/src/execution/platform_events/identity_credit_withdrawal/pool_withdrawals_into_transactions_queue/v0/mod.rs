@@ -77,6 +77,7 @@ where
             platform_version,
         )?;
 
+        let mut tx_hashes = vec![];
         for document in documents.iter_mut() {
             let Some((_, transaction_bytes)) = withdrawal_transactions.get(&document.id()) else {
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -86,6 +87,7 @@ where
 
             // TODO(withdrawals): recheck - don't we need to use dashcore x11 hash instead of double sha here?
             let transaction_id = hash::hash_to_vec(transaction_bytes);
+            tx_hashes.push(transaction_id.clone());
 
             document.set_bytes(
                 withdrawal::properties::TRANSACTION_ID,
@@ -112,6 +114,8 @@ where
                 ))
             })?;
         }
+
+        println!("1. txhashes on pooled: {:?}", tx_hashes);
 
         self.drive.add_update_multiple_documents_operations(
             &documents,

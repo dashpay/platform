@@ -27,11 +27,12 @@ where
             .filter(|(lock_result, _)| lock_result.is_some())
             .map(|(lock_result, identifier)| {
                 let lock_result = lock_result.unwrap();
-                let Some(mined_height) = lock_result.height else {
+                // Transaction has not been mined yet
+                if lock_result.height < 0 {
                     return (identifier, false);
                 };
-                let withdrawal_chain_locked =
-                    lock_result.chain_lock && current_chain_locked_core_height >= mined_height;
+                let withdrawal_chain_locked = lock_result.chain_lock
+                    && current_chain_locked_core_height >= lock_result.height as u32;
                 (identifier, withdrawal_chain_locked)
             })
             .collect())
