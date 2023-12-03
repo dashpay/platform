@@ -293,6 +293,7 @@ impl StateTransition {
             Self::IdentityCreditWithdrawal(_) => "IdentityCreditWithdrawal",
             Self::IdentityUpdate(_) => "IdentityUpdate",
             Self::IdentityCreditTransfer(_) => "IdentityCreditTransfer",
+            Self::MasternodeVote(_) => "MasternodeVote",
         }
         .to_string()
     }
