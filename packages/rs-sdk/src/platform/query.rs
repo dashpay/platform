@@ -202,7 +202,10 @@ impl<E: Into<EpochQuery> + Clone + Debug + Send> Query<GetEpochsInfoRequest> for
 
 impl Query<GetEpochsInfoRequest> for EpochIndex {
     fn query(self, prove: bool) -> Result<GetEpochsInfoRequest, Error> {
-        LimitQuery::from(self).query(prove)
+        LimitQuery {
+            query: self,
+            limit: Some(1),
+        }.query(prove)
     }
 }
 
