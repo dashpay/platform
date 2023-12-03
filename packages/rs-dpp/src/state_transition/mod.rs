@@ -282,6 +282,21 @@ impl StateTransition {
         }
     }
 
+    /// Returns state transition name
+    pub fn name(&self) -> String {
+        match self {
+            Self::DataContractCreate(_) => "DataContractCreate",
+            Self::DataContractUpdate(_) => "DataContractUpdate",
+            Self::DocumentsBatch(_) => "DocumentsBatch",
+            Self::IdentityCreate(_) => "IdentityCreate",
+            Self::IdentityTopUp(_) => "IdentityTopUp",
+            Self::IdentityCreditWithdrawal(_) => "IdentityCreditWithdrawal",
+            Self::IdentityUpdate(_) => "IdentityUpdate",
+            Self::IdentityCreditTransfer(_) => "IdentityCreditTransfer",
+        }
+        .to_string()
+    }
+
     /// returns the signature as a byte-array
     pub fn signature(&self) -> &BinaryData {
         call_method!(self, signature)

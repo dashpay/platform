@@ -46,7 +46,9 @@ describe.skip('validateDataContractCreateTransitionStateFactory', () => {
     };
 
     factory = (t) => validateDataContractCreateTransitionState(
-      stateRepositoryLike, t, executionContext,
+      stateRepositoryLike,
+      t,
+      executionContext,
     );
   });
 

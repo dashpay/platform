@@ -1,0 +1,18 @@
+[package]
+
+name = "dapi-grpc-macros"
+version = "0.25.16-rc.4"
+edition = "2021"
+description = "Macros used by dapi-grpc. Internal use only."
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1.0.33"
+syn = "2.0.38"
+heck = "0.4.1"
+
+[dev-dependencies]
+
+dapi-grpc = { path = "../dapi-grpc" }

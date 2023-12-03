@@ -1,5 +1,3 @@
-const requestApi = require('./requestApi');
-
 /**
  * Download the certificate specified by id
  *
@@ -8,7 +6,9 @@ const requestApi = require('./requestApi');
  * @param {string} apiKey
  * @returns {Promise<string>}
  */
-async function downloadCertificate(id, apiKey) {
+import requestApi from './requestApi.js';
+
+export default async function downloadCertificate(id, apiKey) {
   const url = `https://api.zerossl.com/certificates/${id}/download/return?access_key=${apiKey}`;
 
   const requestOptions = {
@@ -20,5 +20,3 @@ async function downloadCertificate(id, apiKey) {
 
   return `${data['certificate.crt']}\n${data['ca_bundle.crt']}`;
 }
-
-module.exports = downloadCertificate;

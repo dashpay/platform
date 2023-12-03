@@ -38,11 +38,9 @@ class JsonRpcTransport {
 
   /**
    * Make request to DAPI node
-   *
    * @param {string} method
    * @param {object} [params]
    * @param {DAPIClientOptions} [options]
-   *
    * @returns {Promise<object>}
    */
   async request(method, params = {}, options = {}) {
@@ -122,7 +120,6 @@ class JsonRpcTransport {
 
   /**
    * Get last used address
-   *
    * @returns {DAPIAddress|null}
    */
   getLastUsedAddress() {

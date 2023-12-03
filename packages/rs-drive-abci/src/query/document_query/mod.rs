@@ -1,4 +1,3 @@
-use crate::error::execution::ExecutionError;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -8,7 +7,7 @@ use dapi_grpc::platform::v0::get_documents_request::Version;
 use dapi_grpc::platform::v0::GetDocumentsRequest;
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
-use dpp::version::FeatureVersion;
+
 use dpp::version::PlatformVersion;
 use prost::Message;
 

@@ -1,4 +1,4 @@
-const wait = require('../util/wait');
+import wait from '../util/wait.js';
 
 /**
  * Wait Core to connect to peers
@@ -7,7 +7,7 @@ const wait = require('../util/wait');
  * @param {RpcClient} rpcClient
  * @return {Promise<void>}
  */
-async function waitForCorePeersConnected(rpcClient) {
+export default async function waitForCorePeersConnected(rpcClient) {
   let hasPeers = false;
 
   do {
@@ -20,5 +20,3 @@ async function waitForCorePeersConnected(rpcClient) {
     }
   } while (!hasPeers);
 }
-
-module.exports = waitForCorePeersConnected;

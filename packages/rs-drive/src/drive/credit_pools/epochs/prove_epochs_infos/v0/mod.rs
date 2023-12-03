@@ -1,12 +1,11 @@
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
+
 use crate::error::Error;
-use dpp::block::epoch::{Epoch, EpochIndex, EPOCH_KEY_OFFSET};
-use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0;
+use dpp::block::epoch::EPOCH_KEY_OFFSET;
+
 use dpp::ProtocolError;
-use grovedb::query_result_type::QueryResultElement;
-use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
-use std::collections::BTreeMap;
+
+use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 
 use crate::drive::credit_pools::pools_vec_path;
 use crate::error::query::QuerySyntaxError;

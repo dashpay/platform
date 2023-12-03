@@ -11,6 +11,7 @@ mod missing_data_contract_id_basic_error;
 mod missing_document_transition_action_error;
 mod missing_document_transition_type_error;
 mod missing_document_type_error;
+mod missing_positions_in_document_type_properties_error;
 
 pub use data_contract_not_present_error::*;
 pub use document_transitions_are_absent_error::*;
@@ -25,3 +26,4 @@ pub use missing_data_contract_id_basic_error::*;
 pub use missing_document_transition_action_error::*;
 pub use missing_document_transition_type_error::*;
 pub use missing_document_type_error::*;
+pub use missing_positions_in_document_type_properties_error::*;

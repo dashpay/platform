@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.25.10",
+  "version": "0.25.16-rc.4",
   "description": "Distribution package for Dash node installation",
   "scripts": {
     "lint": "eslint .",
@@ -16,7 +16,8 @@
     "type": "git",
     "url": "git+https://github.com/dashevo/dashmate.git"
   },
-  "bin": "./bin/run",
+  "type": "module",
+  "bin": "./bin/run.js",
   "contributors": [
     {
       "name": "Ivan Shumkov",
@@ -45,7 +46,7 @@
     }
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "license": "MIT",
   "bugs": {
@@ -53,6 +54,8 @@
   },
   "homepage": "https://github.com/dashevo/dashmate#readme",
   "dependencies": {
+    "@babel/core": "^7.23.3",
+    "@babel/eslint-parser": "^7.23.3",
     "@dashevo/bls": "~1.2.9",
     "@dashevo/dashcore-lib": "~0.21.0",
     "@dashevo/dashd-rpc": "^18.2.0",
@@ -64,8 +67,8 @@
     "@dashevo/wallet-lib": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
     "@dashevo/withdrawals-contract": "workspace:*",
-    "@oclif/core": "^1.25.0",
-    "@oclif/plugin-help": "^5.1.20",
+    "@oclif/core": "^3.10.8",
+    "@oclif/plugin-help": "^6.0.5",
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.1",
     "awilix": "^4.2.6",
@@ -80,7 +83,7 @@
     "glob": "^10.3.4",
     "hasbin": "^1.2.3",
     "is-wsl": "2.2.0",
-    "jayson": "^3.3.4",
+    "jayson": "^4.1.0",
     "js-yaml": "^4.1.0",
     "listr2": "5.0.7",
     "lodash": "^4.17.21",
@@ -89,26 +92,25 @@
     "node-graceful": "^3.0.1",
     "pretty-bytes": "^5.3.0",
     "pretty-ms": "^7.0.0",
-    "public-ip": "^4.0.4",
+    "public-ip": "^6.0.1",
     "qs": "^6.11.0",
     "rxjs": "^6.6.7",
     "semver": "^7.5.3",
-    "table": "^5.4.6",
+    "table": "^6.8.1",
     "wrap-ansi": "^7.0.0"
   },
   "devDependencies": {
-    "@dashevo/oclif": "^1.0.4",
-    "babel-eslint": "^10.1.0",
-    "chai": "^4.3.9",
+    "chai": "^4.3.10",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
-    "eslint": "^7.32.0",
-    "eslint-config-airbnb-base": "^14.2.1",
-    "eslint-plugin-import": "^2.24.2",
+    "eslint": "^8.53.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.29.0",
     "globby": "^11",
-    "mocha": "^9.1.2",
+    "mocha": "^10.2.0",
     "mocha-sinon": "^2.1.2",
-    "sinon": "^11.1.2",
+    "oclif": "^4.0.3",
+    "sinon": "^17.0.1",
     "sinon-chai": "^3.7.0"
   },
   "resolutions": {

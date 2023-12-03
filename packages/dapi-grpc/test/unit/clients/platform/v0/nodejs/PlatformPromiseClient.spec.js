@@ -16,8 +16,8 @@ describe('PlatformPromiseClient', () => {
       getDataContract: this.sinon.stub().resolves(response),
       getDocuments: this.sinon.stub().resolves(response),
       getEpochsInfo: this.sinon.stub().resolves(response),
-      getVersionUpgradeVoteStatus: this.sinon.stub().resolves(response),
-      getVersionUpgradeState: this.sinon.stub().resolves(response),
+      getProtocolVersionUpgradeVoteStatus: this.sinon.stub().resolves(response),
+      getProtocolVersionUpgradeState: this.sinon.stub().resolves(response),
     };
   });
 
@@ -97,22 +97,23 @@ describe('PlatformPromiseClient', () => {
     });
   });
 
-  describe('#getVersionUpgradeVoteStatus', () => {
+  describe('#getProtocolVersionUpgradeVoteStatus', () => {
     it('should get version upgrade vote status', async () => {
-      const result = await platformPromiseClient.getVersionUpgradeVoteStatus(request);
+      const result = await platformPromiseClient.getProtocolVersionUpgradeVoteStatus(request);
 
       expect(result).to.equal(response);
-      expect(platformPromiseClient.client.getVersionUpgradeVoteStatus)
+      expect(platformPromiseClient.client.getProtocolVersionUpgradeVoteStatus)
         .to.be.calledOnceWith(request);
     });
   });
 
-  describe('#getVersionUpgradeState', () => {
+  describe('#getProtocolVersionUpgradeState', () => {
     it('should get version upgrade state', async () => {
-      const result = await platformPromiseClient.getVersionUpgradeState(request);
+      const result = await platformPromiseClient.getProtocolVersionUpgradeState(request);
 
       expect(result).to.equal(response);
-      expect(platformPromiseClient.client.getVersionUpgradeState).to.be.calledOnceWith(request);
+      expect(platformPromiseClient.client.getProtocolVersionUpgradeState)
+        .to.be.calledOnceWith(request);
     });
   });
 });

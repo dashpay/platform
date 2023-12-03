@@ -23,7 +23,7 @@ import topUpIdentity from './methods/identities/topUp';
 import creditTransferIdentity from './methods/identities/creditTransfer';
 import updateIdentity from './methods/identities/update';
 import createIdentityCreateTransition from './methods/identities/internal/createIdentityCreateTransition';
-import createIdentityTopUpTransition from './methods/identities/internal/createIdnetityTopUpTransition';
+import createIdentityTopUpTransition from './methods/identities/internal/createIdentityTopUpTransition';
 import createAssetLockProof from './methods/identities/internal/createAssetLockProof';
 import waitForCoreChainLockedHeight from './methods/identities/internal/waitForCoreChainLockedHeight';
 

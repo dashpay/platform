@@ -1,4 +1,4 @@
-use crate::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 
 use crate::prelude::Revision;
 use crate::ProtocolError;

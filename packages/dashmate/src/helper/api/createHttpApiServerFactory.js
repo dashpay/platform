@@ -1,7 +1,7 @@
-const jayson = require('jayson/promise');
-const oclif = require('@oclif/core');
+import jayson from 'jayson/promise/index.js';
+import oclif from '@oclif/core';
 
-function createHttpApiServerFactory() {
+export default function createHttpApiServerFactory() {
   /**
    * @return {HttpServer}
    */
@@ -34,5 +34,3 @@ function createHttpApiServerFactory() {
 
   return createHttpApiServer;
 }
-
-module.exports = createHttpApiServerFactory;

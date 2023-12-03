@@ -1,4 +1,4 @@
-function blocksToTime(blocks) {
+export default function blocksToTime(blocks) {
   let time;
   const blockTime = 2.625;
   const mins = blockTime * blocks;
@@ -11,5 +11,3 @@ function blocksToTime(blocks) {
   }
   return time;
 }
-
-module.exports = blocksToTime;

@@ -1,5 +1,5 @@
-const qs = require('qs');
-const requestApi = require('./requestApi');
+import qs from 'qs';
+import requestApi from './requestApi.js';
 
 /**
  * Verify the domain/ip specified by certificate id
@@ -9,7 +9,7 @@ const requestApi = require('./requestApi');
  * @param {string} apiKey
  * @return {Promise<Object>}
  */
-async function verifyDomain(id, apiKey) {
+export default async function verifyDomain(id, apiKey) {
   const body = qs.stringify({
     validation_method: 'HTTP_CSR_HASH',
   });
@@ -26,5 +26,3 @@ async function verifyDomain(id, apiKey) {
 
   return requestApi(url, requestOptions);
 }
-
-module.exports = verifyDomain;

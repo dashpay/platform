@@ -28,6 +28,7 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
       properties: {
         name: {
           type: 'string',
+          position: 0,
         },
       },
       required: ['$createdAt'],
@@ -38,6 +39,7 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
       properties: {
         lastName: {
           type: 'string',
+          position: 0,
         },
       },
       required: ['lastName', '$updatedAt'],
@@ -93,14 +95,17 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
         firstName: {
           type: 'string',
           maxLength: 63,
+          position: 0,
         },
         lastName: {
           type: 'string',
           maxLength: 63,
+          position: 1,
         },
         otherProperty: {
           type: 'string',
           maxLength: 42,
+          position: 2,
         },
       },
       required: ['firstName', '$createdAt', '$updatedAt', 'lastName'],
@@ -137,6 +142,7 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
       properties: {
         name: {
           type: 'string',
+          position: 0,
         },
       },
       additionalProperties: false,
@@ -162,9 +168,11 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
       properties: {
         firstName: {
           type: 'string',
+          position: 0,
         },
         lastName: {
           type: 'string',
+          position: 1,
         },
       },
       required: ['firstName', '$createdAt', '$updatedAt'],
@@ -185,6 +193,7 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
           type: 'array',
           byteArray: true,
           maxItems: 16,
+          position: 0,
         },
         identifierField: {
           type: 'array',
@@ -192,6 +201,7 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
           contentMediaType: Identifier.MEDIA_TYPE,
           minItems: 32,
           maxItems: 32,
+          position: 1,
         },
       },
       required: ['byteArrayField'],
@@ -203,18 +213,22 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
         firstName: {
           type: 'string',
           maxLength: 63,
+          position: 0,
         },
         lastName: {
           type: 'string',
           maxLength: 63,
+          position: 1,
         },
         country: {
           type: 'string',
           maxLength: 63,
+          position: 2,
         },
         city: {
           type: 'string',
           maxLength: 63,
+          position: 3,
         },
       },
       indices: [

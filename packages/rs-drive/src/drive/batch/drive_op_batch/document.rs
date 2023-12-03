@@ -19,7 +19,7 @@ use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::borrow::{Borrow, Cow};
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 /// A wrapper for a document operation
@@ -284,7 +284,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 document_type,
             } => drive.delete_document_for_contract_operations(
                 document_id,
-                contract.borrow(),
+                contract,
                 document_type,
                 None,
                 estimated_costs_only_with_layer_info,
@@ -311,7 +311,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 document_type_name,
             } => drive.delete_document_for_contract_with_named_type_operations(
                 document_id,
-                contract.borrow(),
+                contract,
                 document_type_name,
                 None,
                 estimated_costs_only_with_layer_info,

@@ -7,7 +7,7 @@ pub use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
-use dpp::data_contract::{DataContract, DocumentName, JsonValue};
+use dpp::data_contract::DataContract;
 use dpp::platform_value::{platform_value, Bytes32, Value};
 
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
@@ -17,16 +17,16 @@ use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethod
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
-use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
-use dpp::{platform_value, ProtocolError};
+use dpp::ProtocolError;
 
 use crate::identifier::identifier_from_js_value;
 use crate::metadata::MetadataWasm;
 use crate::utils::get_bool_from_options;
 use crate::utils::SKIP_VALIDATION_PROPERTY_NAME;
 use crate::utils::{Inner, IntoWasm, ToSerdeJSONExt, WithJsError};
-use crate::{bail_js, console_log, with_js_error};
+use crate::with_js_error;
 use crate::{buffer::Buffer, identifier::IdentifierWrapper};
 
 #[wasm_bindgen(js_name=DataContract)]
@@ -160,22 +160,18 @@ impl DataContractWasm {
 
         let mut binary_paths = BTreeMap::new();
 
-        document_type.binary_paths().iter().for_each(
-            (|path| {
-                binary_paths.insert(path.to_owned(), platform_value!({}));
-            }),
-        );
+        document_type.binary_paths().iter().for_each(|path| {
+            binary_paths.insert(path.to_owned(), platform_value!({}));
+        });
 
-        document_type.identifier_paths().iter().for_each(
-            (|path| {
-                binary_paths.insert(
-                    path.to_owned(),
-                    platform_value!({
-                        "contentMediaType": "application/x.dash.dpp.identifier"
-                    }),
-                );
-            }),
-        );
+        document_type.identifier_paths().iter().for_each(|path| {
+            binary_paths.insert(
+                path.to_owned(),
+                platform_value!({
+                    "contentMediaType": "application/x.dash.dpp.identifier"
+                }),
+            );
+        });
 
         with_js_error!(binary_paths.serialize(&serializer))
     }
@@ -214,7 +210,7 @@ impl DataContractWasm {
                 document_schemas_map,
                 defs,
                 !skip_validation,
-                &platform_version,
+                platform_version,
             )
             .with_js_error()
     }
@@ -226,7 +222,7 @@ impl DataContractWasm {
         schema: JsValue,
         options: Option<js_sys::Object>,
     ) -> Result<(), JsValue> {
-        let (skip_validation) = if let Some(options) = options {
+        let skip_validation = if let Some(options) = options {
             get_bool_from_options(options.into(), SKIP_VALIDATION_PROPERTY_NAME, false)?
         } else {
             false
@@ -237,7 +233,7 @@ impl DataContractWasm {
         let platform_version = PlatformVersion::first();
 
         self.inner
-            .set_document_schema(name, schema_value, !skip_validation, &platform_version)
+            .set_document_schema(name, schema_value, !skip_validation, platform_version)
             .with_js_error()
     }
 
@@ -280,7 +276,7 @@ impl DataContractWasm {
         defs: Option<js_sys::Object>,
         options: Option<js_sys::Object>,
     ) -> Result<(), JsValue> {
-        let (skip_validation) = if let Some(options) = options {
+        let skip_validation = if let Some(options) = options {
             get_bool_from_options(options.into(), SKIP_VALIDATION_PROPERTY_NAME, false)?
         } else {
             false

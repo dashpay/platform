@@ -34,7 +34,7 @@ describe.skip('validateStateTransitionBasicFactory', () => {
       ValidationResult,
     } = await loadWasmDpp());
 
-    const stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    const stateRepositoryMock = createStateRepositoryMock(this.sinon);
     const blsMock = getBlsMock();
 
     dpp = new DashPlatformProtocol(blsMock, stateRepositoryMock);

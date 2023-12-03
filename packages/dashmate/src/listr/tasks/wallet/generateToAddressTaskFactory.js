@@ -1,6 +1,6 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
 
-const { Observable } = require('rxjs');
+import { Observable } from 'rxjs';
 
 /**
  *
@@ -11,7 +11,7 @@ const { Observable } = require('rxjs');
  * @param {waitForBalanceToConfirm} waitForBalanceToConfirm
  * @return {generateToAddressTask}
  */
-function generateToAddressTaskFactory(
+export default function generateToAddressTaskFactory(
   startCore,
   createNewAddress,
   generateToAddress,
@@ -118,5 +118,3 @@ function generateToAddressTaskFactory(
 
   return generateToAddressTask;
 }
-
-module.exports = generateToAddressTaskFactory;

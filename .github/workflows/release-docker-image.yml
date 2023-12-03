@@ -1,0 +1,146 @@
+on:
+  workflow_call:
+    inputs:
+      name:
+        type: string
+        description: Name
+        required: true
+      image_name:
+        type: string
+        description: Image name. i.e. drive, dapi
+        required: true
+      image_org:
+        type: string
+        description: Image org. i.e. dashpay
+        required: true
+      target:
+        type: string
+        description: Image target. i.e. drive-abci, dapi
+        required: true
+env:
+  DIGEST_NAME: digests-${{ inputs.image_org }}-${{ inputs.image_name }}-${{ github.sha }}
+  DIGEST_DIR_PATH: /tmp/digests
+
+jobs:
+  build-image:
+    name: Build ${{ matrix.platform }} image
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        include:
+          - runner: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+            platform: linux/amd64
+          - runner: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+            platform: linux/arm64
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Build and push by digest
+        uses: ./.github/actions/docker
+        id: docker_build
+        with:
+          image_name: ${{ inputs.image_name }}
+          image_org: ${{ inputs.image_org }}
+          image_version: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.event.release.tag_name }}
+          target: ${{ inputs.target }}
+          platform: ${{ matrix.platform }}
+          cargo_profile: release
+          dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
+          region: ${{ vars.AWS_REGION }}
+
+      - name: Export digest
+        run: |
+          mkdir -p ${{ env.DIGEST_DIR_PATH }}
+          digest="${{ steps.docker_build.outputs.digest }}"
+          touch "${{ env.DIGEST_DIR_PATH }}/${digest#sha256:}"
+          ls -lah ${{ env.DIGEST_DIR_PATH }}
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.DIGEST_NAME }}
+          path: ${{ env.DIGEST_DIR_PATH }}/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-manifest:
+    name: Publish image tags
+    needs: build-image
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ env.DIGEST_NAME }}
+          path: ${{ env.DIGEST_DIR_PATH }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Get image version
+        uses: actions/github-script@v6
+        id: version
+        with:
+          result-encoding: string
+          script: |
+            return (
+              context.eventName === 'workflow_dispatch'
+                ? '${{ github.event.inputs.tag }}'
+                : context.payload.release.tag_name
+            );
+
+      - name: Set suffix
+        uses: actions/github-script@v6
+        id: suffix
+        with:
+          result-encoding: string
+          script: |
+            const fullTag = '${{ steps.version.outputs.result }}';
+            if (fullTag.includes('-')) {
+              const [, fullSuffix] = fullTag.split('-');
+              const [suffix] = fullSuffix.split('.');
+              return `-${suffix}`;
+            } else {
+              return '';
+            }
+
+      - name: Set Docker tags and labels from image
+        id: docker_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ inputs.image_org }}/${{ inputs.image_name }}
+          tags: |
+            type=match,pattern=v(\d+),group=1,value=${{ steps.version.outputs.result }}
+            type=match,pattern=v(\d+.\d+),group=1,value=${{ steps.version.outputs.result }}
+            type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{ steps.version.outputs.result }}
+            type=match,pattern=v(.*),group=1,value=${{ steps.version.outputs.result }},suffix=
+          flavor: |
+            suffix=${{ steps.suffix.outputs.result }},onlatest=true
+            latest=${{ github.event_name == 'release' }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create manifest list and push
+        working-directory: ${{ env.DIGEST_DIR_PATH }}
+        run: |
+          ls -lah
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ inputs.image_org }}/${{ inputs.image_name }}@sha256:%s ' *)
+
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ inputs.image_org }}/${{ inputs.image_name }}:${{ steps.docker_meta.outputs.version }}

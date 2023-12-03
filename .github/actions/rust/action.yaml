@@ -5,17 +5,23 @@ inputs:
   toolchain:
     description: Rust toolchain to use, stable / nightly / beta, or exact version
     # The same as in /README.md
-    default: "1.73"
+    default: "stable"
   target:
     description: Target Rust platform
     required: false
-
+    default: x86_64-unknown-linux-gnu
   components:
     description: List of additional Rust toolchain components to install
     required: false
+  cache:
+    description: Enable Rust cache
+    required: false
+    default: "true"
+
 runs:
   using: composite
   steps:
+    # TODO: Move to AMI and build every day
     - uses: dtolnay/rust-toolchain@master
       name: Install Rust toolchain
       with:
@@ -23,48 +29,63 @@ runs:
         target: ${{ inputs.target }}
         components: ${{ inputs.components }}
 
+    - name: Get protoc arch
+      shell: bash
+      id: protoc_arch
+      run: |
+        arch="${{ runner.arch }}"
+
+        case "$arch" in
+          X64)
+            echo "arch=x86_64" >> $GITHUB_OUTPUT
+            ;;
+          ARM64)
+            echo "arch=aarch_64" >> $GITHUB_OUTPUT
+            ;;
+          *)
+            echo "Unsupported architecture: $arch"
+            exit 1
+            ;;
+        esac
+
+    # TODO: Move to AMI and build every day
     - name: Install protoc
       id: deps-protoc
       shell: bash
       run: |
         curl -Lo /tmp/protoc.zip \
-          https://github.com/protocolbuffers/protobuf/releases/download/v22.0/protoc-22.0-linux-x86_64.zip
+          "https://github.com/protocolbuffers/protobuf/releases/download/v22.0/protoc-22.0-linux-${{ steps.protoc_arch.outputs.arch }}.zip"
         unzip /tmp/protoc.zip -d ${HOME}/.local
         echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
         export PATH="${PATH}:${HOME}/.local/bin"
 
-    - name: Configure AWS credentials and bucket region
-      uses: aws-actions/configure-aws-credentials@v4
-      if: contains(runner.name, 'ubuntu-platform')
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.3
       with:
-        aws-region: eu-west-1
+        version: "v0.7.1" # Must be the same as in Dockerfile
+      if: inputs.cache == 'true'
 
-    - name: Cache Rust build artifacts (S3 bucket cache)
-      uses: everpcpc/actions-cache@v1
-      if: contains(runner.name, 'ubuntu-platform')
+    - name: Hash ref_name
+      id: hashed-ref-name
+      shell: bash
+      run: echo "key=$(echo '${{ github.ref_name }}' | sha256sum | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
+
+    - name: Cache cargo registry (S3 bucket cache)
+      uses: strophy/actions-cache@opendal-update
+      if: inputs.cache == 'true'
       with:
-        bucket: multi-runner-linux-x64-platform-cache-ui535z23
+        bucket: multi-runner-cache-x1xibo9c
         root: actions-cache
         path: |
           /home/ubuntu/.cargo/registry/index
           /home/ubuntu/.cargo/registry/cache
           /home/ubuntu/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-
+        key: ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
+          ${{ runner.os }}/cargo/registry/
 
-    - name: Cache Rust build artifacts (GitHub Actions cache)
-      uses: actions/cache@v3
-      if: ${{ !contains(runner.name, 'ubuntu-platform') }}
-      with:
-        path: |
-          /home/ubuntu/.cargo/registry/index
-          /home/ubuntu/.cargo/registry/cache
-          /home/ubuntu/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-
-
+    # TODO: Move to AMI and build every day
     - name: Install clang
       id: deps-clang
       shell: bash

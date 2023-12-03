@@ -1,6 +1,6 @@
-const AbstractError = require('../../errors/AbstractError');
+import AbstractError from '../../errors/AbstractError.js';
 
-class ConfigAlreadyPresentError extends AbstractError {
+export default class ConfigAlreadyPresentError extends AbstractError {
   /**
    * @param {string} configName
    */
@@ -17,5 +17,3 @@ class ConfigAlreadyPresentError extends AbstractError {
     return this.configName;
   }
 }
-
-module.exports = ConfigAlreadyPresentError;

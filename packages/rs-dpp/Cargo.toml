@@ -1,6 +1,6 @@
 [package]
 name = "dpp"
-version = "0.25.0"
+version = "0.25.16-rc.4"
 edition = "2021"
 rust-version = "1.73"
 authors = [
@@ -32,7 +32,6 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
 ], default-features = false, branch = "master" }
 env_logger = { version = "0.9" }
 enum-map = { version = "2.5.0" }
-futures = { version = "0.3" }
 getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
 integer-encoding = { version = "4.0.0" }
@@ -49,18 +48,14 @@ bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 rand = { version = "0.8.4", features = ["small_rng"] }
 regex = { version = "1.5" }
 serde = { version = "1.0.152", features = ["derive"] }
-serde-big-array = "0.4.1"
-serde_cbor = "0.11.2"
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_repr = { version = "0.1.7" }
 sha2 = { version = "0.10" }
 thiserror = { version = "1.0" }
-mockall = { version = "0.11.3", optional = true }
 data-contracts = { path = "../data-contracts" }
 platform-value = { path = "../rs-platform-value" }
 platform-version = { path = "../rs-platform-version" }
 platform-versioning = { path = "../rs-platform-versioning" }
-platform-value-convertible = { path = "../rs-platform-value-convertible" }
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 derive_more = "0.99.17"
@@ -68,6 +63,7 @@ ed25519-dalek = { version = "2.0.0-rc.2", features = ["rand_core"] }
 nohash-hasher = "0.2.0"
 rust_decimal = "1.29.1"
 rust_decimal_macros = "1.29.1"
+indexmap = { version = "2.0.2", features = ["serde"] }
 
 [dev-dependencies]
 test-case = { version = "2.0" }
@@ -114,7 +110,6 @@ all_features = [
     "state-transitions",
     "factories",
     "fixtures-and-mocks",
-    "mockall",
     "random-public-keys",
     "random-identities",
     "random-documents",
@@ -153,7 +148,6 @@ all_features_without_client = [
     "state-transitions",
     "factories",
     "fixtures-and-mocks",
-    "mockall",
     "random-public-keys",
     "random-identities",
     "random-documents",
@@ -204,7 +198,7 @@ state-transition-validation = []
 state-transition-signing = []
 state-transitions = []
 system_contracts = ["factories"]
-fixtures-and-mocks = ["mockall"]
+fixtures-and-mocks = []
 random-public-keys = []
 random-identities = ["random-public-keys"]
 random-documents = []

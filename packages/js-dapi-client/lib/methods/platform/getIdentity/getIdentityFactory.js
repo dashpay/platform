@@ -15,7 +15,6 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 function getIdentityFactory(grpcTransport) {
   /**
    * Fetch the identity by id
-   *
    * @typedef {getIdentity}
    * @param {Buffer} id
    * @param {DAPIClientOptions & {prove: boolean}} [options]

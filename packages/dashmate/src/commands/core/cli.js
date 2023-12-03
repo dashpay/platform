@@ -1,7 +1,22 @@
-const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunningError');
+import { Args } from '@oclif/core';
+import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
+import ServiceIsNotRunningError from '../../docker/errors/ServiceIsNotRunningError.js';
 
-class CliCommand extends ConfigBaseCommand {
+export default class CliCommand extends ConfigBaseCommand {
+  static description = 'Dash Core CLI';
+
+  static args = {
+    command: Args.string({
+      name: 'command',
+      required: true,
+      description: 'dash core command written in the double quotes',
+    }),
+  };
+
+  static flags = {
+    ...ConfigBaseCommand.flags,
+  };
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -30,17 +45,3 @@ class CliCommand extends ConfigBaseCommand {
     return out;
   }
 }
-
-CliCommand.description = 'Dash Core CLI';
-
-CliCommand.args = [{
-  name: 'command',
-  required: true,
-  description: 'dash core command written in the double quotes',
-}];
-
-CliCommand.flags = {
-  ...ConfigBaseCommand.flags,
-};
-
-module.exports = CliCommand;
