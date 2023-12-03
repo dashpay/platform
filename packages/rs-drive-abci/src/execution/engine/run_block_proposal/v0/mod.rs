@@ -110,6 +110,7 @@ where
         // destructure the block proposal
         let block_proposal::v0::BlockProposal {
             core_chain_locked_height,
+            core_chain_lock_update,
             proposed_app_version,
             proposer_pro_tx_hash,
             validator_set_quorum_hash,
@@ -121,6 +122,11 @@ where
             Epoch::new(epoch_info.current_epoch_index())
                 .expect("current epoch index should be in range"),
         );
+
+        // If there is a core chain lock update, we should start by verifying it
+        if let Some(core_chain_lock_update) = core_chain_lock_update {
+            //todo: verify the core chain lock update
+        }
 
         // Update the masternode list and create masternode identities and also update the active quorums
         self.update_core_info(

@@ -61,6 +61,7 @@ pub struct DriveAbciMethodVersions {
     pub protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions,
     pub block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions,
     pub core_subsidy: DriveAbciCoreSubsidyMethodVersions,
+    pub core_chain_lock: DriveAbciCoreChainLockMethodVersions,
     pub fee_pool_inwards_distribution: DriveAbciFeePoolInwardsDistributionMethodVersions,
     pub fee_pool_outwards_distribution: DriveAbciFeePoolOutwardsDistributionMethodVersions,
     pub identity_credit_withdrawal: DriveAbciIdentityCreditWithdrawalMethodVersions,
@@ -193,6 +194,13 @@ pub struct DriveAbciBlockFeeProcessingMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciCoreSubsidyMethodVersions {
     pub epoch_core_reward_credits_for_distribution: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciCoreChainLockMethodVersions {
+    pub verify_chain_lock: FeatureVersion,
+    pub verify_chain_lock_locally: FeatureVersion,
+    pub verify_chain_lock_through_core: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -416,11 +416,6 @@ where
         };
         let transaction = transaction_guard.as_ref().unwrap();
 
-        // We can take the core chain lock update here because it won't be used anywhere else
-        if let Some(_c) = request.core_chain_lock_update.take() {
-            //todo: if there is a core chain lock update we need to validate it
-        }
-
         // Running the proposal executes all the state transitions for the block
         let run_result = self
             .platform

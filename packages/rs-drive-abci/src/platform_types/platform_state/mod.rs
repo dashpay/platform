@@ -331,7 +331,7 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn chain_lock_validating_quorums(&self) -> &IndexMap<QuorumHash, ThresholdBlsPublicKey> {
+    fn chain_lock_validating_quorums(&self) -> &BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
         match self {
             PlatformState::V0(v0) => &v0.chain_lock_validating_quorums,
         }
@@ -397,7 +397,7 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn set_chain_lock_validating_quorums(&mut self, quorums: IndexMap<QuorumHash, ThresholdBlsPublicKey>) {
+    fn set_chain_lock_validating_quorums(&mut self, quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>) {
         match self {
             PlatformState::V0(v0) => v0.set_chain_lock_validating_quorums(quorums),
         }

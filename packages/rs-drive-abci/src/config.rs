@@ -308,6 +308,7 @@ impl Default for PlatformConfig {
     fn default() -> Self {
         Self {
             validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             quorum_size: 100,
             block_spacing_ms: 5000,
             drive: Default::default(),
