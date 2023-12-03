@@ -3,7 +3,7 @@ use crate::data_contract::document_type::property::{DocumentProperty, DocumentPr
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 
 use indexmap::IndexMap;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 impl DocumentTypeV0 {
     pub(super) fn find_identifier_and_binary_paths_v0(

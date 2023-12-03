@@ -4,11 +4,10 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::{
-    get_protocol_version_upgrade_state_response, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse, Proof,
+    get_protocol_version_upgrade_state_response, GetProtocolVersionUpgradeStateResponse, Proof,
 };
 use dpp::check_validation_result_with_data;
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
+
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use prost::Message;

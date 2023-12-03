@@ -2,7 +2,7 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
 use indexmap::IndexMap;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::TryInto;
 
 use crate::consensus::basic::data_contract::{
@@ -445,10 +445,7 @@ fn insert_values(
                             match inner_properties
                                 .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
                             {
-                                Some(content_media_type)
-                                    if content_media_type
-                                        == "application/x.dash.dpp.identifier" =>
-                                {
+                                Some("application/x.dash.dpp.identifier") => {
                                     DocumentPropertyType::Identifier
                                 }
                                 Some(_) | None => DocumentPropertyType::ByteArray(
@@ -563,33 +560,23 @@ fn insert_values_nested(
 
     let is_required = known_required.contains(&property_key);
 
-    let field_type: DocumentPropertyType;
-
-    match type_value {
-        "integer" => {
-            field_type = DocumentPropertyType::Integer;
-        }
-        "number" => {
-            field_type = DocumentPropertyType::Number;
-        }
-        "string" => {
-            field_type = DocumentPropertyType::String(
-                inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
-                inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
-            );
-        }
+    let field_type = match type_value {
+        "integer" => DocumentPropertyType::Integer,
+        "number" => DocumentPropertyType::Number,
+        "string" => DocumentPropertyType::String(
+            inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
+            inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
+        ),
         "array" => {
             // Only handling bytearrays for v1
             // Return an error if it is not a byte array
-            field_type = match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
+            match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
                 Some(inner_bool) => {
                     if inner_bool {
                         match inner_properties
                             .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
                         {
-                            Some(content_media_type)
-                                if content_media_type == "application/x.dash.dpp.identifier" =>
-                            {
+                            Some("application/x.dash.dpp.identifier") => {
                                 DocumentPropertyType::Identifier
                             }
                             Some(_) | None => DocumentPropertyType::ByteArray(
@@ -610,7 +597,7 @@ fn insert_values_nested(
                 //   This is a temporary workaround to bring back v0.22 behavior and should be
                 //   replaced with a proper array support in future versions
                 None => DocumentPropertyType::Array(ArrayItemType::Boolean),
-            };
+            }
         }
         "object" => {
             let mut nested_properties = IndexMap::new();
@@ -663,20 +650,17 @@ fn insert_values_nested(
                     )?;
                 }
             }
-            field_type = DocumentPropertyType::Object(nested_properties);
             document_properties.insert(
                 property_key,
                 DocumentProperty {
-                    property_type: field_type,
+                    property_type: DocumentPropertyType::Object(nested_properties),
                     required: is_required,
                 },
             );
             return Ok(());
         }
-        _ => {
-            field_type = DocumentPropertyType::try_from_name(type_value)?;
-        }
-    }
+        _ => DocumentPropertyType::try_from_name(type_value)?,
+    };
 
     document_properties.insert(
         property_key,

@@ -1,3 +1,33 @@
+### [0.25.16-rc.4](https://github.com/dashpay/platform/compare/v0.25.16-rc.3...v0.25.16-rc.4) (2023-11-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* data contracts require position to be defined for object properties
+* previously created state is not compatible
+
+### Features
+
+* **platform:** document serialization across versions ([#1594](https://github.com/dashpay/platform/issues/1594))
+
+
+### Bug Fixes
+
+* drive produces wrong app hash after restart ([#1586](https://github.com/dashpay/platform/issues/1586))
+
+
+### [0.25.16-rc.3](https://github.com/dashpay/platform/compare/v0.25.16-rc.2...v0.25.16-rc.3) (2023-11-23)
+
+### Bug Fixes
+
+* **dashmate:** missing choices enumerator ([#1595](https://github.com/dashpay/platform/issues/1595))
+
+### [0.25.16-rc.2](https://github.com/dashpay/platform/compare/v0.25.16-rc.1...v0.25.16-rc.2) (2023-11-22)
+
+### Bug Fixes
+
+* **dashmate:** incorrect imports  ([#1591](https://github.com/dashpay/platform/issues/1591))
+
 ### [0.25.16-rc.1](https://github.com/dashpay/platform/compare/v0.25.15...v0.25.16-rc.1) (2023-11-21)
 
 ### ⚠ BREAKING CHANGES
