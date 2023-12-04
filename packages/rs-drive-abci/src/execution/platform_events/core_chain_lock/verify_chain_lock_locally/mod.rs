@@ -9,6 +9,7 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
 use dpp::version::PlatformVersion;
+use crate::platform_types::platform_state::PlatformState;
 
 impl<C> Platform<C>
     where
@@ -16,7 +17,7 @@ impl<C> Platform<C>
 {
     /// Returning None here means we were unable to verify the chain lock because of an absence of
     /// the quorum
-    pub fn verify_chain_lock_locally(&self, chain_lock: &ChainLock, platform_version: &PlatformVersion) -> Result<Option<bool>, Error> {
+    pub fn verify_chain_lock_locally(&self, platform_state: &PlatformState, chain_lock: &ChainLock, platform_version: &PlatformVersion) -> Result<Option<bool>, Error> {
         match platform_version
             .drive_abci
             .methods
@@ -24,7 +25,7 @@ impl<C> Platform<C>
             .verify_chain_lock_locally
         {
             0 => {
-                self.verify_chain_lock_locally_v0(chain_lock, platform_version)
+                self.verify_chain_lock_locally_v0(platform_state, chain_lock, platform_version)
             }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "verify_chain_lock_locally".to_string(),

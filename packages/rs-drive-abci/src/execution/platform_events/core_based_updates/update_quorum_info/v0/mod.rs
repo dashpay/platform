@@ -50,6 +50,8 @@ where
             return Ok(()); // no need to do anything
         }
 
+        // We should request the quorum list from 8 blocks behind the core block height
+
         let mut extended_quorum_list = self
             .core_rpc
             .get_quorum_listextended(Some(core_block_height))?;

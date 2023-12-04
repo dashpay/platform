@@ -21,6 +21,7 @@ use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 use dpp::bls_signatures::{PublicKey as ThresholdBlsPublicKey};
+use drive::grovedb::batch::Op;
 
 /// Platform state
 #[derive(Clone)]
@@ -44,6 +45,11 @@ pub struct PlatformStateV0 {
 
     /// The current 400 60 quorums used for validating chain locks
     pub chain_lock_validating_quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+
+    /// The slightly old 400 60 quorums used for validating chain locks, it's important to keep
+    /// these because validation of signatures happens for the quorums that are 8 blocks before the
+    /// height written in the chain lock
+    pub previous_height_chain_lock_validating_quorums: Option<(u32, BTreeMap<QuorumHash, ThresholdBlsPublicKey>)>,
 
     /// current full masternode list
     pub full_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
@@ -119,6 +125,10 @@ pub(super) struct PlatformStateForSavingV0 {
     #[bincode(with_serde)]
     pub chain_lock_validating_quorums: Vec<(Bytes32, ThresholdBlsPublicKey)>,
 
+    /// The 400 60 quorums used for validating chain locks from a slightly previous height.
+    #[bincode(with_serde)]
+    pub previous_height_chain_lock_validating_quorums: Option<(u32, Vec<(Bytes32, ThresholdBlsPublicKey)>)>,
+
     /// current full masternode list
     pub full_masternode_list: BTreeMap<Bytes32, Masternode>,
 
@@ -153,6 +163,12 @@ impl TryFrom<PlatformStateV0> for PlatformStateForSavingV0 {
                 .into_iter()
                 .map(|(k, v)| (k.to_byte_array().into(), v))
                 .collect(),
+            previous_height_chain_lock_validating_quorums: value
+                .previous_height_chain_lock_validating_quorums.map(|(previous_height, inner_value)| {
+                (previous_height, inner_value.into_iter()
+                    .map(|(k, v)| (k.to_byte_array().into(), v))
+                    .collect())
+            }),
             full_masternode_list: value
                 .full_masternode_list
                 .into_iter()
@@ -200,6 +216,12 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
                 .into_iter()
                 .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v))
                 .collect(),
+            previous_height_chain_lock_validating_quorums: value.previous_height_chain_lock_validating_quorums.map(|(previous_height, inner_value)| {
+                (previous_height, inner_value.into_iter()
+                    .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v))
+                    .collect())
+            })
+                ,
             full_masternode_list: value
                 .full_masternode_list
                 .into_iter()
@@ -228,6 +250,7 @@ impl PlatformStateV0 {
             next_validator_set_quorum_hash: None,
             validator_sets: Default::default(),
             chain_lock_validating_quorums: Default::default(),
+            previous_height_chain_lock_validating_quorums: None,
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),
             genesis_block_info: None,
