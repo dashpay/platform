@@ -3,7 +3,6 @@ use crate::{Error, Sdk};
 
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::{Document, DocumentV0Getters};
-use dpp::identity::signer::Signer;
 use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -12,7 +11,7 @@ use super::broadcast::BroadcastStateTransition;
 
 #[async_trait::async_trait]
 /// A trait for putting an identity to platform
-pub trait PutDocument<S: Signer> {
+pub trait PutDocument {
     /// Puts an identity on platform
     async fn put_to_platform(
         &self,
@@ -34,20 +33,21 @@ pub trait PutDocument<S: Signer> {
 }
 
 #[async_trait::async_trait]
-impl<S: Signer> PutDocument<S> for Document {
+impl PutDocument for Document {
     async fn put_to_platform(
         &self,
         sdk: &Sdk,
         document_type: DocumentType,
         document_state_transition_entropy: [u8; 32],
     ) -> Result<(), Error> {
-        let wallet = sdk
-            .wallet
+        let lock = sdk.wallet.lock().await;
+        let wallet = lock
             .as_ref()
             .ok_or(Error::Config("wallet not configured in sdk".to_string()))?;
 
         let identity_public_key = wallet
             .identity_public_key(&dpp::identity::Purpose::AUTHENTICATION)
+            .await
             .ok_or(Error::Config(
                 "cannot retrieve identity public key from wallet".to_string(),
             ))?;
@@ -73,13 +73,14 @@ impl<S: Signer> PutDocument<S> for Document {
         document_type: DocumentType,
         document_state_transition_entropy: [u8; 32],
     ) -> Result<Document, Error> {
-        let wallet = sdk
-            .wallet
+        let lock = sdk.wallet.lock().await;
+        let wallet = lock
             .as_ref()
             .ok_or(Error::Config("wallet not configured in sdk".to_string()))?;
 
         let identity_public_key = wallet
             .identity_public_key(&dpp::identity::Purpose::AUTHENTICATION)
+            .await
             .ok_or(Error::Config(
                 "cannot retrieve identity public key from wallet".to_string(),
             ))?;

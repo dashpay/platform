@@ -1,6 +1,7 @@
 //! Wallet for managing keys assets in Dash Core and Platform.
 
 use async_trait::async_trait;
+use dashcore_rpc::dashcore::secp256k1::rand::{rngs::StdRng, SeedableRng};
 use dashcore_rpc::dashcore_rpc_json::ListUnspentResultEntry;
 use dpp::{
     bls_signatures::PrivateKey,
@@ -10,25 +11,24 @@ use dpp::{
     platform_value::BinaryData,
     ProtocolError,
 };
+use dpp::{
+    identity::{identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, KeyID, Purpose},
+    version::{PlatformVersion, PlatformVersionCurrentVersion},
+};
+use simple_signer::signer::SimpleSigner;
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 
-use crate::{
-    wallet::{CoreWallet, PlatformWallet, Wallet},
-    Error,
-};
+use crate::{wallet::Wallet, Error};
 
-use self::{core::CoreGrpcWallet, platform::PlatformSignerWallet};
+use self::core_client::CoreClient;
 pub mod cache;
-pub mod core;
 pub mod core_client;
-pub mod platform;
 
 /// Mock wallet that uses core grpc wallet and platform signer to implement wallet trait.
 ///
 /// It provides contextual information about the state of application using
 /// core wallet (connecting ) and cache for data contracts and quorum public keys
-pub type MockWallet = CompositeWallet<CoreGrpcWallet, PlatformSignerWallet>;
-impl Wallet for MockWallet {}
 
 /// Wallet that combines separate Core and Platform wallets into one.
 ///
@@ -37,82 +37,99 @@ impl Wallet for MockWallet {}
 /// * [CoreGrpcWallet](crate::mock::wallet::CoreGrpcWallet)
 /// * [PlatformSignerWallet](crate::mock::wallet::PlatformSignerWallet)
 #[derive(Debug)]
-pub struct CompositeWallet<C: CoreWallet, P: PlatformWallet>
-where
-    C: Debug,
-    P: Debug,
-{
-    core_wallet: C,
-    platform_wallet: P,
+pub struct MockWallet {
+    pub core_client: CoreClient,
+    /// Signer used to sign Platform transactions.
+    pub signer: SimpleSigner,
+
+    /// Default keys used to sign Platform transactions for each purpose.
+    pub default_keys: BTreeMap<dpp::identity::Purpose, KeyID>,
 }
 
-impl<C: CoreWallet, P: PlatformWallet> CompositeWallet<C, P>
-where
-    C: Debug,
-    P: Debug,
-{
-    /// Create new composite wallet.
-    ///
-    /// Create new composite wallet comprising of Core wallet and Platform wallet.
-    ///
-    /// Note that if the `sdk` is `None`, the wallet will not be able to fetch data contracts.
-    pub fn new(core_wallet: C, platform_wallet: P) -> Self {
-        Self {
-            core_wallet,
-            platform_wallet,
-        }
-    }
+impl MockWallet {
+    /// Create new mock wallet using Dash Core GRPC interface to access Dash Core, and a fixed private key.
+    pub fn new_mock(ip: &str, port: u16, user: &str, password: &str) -> Result<Self, Error> {
+        let core_client = CoreClient::new(ip, port, user, password)?;
 
-    /// Return Core wallet client.
-    pub fn core(&self) -> &C {
-        &self.core_wallet
-    }
+        let platform_version = PlatformVersion::get_current()?; // TODO pass as arg
+                                                                // it's a mock, so we always want the same key
+        const SEED: [u8; 32] = [0u8; 32];
+        let mut rng = StdRng::from_seed(SEED);
+        // let privkey = PrivateKey::generate_dash(&mut rng).map_err(|e| Error::from(e))?;
 
-    /// Return Platform wallet client.
-    pub fn platform(&self) -> &P {
-        &self.platform_wallet
+        // TODO: also generate other types of keys
+        let keys = IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(
+            0 as KeyID,
+            6,
+            &mut rng,
+            platform_version,
+        )?;
+
+        let mut signer = SimpleSigner::default();
+        signer.add_keys(keys);
+
+        // get first authentication key and set it as default
+        let (first_key, _) = signer
+            .private_keys
+            .iter()
+            .find(|(key, _)| key.purpose() == Purpose::AUTHENTICATION)
+            .ok_or(Error::Protocol(ProtocolError::PublicKeyGenerationError(
+                "At least one key is required in Signer".to_string(),
+            )))?;
+
+        let mut default_keys: BTreeMap<Purpose, KeyID> = BTreeMap::new();
+        default_keys.insert(first_key.purpose(), first_key.id());
+
+        Ok(Self {
+            core_client,
+            signer,
+            default_keys,
+        })
     }
 }
+
 #[async_trait]
-impl<C: CoreWallet, P: PlatformWallet> CoreWallet for CompositeWallet<C, P>
-where
-    C: Debug,
-    P: Debug,
-{
-    async fn lock_assets(&self, amount: u64) -> Result<(AssetLockProof, PrivateKey), Error> {
-        self.core_wallet.lock_assets(amount).await
+impl Wallet for MockWallet {
+    async fn platform_sign(
+        &self,
+        pubkey: &IdentityPublicKey,
+        message: &[u8],
+    ) -> Result<BinaryData, Error> {
+        todo!("Not yet implemented")
     }
-    /// Return balance of the wallet, in satoshis.
-    async fn core_balance(&self) -> Result<u64, Error> {
-        self.core_wallet.core_balance().await
+    async fn lock_assets(&self, _amount: u64) -> Result<(AssetLockProof, PrivateKey), Error> {
+        todo!("Not yet implemented")
     }
 
     async fn core_utxos(&self, sum: Option<u64>) -> Result<Vec<ListUnspentResultEntry>, Error> {
-        self.core_wallet.core_utxos(sum).await
+        let unspent: Vec<dashcore_rpc::dashcore_rpc_json::ListUnspentResultEntry> =
+            self.core_client.list_unspent(sum)?;
+        Ok(unspent)
+    }
+
+    async fn core_balance(&self) -> Result<u64, Error> {
+        Ok(self.core_client.get_balance()?.to_sat())
+    }
+
+    async fn identity_public_key(&self, purpose: &Purpose) -> Option<IdentityPublicKey> {
+        let id = self.default_keys.get(purpose)?;
+
+        let (key, _) = self
+            .signer
+            .private_keys
+            .iter()
+            .find(|(key, _)| key.id() == *id)?;
+
+        Some(key.clone())
     }
 }
 
-impl<C: CoreWallet, P: PlatformWallet> PlatformWallet for CompositeWallet<C, P>
-where
-    C: Debug,
-    P: Debug,
-{
-    fn identity_public_key(&self, purpose: &dpp::identity::Purpose) -> Option<IdentityPublicKey> {
-        self.platform_wallet.identity_public_key(purpose)
-    }
-}
-
-#[async_trait]
-impl<C: CoreWallet, P: PlatformWallet> Signer for CompositeWallet<C, P>
-where
-    C: Debug,
-    P: Debug,
-{
+impl Signer for MockWallet {
     fn sign(
         &self,
         pubkey: &IdentityPublicKey,
         message: &[u8],
     ) -> Result<BinaryData, ProtocolError> {
-        self.platform_wallet.sign(pubkey, message)
+        self.signer.sign(pubkey, message)
     }
 }

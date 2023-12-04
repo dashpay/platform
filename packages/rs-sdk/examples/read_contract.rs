@@ -2,10 +2,7 @@ use std::{num::NonZeroUsize, str::FromStr, sync::Arc};
 
 use clap::Parser;
 use dash_platform_sdk::{
-    mock::{
-        provider::GrpcContextProvider,
-        wallet::{core::CoreGrpcWallet, platform::PlatformSignerWallet, MockWallet},
-    },
+    mock::{provider::GrpcContextProvider, wallet::MockWallet},
     platform::Fetch,
     Sdk, SdkBuilder,
 };
@@ -73,22 +70,14 @@ fn setup_sdk(config: &Config) -> Arc<Sdk> {
     // Note that this logic is executed automatically when you [build](SdkBuilder::build()) SDK without providing a
     // wallet nor context provider. We do it manually here to show how it works, and how
     // you should use it with your own implementation of wallet and context provider.
-
-    // For platform wallet, we use mock implementation that uses a single private key to sign
-    let platform_wallet = PlatformSignerWallet::new_mock().expect("platform wallet");
-
-    // For core wallet, we use mock implementation that uses core grpc api
-    // It requires running Dash Core with grpc api enabled
-    let core_wallet = CoreGrpcWallet::new(
+    // Now, let's create the wallet
+    let wallet = MockWallet::new_mock(
         &config.server_address,
         config.core_port,
         &config.core_user,
         &config.core_password,
     )
-    .expect("core wallet");
-
-    // Now, let's create the wallet
-    let wallet = MockWallet::new(core_wallet, platform_wallet);
+    .expect("mock wallet creation");
 
     // We also need to implement a ContextProvider.
     // Here, we will just use a mock implementation.
@@ -108,7 +97,7 @@ fn setup_sdk(config: &Config) -> Arc<Sdk> {
     )
     .expect("context provider");
     let context_provider = Arc::new(std::sync::Mutex::new(context_provider));
-    // let context_provider = RefCell::new(context_provider);
+
     // Let's build the Sdk.
     // First, we need an URI of some Dash Platform DAPI host to connect to and use as seed.
     let uri = http::Uri::from_str(&format!(

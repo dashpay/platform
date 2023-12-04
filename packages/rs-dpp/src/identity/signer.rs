@@ -10,3 +10,13 @@ pub trait Signer: Sync {
         data: &[u8],
     ) -> Result<BinaryData, ProtocolError>;
 }
+
+// impl<S: AsRef<dyn Signer> + Send + Sync> Signer for S {
+//     fn sign(
+//         &self,
+//         identity_public_key: &IdentityPublicKey,
+//         data: &[u8],
+//     ) -> Result<BinaryData, ProtocolError> {
+//         self.as_ref().sign(identity_public_key, data)
+//     }
+// }

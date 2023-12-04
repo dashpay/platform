@@ -1,9 +1,11 @@
-use dashcore_rpc::dashcore::transaction::special_transaction::TransactionPayload;
+/*
+
+Not sure if it's needed at all
 use dpp::{bls_signatures::PrivateKey, prelude::AssetLockProof};
 
 use tokio_util::sync::CancellationToken;
 
-use crate::{wallet::Wallet, Error, Sdk};
+use crate::wallet::Wallet;
 
 #[derive(Clone)]
 /// Various context information required for transition execution.
@@ -28,49 +30,49 @@ pub struct TransitionContext<'a> {
     pub wallet: &'a dyn Wallet,
 }
 
-impl<'a> TransitionContext<'a> {
-    /// Creates a new [TransitionContext], using defaults from provided [Sdk].
-    pub fn new(sdk: &'a Sdk) -> Self {
-        Self {
-            cancellation_token: CancellationToken::new(),
-            asset_lock_proof: None,
-            asset_lock_private_key: None,
-            wallet: sdk.wallet.as_ref().expect("Wallet not set in Sdk").as_ref(),
-        }
-    }
+// impl<'a> TransitionContext<'a> {
+//     /// Creates a new [TransitionContext], using defaults from provided [Sdk].
+//     pub fn new(sdk: &'a Sdk) -> Self {
+//         Self {
+//             cancellation_token: CancellationToken::new(),
+//             asset_lock_proof: None,
+//             asset_lock_private_key: None,
+//             wallet: sdk.wallet.as_ref().expect("Wallet not set in Sdk").as_ref(),
+//         }
+//     }
 
-    /// Provide instance of wallet to use for transition execution.
-    pub fn with_wallet(&mut self, wallet: &'a dyn Wallet) -> &mut Self {
-        self.wallet = wallet;
-        self
-    }
+//     /// Provide instance of wallet to use for transition execution.
+//     pub fn with_wallet(&mut self, wallet: &'a dyn Wallet) -> &mut Self {
+//         self.wallet = wallet;
+//         self
+//     }
 
-    /// Locks some assets (funds) on Dash Core using the wallet.
-    ///
-    /// This is a conveniance method that calls [Wallet::lock_assets] and stores the returned proof and private key.
-    ///
-    /// If self.asset_lock_proof is already set and the amount is the same or higher, this method will return existing
-    /// proof and key.
-    pub async fn lock_assets(&mut self, amount: u64) -> Result<(), Error> {
-        if let Some(proof) = &self.asset_lock_proof {
-            if let Some(tx) = proof.transaction() {
-                if let Some(TransactionPayload::AssetLockPayloadType(ref payload)) =
-                    tx.special_transaction_payload
-                {
-                    if amount <= payload.credit_outputs.iter().map(|out| out.value).sum() {
-                        return Ok(());
-                    }
-                }
-            }
-        }
+//     /// Locks some assets (funds) on Dash Core using the wallet.
+//     ///
+//     /// This is a conveniance method that calls [Wallet::lock_assets] and stores the returned proof and private key.
+//     ///
+//     /// If self.asset_lock_proof is already set and the amount is the same or higher, this method will return existing
+//     /// proof and key.
+//     pub async fn lock_assets(&mut self, amount: u64) -> Result<(), Error> {
+//         if let Some(proof) = &self.asset_lock_proof {
+//             if let Some(tx) = proof.transaction() {
+//                 if let Some(TransactionPayload::AssetLockPayloadType(ref payload)) =
+//                     tx.special_transaction_payload
+//                 {
+//                     if amount <= payload.credit_outputs.iter().map(|out| out.value).sum() {
+//                         return Ok(());
+//                     }
+//                 }
+//             }
+//         }
 
-        let assets = self.wallet.lock_assets(amount).await?;
-        self.asset_lock_proof = Some(assets.0);
-        self.asset_lock_private_key = Some(assets.1);
+//         let assets = self.wallet.lock_assets(amount).await?;
+//         self.asset_lock_proof = Some(assets.0);
+//         self.asset_lock_private_key = Some(assets.1);
 
-        Ok(())
-    }
-}
+//         Ok(())
+//     }
+// }
 
 // #[derive(Debug)]
 // pub struct TransitionContextBuilder<'a> {
@@ -103,3 +105,4 @@ impl<'a> TransitionContext<'a> {
 //         self.stub_transition_context
 //     }
 // }
+*/

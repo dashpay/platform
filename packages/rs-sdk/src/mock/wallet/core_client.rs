@@ -7,6 +7,7 @@ use dashcore_rpc::{
     dashcore::{address::NetworkUnchecked, hashes::Hash, Amount, QuorumHash},
     dashcore_rpc_json as json, Auth, Client, RawTx, RpcApi,
 };
+use drive_proof_verifier::error::ContextProviderError;
 use std::{fmt::Debug, sync::Mutex};
 
 use crate::error::Error;
@@ -16,7 +17,7 @@ use crate::error::Error;
 /// Implements [`ContextProvider`] trait.
 ///
 /// TODO: This is a temporary implementation, effective until we integrate SPV.
-pub(crate) struct CoreClient {
+pub struct CoreClient {
     core: Mutex<Client>,
     server_address: String,
     core_user: String,
@@ -125,31 +126,25 @@ impl CoreClient {
             .map_err(Error::CoreClientError)
     }
 
+    /// Retrieve quorum public key from core.
     pub fn get_quorum_public_key(
         &self,
         quorum_type: u32,
         quorum_hash: [u8; 32],
         _core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], drive_proof_verifier::Error> {
-        let quorum_hash = QuorumHash::from_slice(&quorum_hash).map_err(|e| {
-            drive_proof_verifier::Error::InvalidQuorum {
-                error: e.to_string(),
-            }
-        })?;
+    ) -> Result<[u8; 48], ContextProviderError> {
+        let quorum_hash = QuorumHash::from_slice(&quorum_hash)
+            .map_err(|e| ContextProviderError::InvalidQuorum(e.to_string()))?;
 
         let core = self.core.lock().expect("Core lock poisoned");
         let quorum_info = core
             .get_quorum_info(json::QuorumType::from(quorum_type), &quorum_hash, None)
-            .map_err(
-                |e: dashcore_rpc::Error| drive_proof_verifier::Error::InvalidQuorum {
-                    error: e.to_string(),
-                },
-            )?;
+            .map_err(|e: dashcore_rpc::Error| ContextProviderError::InvalidQuorum(e.to_string()))?;
         let key = quorum_info.quorum_public_key;
         let pubkey = <Vec<u8> as TryInto<[u8; 48]>>::try_into(key).map_err(|_e| {
-            drive_proof_verifier::Error::InvalidQuorum {
-                error: "quorum public key is not 48 bytes long".to_string(),
-            }
+            ContextProviderError::InvalidQuorum(
+                "quorum public key is not 48 bytes long".to_string(),
+            )
         })?;
         Ok(pubkey)
     }

@@ -1,5 +1,6 @@
 use std::{ops::Deref, sync::Arc};
 
+use crate::error::ContextProviderError;
 use dpp::prelude::{DataContract, Identifier};
 use hex::ToHex;
 
@@ -26,7 +27,7 @@ pub trait ContextProvider: Send + Sync {
         quorum_type: u32,
         quorum_hash: [u8; 32], // quorum hash is 32 bytes
         core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], crate::Error>; // public key is 48 bytes
+    ) -> Result<[u8; 48], ContextProviderError>; // public key is 48 bytes
 
     /// Fetches the data contract for a specified data contract ID.
     /// This method is used by [FromProof](crate::FromProof) implementations to fetch data contracts
@@ -41,8 +42,10 @@ pub trait ContextProvider: Send + Sync {
     /// * `Ok(Option<Arc<DataContract>>)`: On success, returns the data contract if it exists, or `None` if it does not.
     /// We use Arc to avoid copying the data contract.
     /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
-    fn get_data_contract(&self, id: &Identifier)
-        -> Result<Option<Arc<DataContract>>, crate::Error>;
+    fn get_data_contract(
+        &self,
+        id: &Identifier,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError>;
 }
 
 impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
@@ -51,7 +54,7 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
         quorum_type: u32,
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], crate::Error> {
+    ) -> Result<[u8; 48], ContextProviderError> {
         self.as_ref()
             .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
@@ -59,7 +62,7 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
     fn get_data_contract(
         &self,
         id: &Identifier,
-    ) -> Result<Option<Arc<DataContract>>, crate::Error> {
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         self.as_ref().get_data_contract(id)
     }
 }
@@ -71,7 +74,7 @@ where
     fn get_data_contract(
         &self,
         id: &Identifier,
-    ) -> Result<Option<Arc<DataContract>>, crate::Error> {
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         let lock = self.lock().expect("lock poisoned");
         lock.get_data_contract(id)
     }
@@ -80,7 +83,7 @@ where
         quorum_type: u32,
         quorum_hash: [u8; 32], // quorum hash is 32 bytes
         core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], crate::Error> {
+    ) -> Result<[u8; 48], ContextProviderError> {
         let lock = self.lock().expect("lock poisoned");
         lock.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
@@ -135,14 +138,10 @@ impl ContextProvider for MockContextProvider {
         quorum_type: u32,
         quorum_hash: [u8; 32],
         _core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], crate::Error> {
+    ) -> Result<[u8; 48], ContextProviderError> {
         let path = match &self.quorum_keys_dir {
             Some(p) => p,
-            None => {
-                return Err(crate::Error::InvalidQuorum {
-                    error: "dump dir not set".to_string(),
-                })
-            }
+            None => return Err(ContextProviderError::Config("dump dir not set".to_string())),
         };
 
         let file = path.join(format!(
@@ -154,13 +153,11 @@ impl ContextProvider for MockContextProvider {
         let f = match std::fs::File::open(&file) {
             Ok(f) => f,
             Err(e) => {
-                return Err(crate::Error::InvalidQuorum {
-                    error: format!(
-                        "cannot load quorum key file {}: {}",
-                        file.to_string_lossy(),
-                        e
-                    ),
-                })
+                return Err(ContextProviderError::InvalidQuorum(format!(
+                    "cannot load quorum key file {}: {}",
+                    file.to_string_lossy(),
+                    e
+                )))
             }
         };
 
@@ -172,7 +169,7 @@ impl ContextProvider for MockContextProvider {
     fn get_data_contract(
         &self,
         _data_contract_id: &Identifier,
-    ) -> Result<Option<Arc<DataContract>>, crate::Error> {
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         todo!("not implemented yet");
     }
 }

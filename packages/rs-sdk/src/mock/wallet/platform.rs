@@ -86,15 +86,5 @@ impl Signer for PlatformSignerWallet {
 }
 
 impl PlatformWallet for PlatformSignerWallet {
-    fn identity_public_key(&self, purpose: &Purpose) -> Option<IdentityPublicKey> {
-        let id = self.default_keys.get(purpose)?;
-
-        let (key, _) = self
-            .signer
-            .private_keys
-            .iter()
-            .find(|(key, _)| key.id() == *id)?;
-
-        Some(key.clone())
-    }
+   
 }

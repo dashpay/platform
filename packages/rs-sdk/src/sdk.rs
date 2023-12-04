@@ -9,15 +9,16 @@ use std::{
 #[cfg(feature = "mocks")]
 use crate::mock::MockDashPlatformSdk;
 
-use crate::mock::wallet::{platform::PlatformSignerWallet, MockWallet};
+use crate::error::Error;
+use crate::mock::provider::GrpcContextProvider;
+use crate::mock::wallet::MockWallet;
 use crate::mock::MockResponse;
-use crate::mock::{provider::GrpcContextProvider, wallet::core::CoreGrpcWallet};
 use crate::wallet::Wallet;
-use crate::{error::Error, platform::transition::TransitionContext};
 
 use dapi_grpc::mock::Mockable;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::MockContextProvider;
 #[cfg(feature = "mocks")]
 use drive_proof_verifier::{ContextProvider, FromProof};
@@ -81,7 +82,8 @@ pub struct Sdk {
     /// It can be changed on runtime with set_wallet().
     ///
     /// If wallet is not provided, only read operations will be available.
-    pub(crate) wallet: Option<Box<dyn Wallet>>,
+    // TODO: replace tokio::sync::Mutex with another one implementing Send+Sync but working in both sync and async context
+    pub(crate) wallet: tokio::sync::Mutex<Option<Box<dyn Wallet>>>,
 
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
@@ -220,8 +222,23 @@ impl Sdk {
     /// It can be changed on runtime with set_wallet().
     ///
     /// Note that this will overwrite any previous wallet.
-    pub fn set_wallet<W: Wallet + 'static>(&mut self, wallet: W) {
-        self.wallet = Some(Box::new(wallet));
+    pub async fn set_wallet<W: Wallet + 'static>(&self, wallet: W) {
+        let mut lock = self.wallet.lock().await;
+        lock.replace(Box::new(wallet));
+    }
+
+    /// Set the [ContextProvider] to use.
+    ///
+    /// [ContextProvider] is used to access state information, like data contracts and quorum public keys.
+    ///
+    /// Note that this will overwrite any previous context provider.
+    pub fn set_context_provider<C: ContextProvider + 'static>(&self, context_provider: C) {
+        let mut guard = self
+            .context_provider
+            .lock()
+            .expect("context provider lock poisoned");
+
+        guard.deref_mut().replace(Box::new(context_provider));
     }
 
     /// Save quorum public key to disk.
@@ -261,8 +278,12 @@ impl Sdk {
     ///
     /// This method is used to create a new [`TransitionContext`] that stores various parameters
     /// required to execute a state transition.
-    pub fn create_transition_context(&self) -> TransitionContext {
-        TransitionContext::new(self)
+    // pub fn create_transition_context(&self) -> TransitionContext {
+    //     TransitionContext::new(self)
+    // }
+
+    pub async fn wallet(&self) -> tokio::sync::MutexGuard<Option<Box<dyn Wallet>>> {
+        self.wallet.lock().await
     }
 }
 
@@ -272,14 +293,15 @@ impl ContextProvider for Sdk {
         quorum_type: u32,
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], drive_proof_verifier::Error> {
+    ) -> Result<[u8; 48], ContextProviderError> {
         let guard = self
             .context_provider
             .lock()
             .expect("context provider lock poisoned");
-        let provider = guard
-            .as_ref()
-            .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
+        let provider = guard.as_ref().ok_or(ContextProviderError::Config(
+            "context provider not configured in sdk, use SdkBuilder::with_context_provider()"
+                .to_string(),
+        ))?;
 
         let key: [u8; 48] =
             provider.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)?;
@@ -293,14 +315,15 @@ impl ContextProvider for Sdk {
     fn get_data_contract(
         &self,
         data_contract_id: &Identifier,
-    ) -> Result<Option<Arc<DataContract>>, drive_proof_verifier::Error> {
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         let guard = self
             .context_provider
             .lock()
             .expect("context provider lock poisoned");
-        let provider = guard
-            .as_ref()
-            .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
+        let provider = guard.as_ref().ok_or(ContextProviderError::Config(
+            "context provider not configured in sdk, use SdkBuilder::with_context_provider()"
+                .to_string(),
+        ))?;
 
         provider.get_data_contract(data_contract_id)
     }
@@ -517,15 +540,12 @@ impl SdkBuilder {
 
     /// Create a new composite wallet using [CoreGrpcWallet] and [PlatformSignerWallet] intended for testing.
     fn build_core_wallet(&self) -> Result<MockWallet, Error> {
-        let core_wallet = CoreGrpcWallet::new(
+        MockWallet::new_mock(
             &self.core_ip,
             self.core_port,
             &self.core_user,
             &self.core_password,
-        )?;
-        let platform_wallet = PlatformSignerWallet::new_mock()?;
-
-        Ok(MockWallet::new(core_wallet, platform_wallet))
+        )
     }
 
     fn is_mock(&self) -> bool {
@@ -551,41 +571,38 @@ impl SdkBuilder {
         let  sdk=  match self.addresses {
             // non-mock mode
             Some(addresses) => {
-                let context_provider:Option<Box<dyn ContextProvider>> = if self.context_provider.is_some() || self.core_ip.is_empty() {
-
-                Some(self.context_provider.ok_or(Error::Config(
-                    "context provider must be configured with SdkBuilder::with_context_provider"
-                .to_string()))?)
-
-                }
-                 else {
-                    tracing::warn!("ContextProvider not set; mocking with Dash Core. \
-                    Please provide your own ContextProvider with SdkBuilder::with_context_provider().");
-
-                    None
-                } ;
-
-               let dapi = DapiClient::new(addresses, self.settings);
+                let dapi = DapiClient::new(addresses, self.settings);
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
 
                 let sdk= Sdk{
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
-                    context_provider: std::sync:: Mutex::new(context_provider),
-                    wallet,
+                    context_provider: std::sync:: Mutex::new(self.context_provider),
+                    wallet: tokio::sync::Mutex::new(wallet),
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
                 };
                 let sdk = Arc::new(sdk);
 
                 // if context provider is not set correctly (is None), it means we need to fallback to core wallet
-                let mut guard = sdk.context_provider.lock().expect("lock poisoned");
-                let context_provider = GrpcContextProvider::new(Some(Arc::clone(&sdk)),
+                let mut ctx_guard = sdk.context_provider.lock().expect("lock poisoned");
+                if  ctx_guard.is_none() { if !self.core_ip.is_empty() {
+                    tracing::warn!("ContextProvider not set; mocking with Dash Core. \
+                    Please provide your own ContextProvider with SdkBuilder::with_context_provider().");
+
+                    let context_provider = GrpcContextProvider::new(Some(Arc::clone(&sdk)),
                     &self.core_ip, self.core_port, &self.core_user, &self.core_password,
                     self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
-                let _r= std::mem::replace(guard.deref_mut(), Some(Box::new(context_provider)));
-                drop(guard);
+                    ctx_guard.replace(Box::new(context_provider));
+                } else{
+                    tracing::warn!(
+                        "Configure ContextProvider with Sdk::with_context_provider(); otherwise Sdk will fail"
+                            );
+                }
+            };
+            drop(ctx_guard);
+
 
             sdk
             },
@@ -596,14 +613,14 @@ impl SdkBuilder {
                 let  context_provider = self.context_provider.unwrap_or(Box::new(MockContextProvider::new()));
 
           let sdk=    Sdk{
-                    inner:SdkInstance::Mock {
-                        mock: std::sync::Mutex::new( MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs)),
-                        dapi,
-                    },
-                    dump_dir: self.dump_dir,
-                    proofs:self.proofs,
+                inner:SdkInstance::Mock {
+                    mock: std::sync::Mutex::new( MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs)),
+                    dapi,
+                },
+                dump_dir: self.dump_dir,
+                proofs:self.proofs,
                 context_provider:  std::sync:: Mutex::new( Some(context_provider)),
-                    wallet,
+                wallet: tokio::sync::Mutex::new(wallet),
             };
             Arc::new(sdk)
         },

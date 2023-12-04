@@ -5,6 +5,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use dpp::prelude::{DataContract, Identifier};
+use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::ContextProvider;
 
 use crate::mock::wallet::core_client::CoreClient;
@@ -80,7 +81,7 @@ impl ContextProvider for GrpcContextProvider {
         quorum_type: u32,
         quorum_hash: [u8; 32], // quorum hash is 32 bytes
         core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], drive_proof_verifier::Error> {
+    ) -> Result<[u8; 48], ContextProviderError> {
         if let Some(key) = self
             .quorum_public_keys_cache
             .get(&(quorum_hash, quorum_type))
@@ -101,7 +102,7 @@ impl ContextProvider for GrpcContextProvider {
     fn get_data_contract(
         &self,
         data_contract_id: &Identifier,
-    ) -> Result<Option<Arc<DataContract>>, drive_proof_verifier::Error> {
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         if let Some(contract) = self.data_contracts_cache.get(data_contract_id) {
             return Ok(Some(contract));
         };
@@ -128,9 +129,7 @@ impl ContextProvider for GrpcContextProvider {
 
         let data_contract = handle
             .block_on(DataContract::fetch(sdk, *data_contract_id))
-            .map_err(|e| drive_proof_verifier::Error::InvalidDataContract {
-                error: e.to_string(),
-            })?;
+            .map_err(|e| ContextProviderError::InvalidDataContract(e.to_string()))?;
 
         if let Some(ref dc) = data_contract {
             self.data_contracts_cache.put(*data_contract_id, dc.clone());

@@ -6,6 +6,8 @@ use dpp::version::PlatformVersionError;
 use dpp::ProtocolError;
 use rs_dapi_client::DapiClientError;
 
+pub use drive_proof_verifier::error::ContextProviderError;
+
 /// Error type for the SDK
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -46,6 +48,10 @@ pub enum Error {
     /// Cryptographic error
     #[error("Cryptographic error: {0}")]
     CryptoError(#[from] BlsError),
+
+    /// Context provider error
+    #[error("Context provider error: {0}")]
+    ContextProviderError(#[from] ContextProviderError),
 }
 
 impl<T: Debug> From<DapiClientError<T>> for Error {
