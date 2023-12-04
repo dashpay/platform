@@ -223,7 +223,7 @@ mod tests {
                             ]
                         {
                             Some(GetTransactionLockedResult {
-                                height: Some(93),
+                                height: 93,
                                 chain_lock: true,
                             })
                         } else {
