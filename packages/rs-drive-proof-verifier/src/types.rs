@@ -15,6 +15,7 @@ use dpp::{
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
     util::deserializer::ProtocolVersion,
 };
+use dpp::version::ProtocolVersionVoteCount;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
@@ -57,12 +58,6 @@ pub type Documents = RetrievedObjects<Identifier, Document>;
 
 /// Collection of epoch information
 pub type ExtendedEpochInfos = RetrievedObjects<EpochIndex, ExtendedEpochInfo>;
-
-/// Number of votes for a protocol version upgrade.
-///
-/// Number of votes for a protocol version upgrade, returned by [ProtocolVersionVoteCount::fetch_many()].
-/// See [ProtocolVersionUpgrades].
-pub type ProtocolVersionVoteCount = u64;
 
 /// Results of protocol version upgrade voting.
 ///

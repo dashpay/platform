@@ -80,9 +80,9 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
               port: 36660,
             },
             genesis: {
-              genesis_time: '2023-11-09T15:00:00.000Z',
-              chain_id: 'dash-testnet-36',
-              initial_core_chain_locked_height: 909700,
+              genesis_time: '2023-11-02T10:18:00.000Z',
+              chain_id: 'dash-testnet-37',
+              initial_core_chain_locked_height: 918609,
               consensus_params: {
                 timeout: {
                   propose: '50000000000',
