@@ -26,7 +26,7 @@ describe('Update command', () => {
       on: this.sinon.stub().callsFake((channel, cb) => (channel !== 'error'
         ? cb(Buffer.from(`${JSON.stringify(mockDockerResponse)}\r\n`)) : null)),
     };
-    mockDocker = { pull: this.sinon.stub().returns((image, cb) => cb(false, mockDockerStream)) };
+    mockDocker = { pull: this.sinon.stub().callsFake((image, cb) => cb(false, mockDockerStream)) };
   });
 
   it('should just update', async () => {
@@ -40,7 +40,6 @@ describe('Update command', () => {
     await command.runWithDependencies({}, { format: 'json' }, mockDocker, config, updateNode);
 
     expect(mockGetServicesList).to.have.been.calledOnceWithExactly(config);
-    expect(mockDocker.pull.firstCall.firstArg).to.be.equal(mockServicesList[0].image);
-    expect(mockDocker.pull.callCount).to.be.equal(1);
+    expect(mockDocker.pull).to.have.been.calledOnceWith(mockServicesList[0].image);
   });
 });
