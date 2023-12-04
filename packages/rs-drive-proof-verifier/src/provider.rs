@@ -4,11 +4,17 @@ use crate::error::ContextProviderError;
 use dpp::prelude::{DataContract, Identifier};
 use hex::ToHex;
 
-/// `ContextProvider` trait provides an interface to fetch information about context of proof verification, like
-/// quorum information, data contracts present in the platform, etc.
+/// Interface between the Sdk and state of the application.
 ///
-/// Developers should implement this trait to provide required information to [FromProof](crate::FromProof)
-/// implementations.
+/// ContextProvider is called by the [FromProof](crate::FromProof) trait (and similar) to get information about
+/// the application and/or network state, including data contracts that might be cached by the application or
+/// quorum public keys.
+///
+/// Developers using the Dash Platform SDK should implement this trait to provide required information
+/// to the Sdk, especially implementation of [FromProof](crate::FromProof) trait.
+///
+/// A ContextProvider should be thread-safe and manage timeouts and other concurrency-related issues internally,
+/// as the [FromProof](crate::FromProof) implementations can block on ContextProvider calls.
 pub trait ContextProvider: Send + Sync {
     /// Fetches the public key for a specified quorum.
     ///

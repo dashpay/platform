@@ -341,21 +341,18 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
                     let v=  v.security_level_map
                             .iter()
                             .map(|(level, kind)| {
-                                let kt = match GrpcKeyKind::from_i32(*kind) {
-                                    Some(GrpcKeyKind::CurrentKeyOfKindRequest) => {
-                                        Ok(KeyKindRequestType::CurrentKeyOfKindRequest)
+                                let kt = match GrpcKeyKind::try_from(*kind).map_err(|e| Error::RequestDecodeError {
+                                    error: format!("invalid key kind: {}", e),
+                                })? {
+                                    GrpcKeyKind::CurrentKeyOfKindRequest => {
+                                        KeyKindRequestType::CurrentKeyOfKindRequest
                                     }
-                                    Some(GrpcKeyKind::AllKeysOfKindRequest) => {
-                                        Ok(KeyKindRequestType::AllKeysOfKindRequest)
+                                    GrpcKeyKind::AllKeysOfKindRequest => {
+                                        KeyKindRequestType::AllKeysOfKindRequest
                                     }
-                                    None => Err(Error::RequestDecodeError {
-                                        error: format!("missing requested key type: {}", *kind),
-                                    }),
                                 };
-                                match kt  {
-                                    Err(e) => Err(e),
-                                    Ok(d) => Ok((*level as u8, d))
-                                }
+                                
+                                Ok((*level as u8, kt))
                             })
                             .collect::<Result<BTreeMap<SecurityLevelU8,KeyKindRequestType>,Error>>();
 
@@ -426,7 +423,7 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
 
         provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>

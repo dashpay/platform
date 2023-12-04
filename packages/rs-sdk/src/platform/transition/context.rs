@@ -1,6 +1,4 @@
-/*
-
-Not sure if it's needed at all
+//! TODO: Not sure if it's needed at all
 use dpp::{bls_signatures::PrivateKey, prelude::AssetLockProof};
 
 use tokio_util::sync::CancellationToken;
@@ -105,4 +103,3 @@ pub struct TransitionContext<'a> {
 //         self.stub_transition_context
 //     }
 // }
-*/

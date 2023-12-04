@@ -15,10 +15,19 @@ use crate::Error;
 /// Wallet used by Dash Platform SDK.
 ///
 /// Wallet is used to manage keys and addresses, and sign transactions.
-/// It must support:
+/// It must provide access to operations utilizing private keys, without
+/// exposing them to the Sdk.
 ///
-/// * Dash Core operations, as defined in [CoreWallet]
-/// * Platform operations, as defined in [PlatformWallet]
+/// It should also add additional level of validation and security on top of
+/// Sdk, to verify that security-related operations are executed as intended by the user.
+/// It can, for example, notify the user if they are about to sign a transaction
+/// that will spend all their funds.
+///
+/// Sdk calls wallet methods whenever operations utilizing private keys are required.
+///
+/// Wallet should be thread-safe, as it can be used from multiple threads.
+/// It should manage timeouts and other concurrency-related issues internally, as the Sdk
+/// will block on wallet calls.
 #[async_trait]
 pub trait Wallet: Send + Sync {
     // PLATFORM WALLET FUNCTIONS
