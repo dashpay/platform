@@ -65,6 +65,7 @@
     "@dashevo/feature-flags-contract": "workspace:*",
     "@dashevo/masternode-reward-shares-contract": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
+    "@dashevo/wasm-dpp": "workspace:*",
     "@dashevo/withdrawals-contract": "workspace:*",
     "@oclif/core": "^3.10.8",
     "@oclif/plugin-help": "^6.0.5",
