@@ -2,8 +2,6 @@ const Dash = require('dash');
 
 let storageAdapter;
 
-process.env.MOCHA_WORKER_ID
-
 if (typeof window === 'undefined') {
   // eslint-disable-next-line global-require
   const { NodeForage } = require('nodeforage');
