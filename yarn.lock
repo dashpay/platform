@@ -6565,7 +6565,6 @@ __metadata:
     "@dashevo/feature-flags-contract": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
-    "@dashevo/wasm-dpp": "workspace:*"
     "@dashevo/withdrawals-contract": "workspace:*"
     "@oclif/core": "npm:^3.10.8"
     "@oclif/plugin-help": "npm:^6.0.5"

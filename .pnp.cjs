@@ -8710,7 +8710,6 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
           ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
           ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
-          ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
           ["@oclif/core", "npm:3.10.8"],\
           ["@oclif/plugin-help", "npm:6.0.5"],\
