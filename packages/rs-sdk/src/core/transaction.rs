@@ -12,7 +12,6 @@ use dpp::prelude::AssetLockProof;
 use rs_dapi_client::{Dapi, RequestSettings};
 
 use std::time::Duration;
-use tokio::time::timeout;
 
 impl Sdk {
     /// Starts the stream to listen for instant send lock messages
@@ -65,9 +64,10 @@ impl Sdk {
 
     /// Waits for a response for the asset lock proof
     pub async fn wait_for_asset_lock_proof_for_transaction(
+        &self,
         mut stream: dapi_grpc::tonic::Streaming<TransactionsWithProofsResponse>,
         transaction: &Transaction,
-        time_out_ms: Option<u64>,
+        timeout: Option<Duration>,
         // core_chain_locked_height: u32,
     ) -> Result<AssetLockProof, Error> {
         let transaction_id = transaction.txid();
@@ -168,14 +168,16 @@ impl Sdk {
                         //     return Ok(asset_lock_proof);
                         // }
                     }
+                    None => tracing::trace!(
+                        "received None when waiting for asset lock, it can be safely ignored as it's our workaround for tonic bug"
+                    ),
                     _ => {
-                        tracing::debug!("received something else");
+                        tracing::debug!(response=?responses, "received unexpected response");
 
                         continue;
                     }
-                }
+                };
             }
-
             // Err(Error::DapiClientError(
             //     "Asset lock proof not found".to_string(),
             // ))
@@ -183,8 +185,8 @@ impl Sdk {
 
         // TODO: Timeout must be set when we open the stream. Tonic will deal with it
         // Apply the timeout if `time_out_ms` is Some, otherwise just await the processing.
-        match time_out_ms {
-            Some(ms) => timeout(Duration::from_millis(ms), stream_processing)
+        match timeout {
+            Some(t) => tokio::time::timeout(t, stream_processing)
                 .await
                 .map_err(|_| Error::DapiClientError("Timeout reached".to_string()))?,
             None => stream_processing.await,

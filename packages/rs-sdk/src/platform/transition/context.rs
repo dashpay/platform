@@ -7,7 +7,12 @@ use crate::wallet::Wallet;
 
 #[derive(Clone)]
 /// Various context information required for transition execution.
-pub struct TransitionContext<'a> {
+// TODO: Remove?
+pub enum TransitionContext {
+    /// Create identity with provided amount in Dash
+    CreateIdentity { amount: u64 },
+}
+pub struct TransitionContext1<'a> {
     /// Cancellation token for transition execution.
     ///
     /// If this token is cancelled, transition execution will be aborted.
