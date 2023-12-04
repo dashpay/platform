@@ -70,6 +70,7 @@ mod tests {
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
     use dashcore_rpc::json::GetTransactionLockedResult;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+    use std::sync::{Arc, Mutex};
     use strategy_tests::operations::DocumentAction::DocumentActionReplace;
     use strategy_tests::operations::{
         DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
@@ -2390,52 +2391,46 @@ mod tests {
             .expect_send_raw_transaction()
             .returning(move |_| Ok(Txid::all_zeros()));
 
-        let mut call_num = 0;
+        struct CoreState {
+            tx_chainlocked_statuses: BTreeMap<Txid, GetTransactionLockedResult>,
+            core_chain_lock: CoreChainLock,
+        }
+
+        // Have to go with a complicated shared object for the core state because we need to change
+        // rpc response along the way but we can't mutate `platform.core_rpc` later
+        // because platform reference is moved into the AbciApplication.
+        let shared_core_state = Arc::new(Mutex::new(CoreState {
+            tx_chainlocked_statuses: BTreeMap::new(),
+            core_chain_lock: CoreChainLock {
+                core_block_height: 10,
+                core_block_hash: [1; 32].to_vec(),
+                signature: [2; 96].to_vec(),
+            },
+        }));
+
+        let core_state_to_share = shared_core_state.clone();
         platform
             .core_rpc
             .expect_get_transactions_are_chain_locked()
-            .times(2)
             .returning(move |txids| {
-                call_num += 1;
-                if call_num == 1 {
-                    Ok(txids.iter().map(|_| None).collect())
-                } else if call_num == 2 {
-                    Ok(txids
-                        .iter()
-                        .map(|_| {
-                            Some(GetTransactionLockedResult {
-                                height: -1,
-                                chain_lock: false,
-                            })
-                        })
-                        .collect())
-                } else {
-                    panic!("unexpected call to get_transactions_are_chain_locked")
-                }
+                Ok(txids
+                    .iter()
+                    .map(|txid| {
+                        core_state_to_share
+                            .lock()
+                            .unwrap()
+                            .tx_chainlocked_statuses
+                            .get(txid)
+                            .map(|status| status.clone())
+                    })
+                    .collect())
             });
-        // .returning(move |txids| {
-        //     println!("second call!");
-        //     Ok(txids
-        //         .iter()
-        //         .map(|_| {
-        //             Some(GetTransactionLockedResult {
-        //                 height: -1,
-        //                 chain_lock: false,
-        //             })
-        //         })
-        //         .collect())
-        // });
 
+        let core_state_to_share = shared_core_state.clone();
         platform
             .core_rpc
             .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+            .returning(move || Ok(core_state_to_share.lock().unwrap().core_chain_lock.clone()));
 
         // Run first two blocks:
         // - Block 1: creates identity
@@ -2455,13 +2450,13 @@ mod tests {
             // Withdrawal transactions are not populated to block execution context yet
             assert_eq!(outcome.withdrawals.len(), 0);
 
-            // Withdrawal documents with queued status should exist
+            // Withdrawal documents with pooled status should exist.
             let withdrawal_documents_pooled = outcome
                 .abci_app
                 .platform
                 .drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::WithdrawalStatus::QUEUED.into(),
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
                     None,
                     platform_version,
                 )
@@ -2472,8 +2467,7 @@ mod tests {
         };
 
         // Run block 3
-        // Should change queued status of withdrawals to pooled and
-        // broadcast transactions to core
+        // Should broadcast previously pooled withdrawals to core
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -2504,23 +2498,23 @@ mod tests {
 
             assert!(outcome.withdrawals.len() > 0);
 
-            // Withdrawal documents with queued status should exist
-            let withdrawal_documents_pooled = outcome
-                .abci_app
-                .platform
-                .drive
-                .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
-                    None,
-                    platform_version,
-                )
-                .unwrap();
-            assert_eq!(withdrawal_documents_pooled.len(), outcome.withdrawals.len());
+            // Update core state to return chain locked status for broadcasted transactions
+            let mut core_state = shared_core_state.lock().unwrap();
+            outcome.withdrawals.iter().for_each(|(txid, _)| {
+                let txid = txid.to_owned();
+                core_state.tx_chainlocked_statuses.insert(
+                    txid.to_owned(),
+                    GetTransactionLockedResult {
+                        height: -1,
+                        chain_lock: false,
+                    },
+                );
+            });
 
             outcome
         };
 
-        let latest_withdrawals = withdrawals.len();
+        let latest_withdrawals_amount = withdrawals.len();
         // Run block 4
         // Should change pooled status to broadcasted
         let ChainExecutionOutcome {
@@ -2550,7 +2544,6 @@ mod tests {
                 StrategyRandomness::SeedEntropy(3),
             );
 
-            // Withdrawal documents with queued status should exist
             let withdrawal_documents_broadcasted = outcome
                 .abci_app
                 .platform
@@ -2561,52 +2554,17 @@ mod tests {
                     platform_version,
                 )
                 .unwrap();
+
+            // Ensure that broadcasted withdrawals are equal to the latest withdrawal transactions amount
             assert_eq!(
                 withdrawal_documents_broadcasted.len(),
-                outcome.withdrawals.len()
+                latest_withdrawals_amount
             );
-
-            // assert!(outcome.withdrawals.len() > 0);
-            //
-            // // Withdrawal documents with queued status should exist
-            // let withdrawal_documents_pooled = outcome
-            //     .abci_app
-            //     .platform
-            //     .drive
-            //     .fetch_withdrawal_documents_by_status(
-            //         withdrawals_contract::WithdrawalStatus::POOLED.into(),
-            //         None,
-            //         platform_version,
-            //     )
-            //     .unwrap();
-            // assert_eq!(withdrawal_documents_pooled.len(), outcome.withdrawals.len());
 
             outcome
         };
 
-        // assert!(outcome.withdrawals.len() > 0);
-        //
-        // // But withdrawal documents with pooled status should exist
-        // let withdrawal_documents_pooled = outcome
-        //     .abci_app
-        //     .platform
-        //     .drive
-        //     .fetch_withdrawal_documents_by_status(
-        //         withdrawals_contract::WithdrawalStatus::POOLED.into(),
-        //         None,
-        //         platform_version,
-        //     )
-        //     .unwrap();
-        // assert!(withdrawal_documents_pooled.len() > 0);
-        //
-        // for withdrawalTx in outcome.withdrawals {
-        //     let txid = withdrawalTx.txid();
-        //     // assert_eq!(withdrawal.amount, 1000000000);
-        // }
-
         println!("End");
-        // assert_eq!(outcome.identities.len(), 10);
-        // assert_eq!(outcome.withdrawals.len(), 18);
     }
 
     #[test]

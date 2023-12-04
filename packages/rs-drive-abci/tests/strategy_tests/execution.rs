@@ -638,7 +638,8 @@ pub(crate) fn continue_chain_for_strategy(
 
     let mut current_core_height = core_height_start;
 
-    let mut total_withdrawals = vec![];
+    // let mut total_withdrawals = vec![];
+    let mut total_withdrawals = BTreeMap::new();
 
     let mut current_quorum_with_test_info =
         quorums.get::<QuorumHash>(&current_quorum_hash).unwrap();

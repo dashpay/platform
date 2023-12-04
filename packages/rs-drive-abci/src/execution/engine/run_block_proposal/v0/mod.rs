@@ -249,14 +249,6 @@ where
 
         // Block-W + 1 - Pool withdrawals into transactions and prepare them for signing and broadcasting
         {
-            // Takes queued withdrawals, creates L1 withdrawal transactions info and saves them to drive,
-            // and changes withdrawal documents from queued to pooled
-            self.pool_withdrawals_into_transactions_queue(
-                &block_execution_context,
-                transaction,
-                platform_version,
-            )?;
-
             // TODO(withdrawals): can't we do this in a previous step before saving newly created
             //   L1 tx info to drive?
             //
@@ -294,17 +286,17 @@ where
         )?;
 
         // TODO(withdrawals): executed when Core transactions already broadcasted
-        // if block_execution_context
-        //     .block_state_info()
-        //     .core_chain_locked_height()
-        //     != last_block_core_height
-        // {
-        //     self.update_broadcasted_withdrawal_transaction_statuses(
-        //         &block_execution_context,
-        //         transaction,
-        //         platform_version,
-        //     )?;
-        // }
+        if block_execution_context
+            .block_state_info()
+            .core_chain_locked_height()
+            != last_block_core_height
+        {
+            self.update_broadcasted_withdrawal_transaction_statuses(
+                &block_execution_context,
+                transaction,
+                platform_version,
+            )?;
+        }
 
         // This checks for broadcasted core transactions and updates the withdrawal statuses
         // from queued to broadcasted
@@ -318,6 +310,14 @@ where
         )?;
 
         let mut block_execution_context: BlockExecutionContext = block_execution_context;
+
+        // Takes queued withdrawals, creates L1 withdrawal transactions info and saves them to drive,
+        // and changes withdrawal documents from queued to pooled
+        self.pool_withdrawals_into_transactions_queue(
+            &block_execution_context,
+            transaction,
+            platform_version,
+        )?;
 
         // while we have the state transitions executed, we now need to process the block fees
 

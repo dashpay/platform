@@ -3,6 +3,7 @@ use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use bytes::Buf;
+use std::collections::BTreeMap;
 
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
@@ -41,7 +42,8 @@ pub struct MimicExecuteBlockOutcome {
     /// state transaction results
     pub state_transaction_results: Vec<(StateTransition, ExecTxResult)>,
     /// withdrawal transactions
-    pub withdrawal_transactions: Vec<dashcore_rpc::dashcore::Transaction>,
+    // pub withdrawal_transactions: Vec<dashcore_rpc::dashcore::Transaction>,
+    pub withdrawal_transactions: BTreeMap<dashcore_rpc::dashcore::Txid, Vec<u8>>,
     /// The next validators
     pub validator_set_update: Option<ValidatorSetUpdate>,
     /// The next validators hash
@@ -277,32 +279,32 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             .collect();
 
         //todo: tidy up and fix
-        let withdrawals = block_execution_context
-            .withdrawal_transactions
-            .values()
-            .map(|transaction| {
-                let AssetUnlockBaseTransactionInfo {
-                    version,
-                    lock_time,
-                    output,
-                    base_payload,
-                } = Decodable::consensus_decode(&mut transaction.reader()).expect("a");
-                dashcore::Transaction {
-                    version,
-                    lock_time,
-                    input: vec![],
-                    output,
-                    special_transaction_payload: Some(AssetUnlockPayloadType(AssetUnlockPayload {
-                        base: base_payload,
-                        request_info: AssetUnlockRequestInfo {
-                            request_height: core_height,
-                            quorum_hash: current_quorum.quorum_hash,
-                        },
-                        quorum_sig: BLSSignature::from([0; 96]),
-                    })),
-                }
-            })
-            .collect();
+        // TODO(withdrawals): restore Dashcore transactions here
+        let withdrawals = block_execution_context.withdrawal_transactions.clone();
+        // .values()
+        // .map(|transaction| {
+        //     let AssetUnlockBaseTransactionInfo {
+        //         version,
+        //         lock_time,
+        //         output,
+        //         base_payload,
+        //     } = Decodable::consensus_decode(&mut transaction.reader()).expect("a");
+        //     dashcore::Transaction {
+        //         version,
+        //         lock_time,
+        //         input: vec![],
+        //         output,
+        //         special_transaction_payload: Some(AssetUnlockPayloadType(AssetUnlockPayload {
+        //             base: base_payload,
+        //             request_info: AssetUnlockRequestInfo {
+        //                 request_height: core_height,
+        //                 quorum_hash: current_quorum.quorum_hash,
+        //             },
+        //             quorum_sig: BLSSignature::from([0; 96]),
+        //         })),
+        //     }
+        // })
+        // .collect();
 
         drop(guarded_block_execution_context);
 

@@ -948,7 +948,8 @@ pub struct ChainExecutionOutcome<'a> {
     pub end_epoch_index: u16,
     pub end_time_ms: u64,
     pub strategy: NetworkStrategy,
-    pub withdrawals: Vec<dashcore::Transaction>,
+    // pub withdrawals: Vec<dashcore::Transaction>,
+    pub withdrawals: BTreeMap<dashcore::Txid, Vec<u8>>,
     /// height to the validator set update at that height
     pub validator_set_updates: BTreeMap<u64, ValidatorSetUpdate>,
     pub state_transition_results_per_block: BTreeMap<u64, Vec<(StateTransition, ExecTxResult)>>,
