@@ -21,18 +21,25 @@ MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY=$(grep -m 1 "Masternode Reward Shares
 MASTERNODE_OWNER_PRO_REG_TX_HASH=$(grep -m 1 "ProRegTx transaction ID:" "${SETUP_FILE_PATH}" | awk '{printf $5}')
 MASTERNODE_OWNER_MASTER_PRIVATE_KEY=$(grep -m 1 "Owner Private Key:" "${SETUP_FILE_PATH}" | awk '{printf $5}')
 
-echo "Mint 100 Dash to faucet address"
+echo "Mint 50 Dash to the firs faucet address"
 
 MINT_FILE_PATH=${PATH_TO_PROJECT_ROOT}/logs/mint.log
 
-yarn dashmate wallet mint --verbose --config=local_seed 100 | tee "${MINT_FILE_PATH}"
-FAUCET_ADDRESS=$(grep -m 1 "Address:" "${MINT_FILE_PATH}" | awk '{printf $3}')
-FAUCET_PRIVATE_KEY=$(grep -m 1 "Private key:" "${MINT_FILE_PATH}" | awk '{printf $4}')
+yarn dashmate wallet mint --verbose --config=local_seed 50 | tee "${MINT_FILE_PATH}"
+FAUCET_1_ADDRESS=$(grep -m 1 "Address:" "${MINT_FILE_PATH}" | awk '{printf $3}')
+FAUCET_1_PRIVATE_KEY=$(grep -m 1 "Private key:" "${MINT_FILE_PATH}" | awk '{printf $4}')
+
+echo "Mint 50 Dash to the firs faucet address"
+
+yarn dashmate wallet mint --verbose --config=local_seed 50 | tee "${MINT_FILE_PATH}"
+FAUCET_2_ADDRESS=$(grep -m 1 "Address:" "${MINT_FILE_PATH}" | awk '{printf $3}')
+FAUCET_2_PRIVATE_KEY=$(grep -m 1 "Private key:" "${MINT_FILE_PATH}" | awk '{printf $4}')
 
 FAUCET_WALLET_USE_STORAGE=true
 
 # check variables are not empty
-if [ -z "$FAUCET_ADDRESS" ] || \
+if [ -z "$FAUCET_1_ADDRESS" ] || \
+    [ -z "$FAUCET_2_ADDRESS" ] || \
     [ -z "$FAUCET_PRIVATE_KEY" ] || \
     [ -z "$DPNS_OWNER_PRIVATE_KEY" ] || \
     [ -z "$FEATURE_FLAGS_OWNER_PRIVATE_KEY" ] || \
@@ -51,8 +58,10 @@ touch ${TEST_SUITE_ENV_FILE_PATH}
 
 #cat << 'EOF' >> ${TEST_SUITE_ENV_FILE_PATH}
 echo "DAPI_SEED=127.0.0.1:2443:self-signed
-FAUCET_ADDRESS=${FAUCET_ADDRESS}
-FAUCET_PRIVATE_KEY=${FAUCET_PRIVATE_KEY}
+FAUCET_1_ADDRESS=${FAUCET_1_ADDRESS}
+FAUCET_1_ADDRESS=${FAUCET_1_ADDRESS}
+FAUCET_2_PRIVATE_KEY=${FAUCET_2_PRIVATE_KEY}
+FAUCET_2_PRIVATE_KEY=${FAUCET_2_PRIVATE_KEY}
 FAUCET_WALLET_USE_STORAGE=${FAUCET_WALLET_USE_STORAGE}
 FAUCET_WALLET_STORAGE_DIR="${PATH_TO_PROJECT_ROOT}/db"
 DPNS_OWNER_PRIVATE_KEY=${DPNS_OWNER_PRIVATE_KEY}
