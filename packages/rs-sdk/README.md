@@ -21,10 +21,6 @@ dash-platform-sdk = { git="https://github.com/dashpay/platform"0 }
 In order to build application that uses Dash Platform SDK, you need to:
 
 1. Implement a [Wallet](src/wallet.rs) that will store, manage and use your keys to sign transactions and state transitions.
-   A wallet consists of two parts:
-   1. [CoreWallet], managing Dash Core keys,
-   2. [PlatformWallet](src/wallet.rs), managing Dash Platform identities and their keys. `PlatformWallet` should also implement [Signer](../rs-dpp/src/identity/signer.rs) that executes digital signature operation.
-
    An example implementation of wallet can be found in [src/mock/wallet.rs](src/mock/wallet.rs).
 2. Implement Dash SPV client that will sync your application with Dash Core state, including quorum public keys.
 
