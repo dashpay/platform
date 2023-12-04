@@ -33,6 +33,7 @@ use rs_dapi_client::{
     Dapi, DapiClient, DapiClientError, RequestSettings,
 };
 use tokio::sync::Mutex;
+use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
@@ -84,6 +85,9 @@ pub struct Sdk {
     /// If wallet is not provided, only read operations will be available.
     // TODO: replace tokio::sync::Mutex with another one implementing Send+Sync but working in both sync and async context
     pub(crate) wallet: tokio::sync::Mutex<Option<Box<dyn Wallet>>>,
+
+    /// Cancellation token; once cancelled, all pending requests should be aborted.
+    pub(crate) cancel_token: CancellationToken,
 
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
@@ -285,6 +289,16 @@ impl Sdk {
     pub async fn wallet(&self) -> tokio::sync::MutexGuard<Option<Box<dyn Wallet>>> {
         self.wallet.lock().await
     }
+
+    /// Returns a future that resolves when the Sdk is cancelled (eg. shutdown was requested).
+    pub fn cancelled(&self) -> WaitForCancellationFuture {
+        self.cancel_token.cancelled()
+    }
+
+    /// Request shutdown of the Sdk and all related operation.
+    pub fn shutdown(&self) {
+        self.cancel_token.cancel();
+    }
 }
 
 impl ContextProvider for Sdk {
@@ -390,6 +404,9 @@ pub struct SdkBuilder {
     /// directory where dump files will be stored
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
+
+    /// Cancellation token; once cancelled, all pending requests should be aborted.
+    pub(crate) cancel_token: CancellationToken,
 }
 
 impl Default for SdkBuilder {
@@ -412,6 +429,8 @@ impl Default for SdkBuilder {
 
             context_provider: None,
             wallet: None,
+
+            cancel_token: CancellationToken::new(),
 
             version: PlatformVersion::latest(),
             #[cfg(feature = "mocks")]
@@ -503,6 +522,14 @@ impl SdkBuilder {
         self
     }
 
+    /// Set cancellation token that will be used by the Sdk.
+    ///
+    /// Once that cancellation token is cancelled, all pending requests shall teriminate.
+    pub fn with_cancellation_token(mut self, cancel_token: CancellationToken) -> Self {
+        self.cancel_token = cancel_token;
+        self
+    }
+
     /// Use Dash Core as a wallet and context provider.
     ///
     /// This is a conveniance method that configures the SDK to use Dash Core as a wallet and context provider.
@@ -580,6 +607,7 @@ impl SdkBuilder {
                     proofs:self.proofs,
                     context_provider: std::sync:: Mutex::new(self.context_provider),
                     wallet: tokio::sync::Mutex::new(wallet),
+                    cancel_token: self.cancel_token,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
                 };
@@ -612,7 +640,7 @@ impl SdkBuilder {
                 // We create mock context provider that will use the mock DAPI client to retrieve data contracts.
                 let  context_provider = self.context_provider.unwrap_or(Box::new(MockContextProvider::new()));
 
-          let sdk=    Sdk{
+          let sdk= Sdk{
                 inner:SdkInstance::Mock {
                     mock: std::sync::Mutex::new( MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs)),
                     dapi,
@@ -621,6 +649,7 @@ impl SdkBuilder {
                 proofs:self.proofs,
                 context_provider:  std::sync:: Mutex::new( Some(context_provider)),
                 wallet: tokio::sync::Mutex::new(wallet),
+                cancel_token: self.cancel_token,
             };
             Arc::new(sdk)
         },

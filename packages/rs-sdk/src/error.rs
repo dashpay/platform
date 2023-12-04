@@ -52,6 +52,10 @@ pub enum Error {
     /// Context provider error
     #[error("Context provider error: {0}")]
     ContextProviderError(#[from] ContextProviderError),
+
+    /// Operation cancelled - cancel token was triggered, timeout, etc.
+    #[error("Operation cancelled: {0}")]
+    Cancelled(String),
 }
 
 impl<T: Debug> From<DapiClientError<T>> for Error {
