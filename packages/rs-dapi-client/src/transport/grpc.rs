@@ -47,6 +47,7 @@ impl CanRetry for dapi_grpc::tonic::Status {
                 | ResourceExhausted
                 | Aborted
                 | Internal
+                | Unavailable
         )
     }
 }
@@ -61,10 +62,6 @@ macro_rules! impl_transport_request_grpc {
             type Response = $response;
 
             const SETTINGS_OVERRIDES: RequestSettings = $settings;
-
-            fn request_name(&self) -> &'static str {
-                stringify!($request)
-            }
 
             fn response_name(&self) -> &'static str {
                 stringify!($response)
@@ -259,7 +256,7 @@ impl_transport_request_grpc!(
     Streaming<core_proto::TransactionsWithProofsResponse>,
     CoreGrpcClient,
     RequestSettings {
-        timeout: Some(Duration::from_secs(0)), // Disable timeout for this request
+        timeout: Some(Duration::from_secs(5 * 60)),
         ..RequestSettings::default()
     },
     subscribe_to_transactions_with_proofs

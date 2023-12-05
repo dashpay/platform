@@ -108,15 +108,15 @@ impl Dapi for DapiClient {
                 DapiClientError::<<R::Client as TransportClient>::Error>::NoAvailableAddresses,
             );
 
-            let _span = tracing::debug_span!(
+            let _span = tracing::trace_span!(
                 "execute request",
-                ?request,
                 ?address,
                 settings = ?applied_settings,
                 method = request.method_name(),
             );
 
-            tracing::debug!(
+            tracing::trace!(
+                ?request,
                 "calling {} with {} request",
                 request.method_name(),
                 request.request_name(),
@@ -140,7 +140,7 @@ impl Dapi for DapiClient {
                         DapiClientError::<<R::Client as TransportClient>::Error>::Transport(e)
                     });
 
-                tracing::debug!(?response, "received {} response", response_name);
+                tracing::trace!(?response, "received {} response", response_name);
 
                 response
             }
