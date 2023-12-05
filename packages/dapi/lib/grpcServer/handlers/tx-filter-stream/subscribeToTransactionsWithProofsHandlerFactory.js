@@ -168,7 +168,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     mediator.on(
       ProcessMediator.EVENTS.MERKLE_BLOCK,
       async (merkleBlock) => {
-        requestLogger.debug('send merkle block', merkleBlock.header.hash);
+        requestLogger.debug(`send merkle block ${merkleBlock.header.hash}`);
 
         await sendMerkleBlockResponse(acknowledgingCall, merkleBlock);
       },
