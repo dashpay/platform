@@ -6577,7 +6577,6 @@ __metadata:
     chai-as-promised: "npm:^7.1.1"
     chalk: "npm:^4.1.0"
     cron: "npm:^2.1.0"
-    dash: "workspace:*"
     dirty-chai: "npm:^2.0.1"
     dockerode: "npm:^3.3.5"
     dot: "npm:^1.1.3"
