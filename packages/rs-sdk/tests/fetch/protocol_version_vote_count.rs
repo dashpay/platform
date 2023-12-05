@@ -1,6 +1,6 @@
 use crate::{common::setup_logs, config::Config};
 use dash_platform_sdk::platform::FetchMany;
-use drive_proof_verifier::types::ProtocolVersionVoteCount;
+use dpp::version::ProtocolVersionVoteCount;
 
 /// Given some existing identity ID, when I fetch the identity keys, I get some of them indexed by key ID.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
