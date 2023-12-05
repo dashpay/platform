@@ -2396,13 +2396,15 @@ mod tests {
             core_chain_lock: CoreChainLock,
         }
 
+        let mut chain_locked_height = 1;
+
         // Have to go with a complicated shared object for the core state because we need to change
         // rpc response along the way but we can't mutate `platform.core_rpc` later
         // because platform reference is moved into the AbciApplication.
         let shared_core_state = Arc::new(Mutex::new(CoreState {
             tx_chainlocked_statuses: BTreeMap::new(),
             core_chain_lock: CoreChainLock {
-                core_block_height: 10,
+                core_block_height: chain_locked_height,
                 core_block_hash: [1; 32].to_vec(),
                 signature: [2; 96].to_vec(),
             },
@@ -2475,7 +2477,7 @@ mod tests {
             current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
-            withdrawals,
+            withdrawals: last_block_withdrawals,
             ..
         } = {
             let outcome = continue_chain_for_strategy(
@@ -2514,9 +2516,9 @@ mod tests {
             outcome
         };
 
-        let latest_withdrawals_amount = withdrawals.len();
         // Run block 4
         // Should change pooled status to broadcasted
+        let mut broadcasted_transactions_amount = last_block_withdrawals.len();
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -2524,6 +2526,7 @@ mod tests {
             current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
+            withdrawals: last_block_withdrawals,
             ..
         } = {
             let outcome = continue_chain_for_strategy(
@@ -2539,10 +2542,21 @@ mod tests {
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                 },
-                strategy,
-                config,
+                strategy.clone(),
+                config.clone(),
                 StrategyRandomness::SeedEntropy(3),
             );
+
+            let withdrawal_documents_pooled = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
 
             let withdrawal_documents_broadcasted = outcome
                 .abci_app
@@ -2558,13 +2572,205 @@ mod tests {
             // Ensure that broadcasted withdrawals are equal to the latest withdrawal transactions amount
             assert_eq!(
                 withdrawal_documents_broadcasted.len(),
-                latest_withdrawals_amount
+                broadcasted_transactions_amount
             );
+
+            // Simulate transactions being added to the core mempool
+            let mut core_state = shared_core_state.lock().unwrap();
+            outcome.withdrawals.iter().for_each(|(txid, _)| {
+                let txid = txid.to_owned();
+                core_state.tx_chainlocked_statuses.insert(
+                    txid.to_owned(),
+                    GetTransactionLockedResult {
+                        height: -1,
+                        chain_lock: false,
+                    },
+                );
+            });
 
             outcome
         };
 
-        println!("End");
+        // Run block 5
+        // Previously broadcasted transactions are settled now,
+        // and their corresponding withdrawal statuses should be changed to COMPLETED
+        let mut settled_transactions_amount = broadcasted_transactions_amount;
+        broadcasted_transactions_amount = last_block_withdrawals.len();
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            withdrawals: last_block_withdrawals,
+            ..
+        } = {
+            chain_locked_height += 1;
+
+            // Update core state to return chain locked status for broadcasted transactions
+            let mut core_state = shared_core_state.lock().unwrap();
+            core_state
+                .tx_chainlocked_statuses
+                .iter_mut()
+                .for_each(|(txid, status)| {
+                    // Do not settle yet transactions that were broadcasted in the last block
+                    if !last_block_withdrawals.contains_key(txid) {
+                        status.height = chain_locked_height as i32;
+                        status.chain_lock = true;
+                    }
+                });
+
+            core_state.core_chain_lock.core_block_height = chain_locked_height;
+            drop(core_state);
+
+            let outcome = continue_chain_for_strategy(
+                abci_app,
+                ChainExecutionParameters {
+                    block_start: 5,
+                    core_height_start: 1,
+                    block_count: 1,
+                    proposers,
+                    quorums,
+                    current_quorum_hash,
+                    current_proposer_versions: Some(current_proposer_versions),
+                    start_time_ms: GENESIS_TIME_MS,
+                    current_time_ms: end_time_ms + 1000,
+                },
+                strategy.clone(),
+                config.clone(),
+                StrategyRandomness::SeedEntropy(4),
+            );
+
+            let withdrawal_documents_broadcasted = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+            assert_eq!(
+                withdrawal_documents_broadcasted.len(),
+                broadcasted_transactions_amount
+            );
+
+            let withdrawal_documents_completed = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+            assert_eq!(
+                withdrawal_documents_completed.len(),
+                settled_transactions_amount
+            );
+
+            // Simulate transactions being added to the core mempool
+            let mut core_state = shared_core_state.lock().unwrap();
+            outcome.withdrawals.iter().for_each(|(txid, _)| {
+                let txid = txid.to_owned();
+                core_state.tx_chainlocked_statuses.insert(
+                    txid.to_owned(),
+                    GetTransactionLockedResult {
+                        height: -1,
+                        chain_lock: false,
+                    },
+                );
+            });
+
+            outcome
+        };
+
+        // Run last block 6
+        // Amount of completed withdrawals should increase
+        settled_transactions_amount += broadcasted_transactions_amount;
+        broadcasted_transactions_amount = last_block_withdrawals.len();
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            withdrawals,
+            ..
+        } = {
+            chain_locked_height += 1;
+
+            // Update core state to return chain locked status for broadcasted transactions
+            let mut core_state = shared_core_state.lock().unwrap();
+            core_state
+                .tx_chainlocked_statuses
+                .iter_mut()
+                .for_each(|(txid, status)| {
+                    // Do not settle yet transactions that were broadcasted in the last block
+                    if !status.chain_lock && !last_block_withdrawals.contains_key(txid) {
+                        status.height = chain_locked_height as i32;
+                        status.chain_lock = true;
+                    }
+                });
+
+            core_state.core_chain_lock.core_block_height = chain_locked_height;
+            drop(core_state);
+
+            let outcome = continue_chain_for_strategy(
+                abci_app,
+                ChainExecutionParameters {
+                    block_start: 6,
+                    core_height_start: 1,
+                    block_count: 1,
+                    proposers,
+                    quorums,
+                    current_quorum_hash,
+                    current_proposer_versions: Some(current_proposer_versions),
+                    start_time_ms: GENESIS_TIME_MS,
+                    current_time_ms: end_time_ms + 1000,
+                },
+                strategy,
+                config,
+                StrategyRandomness::SeedEntropy(5),
+            );
+
+            let withdrawal_documents_broadcasted = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+            assert_eq!(
+                withdrawal_documents_broadcasted.len(),
+                broadcasted_transactions_amount
+            );
+
+            let withdrawal_documents_completed = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            assert_eq!(
+                withdrawal_documents_completed.len(),
+                settled_transactions_amount
+            );
+
+            outcome
+        };
     }
 
     #[test]

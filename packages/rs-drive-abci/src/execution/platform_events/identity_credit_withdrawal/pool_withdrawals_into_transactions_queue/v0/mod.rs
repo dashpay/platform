@@ -115,8 +115,6 @@ where
             })?;
         }
 
-        println!("1. txhashes on pooled: {:?}", tx_hashes);
-
         self.drive.add_update_multiple_documents_operations(
             &documents,
             &contract_fetch_info.contract,

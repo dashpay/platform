@@ -214,8 +214,6 @@ where
             self.core_rpc.send_raw_transaction(tx)?;
         }
 
-        println!("4. broadcasted txids: {:?}", txids_to_broadcast);
-
         // At the end we update the state cache
         drop(guarded_block_execution_context);
 

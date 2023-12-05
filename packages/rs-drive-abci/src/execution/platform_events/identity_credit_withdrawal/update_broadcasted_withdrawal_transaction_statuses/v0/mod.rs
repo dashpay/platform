@@ -101,13 +101,6 @@ where
         let documents_to_update: Vec<Document> = broadcasted_withdrawal_documents
             .into_iter()
             .map(|mut document| {
-                let transaction_sign_height: u32 = document
-                    .properties()
-                    .get_optional_integer(withdrawal::properties::TRANSACTION_SIGN_HEIGHT)?
-                    .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
-                        "Can't get transactionSignHeight from withdrawal document".to_string(),
-                    )))?;
-
                 let transaction_id = document
                     .properties()
                     .get_optional_hash256_bytes(withdrawal::properties::TRANSACTION_ID)?
@@ -115,18 +108,11 @@ where
                         "Can't get transactionId from withdrawal document".to_string(),
                     )))?;
 
-                let transaction_index = document
-                    .properties()
-                    .get_optional_integer(withdrawal::properties::TRANSACTION_INDEX)?
-                    .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
-                        "Can't get transaction index from withdrawal document".to_string(),
-                    )))?;
-
                 let current_status: WithdrawalStatus = document
                     .properties()
                     .get_optional_integer::<u8>(withdrawal::properties::STATUS)?
                     .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
-                        "Can't get transaction index from withdrawal document".to_string(),
+                        "Can't get transaction status from withdrawal document".to_string(),
                     )))?
                     .try_into()
                     .map_err(|_| {
@@ -134,11 +120,6 @@ where
                             "Withdrawal status unknown".to_string(),
                         ))
                     })?;
-
-                let block_height_difference = block_execution_context
-                    .block_state_info()
-                    .core_chain_locked_height()
-                    - transaction_sign_height;
 
                 let is_chain_locked =
                     *core_transactions_statuses
@@ -151,9 +132,6 @@ where
 
                 if is_chain_locked {
                     status = WithdrawalStatus::COMPLETE;
-                } else if block_height_difference > NUMBER_OF_BLOCKS_BEFORE_EXPIRED {
-                    // TODO(withdrawals): remove that because we agreed to not do expiration?
-                    status = WithdrawalStatus::EXPIRED;
                 } else {
                     // todo: there could be a problem here where we always get the same withdrawals
                     //  and don't cycle them most likely when we query withdrawals
@@ -165,13 +143,6 @@ where
                 document.set_u64(withdrawal::properties::UPDATED_AT, block_info.time_ms);
 
                 document.increment_revision().map_err(Error::Protocol)?;
-
-                if status == WithdrawalStatus::EXPIRED {
-                    self.drive.add_insert_expired_index_operation(
-                        transaction_index,
-                        &mut drive_operations,
-                    );
-                }
 
                 Ok(Some(document))
             })

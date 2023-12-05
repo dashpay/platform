@@ -145,9 +145,6 @@ where
                 .into_iter()
                 .unzip();
 
-        println!("3.1. untied txids: {:?}", untied_tx_hashes);
-        println!("3.1. unsigned txids: {:?}", unsigned_tx_hashes);
-
         self.drive.add_update_multiple_documents_operations(
             &documents_to_update,
             &contract_fetch_info.contract,
