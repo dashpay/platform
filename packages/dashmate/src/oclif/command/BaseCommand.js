@@ -5,7 +5,6 @@ import { asValue } from 'awilix';
 import graceful from 'node-graceful';
 
 import dotenv from 'dotenv';
-import WasmDPP from '@dashevo/wasm-dpp';
 import createDIContainer from '../../createDIContainer.js';
 import ConfigFileNotFoundError from '../../config/errors/ConfigFileNotFoundError.js';
 import getFunctionParams from '../../util/getFunctionParams.js';
@@ -23,9 +22,6 @@ export default class BaseCommand extends Command {
   };
 
   async init() {
-    // Load wasm-dpp for further usage
-    await WasmDPP.default();
-
     // Read environment variables from .env file
     dotenv.config();
 
