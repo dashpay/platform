@@ -1,15 +1,17 @@
 //! Subsystem to manage peers.
 
+use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::time;
 
 use http::Uri;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
 
-const DEFAULT_BASE_BAN_PERIOD: time::Duration = time::Duration::from_secs(60);
+const DEFAULT_BASE_BAN_PERIOD: time::Duration = time::Duration::from_secs(2 * 60);
 
 /// Peer's address.
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq)]
 pub struct Address {
     base_ban_period: time::Duration,
     ban_count: usize,
@@ -17,9 +19,38 @@ pub struct Address {
     uri: Uri,
 }
 
+impl PartialEq<Self> for Address {
+    fn eq(&self, other: &Self) -> bool {
+        self.uri == other.uri
+    }
+}
+
+impl PartialEq<Uri> for Address {
+    fn eq(&self, other: &Uri) -> bool {
+        self.uri == *other
+    }
+}
+
+impl Hash for Address {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.uri.hash(state);
+    }
+}
+
+impl From<Uri> for Address {
+    fn from(uri: Uri) -> Self {
+        Address {
+            ban_count: 0,
+            banned_until: None,
+            base_ban_period: DEFAULT_BASE_BAN_PERIOD,
+            uri,
+        }
+    }
+}
+
 impl Address {
     /// Ban the [Address] so it won't be available through [AddressList::get_live_address] for some time.
-    pub fn ban(&mut self) {
+    pub(crate) fn ban(&mut self) {
         let coefficient = (self.ban_count as f64).exp();
         let ban_period =
             time::Duration::from_secs_f64(self.base_ban_period.as_secs_f64() * coefficient);
@@ -28,8 +59,13 @@ impl Address {
         self.ban_count += 1;
     }
 
+    /// Check if [Address] is banned.
+    pub fn is_banned(&self) -> bool {
+        self.ban_count > 0
+    }
+
     /// Clears ban record.
-    pub fn clear_ban(&mut self) {
+    pub(crate) fn clear_ban(&mut self) {
         self.ban_count = 0;
         self.banned_until = None;
     }
@@ -40,17 +76,30 @@ impl Address {
     }
 }
 
+/// [AddressList] errors
+#[derive(Debug, thiserror::Error)]
+pub enum AddressListError {
+    #[error("address {0} not found in the list")]
+    AddressNotFound(Uri),
+}
+
 /// A structure to manage peer's addresses to select from
 /// for [DapiRequest](crate::DapiRequest) execution.
 #[derive(Debug)]
 pub struct AddressList {
-    addresses: Vec<Address>,
+    addresses: HashSet<Address>,
     base_ban_period: time::Duration,
 }
 
 impl Default for AddressList {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl std::fmt::Display for Address {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.uri.fmt(f)
     }
 }
 
@@ -63,9 +112,37 @@ impl AddressList {
     /// Creates an empty [AddressList] with adjustable base ban time.
     pub fn with_settings(base_ban_period: time::Duration) -> Self {
         AddressList {
-            addresses: Vec::new(),
+            addresses: HashSet::new(),
             base_ban_period,
         }
+    }
+
+    /// Bans address by [Uri].
+    pub fn ban(&mut self, address: &Address) -> Result<(), AddressListError> {
+        if !self.addresses.remove(address) {
+            return Err(AddressListError::AddressNotFound(address.uri.clone()));
+        };
+
+        let mut banned_address = address.clone();
+        banned_address.ban();
+
+        self.addresses.insert(banned_address);
+
+        Ok(())
+    }
+
+    /// Clears address ban record by [Uri].
+    pub fn clear_ban(&mut self, mut address: &Address) -> Result<(), AddressListError> {
+        if !self.addresses.remove(address) {
+            return Err(AddressListError::AddressNotFound(address.uri.clone()));
+        };
+
+        let mut unbanned_address = address.clone();
+        unbanned_address.clear_ban();
+
+        self.addresses.insert(unbanned_address);
+
+        Ok(())
     }
 
     // TODO: this is the most simple way to add an address
@@ -73,7 +150,7 @@ impl AddressList {
     // and also fetch updated from SML.
     /// Manually add a peer to [AddressList].
     pub fn add_uri(&mut self, uri: Uri) {
-        self.addresses.push(Address {
+        self.addresses.insert(Address {
             ban_count: 0,
             banned_until: None,
             base_ban_period: self.base_ban_period,
