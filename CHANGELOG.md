@@ -3,7 +3,7 @@
 
 ### Features
 
-* **dashmate:** upgrade dashcore to v20.0.2 ([#1619](https://github.com/dashpay/platform/issues/1619))
+* **dashmate:** allow dashmate to update minor core versions ([#1619](https://github.com/dashpay/platform/issues/1619))
 
 ### Bug Fixes
 
