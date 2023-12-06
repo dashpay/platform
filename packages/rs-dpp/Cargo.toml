@@ -1,6 +1,6 @@
 [package]
 name = "dpp"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 edition = "2021"
 rust-version = "1.73"
 authors = [
