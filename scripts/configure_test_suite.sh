@@ -39,8 +39,9 @@ FAUCET_WALLET_USE_STORAGE=true
 
 # check variables are not empty
 if [ -z "$FAUCET_1_ADDRESS" ] || \
+    [ -z "$FAUCET_1_PRIVATE_KEY" ] || \
     [ -z "$FAUCET_2_ADDRESS" ] || \
-    [ -z "$FAUCET_PRIVATE_KEY" ] || \
+    [ -z "$FAUCET_2_PRIVATE_KEY" ] || \
     [ -z "$DPNS_OWNER_PRIVATE_KEY" ] || \
     [ -z "$FEATURE_FLAGS_OWNER_PRIVATE_KEY" ] || \
     [ -z "$DASHPAY_OWNER_PRIVATE_KEY" ] || \
