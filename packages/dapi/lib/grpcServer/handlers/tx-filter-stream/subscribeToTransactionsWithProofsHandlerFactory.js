@@ -159,7 +159,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     mediator.on(
       ProcessMediator.EVENTS.TRANSACTION,
       async (tx) => {
-        requestLogger.debug(`send transaction ${tx.hash}`);
+        requestLogger.debug(`sent transaction ${tx.hash}`);
 
         await sendTransactionsResponse(acknowledgingCall, [tx]);
       },
@@ -168,7 +168,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     mediator.on(
       ProcessMediator.EVENTS.MERKLE_BLOCK,
       async (merkleBlock) => {
-        requestLogger.debug(`send merkle block ${merkleBlock.header.hash}`);
+        requestLogger.debug(`sent merkle block ${merkleBlock.header.hash}`);
 
         await sendMerkleBlockResponse(acknowledgingCall, merkleBlock);
       },
@@ -179,7 +179,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
       async (instantLock) => {
         requestLogger.debug({
           instantLock,
-        }, `send instant lock for ${instantLock.txid}`);
+        }, `sent instant lock for ${instantLock.txid}`);
 
         await sendInstantLockResponse(acknowledgingCall, instantLock);
       },
