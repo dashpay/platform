@@ -320,11 +320,46 @@ describe('Platform', () => {
         const account = await client.getWalletAccount();
         const withdrawTo = await account.getUnusedAddress();
 
+        const identityBalanceBefore = newIdentity.getBalance();
+        const walletBalanceBefore = account.getTotalBalance();
+
+        console.log('Identity balance before', identityBalanceBefore);
+        console.log('Wallet balance before', walletBalanceBefore);
+        const metadata = newIdentity.getMetadata().toObject();
+        const initialCoreChainLockedHeight = metadata.coreChainLockedHeight;
+        console.log('Identity metadata', {
+          platformBlockHeight: metadata.blockHeight,
+          coreChainLockedHeight: initialCoreChainLockedHeight,
+        });
+
         await client.platform.identities.withdrawCredits(
           newIdentity,
           BigInt(INITIAL_BALANCE / 2),
           withdrawTo.address,
         );
+
+        let coreChainLockUpdates = 0;
+        let walletBalanceUpdated = 0;
+        while (coreChainLockUpdates < 1) {
+          const identity = await client.platform.identities.get(newIdentity.getId());
+          walletBalanceUpdated = account.getTotalBalance();
+
+          console.log('\nIdentity balance', identity.getBalance());
+          console.log('Wallet balance', walletBalanceUpdated);
+          const metadata = identity.getMetadata().toObject();
+
+          console.log('Identity metadata', {
+            platformBlockHeight: metadata.blockHeight,
+            coreChainLockedHeight: metadata.coreChainLockedHeight,
+          });
+
+          coreChainLockUpdates = metadata.coreChainLockedHeight - initialCoreChainLockedHeight;
+
+          console.log('Update in 3 second...');
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+        }
+
+        expect(walletBalanceUpdated).to.be.greaterThan(walletBalanceBefore);
       });
     });
 
