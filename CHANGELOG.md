@@ -1,6 +1,10 @@
 ### [0.25.16-rc.6](https://github.com/dashpay/platform/compare/v0.25.16-rc.5...v0.25.16-rc.6) (2023-12-06)
 
 
+### Features
+
+* **dashmate:** upgrade dashcore to v20.0.2 ([#1619](https://github.com/dashpay/platform/issues/1619))
+
 ### Bug Fixes
 
 * **dashmate:** http API calls fail with `command not found error` ([#1600](https://github.com/dashpay/platform/issues/1600))
