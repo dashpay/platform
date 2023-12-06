@@ -186,32 +186,3 @@ impl<'a, T: ContextProvider + 'a> AsRef<dyn ContextProvider + 'a> for Arc<T> {
         self.deref()
     }
 }
-
-// // the trait `std::convert::AsRef<(dyn drive_proof_verifier::ContextProvider + 'static)>`
-// // is not implemented for `tokio::sync::Mutex<mock::provider::GrpcContextProvider<'_>>`
-// impl<'a, T: ContextProvider + 'a> AsRef<dyn ContextProvider + 'a> for std::sync::Mutex<T> {
-//     fn as_ref(&self) -> &(dyn ContextProvider + 'a) {
-//         let lock: &std::sync::MutexGuard<'_, T> = &self.lock().expect("lock poisoned");
-//         lock.deref()
-//     }
-// }
-
-// impl<P: ContextProvider> ContextProvider for Arc<&P> {
-//     fn get_data_contract(
-//         &self,
-//         id: &Identifier,
-//     ) -> Result<Option<Arc<DataContract>>, crate::Error> {
-//         let provider = self.as_ref();
-//         provider.get_data_contract(id)
-//     }
-
-//     fn get_quorum_public_key(
-//         &self,
-//         quorum_type: u32,
-//         quorum_hash: [u8; 32], // quorum hash is 32 bytes
-//         core_chain_locked_height: u32,
-//     ) -> Result<[u8; 48], crate::Error> {
-//         let provider = self.as_ref();
-//         provider.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
-//     }
-// }

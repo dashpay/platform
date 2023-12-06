@@ -351,7 +351,7 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
                                         KeyKindRequestType::AllKeysOfKindRequest
                                     }
                                 };
-                                
+
                                 Ok((*level as u8, kt))
                             })
                             .collect::<Result<BTreeMap<SecurityLevelU8,KeyKindRequestType>,Error>>();
