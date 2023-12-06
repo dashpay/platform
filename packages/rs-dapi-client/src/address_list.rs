@@ -50,7 +50,7 @@ impl From<Uri> for Address {
 
 impl Address {
     /// Ban the [Address] so it won't be available through [AddressList::get_live_address] for some time.
-    pub(crate) fn ban(&mut self) {
+    fn ban(&mut self) {
         let coefficient = (self.ban_count as f64).exp();
         let ban_period =
             time::Duration::from_secs_f64(self.base_ban_period.as_secs_f64() * coefficient);
@@ -65,7 +65,7 @@ impl Address {
     }
 
     /// Clears ban record.
-    pub(crate) fn clear_ban(&mut self) {
+    fn clear_ban(&mut self) {
         self.ban_count = 0;
         self.banned_until = None;
     }
@@ -117,7 +117,7 @@ impl AddressList {
         }
     }
 
-    /// Bans address by [Uri].
+    /// Bans address
     pub fn ban(&mut self, address: &Address) -> Result<(), AddressListError> {
         if !self.addresses.remove(address) {
             return Err(AddressListError::AddressNotFound(address.uri.clone()));
@@ -131,8 +131,8 @@ impl AddressList {
         Ok(())
     }
 
-    /// Clears address ban record by [Uri].
-    pub fn clear_ban(&mut self, mut address: &Address) -> Result<(), AddressListError> {
+    /// Clears address' ban record
+    pub fn clear_ban(&mut self, address: &Address) -> Result<(), AddressListError> {
         if !self.addresses.remove(address) {
             return Err(AddressListError::AddressNotFound(address.uri.clone()));
         };
