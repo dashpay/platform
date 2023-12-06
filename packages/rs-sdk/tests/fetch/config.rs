@@ -9,6 +9,7 @@ use dpp::prelude::Identifier;
 use rs_dapi_client::AddressList;
 use serde::Deserialize;
 use std::{num::NonZeroUsize, path::PathBuf, str::FromStr, sync::Arc};
+use tokio_util::sync::CancellationToken;
 
 /// Existing document ID
 ///
@@ -143,11 +144,13 @@ impl Config {
         // offline testing takes precedence over network testing
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
-            let wallet = self.create_wallet();
+            let cancel = CancellationToken::new();
+            let wallet = self.create_wallet(cancel.child_token());
             let context_provider = self.create_context_provider();
 
             // Dump all traffic to disk
             let builder = dash_platform_sdk::SdkBuilder::new(self.address_list())
+                .with_cancellation_token(cancel)
                 .with_context_provider(context_provider)
                 .with_wallet(wallet);
 
@@ -177,13 +180,14 @@ impl Config {
         sdk
     }
 
-    fn create_wallet(&self) -> Arc<MockWallet> {
+    fn create_wallet(&self, cancel: CancellationToken) -> Arc<MockWallet> {
         let wallet = MockWallet::new_mock(
             Network::Devnet,
             &self.platform_host,
             self.core_port,
             &self.core_user,
             &self.core_password,
+            cancel,
         )
         .expect("mock wallet creation");
 

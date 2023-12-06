@@ -6,8 +6,10 @@ use dash_platform_sdk::{
     platform::Fetch,
     Sdk, SdkBuilder,
 };
+use dashcore_rpc::dashcore::Network;
 use dpp::prelude::{DataContract, Identifier};
 use rs_dapi_client::AddressList;
+use tokio_util::sync::CancellationToken;
 
 #[derive(clap::Parser, Debug)]
 #[command(version)]
@@ -63,7 +65,10 @@ async fn main() {
 
 /// Setup Rust SDK
 fn setup_sdk(config: &Config) -> Arc<Sdk> {
-    // First, we need to implement a Wallet. In our case, we'll just use GRPC wallet
+    // When the CancellationToken is cancelled, we will gracefully stop the Sdk.
+    let cancel = CancellationToken::new();
+
+    // We need to implement a Wallet. In our case, we'll just use GRPC wallet
     // implementation from the SDK mocking module, which in turn uses separate Platform and
     // Core wallet.
     //
@@ -72,10 +77,12 @@ fn setup_sdk(config: &Config) -> Arc<Sdk> {
     // you should use it with your own implementation of wallet and context provider.
     // Now, let's create the wallet
     let wallet = MockWallet::new_mock(
+        Network::Devnet,
         &config.server_address,
         config.core_port,
         &config.core_user,
         &config.core_password,
+        cancel.child_token(),
     )
     .expect("mock wallet creation");
 
@@ -110,6 +117,7 @@ fn setup_sdk(config: &Config) -> Arc<Sdk> {
     let sdk = SdkBuilder::new(AddressList::from_iter([uri]))
         .with_wallet(wallet)
         .with_context_provider(Arc::clone(&context_provider))
+        .with_cancellation_token(cancel)
         .build()
         .expect("cannot build sdk");
 

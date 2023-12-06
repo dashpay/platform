@@ -4,3 +4,5 @@
 
 pub(crate) mod subscriber;
 mod transaction;
+
+// Reexport types from dashcore-rpc crate

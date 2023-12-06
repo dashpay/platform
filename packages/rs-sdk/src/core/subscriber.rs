@@ -43,7 +43,7 @@ pub struct Subscriber {
     events_tx: Sender<Message>,
     events_rx: Receiver<Message>,
 
-    threads: BTreeMap<Address, JoinHandle<()>>,
+    threads: Vec<JoinHandle<()>>,
     cancel: CancellationToken,
 }
 
@@ -64,7 +64,7 @@ impl Subscriber {
         Self {
             dapi: client,
             notifier: Arc::new(Notify::new()),
-            threads: BTreeMap::new(),
+            threads: Default::default(),
             events_tx,
             events_rx,
             cancel,
@@ -95,13 +95,15 @@ impl Subscriber {
     /// This will panic if called outside the context of a Tokio runtime.
     /// See [Handle::current()](tokio::runtime::Handle) for more detailed explanation.
     pub fn watch_address(&mut self, address: Address) {
-        let watcher = AddressWatcher::spawn(
+        let watcher = Watcher::spawn(
             Arc::clone(&self.dapi),
             address,
             self.events_tx.clone(),
             self.notifier.clone(),
             self.cancel.clone(),
         );
+
+        self.threads.push(watcher);
     }
 }
 
@@ -111,8 +113,7 @@ pub enum Message {
     Error { payload: Vec<u8>, error: String },
 }
 
-type AddressWatcherJoinHandle = JoinHandle<impl Future<Output = ()>>;
-struct AddressWatcher {
+struct Watcher {
     dapi: Arc<DapiClient>,
     address: Address,
     sender: Sender<Message>,
@@ -120,7 +121,7 @@ struct AddressWatcher {
     cancel: CancellationToken,
 }
 
-impl AddressWatcher {
+impl Watcher {
     fn spawn(
         dapi: Arc<DapiClient>,
         address: Address,
@@ -128,7 +129,7 @@ impl AddressWatcher {
         notifier: Arc<Notify>,
         cancel: CancellationToken,
     ) -> JoinHandle<()> {
-        let mut watcher = Self {
+        let watcher = Self {
             dapi,
             address,
             sender,
@@ -137,11 +138,11 @@ impl AddressWatcher {
         };
 
         let hdl = Handle::current();
-        hdl.spawn(async move { watcher.worker(address) })
+        hdl.spawn(watcher.worker())
     }
 
-    async fn worker(&self, address: Address) {
-        self.start_stream(&address);
+    async fn worker(self) {
+        self.start_stream(&self.address);
         todo!("not implemented")
     }
 

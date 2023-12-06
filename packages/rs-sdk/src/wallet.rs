@@ -1,12 +1,12 @@
 //! Wallet for managing keys assets in Dash Core and Platform.
 
 use async_trait::async_trait;
-use dashcore_rpc::dashcore::Address;
-use dashcore_rpc::dashcore::Txid;
 pub use dashcore_rpc::dashcore_rpc_json::ListUnspentResultEntry;
-use dashcore_rpc::dashcore_rpc_json::SignRawTransactionInput;
+pub use dashcore_rpc::dashcore_rpc_json::SignRawTransactionInput;
+use dpp::dashcore::Address;
 use dpp::dashcore::PrivateKey;
 use dpp::dashcore::Transaction;
+use dpp::dashcore::Txid;
 use dpp::identity::{signer::Signer, IdentityPublicKey, Purpose};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::AssetLockProof;
@@ -70,6 +70,7 @@ pub trait Wallet: Send + Sync {
         sum: Option<u64>,
     ) -> Result<Vec<ListUnspentResultEntry>, WalletError>;
 
+    /// Sign provided core chain transaction
     async fn core_sign_tx(
         &self,
         tx: &Transaction,

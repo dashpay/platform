@@ -1,4 +1,4 @@
-use dash_platform_sdk::platform::types::identity::PublicKeyHash;
+use dash_platform_sdk::platform::types::identity::{IdentityEx, PublicKeyHash};
 use dash_platform_sdk::platform::{Fetch, FetchMany};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -127,5 +127,7 @@ async fn test_identity_register() {
 
     let sdk = cfg.setup_api().await;
 
-    let new_identity = Identity::register(&sdk).await.expect("register identity");
+    let new_identity = Identity::register(&sdk, 1)
+        .await
+        .expect("register identity");
 }

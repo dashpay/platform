@@ -1,7 +1,7 @@
 //! Wallet for managing keys assets in Dash Core and Platform.
 pub(crate) mod core_grpc_wallet;
 
-use self::core_grpc_wallet::CoreClient;
+pub use self::core_grpc_wallet::CoreClient;
 use crate::core::subscriber::Subscriber;
 use crate::{wallet::Wallet, Error};
 use async_trait::async_trait;
@@ -118,7 +118,7 @@ impl MockWallet {
 
         Ok(Self {
             grpc_wallet,
-            dapi,
+            dapi: Arc::clone(&dapi),
             signer,
             default_keys,
             network: network_type,
@@ -268,7 +268,7 @@ impl Wallet for MockWallet {
             .send_raw_transaction(signed_tx.as_slice())?;
 
         // subscribe to channel with core chain updates
-        let channel = self.core_subscriptions.subscribe();
+        let mut channel = self.core_subscriptions.subscribe();
         let msg = channel.recv().await.unwrap();
 
         todo!("broadcast and wait, see /core/transaction.rs")
