@@ -165,6 +165,9 @@ impl Sdk {
                             "merkle block contains the transaction, obtaining core chain locked height"
                         );
 
+                        // TODO: This a temporary implementation until we have headers stream running in background
+                        //  so we can always get actual height and chain locks
+
                         // Wait until the block is chainlocked
                         let mut core_chain_locked_height;
                         loop {
