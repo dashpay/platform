@@ -28,7 +28,7 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:20.0.1',
+          image: 'dashpay/dashd:20.0.2',
         },
         indexes: false,
         log: {

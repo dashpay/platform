@@ -347,6 +347,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '0.25.16-rc.6': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            options.core.docker.image = base.get('core.docker.image');
+          });
+
+        return configFile;
+      },
     };
   }
 
