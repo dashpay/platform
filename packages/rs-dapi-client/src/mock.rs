@@ -19,17 +19,22 @@ use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
 use hex::ToHex;
 use sha2::Digest;
-use std::{any::type_name, collections::HashMap, fmt::Display};
+use std::{
+    any::type_name,
+    collections::HashMap,
+    fmt::{Debug, Display},
+};
 
 /// Mock DAPI client.
 ///
 /// This is a mock implmeneation of [Dapi] that can be used for testing.
 ///
 /// See `tests/mock_dapi_client.rs` for an example.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct MockDapiClient {
     expectations: Expectations,
 }
+
 impl MockDapiClient {
     /// Create a new mock client
     pub fn new() -> Self {
@@ -116,7 +121,7 @@ impl Dapi for MockDapiClient {
     }
 }
 
-#[derive(Eq, Hash, PartialEq, PartialOrd, Ord, Clone)]
+#[derive(Eq, Hash, PartialEq, PartialOrd, Ord, Clone, Debug)]
 /// Unique identifier of some serializable object (e.g. request) that can be used as a key in a hashmap.
 pub struct Key([u8; 32]);
 
@@ -170,6 +175,7 @@ impl Display for Key {
     }
 }
 
+#[derive(Debug)]
 struct ExpectedResponse(Vec<u8>);
 
 impl ExpectedResponse {
@@ -184,7 +190,7 @@ impl ExpectedResponse {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 /// Requests expected by a mock and their responses.
 struct Expectations {
     expectations: HashMap<Key, ExpectedResponse>,

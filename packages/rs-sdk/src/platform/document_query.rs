@@ -79,7 +79,7 @@ impl DocumentQuery {
     ///
     /// Note that this method will fetch data contract first.
     pub async fn new_with_data_contract_id(
-        api: &mut Sdk,
+        api: &Sdk,
         data_contract_id: Identifier,
         document_type_name: &str,
     ) -> Result<Self, Error> {

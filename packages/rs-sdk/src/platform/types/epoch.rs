@@ -13,12 +13,12 @@ use crate::{
 /// Helper trait for managing Epoch information
 pub trait ExtendedEpochInfoEx: Sized {
     /// Fetch current (the latest) epoch from the platform.
-    async fn fetch_current(sdk: &mut Sdk) -> Result<Self, Error>;
+    async fn fetch_current(sdk: &Sdk) -> Result<Self, Error>;
 }
 
 #[async_trait]
 impl ExtendedEpochInfoEx for ExtendedEpochInfo {
-    async fn fetch_current(sdk: &mut Sdk) -> Result<Self, Error> {
+    async fn fetch_current(sdk: &Sdk) -> Result<Self, Error> {
         let query = LimitQuery {
             query: EpochQuery {
                 start: None,

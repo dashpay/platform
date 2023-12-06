@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 
+pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::{
     block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
     dashcore::ProTxHash,
@@ -15,7 +16,6 @@ use dpp::{
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
     util::deserializer::ProtocolVersion,
 };
-use dpp::version::ProtocolVersionVoteCount;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///

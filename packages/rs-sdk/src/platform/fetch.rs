@@ -37,10 +37,10 @@ use super::DocumentQuery;
 /// use dash_platform_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
-/// let mut sdk = Sdk::new_mock();
+/// let sdk = Sdk::new_mock();
 /// let query = Identifier::new(SOME_IDENTIFIER);
 ///
-/// let identity = Identity::fetch(&mut sdk, query);
+/// let identity = Identity::fetch(&sdk, query);
 /// ```
 #[async_trait::async_trait]
 pub trait Fetch
@@ -113,7 +113,7 @@ where
     ///
     /// - `sdk`: An instance of [Sdk].
     /// - `id`: An [Identifier] of the object to be fetched.
-    async fn fetch_by_identifier(sdk: &mut Sdk, id: Identifier) -> Result<Option<Self>, Error>
+    async fn fetch_by_identifier(sdk: &Sdk, id: Identifier) -> Result<Option<Self>, Error>
     where
         Identifier: Query<<Self as Fetch>::Request>,
     {

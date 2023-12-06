@@ -1,3 +1,4 @@
+//! State transitions used to put changed objects to the Dash Platform.
 pub mod broadcast;
 pub(crate) mod broadcast_identity;
 pub(crate) mod broadcast_request;
