@@ -102,6 +102,7 @@ impl Dapi for DapiClient {
         // Setup retry policy:
         let retry_settings = ExponentialBuilder::default()
             .with_max_times(applied_settings.retries)
+            // backon doesn't accept 1.0
             .with_factor(1.001)
             .with_min_delay(Duration::from_secs(0))
             .with_max_delay(Duration::from_secs(0));
