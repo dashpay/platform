@@ -173,7 +173,7 @@ impl Dapi for DapiClient {
                                 .write()
                                 .expect("can't get address list for write");
 
-                            address_list.clear_ban(&address)
+                            address_list.unban_address(&address)
                                 .map_err(DapiClientError::<<R::Client as TransportClient>::Error>::AddressList)?;
                         }
 
@@ -186,7 +186,7 @@ impl Dapi for DapiClient {
                                 .write()
                                 .expect("can't get address list for write");
 
-                            address_list.ban(&address)
+                            address_list.ban_address(&address)
                                 .map_err(DapiClientError::<<R::Client as TransportClient>::Error>::AddressList)?;
                         } else {
                             tracing::trace!(?response, ?error, "received error");

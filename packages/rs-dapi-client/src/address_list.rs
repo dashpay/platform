@@ -63,7 +63,7 @@ impl Address {
     }
 
     /// Clears ban record.
-    fn clear_ban(&mut self) {
+    fn unban(&mut self) {
         self.ban_count = 0;
         self.banned_until = None;
     }
@@ -116,7 +116,7 @@ impl AddressList {
     }
 
     /// Bans address
-    pub fn ban(&mut self, address: &Address) -> Result<(), AddressListError> {
+    pub(crate) fn ban_address(&mut self, address: &Address) -> Result<(), AddressListError> {
         if !self.addresses.remove(address) {
             return Err(AddressListError::AddressNotFound(address.uri.clone()));
         };
@@ -130,13 +130,13 @@ impl AddressList {
     }
 
     /// Clears address' ban record
-    pub fn clear_ban(&mut self, address: &Address) -> Result<(), AddressListError> {
+    pub(crate) fn unban_address(&mut self, address: &Address) -> Result<(), AddressListError> {
         if !self.addresses.remove(address) {
             return Err(AddressListError::AddressNotFound(address.uri.clone()));
         };
 
         let mut unbanned_address = address.clone();
-        unbanned_address.clear_ban();
+        unbanned_address.unban();
 
         self.addresses.insert(unbanned_address);
 
