@@ -44,11 +44,11 @@ impl<C> Platform<C> {
                 version: Some(get_identity_balance_and_revision_response::Version::V0(GetIdentityBalanceAndRevisionResponseV0 {
                     result: Some(get_identity_balance_and_revision_response::get_identity_balance_and_revision_response_v0::Result::Proof(Proof {
                         grovedb_proof: proof,
-                        quorum_hash: state.last_quorum_hash().to_vec(),
+                        quorum_hash: state.last_committed_quorum_hash().to_vec(),
                         quorum_type,
-                        block_id_hash: state.last_block_id_hash().to_vec(),
-                        signature: state.last_block_signature().to_vec(),
-                        round: state.last_block_round(),
+                        block_id_hash: state.last_committed_block_id_hash().to_vec(),
+                        signature: state.last_committed_block_signature().to_vec(),
+                        round: state.last_committed_block_round(),
                     })),
                     metadata: Some(metadata),
                 })),

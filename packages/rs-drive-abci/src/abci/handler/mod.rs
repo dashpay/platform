@@ -94,7 +94,7 @@ where
         }
 
         let state_app_hash = state_guard
-            .last_block_app_hash()
+            .last_committed_block_app_hash()
             .map(|app_hash| app_hash.to_vec())
             .unwrap_or_default();
 
@@ -103,7 +103,7 @@ where
         let response = proto::ResponseInfo {
             data: "".to_string(),
             app_version: latest_platform_version.protocol_version as u64,
-            last_block_height: state_guard.last_block_height() as i64,
+            last_block_height: state_guard.last_committed_block_height() as i64,
             version: env!("CARGO_PKG_VERSION").to_string(),
             last_block_app_hash: state_app_hash.clone(),
         };
@@ -114,9 +114,9 @@ where
             block_version = request.block_version,
             p2p_version = request.p2p_version,
             app_hash = hex::encode(state_app_hash),
-            height = state_guard.last_block_height(),
+            height = state_guard.last_committed_block_height(),
             "Consensus engine is started from block {}",
-            state_guard.last_block_height(),
+            state_guard.last_committed_block_height(),
         );
 
         if tracing::enabled!(tracing::Level::TRACE) {
@@ -737,7 +737,7 @@ where
                 key: vec![],
                 value: vec![],
                 proof_ops: None,
-                height: self.platform.state.read().unwrap().height() as i64,
+                height: self.platform.state.read().unwrap().last_committed_height() as i64,
                 codespace: "".to_string(),
             };
 
@@ -773,7 +773,7 @@ where
             key: vec![],
             value: data,
             proof_ops: None,
-            height: self.platform.state.read().unwrap().height() as i64,
+            height: self.platform.state.read().unwrap().last_committed_height() as i64,
             codespace: "".to_string(),
         };
 

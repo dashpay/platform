@@ -9,6 +9,7 @@ use drive::dpp::ProtocolError;
 use drive::error::Error as DriveError;
 use tenderdash_abci::proto::abci::ResponseException;
 use tracing::error;
+use dpp::bls_signatures::BlsError;
 
 /// Execution errors module
 pub mod execution;
@@ -36,6 +37,9 @@ pub enum Error {
     /// Core RPC Error
     #[error("core rpc error: {0}")]
     CoreRpc(#[from] CoreRpcError),
+    /// BLS Error
+    #[error("BLS error: {0}")]
+    BLSError(#[from] BlsError),
     /// Serialization Error
     #[error("serialization: {0}")]
     Serialization(#[from] SerializationError),

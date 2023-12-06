@@ -480,6 +480,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 epoch_core_reward_credits_for_distribution: 0,
             },
             core_chain_lock: DriveAbciCoreChainLockMethodVersions {
+                choose_quorum: 0,
                 verify_chain_lock: 0,
                 verify_chain_lock_locally: 0,
                 verify_chain_lock_through_core: 0,

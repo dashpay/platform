@@ -95,7 +95,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         ExecutionEvent::create_from_state_transition_action(
             action,
             maybe_identity,
-            platform.state.epoch_ref(),
+            platform.state.last_committed_block_epoch_ref(),
             platform_version,
         )
     })

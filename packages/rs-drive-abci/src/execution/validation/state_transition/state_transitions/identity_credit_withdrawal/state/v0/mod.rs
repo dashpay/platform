@@ -91,7 +91,7 @@ impl IdentityCreditWithdrawalStateTransitionStateValidationV0
         &self,
         platform: &PlatformRef<C>,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let last_block_time = platform.state.last_block_time_ms().ok_or(Error::Execution(
+        let last_block_time = platform.state.last_committed_block_time_ms().ok_or(Error::Execution(
             ExecutionError::StateNotInitialized(
                 "expected a last platform block during identity update validation",
             ),

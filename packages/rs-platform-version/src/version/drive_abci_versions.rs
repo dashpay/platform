@@ -198,6 +198,7 @@ pub struct DriveAbciCoreSubsidyMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciCoreChainLockMethodVersions {
+    pub choose_quorum: FeatureVersion,
     pub verify_chain_lock: FeatureVersion,
     pub verify_chain_lock_locally: FeatureVersion,
     pub verify_chain_lock_through_core: FeatureVersion,

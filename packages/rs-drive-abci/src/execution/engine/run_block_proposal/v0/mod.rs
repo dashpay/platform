@@ -80,11 +80,11 @@ where
             block_proposal.round,
         );
 
-        let last_block_time_ms = state.last_block_time_ms();
+        let last_block_time_ms = state.last_committed_block_time_ms();
         let last_block_height =
-            state.known_height_or(self.config.abci.genesis_height.saturating_sub(1));
+            state.last_committed_known_height_or(self.config.abci.genesis_height.saturating_sub(1));
         let last_block_core_height =
-            state.known_core_height_or(self.config.abci.genesis_core_height);
+            state.last_committed_known_core_height_or(self.config.abci.genesis_core_height);
         let hpmn_list_len = state.hpmn_list_len();
 
         let mut block_platform_state = state.clone();
