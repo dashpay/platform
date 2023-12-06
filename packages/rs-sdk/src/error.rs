@@ -1,5 +1,6 @@
 //! Definitions of errors
 use std::fmt::Debug;
+use std::time::Duration;
 
 use dpp::bls_signatures::BlsError;
 use dpp::version::PlatformVersionError;
@@ -53,9 +54,16 @@ pub enum Error {
     #[error("Context provider error: {0}")]
     ContextProviderError(#[from] ContextProviderError),
 
-    /// Operation cancelled - cancel token was triggered, timeout, etc.
+    /// Operation cancelled - shutting down, cancel token was triggered, etc
     #[error("Operation cancelled: {0}")]
     Cancelled(String),
+    /// SDK operation timeout reached error
+    #[error("SDK operation timeout {} secs reached: {1}", .0.as_secs())]
+    TimeoutReached(Duration, String),
+    /// Generic error
+    // TODO: Use domain specific errors instead of generic ones
+    #[error("SDK error: {0}")]
+    Generic(String),
 }
 
 impl<T: Debug> From<DapiClientError<T>> for Error {

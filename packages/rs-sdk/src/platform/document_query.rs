@@ -134,10 +134,6 @@ impl TransportRequest for DocumentQuery {
         "GetDocumentsRequest"
     }
 
-    fn response_name(&self) -> &'static str {
-        "GetDocumentsResponse"
-    }
-
     fn method_name(&self) -> &'static str {
         "get_documents"
     }
