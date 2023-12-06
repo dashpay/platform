@@ -1,5 +1,6 @@
 //! Identity related types and functions
 
+use async_trait::async_trait;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::GetIdentityBalanceAndRevisionRequestV0;
 use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
@@ -12,7 +13,7 @@ use dapi_grpc::platform::v0::{
 };
 use dpp::prelude::Identity;
 
-use crate::delegate_enum;
+use crate::{delegate_enum, Sdk};
 use crate::{
     platform::{proto, Query},
     Error,
@@ -98,5 +99,25 @@ impl Query<GetIdentityBalanceAndRevisionRequest> for dpp::prelude::Identifier {
         };
 
         Ok(request)
+    }
+}
+
+/// A trait for identity related types
+#[async_trait]
+pub trait IdentityEx {
+    /// Register a new identity with provided amount of Dash.
+    ///
+    ///
+    async fn register(sdk: &Sdk, amount: u64) -> Result<Identity, Error>;
+}
+
+#[async_trait]
+impl IdentityEx for Identity {
+    async fn register(sdk: &Sdk, amount: u64) -> Result<Identity, Error> {
+        todo!("implement me")
+        // let mut identity = Identity::new();
+        // identity.set_balance(amount);
+        // identity.put_to_platform_and_wait_for_response(sdk).await?;
+        // Ok(identity)
     }
 }

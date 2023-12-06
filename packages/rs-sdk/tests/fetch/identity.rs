@@ -117,3 +117,15 @@ async fn test_identity_public_keys_all_read() {
         assert_eq!(id, pubkey.id());
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_identity_register() {
+    setup_logs();
+
+    let cfg = Config::new();
+    let id: dpp::prelude::Identifier = cfg.existing_identity_id;
+
+    let sdk = cfg.setup_api().await;
+
+    let new_identity = Identity::register(&sdk).await.expect("register identity");
+}

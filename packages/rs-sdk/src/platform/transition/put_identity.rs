@@ -1,4 +1,5 @@
 //! Save Identity to the platform
+// TODO: move to ../types/
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::Fetch;

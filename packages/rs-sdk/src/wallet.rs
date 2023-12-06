@@ -1,8 +1,12 @@
 //! Wallet for managing keys assets in Dash Core and Platform.
 
 use async_trait::async_trait;
+use dashcore_rpc::dashcore::Address;
+use dashcore_rpc::dashcore::Txid;
 pub use dashcore_rpc::dashcore_rpc_json::ListUnspentResultEntry;
-use dpp::bls_signatures::PrivateKey;
+use dashcore_rpc::dashcore_rpc_json::SignRawTransactionInput;
+use dpp::dashcore::PrivateKey;
+use dpp::dashcore::Transaction;
 use dpp::identity::{signer::Signer, IdentityPublicKey, Purpose};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::AssetLockProof;
@@ -10,7 +14,7 @@ use dpp::ProtocolError;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 
-use crate::Error;
+use crate::mock::wallet::WalletError;
 
 /// Wallet used by Dash Platform SDK.
 ///
@@ -37,7 +41,7 @@ pub trait Wallet: Send + Sync {
         &self,
         pubkey: &IdentityPublicKey,
         message: &[u8],
-    ) -> Result<BinaryData, Error>;
+    ) -> Result<BinaryData, WalletError>;
 
     /// Return default identity public key for the provided purpose.
     async fn identity_public_key(&self, purpose: &Purpose) -> Option<IdentityPublicKey>;
@@ -55,13 +59,41 @@ pub trait Wallet: Send + Sync {
     /// * `AssetLockProof` - Asset lock proof.
     /// * `PrivateKey` - One-time private key used to use locked Dash in Platform.
     /// This key should be used to sign Platform transactions.
-    async fn lock_assets(&self, amount: u64) -> Result<(AssetLockProof, PrivateKey), Error>;
+    async fn lock_assets(&self, amount: u64) -> Result<(AssetLockProof, PrivateKey), WalletError>;
 
     /// Return balance of the wallet, in satoshis.
-    async fn core_balance(&self) -> Result<u64, Error>;
+    async fn core_balance(&self) -> Result<u64, WalletError>;
 
     /// Return list of unspent transactions with summarized balance at least `sum`
-    async fn core_utxos(&self, sum: Option<u64>) -> Result<Vec<ListUnspentResultEntry>, Error>;
+    async fn core_utxos(
+        &self,
+        sum: Option<u64>,
+    ) -> Result<Vec<ListUnspentResultEntry>, WalletError>;
+
+    async fn core_sign_tx(
+        &self,
+        tx: &Transaction,
+        utxos: Option<&[SignRawTransactionInput]>,
+    ) -> Result<BinaryData, WalletError>;
+
+    /// Estimate fee for a transaction on the Core chain (L1)
+    ///
+    /// # Arguments
+    ///
+    /// * `confirmation_target` - Confirmation target in blocks
+    ///
+    /// # Returns
+    ///
+    /// * `u64` - Estimated fee in satoshis
+    async fn core_estimate_fee(&self, confirmation_target: u64) -> Result<u64, WalletError>;
+
+    /// Return change address for the wallet
+    async fn core_change_address(&self) -> Result<Address, WalletError> {
+        todo!("Not yet implemented")
+    }
+
+    /// Broadcast some transaction without waiing for confirmation
+    async fn core_broadcast_tx(&self, signed_tx: &[u8]) -> Result<Txid, WalletError>;
 }
 
 // struct WalletSigner<W>(W);
@@ -138,7 +170,7 @@ where
         &self,
         pubkey: &IdentityPublicKey,
         message: &[u8],
-    ) -> Result<BinaryData, Error> {
+    ) -> Result<BinaryData, WalletError> {
         (*self).platform_sign(pubkey, message).await
     }
 
@@ -146,37 +178,37 @@ where
         (*self).identity_public_key(purpose).await
     }
 
-    async fn lock_assets(&self, amount: u64) -> Result<(AssetLockProof, PrivateKey), Error> {
+    async fn lock_assets(&self, amount: u64) -> Result<(AssetLockProof, PrivateKey), WalletError> {
         (*self).lock_assets(amount).await
     }
 
-    async fn core_balance(&self) -> Result<u64, Error> {
+    async fn core_balance(&self) -> Result<u64, WalletError> {
         (*self).core_balance().await
     }
 
-    async fn core_utxos(&self, sum: Option<u64>) -> Result<Vec<ListUnspentResultEntry>, Error> {
+    async fn core_utxos(
+        &self,
+        sum: Option<u64>,
+    ) -> Result<Vec<ListUnspentResultEntry>, WalletError> {
         (*self).core_utxos(sum).await
     }
+
+    async fn core_estimate_fee(&self, confirmation_target: u64) -> Result<u64, WalletError> {
+        (*self).core_estimate_fee(confirmation_target).await
+    }
+
+    async fn core_sign_tx(
+        &self,
+        tx: &Transaction,
+        utxos: Option<&[SignRawTransactionInput]>,
+    ) -> Result<BinaryData, WalletError> {
+        (*self).core_sign_tx(tx, utxos).await
+    }
+
+    async fn core_broadcast_tx(&self, signed_tx: &[u8]) -> Result<Txid, WalletError> {
+        (*self).core_broadcast_tx(signed_tx).await
+    }
 }
-
-// #[async_trait]
-// impl Wallet for Box<dyn Wallet> {
-//     async fn identity_public_key(&self, purpose: &Purpose) -> Option<IdentityPublicKey> {
-//         self.as_ref().identity_public_key(purpose).await
-//     }
-
-//     async fn lock_assets(&self, amount: u64) -> Result<(AssetLockProof, PrivateKey), Error> {
-//         self.as_ref().lock_assets(amount).await
-//     }
-
-//     async fn core_balance(&self) -> Result<u64, Error> {
-//         self.as_ref().core_balance().await
-//     }
-
-//     async fn core_utxos(&self, sum: Option<u64>) -> Result<Vec<ListUnspentResultEntry>, Error> {
-//         self.as_ref().core_utxos(sum).await
-//     }
-// }
 
 #[async_trait]
 impl<W: Wallet> Wallet for Arc<W> {
@@ -185,7 +217,7 @@ impl<W: Wallet> Wallet for Arc<W> {
         &self,
         pubkey: &IdentityPublicKey,
         message: &[u8],
-    ) -> Result<BinaryData, Error> {
+    ) -> Result<BinaryData, WalletError> {
         self.as_ref().platform_sign(pubkey, message).await
     }
 
@@ -193,15 +225,34 @@ impl<W: Wallet> Wallet for Arc<W> {
         self.as_ref().identity_public_key(purpose).await
     }
 
-    async fn lock_assets(&self, amount: u64) -> Result<(AssetLockProof, PrivateKey), Error> {
+    async fn lock_assets(&self, amount: u64) -> Result<(AssetLockProof, PrivateKey), WalletError> {
         self.as_ref().lock_assets(amount).await
     }
 
-    async fn core_balance(&self) -> Result<u64, Error> {
+    async fn core_balance(&self) -> Result<u64, WalletError> {
         self.as_ref().core_balance().await
     }
 
-    async fn core_utxos(&self, sum: Option<u64>) -> Result<Vec<ListUnspentResultEntry>, Error> {
+    async fn core_utxos(
+        &self,
+        sum: Option<u64>,
+    ) -> Result<Vec<ListUnspentResultEntry>, WalletError> {
         self.as_ref().core_utxos(sum).await
+    }
+
+    async fn core_estimate_fee(&self, confirmation_target: u64) -> Result<u64, WalletError> {
+        self.as_ref().core_estimate_fee(confirmation_target).await
+    }
+
+    async fn core_sign_tx(
+        &self,
+        tx: &Transaction,
+        utxos: Option<&[SignRawTransactionInput]>,
+    ) -> Result<BinaryData, WalletError> {
+        self.as_ref().core_sign_tx(tx, utxos).await
+    }
+
+    async fn core_broadcast_tx(&self, signed_tx: &[u8]) -> Result<Txid, WalletError> {
+        self.as_ref().core_broadcast_tx(signed_tx).await
     }
 }

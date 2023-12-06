@@ -1060,6 +1060,7 @@ dependencies = [
  "hex",
  "http",
  "lru",
+ "rand",
  "rs-dapi-client",
  "serde",
  "serde_json",

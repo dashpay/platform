@@ -11,7 +11,6 @@ use crate::mock::MockDashPlatformSdk;
 
 use crate::error::Error;
 use crate::mock::provider::GrpcContextProvider;
-use crate::mock::wallet::MockWallet;
 use crate::mock::MockResponse;
 use crate::wallet::Wallet;
 
@@ -530,22 +529,6 @@ impl SdkBuilder {
         self
     }
 
-    /// Use Dash Core as a wallet and context provider.
-    ///
-    /// This is a conveniance method that configures the SDK to use Dash Core as a wallet and context provider.
-    ///
-    /// For more control over the configuration, use [SdkBuilder::with_wallet()] and [SdkBuilder::with_context_provider()].
-    ///
-    /// This is temporary implementation, intended for development purposes.   
-    pub fn with_core(mut self, ip: &str, port: u16, user: &str, password: &str) -> Self {
-        self.core_ip = ip.to_string();
-        self.core_port = port;
-        self.core_user = user.to_string();
-        self.core_password = password.to_string();
-
-        self
-    }
-
     /// Configure directory where dumps of all requests and responses will be saved.
     /// Useful for debugging.
     ///
@@ -565,16 +548,6 @@ impl SdkBuilder {
         self
     }
 
-    /// Create a new composite wallet using [CoreGrpcWallet] and [PlatformSignerWallet] intended for testing.
-    fn build_core_wallet(&self) -> Result<MockWallet, Error> {
-        MockWallet::new_mock(
-            &self.core_ip,
-            self.core_port,
-            &self.core_user,
-            &self.core_password,
-        )
-    }
-
     fn is_mock(&self) -> bool {
         self.addresses.is_none()
     }
@@ -589,11 +562,7 @@ impl SdkBuilder {
     pub fn build(self) -> Result<Arc<Sdk>, Error> {
         PlatformVersion::set_current(self.version);
 
-        let wallet: Option<Box<dyn Wallet>> = if !self.is_mock() && self.wallet.as_ref().is_none() {
-            Some(Box::new(self.build_core_wallet()?))
-        } else {
-            self.wallet
-        };
+        let wallet = self.wallet;
 
         let  sdk=  match self.addresses {
             // non-mock mode

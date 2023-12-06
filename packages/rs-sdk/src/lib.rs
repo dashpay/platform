@@ -60,13 +60,13 @@
 #![warn(missing_docs)]
 #![allow(rustdoc::private_intra_doc_links)]
 
+mod common;
 pub mod core;
 pub mod error;
 pub mod mock;
 pub mod platform;
 pub mod sdk;
 pub mod wallet;
-
 pub use error::Error;
 pub use sdk::{Sdk, SdkBuilder};
 

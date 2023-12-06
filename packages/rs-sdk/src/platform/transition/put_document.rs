@@ -1,4 +1,6 @@
 //! Save documents to the platform
+// TODO: move to ../types/
+
 use crate::{Error, Sdk};
 
 use dpp::data_contract::document_type::DocumentType;
