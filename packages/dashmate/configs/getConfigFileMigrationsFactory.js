@@ -350,7 +350,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.25.16-rc.6': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.core.docker.image = base.get('core.docker.image');
+            if (options.network !== NETWORK_TESTNET) {
+              options.core.docker.image = base.get('core.docker.image');
+            }
           });
 
         return configFile;
