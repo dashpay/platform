@@ -248,7 +248,10 @@ impl PlatformConfig {
         };
 
         if found == QuorumType::UNKNOWN {
-            panic!("config: unsupported QUORUM_TYPE: {}", self.validator_set_quorum_type);
+            panic!(
+                "config: unsupported QUORUM_TYPE: {}",
+                self.validator_set_quorum_type
+            );
         }
 
         found
@@ -263,7 +266,10 @@ impl PlatformConfig {
         };
 
         if found == QuorumType::UNKNOWN {
-            panic!("config: unsupported QUORUM_TYPE: {}", self.chain_lock_quorum_type);
+            panic!(
+                "config: unsupported QUORUM_TYPE: {}",
+                self.chain_lock_quorum_type
+            );
         }
 
         found

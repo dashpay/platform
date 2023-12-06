@@ -1,7 +1,7 @@
 use dpp::bls_signatures::G2Element;
-use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};
 use dpp::dashcore::consensus::Encodable;
-use dpp::dashcore::hashes::{Hash, HashEngine, sha256d};
+use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
+use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};
 
 use crate::error::Error;
 
@@ -9,20 +9,24 @@ use crate::platform_types::platform::Platform;
 
 use crate::rpc::core::CoreRPCLike;
 
-use dpp::version::PlatformVersion;
-use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
+use dpp::version::PlatformVersion;
 
 const CHAIN_LOCK_REQUEST_ID_PREFIX: &str = "clsig";
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Returning None here means we were unable to verify the chain lock because of an absence of
     /// the quorum
-    pub fn verify_chain_lock_locally_v0(&self, platform_state: &PlatformState, chain_lock: &ChainLock, platform_version: &PlatformVersion) -> Result<Option<bool>, Error> {
-
+    pub fn verify_chain_lock_locally_v0(
+        &self,
+        platform_state: &PlatformState,
+        chain_lock: &ChainLock,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<bool>, Error> {
         // First verify that the signature conforms to a signature
         let signature = G2Element::from_bytes(chain_lock.signature.as_bytes())?;
 
@@ -32,15 +36,20 @@ impl<C> Platform<C>
         let window_width = 578;
 
         // The last block in the window where the quorums would be the same
-        let last_block_in_window = platform_state.last_committed_core_height() - platform_state.last_committed_core_height() % window_width + window_width - 1;
+        let last_block_in_window = platform_state.last_committed_core_height()
+            - platform_state.last_committed_core_height() % window_width
+            + window_width
+            - 1;
 
         let verification_height = chain_lock.block_height - 8;
 
-        if verification_height > last_block_in_window  {
+        if verification_height > last_block_in_window {
             return Ok(None); // the chain lock is too far in the future or the past to verify locally
         }
 
-        let quorums = if let Some((previous_quorum_height, previous_quorums)) = platform_state.previous_height_chain_lock_validating_quorums() {
+        let quorums = if let Some((previous_quorum_height, previous_quorums)) =
+            platform_state.previous_height_chain_lock_validating_quorums()
+        {
             if chain_lock_height > 8 && chain_lock_height - 8 <= *previous_quorum_height {
                 // In this case the quorums were changed recently meaning that we should use the previous quorums to verify the chain lock
                 previous_quorums
@@ -58,7 +67,9 @@ impl<C> Platform<C>
 
         // Prefix
         let prefix_len = VarInt(CHAIN_LOCK_REQUEST_ID_PREFIX.len() as u64);
-        prefix_len.consensus_encode(&mut engine).expect("expected to encode the prefix");
+        prefix_len
+            .consensus_encode(&mut engine)
+            .expect("expected to encode the prefix");
 
         engine.input(CHAIN_LOCK_REQUEST_ID_PREFIX.as_bytes());
         engine.input(chain_lock.block_height.to_be_bytes().as_slice());
@@ -67,7 +78,12 @@ impl<C> Platform<C>
 
         // Based on the deterministic masternode list at the given height, a quorum must be selected that was active at the time this block was mined
 
-        let quorum = self.choose_quorum(self.config.chain_lock_quorum_type(), quorums, request_id.as_ref(), platform_version)?;
+        let quorum = self.choose_quorum(
+            self.config.chain_lock_quorum_type(),
+            quorums,
+            request_id.as_ref(),
+            platform_version,
+        )?;
 
         let Some((quorum_hash, public_key)) = quorum else {
             return Ok(None);
@@ -86,6 +102,6 @@ impl<C> Platform<C>
 
         let chain_lock_verified = public_key.verify(&signature, message_digest.as_ref());
 
-        return Ok(Some(chain_lock_verified))
+        return Ok(Some(chain_lock_verified));
     }
 }

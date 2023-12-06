@@ -125,12 +125,19 @@ where
 
         // If there is a core chain lock update, we should start by verifying it
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
-            let valid = self.verify_chain_lock(&block_platform_state, core_chain_lock_update, platform_version)?;
+            let valid = self.verify_chain_lock(
+                &block_platform_state,
+                core_chain_lock_update,
+                platform_version,
+            )?;
             if !valid {
-                return Ok(ValidationResult::new_with_error(AbciError::InvalidChainLock(format!(
-                    "received a chain lock for height {} that is invalid {:?}",
-                    block_info.height, core_chain_lock_update,
-                )).into()))
+                return Ok(ValidationResult::new_with_error(
+                    AbciError::InvalidChainLock(format!(
+                        "received a chain lock for height {} that is invalid {:?}",
+                        block_info.height, core_chain_lock_update,
+                    ))
+                    .into(),
+                ));
             }
         }
 

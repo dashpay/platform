@@ -1,13 +1,11 @@
-
-
-use std::collections::BTreeMap;
-use dashcore_rpc::dashcore_rpc_json::QuorumType;
-use sha2::Sha256;
-use dpp::bls_signatures::PublicKey as BlsPublicKey;
-use dpp::dashcore::{ChainLock, QuorumHash};
-use dpp::dashcore::hashes::{Hash, HashEngine, sha256d};
-use dpp::platform_value::Bytes32;
 use crate::error::Error;
+use dashcore_rpc::dashcore_rpc_json::QuorumType;
+use dpp::bls_signatures::PublicKey as BlsPublicKey;
+use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
+use dpp::dashcore::{ChainLock, QuorumHash};
+use dpp::platform_value::Bytes32;
+use sha2::Sha256;
+use std::collections::BTreeMap;
 
 use crate::platform_types::platform::Platform;
 
@@ -16,13 +14,19 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Based on DIP8 deterministically chooses a pseudorandom quorum from the list of quorums
-    pub(super) fn choose_quorum_v0<'a>(&self, llmq_quorum_type: QuorumType, quorums: &'a BTreeMap<QuorumHash, BlsPublicKey>, request_id: &[u8;32], _platform_version: &PlatformVersion) -> Option<(&'a QuorumHash, &'a BlsPublicKey)> {
+    pub(super) fn choose_quorum_v0<'a>(
+        &self,
+        llmq_quorum_type: QuorumType,
+        quorums: &'a BTreeMap<QuorumHash, BlsPublicKey>,
+        request_id: &[u8; 32],
+        _platform_version: &PlatformVersion,
+    ) -> Option<(&'a QuorumHash, &'a BlsPublicKey)> {
         // Scoring system logic
-        let mut scores: Vec<(&QuorumHash, &BlsPublicKey, [u8;32])> = Vec::new();
+        let mut scores: Vec<(&QuorumHash, &BlsPublicKey, [u8; 32])> = Vec::new();
 
         for (quorum_hash, public_key) in quorums {
             let mut hasher = sha256d::Hash::engine();
@@ -38,11 +42,10 @@ impl<C> Platform<C>
 
             // Finalize the hash
             let hash_result = sha256d::Hash::from_engine(hasher);
-            scores.push((quorum_hash, public_key,  hash_result.into()));
+            scores.push((quorum_hash, public_key, hash_result.into()));
         }
 
         scores.sort_by_key(|k| k.2);
         scores.first().map(|&(hash, key, _)| (hash, key))
     }
-
 }

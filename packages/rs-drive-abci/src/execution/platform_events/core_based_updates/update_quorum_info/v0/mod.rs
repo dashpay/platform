@@ -9,9 +9,9 @@ use crate::platform_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Get
 use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::CoreRPCLike;
 
+use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use dpp::dashcore::QuorumHash;
 use tracing::Level;
-use dpp::bls_signatures::PublicKey as BlsPublicKey;
 
 impl<C> Platform<C>
 where
@@ -93,9 +93,11 @@ where
                     .contains_key::<QuorumHash>(key)
             })
             .map(|(key, _)| {
-                let quorum_info_result =
-                    self.core_rpc
-                        .get_quorum_info(self.config.validator_set_quorum_type(), key, None)?;
+                let quorum_info_result = self.core_rpc.get_quorum_info(
+                    self.config.validator_set_quorum_type(),
+                    key,
+                    None,
+                )?;
 
                 Ok((*key, quorum_info_result))
             })
@@ -158,12 +160,22 @@ where
         if validator_set_quorum_type == chain_lock_quorum_type {
             // Remove validator_sets entries that are no longer valid for the core block height
             if removed_a_validator_set || added_a_validator_set {
-                let chain_lock_validating_quorums = block_platform_state.validator_sets().iter().map(|(quorum_hash, validator_set)| {
-                    (quorum_hash.clone(), validator_set.threshold_public_key().clone())
-                }).collect();
+                let chain_lock_validating_quorums = block_platform_state
+                    .validator_sets()
+                    .iter()
+                    .map(|(quorum_hash, validator_set)| {
+                        (
+                            quorum_hash.clone(),
+                            validator_set.threshold_public_key().clone(),
+                        )
+                    })
+                    .collect();
                 let previous_quorums = block_platform_state
                     .replace_chain_lock_validating_quorums(chain_lock_validating_quorums);
-                block_platform_state.set_previous_chain_lock_validating_quorums(block_platform_state.last_committed_core_height(), previous_quorums);
+                block_platform_state.set_previous_chain_lock_validating_quorums(
+                    block_platform_state.last_committed_core_height(),
+                    previous_quorums,
+                );
             }
         } else {
             let chain_lock_quorums_list: BTreeMap<_, _> = extended_quorum_list
@@ -175,9 +187,10 @@ where
                         self.config.chain_lock_quorum_type
                     ),
                 )))?
-                .into_iter().map(|(quorum_hash, extended_quorum_details)| {
-                (quorum_hash, extended_quorum_details.quorum_index)
-            })
+                .into_iter()
+                .map(|(quorum_hash, extended_quorum_details)| {
+                    (quorum_hash, extended_quorum_details.quorum_index)
+                })
                 .collect();
 
             let mut removed_a_chain_lock_validating_quorum = false;
@@ -215,21 +228,23 @@ where
                 let new_chain_lock_quorums = quorum_infos
                     .into_iter()
                     .map(|(quorum_hash, info_result)| {
-                        let public_key = match BlsPublicKey::from_bytes(info_result.quorum_public_key.as_slice())
-                            .map_err(ExecutionError::BlsErrorFromDashCoreResponse)
+                        let public_key = match BlsPublicKey::from_bytes(
+                            info_result.quorum_public_key.as_slice(),
+                        )
+                        .map_err(ExecutionError::BlsErrorFromDashCoreResponse)
                         {
                             Ok(public_key) => public_key,
                             Err(e) => return Err(e.into()),
                         };
 
                         tracing::trace!(
-                        ?public_key,
-                        ?quorum_hash,
-                        quorum_type = ?chain_lock_quorum_type,
-                        "add new chain lock quorum {} with quorum type {}",
-                        quorum_hash,
-                        chain_lock_quorum_type
-                    );
+                            ?public_key,
+                            ?quorum_hash,
+                            quorum_type = ?chain_lock_quorum_type,
+                            "add new chain lock quorum {} with quorum type {}",
+                            quorum_hash,
+                            chain_lock_quorum_type
+                        );
 
                         Ok((quorum_hash, public_key))
                     })
@@ -243,8 +258,12 @@ where
 
             if added_a_chain_lock_validating_quorum || removed_a_chain_lock_validating_quorum {
                 if let Some(old_state) = platform_state {
-                    let previous_chain_lock_validating_quorums = old_state.chain_lock_validating_quorums().clone();
-                    block_platform_state.set_previous_chain_lock_validating_quorums(block_platform_state.last_committed_core_height(), previous_chain_lock_validating_quorums);
+                    let previous_chain_lock_validating_quorums =
+                        old_state.chain_lock_validating_quorums().clone();
+                    block_platform_state.set_previous_chain_lock_validating_quorums(
+                        block_platform_state.last_committed_core_height(),
+                        previous_chain_lock_validating_quorums,
+                    );
                 }
             }
         }

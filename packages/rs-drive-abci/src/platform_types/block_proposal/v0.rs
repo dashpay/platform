@@ -1,14 +1,14 @@
 use crate::abci::AbciError;
 use crate::error::Error;
+use dpp::dashcore::bls_sig_utils::BLSSignature;
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::{BlockHash, ChainLock};
+use dpp::platform_value::Bytes32;
 use std::fmt;
 use tenderdash_abci::proto::abci::{RequestPrepareProposal, RequestProcessProposal};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use tenderdash_abci::proto::types::CoreChainLock;
 use tenderdash_abci::proto::version::Consensus;
-use dpp::dashcore::bls_sig_utils::BLSSignature;
-use dpp::dashcore::{BlockHash, ChainLock};
-use dpp::dashcore::hashes::Hash;
-use dpp::platform_value::Bytes32;
 
 /// The block proposal is the combination of information that a proposer will propose,
 /// Or that a validator or full node will process
@@ -216,25 +216,28 @@ impl<'a> TryFrom<&'a RequestProcessProposal> for BlockProposal<'a> {
             .into());
         }
 
-        let core_chain_lock_update = core_chain_lock_update.as_ref().map(|core_chain_lock| {
-            let CoreChainLock {
-                core_block_height, core_block_hash, signature
-            } = core_chain_lock;
+        let core_chain_lock_update = core_chain_lock_update
+            .as_ref()
+            .map(|core_chain_lock| {
+                let CoreChainLock {
+                    core_block_height,
+                    core_block_hash,
+                    signature,
+                } = core_chain_lock;
 
-            let block_hash : Bytes32 = Bytes32::from_vec(core_block_hash.clone())?;
+                let block_hash: Bytes32 = Bytes32::from_vec(core_block_hash.clone())?;
 
-            let signature : [u8;96] = signature.clone().try_into().map_err(|_| {
-                AbciError::BadRequest(
-                    "core chain lock signature not 96 bytes".to_string(),
-                )
-            })?;
+                let signature: [u8; 96] = signature.clone().try_into().map_err(|_| {
+                    AbciError::BadRequest("core chain lock signature not 96 bytes".to_string())
+                })?;
 
-            Ok::<dpp::dashcore::ChainLock, Error>(ChainLock {
-                block_height: *core_block_height,
-                block_hash: BlockHash::from_byte_array(block_hash.0),
-                signature: BLSSignature::from(signature),
+                Ok::<dpp::dashcore::ChainLock, Error>(ChainLock {
+                    block_height: *core_block_height,
+                    block_hash: BlockHash::from_byte_array(block_hash.0),
+                    signature: BLSSignature::from(signature),
+                })
             })
-        }).transpose()?;
+            .transpose()?;
         Ok(Self {
             consensus_versions,
             block_hash: Some(block_hash),

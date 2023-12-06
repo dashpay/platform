@@ -25,9 +25,9 @@ use indexmap::IndexMap;
 
 use crate::error::execution::ExecutionError;
 use dpp::block::block_info::BlockInfo;
+use dpp::bls_signatures::PublicKey as ThresholdBlsPublicKey;
 use dpp::util::hash::hash;
 use std::collections::BTreeMap;
-use dpp::bls_signatures::{PublicKey as ThresholdBlsPublicKey};
 
 /// Platform state
 #[derive(Clone, Debug, From)]
@@ -397,21 +397,33 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn set_chain_lock_validating_quorums(&mut self, quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>) {
+    fn set_chain_lock_validating_quorums(
+        &mut self,
+        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    ) {
         match self {
             PlatformState::V0(v0) => v0.set_chain_lock_validating_quorums(quorums),
         }
     }
 
-    fn replace_chain_lock_validating_quorums(&mut self, quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>) -> BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
+    fn replace_chain_lock_validating_quorums(
+        &mut self,
+        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    ) -> BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
         match self {
             PlatformState::V0(v0) => v0.replace_chain_lock_validating_quorums(quorums),
         }
     }
 
-    fn set_previous_chain_lock_validating_quorums(&mut self, core_height: u32, quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>) {
+    fn set_previous_chain_lock_validating_quorums(
+        &mut self,
+        core_height: u32,
+        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    ) {
         match self {
-            PlatformState::V0(v0) => v0.set_previous_chain_lock_validating_quorums(core_height, quorums),
+            PlatformState::V0(v0) => {
+                v0.set_previous_chain_lock_validating_quorums(core_height, quorums)
+            }
         }
     }
 
@@ -469,19 +481,25 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn chain_lock_validating_quorums_mut(&mut self) -> &mut BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
+    fn chain_lock_validating_quorums_mut(
+        &mut self,
+    ) -> &mut BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
         match self {
             PlatformState::V0(v0) => v0.chain_lock_validating_quorums_mut(),
         }
     }
 
-    fn previous_height_chain_lock_validating_quorums(&self) -> Option<&(u32, BTreeMap<QuorumHash, ThresholdBlsPublicKey>)> {
+    fn previous_height_chain_lock_validating_quorums(
+        &self,
+    ) -> Option<&(u32, BTreeMap<QuorumHash, ThresholdBlsPublicKey>)> {
         match self {
             PlatformState::V0(v0) => v0.previous_height_chain_lock_validating_quorums(),
         }
     }
 
-    fn previous_height_chain_lock_validating_quorums_mut(&mut self) -> &mut Option<(u32, BTreeMap<QuorumHash, ThresholdBlsPublicKey>)> {
+    fn previous_height_chain_lock_validating_quorums_mut(
+        &mut self,
+    ) -> &mut Option<(u32, BTreeMap<QuorumHash, ThresholdBlsPublicKey>)> {
         match self {
             PlatformState::V0(v0) => v0.previous_height_chain_lock_validating_quorums_mut(),
         }
