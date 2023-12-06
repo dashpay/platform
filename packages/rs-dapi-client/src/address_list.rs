@@ -4,16 +4,16 @@ use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::time;
+use std::time::Duration;
 
 use http::Uri;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
 
-const DEFAULT_BASE_BAN_PERIOD: time::Duration = time::Duration::from_secs(2 * 60);
+const DEFAULT_BASE_BAN_PERIOD: Duration = Duration::from_secs(2 * 60);
 
 /// Peer's address.
 #[derive(Debug, Clone, Eq)]
 pub struct Address {
-    base_ban_period: time::Duration,
     ban_count: usize,
     banned_until: Option<time::Instant>,
     uri: Uri,
@@ -42,7 +42,6 @@ impl From<Uri> for Address {
         Address {
             ban_count: 0,
             banned_until: None,
-            base_ban_period: DEFAULT_BASE_BAN_PERIOD,
             uri,
         }
     }
@@ -50,10 +49,9 @@ impl From<Uri> for Address {
 
 impl Address {
     /// Ban the [Address] so it won't be available through [AddressList::get_live_address] for some time.
-    fn ban(&mut self) {
+    fn ban(&mut self, base_ban_period: &Duration) {
         let coefficient = (self.ban_count as f64).exp();
-        let ban_period =
-            time::Duration::from_secs_f64(self.base_ban_period.as_secs_f64() * coefficient);
+        let ban_period = Duration::from_secs_f64(base_ban_period.as_secs_f64() * coefficient);
 
         self.banned_until = Some(time::Instant::now() + ban_period);
         self.ban_count += 1;
@@ -88,7 +86,7 @@ pub enum AddressListError {
 #[derive(Debug)]
 pub struct AddressList {
     addresses: HashSet<Address>,
-    base_ban_period: time::Duration,
+    base_ban_period: Duration,
 }
 
 impl Default for AddressList {
@@ -110,7 +108,7 @@ impl AddressList {
     }
 
     /// Creates an empty [AddressList] with adjustable base ban time.
-    pub fn with_settings(base_ban_period: time::Duration) -> Self {
+    pub fn with_settings(base_ban_period: Duration) -> Self {
         AddressList {
             addresses: HashSet::new(),
             base_ban_period,
@@ -124,7 +122,7 @@ impl AddressList {
         };
 
         let mut banned_address = address.clone();
-        banned_address.ban();
+        banned_address.ban(&self.base_ban_period);
 
         self.addresses.insert(banned_address);
 
@@ -145,17 +143,19 @@ impl AddressList {
         Ok(())
     }
 
+    /// Adds a node [Address] to [AddressList]
+    /// Returns false if the address is already in the list.
+    pub fn add(&mut self, address: Address) -> bool {
+        self.addresses.insert(address)
+    }
+
     // TODO: this is the most simple way to add an address
-    // however we need to support bulk loading (e.g. providing a network name)
-    // and also fetch updated from SML.
-    /// Manually add a peer to [AddressList].
-    pub fn add_uri(&mut self, uri: Uri) {
-        self.addresses.insert(Address {
-            ban_count: 0,
-            banned_until: None,
-            base_ban_period: self.base_ban_period,
-            uri,
-        });
+    //  however we need to support bulk loading (e.g. providing a network name)
+    //  and also fetch updated from SML.
+    /// Add a node [Address] to [AddressList] by [Uri].
+    /// Returns false if the address is already in the list.
+    pub fn add_uri(&mut self, uri: Uri) -> bool {
+        self.addresses.insert(uri.into())
     }
 
     /// Randomly select a not banned address.
