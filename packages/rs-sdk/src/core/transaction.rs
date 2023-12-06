@@ -68,25 +68,6 @@ impl Sdk {
         transaction: &Transaction,
         time_out: Option<Duration>,
     ) -> Result<AssetLockProof, Error> {
-        // Make sure that the streaming timeout is greater than processing timeout
-        // TODO: We should with actual request timeout but not default one. Fix it during refactoring
-        if let (
-            RequestSettings {
-                timeout: Some(streaming_timeout),
-                ..
-            },
-            Some(processing_timeout),
-        ) = (TransactionsWithProofsRequest::SETTINGS_OVERRIDES, time_out)
-        {
-            if processing_timeout >= streaming_timeout {
-                return Err(Error::Generic(format!(
-                    "Streaming timeout {} secs must be greater than processing timeout {} secs",
-                    streaming_timeout.as_secs(),
-                    processing_timeout.as_secs(),
-                )));
-            }
-        };
-
         let transaction_id = transaction.txid();
 
         let _span = tracing::debug_span!(
