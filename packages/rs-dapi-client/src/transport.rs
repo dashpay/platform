@@ -8,6 +8,7 @@ use dapi_grpc::mock::Mockable;
 pub use futures::future::BoxFuture;
 pub use grpc::{CoreGrpcClient, PlatformGrpcClient};
 use http::Uri;
+use std::any;
 use std::fmt::Debug;
 
 /// Generic transport layer request.
@@ -23,10 +24,14 @@ pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
     const SETTINGS_OVERRIDES: RequestSettings;
 
     /// gRPC request name
-    fn request_name(&self) -> &'static str;
+    fn request_name(&self) -> &'static str {
+        any::type_name::<Self>()
+    }
 
     /// gRPC response name
-    fn response_name(&self) -> &'static str;
+    fn response_name(&self) -> &'static str {
+        any::type_name::<Self::Response>()
+    }
 
     /// gRPC method name
     fn method_name(&self) -> &'static str;
