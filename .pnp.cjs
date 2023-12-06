@@ -8710,7 +8710,6 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
           ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
           ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
-          ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
           ["@oclif/core", "npm:3.10.8"],\
           ["@oclif/plugin-help", "npm:6.0.5"],\
@@ -8722,7 +8721,6 @@ const RAW_RUNTIME_STATE =
           ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
           ["chalk", "npm:4.1.2"],\
           ["cron", "npm:2.1.0"],\
-          ["dash", "workspace:packages/js-dash-sdk"],\
           ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
           ["dockerode", "npm:3.3.5"],\
           ["dot", "npm:1.1.3"],\
