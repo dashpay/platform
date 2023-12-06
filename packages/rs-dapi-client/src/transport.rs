@@ -29,7 +29,9 @@ pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
     }
 
     /// gRPC response name
-    fn response_name(&self) -> &'static str;
+    fn response_name(&self) -> &'static str {
+        any::type_name::<Self::Response>()
+    }
 
     /// gRPC method name
     fn method_name(&self) -> &'static str;

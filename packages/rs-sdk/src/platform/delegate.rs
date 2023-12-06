@@ -34,10 +34,6 @@ macro_rules! delegate_transport_request_variant {
 
             const SETTINGS_OVERRIDES: $crate::platform::dapi::RequestSettings = $crate::platform::dapi::RequestSettings::default();
 
-            fn response_name(&self) -> &'static str {
-                stringify!($response)
-            }
-
             /// TODO: Not sure how to do that
             fn method_name(&self) -> &'static str {
                 ""

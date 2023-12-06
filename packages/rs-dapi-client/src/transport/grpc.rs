@@ -63,10 +63,6 @@ macro_rules! impl_transport_request_grpc {
 
             const SETTINGS_OVERRIDES: RequestSettings = $settings;
 
-            fn response_name(&self) -> &'static str {
-                stringify!($response)
-            }
-
             fn method_name(&self) -> &'static str {
                 stringify!($($method)+)
             }
@@ -93,6 +89,8 @@ macro_rules! impl_transport_request_grpc {
 }
 
 // Link to each platform gRPC request what client and method to use:
+
+const STREAMING_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 impl_transport_request_grpc!(
     platform_proto::GetIdentityRequest,
@@ -256,7 +254,7 @@ impl_transport_request_grpc!(
     Streaming<core_proto::TransactionsWithProofsResponse>,
     CoreGrpcClient,
     RequestSettings {
-        timeout: Some(Duration::from_secs(5 * 60)),
+        timeout: Some(STREAMING_TIMEOUT),
         ..RequestSettings::default()
     },
     subscribe_to_transactions_with_proofs
