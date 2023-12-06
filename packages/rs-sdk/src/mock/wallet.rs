@@ -2,6 +2,7 @@
 pub(crate) mod core_grpc_wallet;
 
 use self::core_grpc_wallet::CoreClient;
+use crate::core::subscriber::Subscriber;
 use crate::{wallet::Wallet, Error};
 use async_trait::async_trait;
 use dashcore_rpc::dashcore::secp256k1::rand::{rngs::StdRng, SeedableRng};
@@ -64,6 +65,9 @@ pub struct MockWallet {
     /// Random number generator to use
     pub rng: Mutex<StdRng>,
 
+    /// Subscription to core events
+    pub core_subscriptions: crate::core::subscriber::Subscriber,
+
     pub cancel: CancellationToken,
 }
 
@@ -120,6 +124,7 @@ impl MockWallet {
             network: network_type,
             confirmation_target: 2,
             rng: Mutex::new(rng),
+            core_subscriptions: Subscriber::new(Arc::clone(&dapi), cancel.clone()),
             cancel,
         })
     }
@@ -262,8 +267,9 @@ impl Wallet for MockWallet {
             .grpc_wallet
             .send_raw_transaction(signed_tx.as_slice())?;
 
-    async fn lock_assets(&self, _amount: u64) -> Result<(AssetLockProof, PrivateKey), Error> {
-        todo!("Not yet implemented")
+        // subscribe to channel with core chain updates
+        let channel = self.core_subscriptions.subscribe();
+        let msg = channel.recv().await.unwrap();
 
         todo!("broadcast and wait, see /core/transaction.rs")
     }
