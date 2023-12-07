@@ -213,32 +213,34 @@ where
         // // Finalize withdrawal processing
         // our_withdrawals.finalize(Some(transaction), &self.drive, &to_commit_block_info)?;
 
-        // let mut txids_to_broadcast = vec![];
-        for (index, (_, tx)) in block_execution_context
-            .withdrawal_transactions()
-            .iter()
-            .enumerate()
-        {
-            let mut asset_unlock_tx = build_asset_unlock_tx(tx).unwrap();
-            let quorum_sig = commit_info.threshold_vote_extensions[index]
-                .signature
-                .clone();
+        // Block proposer broadcasts asset unlock transactions
+        if block_execution_context.proposer_results().is_some() {
+            for (index, (_, tx)) in block_execution_context
+                .withdrawal_transactions()
+                .iter()
+                .enumerate()
+            {
+                let mut asset_unlock_tx = build_asset_unlock_tx(tx).unwrap();
+                let quorum_sig = commit_info.threshold_vote_extensions[index]
+                    .signature
+                    .clone();
 
-            let AssetUnlockPayloadType(mut payload) =
-                asset_unlock_tx.special_transaction_payload.take().unwrap()
-            else {
-                panic!("expected asset unlock payload");
-            };
+                let AssetUnlockPayloadType(mut payload) =
+                    asset_unlock_tx.special_transaction_payload.take().unwrap()
+                else {
+                    panic!("expected asset unlock payload");
+                };
 
-            let signature_bytes: [u8; 96] = quorum_sig.try_into().unwrap();
-            payload.quorum_sig = BLSSignature::from(&signature_bytes);
+                let signature_bytes: [u8; 96] = quorum_sig.try_into().unwrap();
+                payload.quorum_sig = BLSSignature::from(&signature_bytes);
 
-            asset_unlock_tx.special_transaction_payload = Some(AssetUnlockPayloadType(payload));
+                asset_unlock_tx.special_transaction_payload = Some(AssetUnlockPayloadType(payload));
 
-            let mut tx_bytes = vec![];
-            asset_unlock_tx.consensus_encode(&mut tx_bytes).unwrap();
+                let mut tx_bytes = vec![];
+                asset_unlock_tx.consensus_encode(&mut tx_bytes).unwrap();
 
-            self.core_rpc.send_raw_transaction(&tx_bytes)?;
+                self.core_rpc.send_raw_transaction(&tx_bytes)?;
+            }
         }
 
         // At the end we update the state cache
