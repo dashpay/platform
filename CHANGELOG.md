@@ -1,3 +1,23 @@
+### [0.25.16-rc.6](https://github.com/dashpay/platform/compare/v0.25.16-rc.5...v0.25.16-rc.6) (2023-12-06)
+
+
+### Features
+
+* **dashmate:** allow dashmate to update minor core versions ([#1619](https://github.com/dashpay/platform/issues/1619))
+
+### Bug Fixes
+
+* **dashmate:** http API calls fail with `command not found error` ([#1600](https://github.com/dashpay/platform/issues/1600))
+
+### Tests
+
+* **dashmate:** add `dashmate update` unit test ([#1609](https://github.com/dashpay/platform/issues/1609))
+
+### Miscellaneous Chores
+
+* **dashmate:** remove `platform feature-flag` command ([#1616](https://github.com/dashpay/platform/issues/1616))
+* **dashmate:** remove unnecessary WASM DPP ([#1607](https://github.com/dashpay/platform/issues/1607))
+
 ### [0.25.16-rc.5](https://github.com/dashpay/platform/compare/v0.25.16-rc.4...v0.25.16-rc.5) (2023-11-29)
 
 
