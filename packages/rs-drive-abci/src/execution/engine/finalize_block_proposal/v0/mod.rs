@@ -239,7 +239,16 @@ where
                 let mut tx_bytes = vec![];
                 asset_unlock_tx.consensus_encode(&mut tx_bytes).unwrap();
 
-                self.core_rpc.send_raw_transaction(&tx_bytes)?;
+                let result = self.core_rpc.send_raw_transaction(&tx_bytes);
+
+                match result {
+                    Ok(_) => {
+                        tracing::trace!("Broadcasted asset unlock tx: {}", hex::encode(tx_bytes));
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to broadcast asset unlock tx: {}", e);
+                    }
+                }
             }
         }
 
