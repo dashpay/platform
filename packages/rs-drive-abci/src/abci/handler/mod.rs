@@ -38,6 +38,7 @@
 mod error;
 mod execution_result;
 
+use dashcore_rpc::dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::build_asset_unlock_tx;
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
 
@@ -528,14 +529,17 @@ where
             )))
                 .into())
         } else {
-            // TODO(withdrawals): why do we need to do that?
             // we only want to sign the hash of the transaction
             let extensions = block_execution_context
                 .withdrawal_transactions()
-                .keys()
-                .map(|tx_id| proto::ExtendVoteExtension {
-                    r#type: VoteExtensionType::ThresholdRecover as i32,
-                    extension: tx_id.to_byte_array().to_vec(),
+                .values()
+                .map(|asset_unlock_info_bytes| {
+                    let asset_unlock_tx = build_asset_unlock_tx(asset_unlock_info_bytes).unwrap();
+
+                    proto::ExtendVoteExtension {
+                        r#type: VoteExtensionType::ThresholdRecover as i32,
+                        extension: asset_unlock_tx.txid().to_byte_array().to_vec(),
+                    }
                 })
                 .collect();
             Ok(proto::ResponseExtendVote {
@@ -573,10 +577,14 @@ where
         let got: withdrawal_txs::v0::WithdrawalTxs = vote_extensions.into();
         let expected = block_execution_context
             .withdrawal_transactions()
-            .keys()
-            .map(|tx_id| proto::ExtendVoteExtension {
-                r#type: VoteExtensionType::ThresholdRecover as i32,
-                extension: tx_id.to_byte_array().to_vec(),
+            .values()
+            .map(|asset_unlock_info_bytes| {
+                let asset_unlock_tx = build_asset_unlock_tx(asset_unlock_info_bytes).unwrap();
+
+                proto::ExtendVoteExtension {
+                    r#type: VoteExtensionType::ThresholdRecover as i32,
+                    extension: asset_unlock_tx.txid().to_byte_array().to_vec(),
+                }
             })
             .collect::<Vec<_>>()
             .into();
