@@ -90,7 +90,9 @@ where
                         request_height: block_execution_context
                             .block_state_info()
                             .core_chain_locked_height(),
-                        quorum_hash: QuorumHash::hash(&validator_set_quorum_hash),
+                        quorum_hash: QuorumHash::from_byte_array(
+                            validator_set_quorum_hash.to_owned(),
+                        ),
                     };
 
                     let mut unsigned_transaction_bytes = vec![];
