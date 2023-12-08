@@ -392,7 +392,7 @@ LABEL description="DAPI Node.JS"
 # Install ZMQ shared library
 RUN apk add --no-cache zeromq-dev
 
-WORKDIR /platform
+WORKDIR /platform/packages/dapi
 
 COPY --from=build-dapi /platform/.yarn /platform/.yarn
 COPY --from=build-dapi /platform/package.json /platform/yarn.lock /platform/.yarnrc.yml /platform/.pnp* /platform/
@@ -408,3 +408,5 @@ RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 
 EXPOSE 2500 2501 2510
 USER node
+
+ENTRYPOINT ["yarn", "pm2-runtime", "processes.yml"]

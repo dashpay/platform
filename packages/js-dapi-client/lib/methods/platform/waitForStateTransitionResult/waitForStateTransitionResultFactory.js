@@ -24,7 +24,7 @@ function waitForStateTransitionResultFactory(grpcTransport) {
     // eslint-disable-next-line no-param-reassign
     options = {
       // Set default timeout
-      timeout: 120000,
+      timeout: 80000,
       prove: false,
       retry: 0,
       throwDeadlineExceeded: true,

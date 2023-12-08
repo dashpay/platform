@@ -17,6 +17,7 @@ const {
 const cbor = require('cbor');
 const TransactionWaitPeriodExceededError = require('../../../errors/TransactionWaitPeriodExceededError');
 const TransactionErrorResult = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/transactionResult/TransactionErrorResult');
+const logger = require('../../../logger');
 
 /**
  *
