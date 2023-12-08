@@ -412,4 +412,4 @@ RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 EXPOSE 2500 2501 2510
 USER node
 
-ENTRYPOINT ["pm2-runtime", "pm2.yml"]
+ENTRYPOINT ["yarn", "node", "/usr/local/bin/pm2-runtime", "pm2.yml"]
