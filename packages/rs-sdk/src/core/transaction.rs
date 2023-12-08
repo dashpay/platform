@@ -1,9 +1,8 @@
 use crate::{Error, Sdk};
 use bip37_bloom_filter::{BloomFilter, BloomFilterData};
 use dapi_grpc::core::v0::{
-    transactions_with_proofs_request, transactions_with_proofs_response, GetStatusRequest,
-    GetTransactionRequest, GetTransactionResponse, TransactionsWithProofsRequest,
-    TransactionsWithProofsResponse,
+    transactions_with_proofs_request, transactions_with_proofs_response, GetTransactionRequest,
+    GetTransactionResponse, TransactionsWithProofsRequest, TransactionsWithProofsResponse,
 };
 use dapi_grpc::platform::v0::{
     get_epochs_info_request, get_epochs_info_response, GetEpochsInfoRequest, GetEpochsInfoResponse,
@@ -13,7 +12,7 @@ use dpp::dashcore::{Address, InstantLock, MerkleBlock, OutPoint, Transaction, Tx
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
-use rs_dapi_client::transport::TransportRequest;
+
 use rs_dapi_client::{Dapi, RequestSettings};
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
