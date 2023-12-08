@@ -80,6 +80,12 @@
                   timeout: 660s
                   max_stream_duration:
                     grpc_timeout_header_max: 600s
+              # set timeout for waitForStateTransitionResult
+              - match:
+                  prefix: "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
+                route:
+                  cluster: core_and_platform
+                  timeout: 80s
               # core unary endpoints
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Core"
@@ -190,7 +196,7 @@ static_resources:
         {{?}}
   clusters:
    - name: core_and_platform
-     connect_timeout: 0.5s
+     connect_timeout: 15s
      type: logical_dns
      lb_policy: round_robin
      typed_extension_protocol_options:
@@ -211,7 +217,7 @@ static_resources:
                      address: dapi_api
                      port_value: 3005
    - name: tx_filter_stream
-     connect_timeout: 0.5s
+     connect_timeout: 15s
      type: logical_dns
      lb_policy: round_robin
      typed_extension_protocol_options:

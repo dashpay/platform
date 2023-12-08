@@ -325,6 +325,17 @@ impl Dapi for Sdk {
     }
 }
 
+#[async_trait::async_trait]
+impl Dapi for &Sdk {
+    async fn execute<R: TransportRequest>(
+        &self,
+        request: R,
+        settings: RequestSettings,
+    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
+        Dapi::execute(self, request, settings).await
+    }
+}
+
 /// Dash Platform SDK Builder, used to configure and [`SdkBuilder::build()`] the [Sdk].
 ///
 /// [SdkBuilder] implements a "builder" design pattern to allow configuration of the Sdk before it is instantiated.
@@ -485,7 +496,7 @@ impl SdkBuilder {
     ///
     /// For more control over the configuration, use [SdkBuilder::with_wallet()] and [SdkBuilder::with_context_provider()].
     ///
-    /// This is temporary implementation, intended for development purposes.   
+    /// This is temporary implementation, intended for development purposes.
     pub fn with_core(mut self, ip: &str, port: u16, user: &str, password: &str) -> Self {
         self.core_ip = ip.to_string();
         self.core_port = port;

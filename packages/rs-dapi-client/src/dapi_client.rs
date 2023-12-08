@@ -19,7 +19,7 @@ pub enum DapiClientError<TE> {
     /// The error happened on transport layer
     #[error("transport error with {1}: {0}")]
     Transport(TE, Address),
-    /// There are no valid peer addresses to use.
+    /// There are no valid DAPI addresses to use.
     #[error("no available addresses to use")]
     NoAvailableAddresses,
     /// [AddressListError] errors
@@ -133,7 +133,8 @@ impl Dapi for DapiClient {
                 address = ?address_result,
                 settings = ?applied_settings,
                 method = request.method_name(),
-            );
+            )
+            .entered();
 
             tracing::trace!(
                 ?request,
@@ -152,7 +153,8 @@ impl Dapi for DapiClient {
                 // `impl Future<Output = Result<...>`, not a `Result` itself.
                 let address = address_result?;
 
-                let mut transport_client = R::Client::with_uri(address.uri().clone());
+                let mut transport_client =
+                    R::Client::with_uri_and_settings(address.uri().clone(), &applied_settings);
 
                 let response = transport_request
                     .execute_transport(&mut transport_client, &applied_settings)
