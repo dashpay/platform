@@ -409,8 +409,6 @@ COPY --from=build-dapi /platform/packages/js-dapi-client /platform/packages/js-d
 
 RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 
-
-
 EXPOSE 2500 2501 2510
 USER node
 
