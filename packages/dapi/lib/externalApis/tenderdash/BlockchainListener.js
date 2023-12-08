@@ -1,5 +1,4 @@
 const EventEmitter = require('events');
-const logger = require('../../logger');
 
 const TX_QUERY = 'tm.event = \'Tx\'';
 const NEW_BLOCK_QUERY = 'tm.event = \'NewBlock\'';
@@ -30,12 +29,6 @@ class BlockchainListener extends EventEmitter {
    * Subscribe to blocks and transaction results
    */
   start() {
-    const processLogger = logger.child({
-      process: 'BlockchainListener',
-    });
-
-    processLogger.info('Subscribed to state transition results');
-
     // Emit transaction results
     this.wsClient.subscribe(TX_QUERY);
     this.wsClient.on(TX_QUERY, (message) => {
@@ -53,15 +46,12 @@ class BlockchainListener extends EventEmitter {
         return;
       }
 
-      processLogger.trace(`received transaction result for ${hashString}`);
-
       this.emit(BlockchainListener.getTransactionEventName(hashString), message);
     });
 
-    // TODO: It's not using
     // Emit blocks and contained transactions
-    // this.wsClient.subscribe(NEW_BLOCK_QUERY);
-    // this.wsClient.on(NEW_BLOCK_QUERY, (message) => this.emit(EVENTS.NEW_BLOCK, message));
+    this.wsClient.subscribe(NEW_BLOCK_QUERY);
+    this.wsClient.on(NEW_BLOCK_QUERY, (message) => this.emit(EVENTS.NEW_BLOCK, message));
   }
 }
 

@@ -69,34 +69,13 @@ async function main() {
     port: config.tendermintCore.port,
   });
 
-  const tenderdashLogger = logger.child({
-    process: 'TenderdashWs',
-  });
+  // const dppForParsingContracts = new DashPlatformProtocol(null, 1);
+  // const driveStateRepository = new DriveStateRepository(driveClient, dppForParsingContracts);
 
-  tenderdashLogger.info(`Connecting to Tenderdash on ${config.tendermintCore.host}:${config.tendermintCore.port}`);
+  logger.info(`Connecting to Tenderdash on ${config.tendermintCore.host}:${config.tendermintCore.port}`);
 
-  tenderDashWsClient.on('connect', () => {
-    tenderdashLogger.info('Connection to Tenderdash established.');
-  });
-
-  tenderDashWsClient.on('connect:retry', ({ interval }) => {
-    tenderdashLogger.info(`Reconnect to Tenderdash in ${interval} ms`);
-  });
-
-  tenderDashWsClient.on('connect:max_retry_exceeded', ({ maxRetries }) => {
-    tenderdashLogger.info(`Connection retry limit ${maxRetries} is reached`);
-  });
-
-  tenderDashWsClient.on('error', ({ error }) => {
-    tenderdashLogger.error(`Tenderdash connection error: ${error.message}`);
-  });
-
-  tenderDashWsClient.on('close', ({ error }) => {
-    tenderdashLogger.warn(`Connection closed: ${error.code}`);
-  });
-
-  tenderDashWsClient.on('disconnect', () => {
-    tenderdashLogger.fatal('Disconnected from Tenderdash... exiting');
+  tenderDashWsClient.on('error', (e) => {
+    logger.error('Tenderdash connection error', e);
 
     process.exit(1);
   });
@@ -105,6 +84,8 @@ async function main() {
 
   const blockchainListener = new BlockchainListener(tenderDashWsClient);
   blockchainListener.start();
+
+  logger.info('Connection to Tenderdash established.');
 
   // Start JSON RPC server
   logger.info('Starting JSON RPC server');
