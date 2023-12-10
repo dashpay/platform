@@ -147,5 +147,10 @@ process.on('unhandledRejection', (e) => {
 
 // break on ^C
 process.on('SIGINT', () => {
+  logger.info('Received SIGINT. Exiting...');
+
   process.exit();
 });
+
+// Tell PM2 that process ready to receive connections
+process.send('ready');
