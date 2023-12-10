@@ -86,12 +86,15 @@ where
             untied_withdrawal_transactions
                 .into_iter()
                 .map(|(_, untied_transaction_bytes)| {
+                    let mut q = validator_set_quorum_hash.clone();
+                    q.reverse();
+                    let reversed_q = q;
                     let request_info = AssetUnlockRequestInfo {
                         request_height: block_execution_context
                             .block_state_info()
                             .core_chain_locked_height(),
                         quorum_hash: QuorumHash::from_byte_array(
-                            validator_set_quorum_hash.to_owned(),
+                            reversed_q.to_owned(),
                         ),
                     };
 
