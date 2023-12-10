@@ -38,6 +38,9 @@
 mod error;
 mod execution_result;
 
+use dashcore_rpc::dashcore::{QuorumSigningRequestId, VarInt};
+use dashcore_rpc::dashcore::consensus::Encodable;
+use dashcore_rpc::dashcore::hashes::HashEngine;
 use dashcore_rpc::dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::build_asset_unlock_tx;
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
@@ -69,7 +72,8 @@ use crate::platform_types::block_proposal::v0::BlockProposal;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::withdrawal_txs;
-use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::hashes::{Hash, sha256};
+use dpp::dashcore::QuorumHash;
 use dpp::fee::SignedCredits;
 use dpp::version::TryIntoPlatformVersioned;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -535,10 +539,41 @@ where
                 .values()
                 .map(|asset_unlock_info_bytes| {
                     let asset_unlock_tx = build_asset_unlock_tx(asset_unlock_info_bytes).unwrap();
+                    let mut request_id_engine = QuorumSigningRequestId::engine();
+                    {
+                        const ASSET_UNLOCK_REQUEST_ID_PREFIX: &str = "plwdtx";
+                        let prefix_len = VarInt(ASSET_UNLOCK_REQUEST_ID_PREFIX.len() as u64);
+                        prefix_len.consensus_encode(&mut request_id_engine).unwrap();
+                        request_id_engine.input(ASSET_UNLOCK_REQUEST_ID_PREFIX.as_bytes());
+                        // TODO(withdrawals): access correct index from actual transaction payload
+                        let index :u64 = 100;
+                        request_id_engine.input(&index.to_le_bytes());
+                    }
+                    let request_id = QuorumSigningRequestId::from_engine(request_id_engine);
+
+                    let mut message_hash_engine = QuorumSigningRequestId::engine();
+                    {
+                        message_hash_engine.input(&asset_unlock_tx.txid().to_byte_array().to_vec());
+                    }
+                    let message_hash = QuorumSigningRequestId::from_engine(message_hash_engine);
+
+                    let mut signature_hash_engine = QuorumSigningRequestId::engine();
+                    {
+                        // TODO(withdrawals): get the llmq_type properly
+                        let llmq_type :u8 = 106;
+                        signature_hash_engine.input(&llmq_type.to_le_bytes());
+                        // TODO(withdrawals): get the quorum_hash from actual transaction payload
+                        let quorum_hash :QuorumHash = QuorumHash::all_zeros();
+                        signature_hash_engine.input(&quorum_hash.as_byte_array());
+                        signature_hash_engine.input(&request_id.as_byte_array());
+                        signature_hash_engine.input(&message_hash.as_byte_array());
+                    }
+                    // TODO(withdrawals): Probably need to do double-sha according to Core implementation
+                    let signature_hash = QuorumSigningRequestId::from_engine(signature_hash_engine);
 
                     proto::ExtendVoteExtension {
                         r#type: VoteExtensionType::ThresholdRecover as i32,
-                        extension: asset_unlock_tx.txid().to_byte_array().to_vec(),
+                        extension: Vec::from(signature_hash.to_byte_array()),
                     }
                 })
                 .collect();
@@ -583,6 +618,7 @@ where
 
                 proto::ExtendVoteExtension {
                     r#type: VoteExtensionType::ThresholdRecover as i32,
+                    // TODO(withdrawals): Do the same here as in extend_vote
                     extension: asset_unlock_tx.txid().to_byte_array().to_vec(),
                 }
             })
