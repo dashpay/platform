@@ -93,13 +93,9 @@ export default {
             subnet: {
               type: 'string',
             },
-            bindIp: {
-              type: 'string',
-              format: 'ipv4',
-            },
           },
           additionalProperties: false,
-          required: ['subnet', 'bindIp'],
+          required: ['subnet'],
         },
         baseImage: {
           type: 'object',
@@ -168,6 +164,11 @@ export default {
         p2p: {
           type: 'object',
           properties: {
+            host: {
+              type: 'string',
+              minLength: 1,
+              format: 'ipv4',
+            },
             port: {
               $ref: '#/definitions/port',
             },
@@ -189,12 +190,17 @@ export default {
               },
             },
           },
-          required: ['port', 'seeds'],
+          required: ['host', 'port', 'seeds'],
           additionalProperties: false,
         },
         rpc: {
           type: 'object',
           properties: {
+            host: {
+              type: 'string',
+              minLength: 1,
+              format: 'ipv4',
+            },
             port: {
               $ref: '#/definitions/port',
             },
@@ -213,7 +219,7 @@ export default {
               },
             },
           },
-          required: ['port', 'user', 'password'],
+          required: ['host', 'port', 'user', 'password'],
           additionalProperties: false,
         },
         spork: {
@@ -346,11 +352,16 @@ export default {
                 http: {
                   type: 'object',
                   properties: {
+                    host: {
+                      type: 'string',
+                      minLength: 1,
+                      format: 'ipv4',
+                    },
                     port: {
                       $ref: '#/definitions/port',
                     },
                   },
-                  required: ['port'],
+                  required: ['host', 'port'],
                   additionalProperties: false,
                 },
                 rateLimiter: {
@@ -501,6 +512,11 @@ export default {
                 p2p: {
                   type: 'object',
                   properties: {
+                    host: {
+                      type: 'string',
+                      minLength: 1,
+                      format: 'ipv4',
+                    },
                     port: {
                       $ref: '#/definitions/port',
                     },
@@ -517,7 +533,7 @@ export default {
                       },
                     },
                   },
-                  required: ['port', 'persistentPeers', 'seeds'],
+                  required: ['host', 'port', 'persistentPeers', 'seeds'],
                   additionalProperties: false,
                 },
                 consensus: {
@@ -556,11 +572,16 @@ export default {
                 rpc: {
                   type: 'object',
                   properties: {
+                    host: {
+                      type: 'string',
+                      minLength: 1,
+                      format: 'ipv4',
+                    },
                     port: {
                       $ref: '#/definitions/port',
                     },
                   },
-                  required: ['port'],
+                  required: ['host', 'port'],
                   additionalProperties: false,
                 },
                 pprof: {
@@ -583,11 +604,16 @@ export default {
                     enabled: {
                       type: 'boolean',
                     },
+                    host: {
+                      type: 'string',
+                      minLength: 1,
+                      format: 'ipv4',
+                    },
                     port: {
                       $ref: '#/definitions/port',
                     },
                   },
-                  required: ['enabled', 'port'],
+                  required: ['enabled', 'host', 'port'],
                   additionalProperties: false,
                 },
                 node: {
