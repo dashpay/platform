@@ -21,7 +21,7 @@ MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY=$(grep -m 1 "Masternode Reward Shares
 MASTERNODE_OWNER_PRO_REG_TX_HASH=$(grep -m 1 "ProRegTx transaction ID:" "${SETUP_FILE_PATH}" | awk '{printf $5}')
 MASTERNODE_OWNER_MASTER_PRIVATE_KEY=$(grep -m 1 "Owner Private Key:" "${SETUP_FILE_PATH}" | awk '{printf $5}')
 
-echo "Mint 50 Dash to the firs faucet address"
+echo "Mint 50 Dash to the first faucet"
 
 MINT_FILE_PATH=${PATH_TO_PROJECT_ROOT}/logs/mint.log
 
@@ -29,7 +29,7 @@ yarn dashmate wallet mint --verbose --config=local_seed 50 | tee "${MINT_FILE_PA
 FAUCET_1_ADDRESS=$(grep -m 1 "Address:" "${MINT_FILE_PATH}" | awk '{printf $3}')
 FAUCET_1_PRIVATE_KEY=$(grep -m 1 "Private key:" "${MINT_FILE_PATH}" | awk '{printf $4}')
 
-echo "Mint 50 Dash to the firs faucet address"
+echo "Mint 50 Dash to the second faucet"
 
 yarn dashmate wallet mint --verbose --config=local_seed 50 | tee "${MINT_FILE_PATH}"
 FAUCET_2_ADDRESS=$(grep -m 1 "Address:" "${MINT_FILE_PATH}" | awk '{printf $3}')
