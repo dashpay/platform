@@ -358,6 +358,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.25.16-rc.7': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+
             delete options.docker.network.bindIp;
 
             options.core.p2p.host = base.get('core.p2p.host');

@@ -289,7 +289,17 @@ function subscribeToTransactionsWithProofsHandlerFactory(
 
       // End stream if user asked only for historical data
       call.end();
+
+      // remove bloom filter emitter
+      mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
     }
+
+    call.on('end', () => {
+      call.end();
+
+      // remove bloom filter emitter
+      mediator.emit(ProcessMediator.EVENTS.CLIENT_DISCONNECTED);
+    });
 
     call.on('cancelled', () => {
       call.end();

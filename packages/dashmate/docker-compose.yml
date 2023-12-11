@@ -120,7 +120,7 @@ services:
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}
       - NODE_ENV=${ENVIRONMENT:?err}
-    command: yarn workspace @dashevo/dapi api
+    command: --only api
     stop_grace_period: 10s
     profiles:
       - platform
@@ -144,7 +144,7 @@ services:
       - NETWORK=devnet
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=26657
-    command: yarn workspace @dashevo/dapi core-streams
+    command: --only core-streams
     stop_grace_period: 10s
     profiles:
       - platform

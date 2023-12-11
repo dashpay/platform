@@ -44,21 +44,6 @@ describe('Testnet Fullnode', function main() {
     assertServiceRunning = container.resolve('assertServiceRunning');
   });
 
-  after(async () => {
-    if (config) {
-      const resetNodeTask = container.resolve('resetNodeTask');
-      const resetTask = resetNodeTask(config);
-
-      await resetTask.run({
-        isHardReset: false,
-        isForce: true,
-        isVerbose: true,
-      });
-    }
-
-    homeDir.remove();
-  });
-
   describe('setup', () => {
     it('should setup fullnode', async () => {
       // TODO: Refactor setup command to extract setup logic to
@@ -177,6 +162,21 @@ describe('Testnet Fullnode', function main() {
       });
 
       await assertServiceRunning(config, 'core', false);
+    });
+  });
+
+  describe('reset', () => {
+    it('should reset fullnode', async () => {
+      const resetNodeTask = container.resolve('resetNodeTask');
+      const resetTask = resetNodeTask(config);
+
+      await resetTask.run({
+        isHardReset: false,
+        isForce: true,
+        isVerbose: true,
+      });
+
+      homeDir.remove();
     });
   });
 });
