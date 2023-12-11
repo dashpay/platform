@@ -355,6 +355,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '0.25.16-rc.7': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+          });
+
+        return configFile;
+      },
     };
   }
 
