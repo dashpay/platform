@@ -1018,17 +1018,9 @@ impl Strategy {
                         let owner = current_identities.get(indices[0]).unwrap();
                         let recipient = current_identities.get(indices[1]).unwrap();
 
-                        let fetched_owner_balance = drive
-                            .fetch_identity_balance(owner.id().to_buffer(), None, platform_version)
-                            .expect("expected to be able to get identity")
-                            .expect("expected to get an identity");
-
                         let state_transition =
                             crate::transitions::create_identity_credit_transfer_transition(
-                                owner,
-                                recipient,
-                                signer,
-                                fetched_owner_balance - 100,
+                                owner, recipient, signer, 1000,
                             );
                         operations.push(state_transition);
                     }
@@ -1091,9 +1083,8 @@ impl Strategy {
         let mut finalize_block_operations = vec![];
         let identity_state_transitions =
             self.identity_state_transitions_for_block(block_info, signer, rng, platform_version);
-        let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
+        let (mut new_identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
-        current_identities.append(&mut identities);
 
         if block_info.height == 1 {
             // add contracts on block 1
@@ -1124,6 +1115,8 @@ impl Strategy {
             );
             state_transitions.append(&mut contract_update_state_transitions);
         }
+
+        current_identities.append(&mut new_identities);
 
         (state_transitions, finalize_block_operations)
     }
