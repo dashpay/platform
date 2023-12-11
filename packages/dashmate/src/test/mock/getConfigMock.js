@@ -6,6 +6,7 @@ export default function getConfigMock(sinon) {
     getOptions: sinon.stub(),
   };
 
+  configMock.get.withArgs('docker.network.privateInterface').returns('127.0.0.1');
   configMock.get.withArgs('platform.dapi.envoy.http.port').returns('8100');
   configMock.get.withArgs('externalIp').returns('127.0.0.1');
   configMock.get.withArgs('platform.drive.tenderdash.p2p.port').returns('8101');

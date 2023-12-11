@@ -5,7 +5,7 @@ import wait from '../util/wait.js';
  *
  * @typedef {waitForDashmateHelperAPI}
  * @param {Config} config
- * @param {{maxRetries: number, delay: number}} options, default 120s
+ * @param {{maxRetries: number, delay: number}} [options] maxRetries default is 120s
  * @return {Promise<void>}
  */
 export default async function waitForDashmateHelperAPI(config, options =
@@ -19,9 +19,12 @@ export default async function waitForDashmateHelperAPI(config, options =
 
   const { maxRetries, delay } = options;
 
+  const host = config.get('docker.network.privateInterface');
+  const port = config.get('dashmate.helper.api.port');
+
   do {
     try {
-      const response = await fetch(`http://127.0.0.1:${config.get('dashmate.helper.api.port')}`, {
+      const response = await fetch(`http://${host}:${port}`, {
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
         body: JSON.stringify({

@@ -25,7 +25,7 @@ export default function getCoreScopeFactory(
    */
   async function getCoreScope(config) {
     const network = config.get('network');
-    const rpcService = config.get('core.rpc.port') ? `127.0.0.1:${config.get('core.rpc.port')}` : null;
+    const rpcService = `${config.get('docker.network.privateInterface')}:${config.get('core.rpc.port')}`;
     const p2pService = config.get('externalIp') ? `${config.get('externalIp')}:${config.get('core.p2p.port')}` : null;
 
     const core = {

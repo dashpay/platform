@@ -41,6 +41,7 @@ describe('getCoreScopeFactory', () => {
 
       config = getConfigMock(this.sinon);
 
+      config.get.withArgs('docker.network.privateInterface').returns('127.0.0.1');
       config.get.withArgs('network').returns('testnet');
       config.get.withArgs('core.rpc.port').returns('8080');
       config.get.withArgs('core.p2p.port').returns('8081');

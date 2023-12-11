@@ -355,6 +355,18 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '0.25.16-rc.7': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            if (options.docker.network.bindIp) {
+              options.docker.network.publicInterface = options.docker.network.bindIp;
+              options.docker.network.privateInterface = base.get('docker.network.privateInterface');
+              delete options.docker.network.bindIp;
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 

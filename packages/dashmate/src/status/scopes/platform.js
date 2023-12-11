@@ -179,8 +179,9 @@ export default function getPlatformScopeFactory(
     const httpService = config.get('externalIp') ? `${config.get('externalIp')}:${httpPort}` : null;
     const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
     const p2pService = config.get('externalIp') ? `${config.get('externalIp')}:${p2pPort}` : null;
+    const rpcHost = config.get('docker.network.privateInterface');
     const rpcPort = config.get('platform.drive.tenderdash.rpc.port');
-    const rpcService = rpcPort ? `127.0.0.1:${rpcPort}` : rpcPort;
+    const rpcService = `${rpcHost}:${rpcPort}`;
 
     const scope = {
       coreIsSynced: null,

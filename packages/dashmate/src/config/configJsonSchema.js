@@ -93,13 +93,17 @@ export default {
             subnet: {
               type: 'string',
             },
-            bindIp: {
+            publicInterface: {
+              type: 'string',
+              format: 'ipv4',
+            },
+            privateInterface: {
               type: 'string',
               format: 'ipv4',
             },
           },
           additionalProperties: false,
-          required: ['subnet', 'bindIp'],
+          required: ['subnet', 'privateInterface', 'publicInterface'],
         },
         baseImage: {
           type: 'object',

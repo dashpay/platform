@@ -135,6 +135,7 @@ describe('Testnet Fullnode', function main() {
   describe('sync', () => {
     it('should sync Dash Core', async () => {
       const coreRpcClient = createRpcClient({
+        host: config.get('docker.network.privateInterface'),
         port: config.get('core.rpc.port'),
         user: config.get('core.rpc.user'),
         pass: config.get('core.rpc.password'),

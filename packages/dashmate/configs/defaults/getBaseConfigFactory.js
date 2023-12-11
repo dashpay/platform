@@ -46,7 +46,9 @@ export default function getBaseConfigFactory(homeDir) {
       group: null,
       docker: {
         network: {
-          subnet: '0.0.0.0/0', bindIp: '0.0.0.0',
+          subnet: '0.0.0.0/0',
+          privateInterface: '127.0.0.1',
+          publicInterface: '0.0.0.0',
         },
         baseImage: {
           build: {

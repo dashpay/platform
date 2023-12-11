@@ -10,7 +10,7 @@ services:
       - LOCAL_UID=${LOCAL_UID:?err}
       - LOCAL_GID=${LOCAL_GID:?err}
     ports:
-      - 127.0.0.1:${DASHMATE_HELPER_API_PORT:?err}:${DASHMATE_HELPER_API_PORT:?err}
+      - ${DOCKER_NETWORK_PRIVATE_INTERFACE:?err}:${DASHMATE_HELPER_API_PORT:?err}:${DASHMATE_HELPER_API_PORT:?err}
     command: yarn workspace dashmate helper ${CONFIG_NAME:?err}
     volumes:
       - ${DASHMATE_HOME_DIR:?err}:/home/dashmate/.dashmate
@@ -22,8 +22,8 @@ services:
       org.dashmate.service.title: "Core"
     restart: unless-stopped
     ports:
-      - ${DOCKER_NETWORK_BIND_IP:?err}:${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err} # P2P
-      - 127.0.0.1:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err} #RPC
+      - ${DOCKER_NETWORK_PUBLIC_INTERFACE:?err}:${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err} # P2P
+      - ${DOCKER_NETWORK_PRIVATE_INTERFACE:?err}:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err} #RPC
     volumes:
       - core_data:/home/dash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/core/dash.conf:/home/dash/.dashcore/dash.conf:ro
@@ -85,10 +85,10 @@ services:
     depends_on:
       - drive_abci
     ports:
-      - ${DOCKER_NETWORK_BIND_IP:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err} # P2P
-      - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err} # RPC
-      - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_PPROF_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_PPROF_PORT:?err} # pprof
-      - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_METRICS_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_METRICS_PORT:?err} # Metrics
+      - ${DOCKER_NETWORK_PUBLIC_INTERFACE:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err} # P2P
+      - ${DOCKER_NETWORK_PRIVATE_INTERFACE:?err}:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err} # RPC
+      - ${DOCKER_NETWORK_PRIVATE_INTERFACE:?err}:${PLATFORM_DRIVE_TENDERDASH_PPROF_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_PPROF_PORT:?err} # pprof
+      - ${DOCKER_NETWORK_PRIVATE_INTERFACE:?err}:${PLATFORM_DRIVE_TENDERDASH_METRICS_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_METRICS_PORT:?err} # Metrics
     volumes:
       - drive_tenderdash:/tenderdash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/tenderdash:/tenderdash/config:ro
@@ -155,7 +155,7 @@ services:
       org.dashmate.service.title: "DAPI Envoy"
     restart: unless-stopped
     ports:
-      - ${DOCKER_NETWORK_BIND_IP:?err}:${PLATFORM_DAPI_ENVOY_HTTP_PORT:?err}:10000 # JSON RPC and gRPC Web & Native
+      - ${DOCKER_NETWORK_PUBLIC_INTERFACE:?err}:${PLATFORM_DAPI_ENVOY_HTTP_PORT:?err}:10000 # JSON RPC and gRPC Web & Native
     depends_on:
       - dapi_api
       - dapi_tx_filter_stream

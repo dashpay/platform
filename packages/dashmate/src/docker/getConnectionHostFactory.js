@@ -21,7 +21,7 @@ export default function getConnectionHostFactory(dockerCompose, isHelper) {
       return containerIP;
     }
 
-    return '127.0.0.1';
+    return config.get('docker.network.privateInterface');
   }
 
   return getConnectionHost;
