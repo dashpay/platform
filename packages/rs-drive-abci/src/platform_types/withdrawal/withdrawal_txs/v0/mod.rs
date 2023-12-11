@@ -3,6 +3,10 @@ use crate::abci::AbciError;
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::block::block_info::BlockInfo;
 use dpp::bls_signatures;
+use dpp::dashcore::consensus::Encodable;
+use dpp::dashcore::hashes::{Hash, HashEngine};
+use dpp::dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
+use dpp::dashcore::{QuorumSigningRequestId, Transaction, VarInt};
 use dpp::fee::fee_result::FeeResult;
 use dpp::validation::SimpleValidationResult;
 use dpp::version::PlatformVersion;
@@ -204,6 +208,42 @@ impl<'a> From<&Vec<VoteExtension>> for WithdrawalTxs<'a> {
             drive_operations: Vec::<DriveOperation>::new(),
         }
     }
+}
+
+pub fn get_withdrawal_sighash(asset_unlock_tx: &Transaction, quorum_type: u8) -> Vec<u8> {
+    let asset_unlock_payload: AssetUnlockPayload = asset_unlock_tx
+        .clone()
+        .special_transaction_payload
+        .unwrap()
+        .to_asset_unlock_payload()
+        .unwrap();
+
+    let mut request_id_engine = QuorumSigningRequestId::engine();
+    {
+        const ASSET_UNLOCK_REQUEST_ID_PREFIX: &str = "plwdtx";
+        let prefix_len = VarInt(ASSET_UNLOCK_REQUEST_ID_PREFIX.len() as u64);
+        prefix_len.consensus_encode(&mut request_id_engine).unwrap();
+        request_id_engine.input(ASSET_UNLOCK_REQUEST_ID_PREFIX.as_bytes());
+        request_id_engine.input(&asset_unlock_payload.base.index.to_le_bytes());
+    }
+    let request_id = QuorumSigningRequestId::from_engine(request_id_engine);
+
+    let mut signature_hash_engine = QuorumSigningRequestId::engine();
+    {
+        signature_hash_engine.input(&quorum_type.to_le_bytes());
+        signature_hash_engine.input(
+            &asset_unlock_payload
+                .request_info
+                .quorum_hash
+                .as_byte_array()
+                .as_slice(),
+        );
+        signature_hash_engine.input(&request_id.as_byte_array().as_slice());
+        signature_hash_engine.input(&asset_unlock_tx.txid().as_byte_array().as_slice());
+    }
+    let signature_hash = QuorumSigningRequestId::from_engine(signature_hash_engine);
+
+    Vec::from(signature_hash.as_byte_array().to_owned())
 }
 
 impl<'a> PartialEq for WithdrawalTxs<'a> {

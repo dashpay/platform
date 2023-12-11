@@ -72,9 +72,8 @@ use crate::platform_types::block_proposal::v0::BlockProposal;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::withdrawal_txs;
-use dpp::dashcore::hashes::{Hash, sha256};
-use dpp::dashcore::QuorumHash;
-use dpp::dashcore::transaction::special_transaction::TransactionPayload;
+use crate::platform_types::withdrawal::withdrawal_txs::v0::get_withdrawal_sighash;
+use dpp::dashcore::hashes::Hash;
 use dpp::fee::SignedCredits;
 use dpp::version::TryIntoPlatformVersioned;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -540,39 +539,15 @@ where
                 .values()
                 .map(|asset_unlock_info_bytes| {
                     let asset_unlock_tx = build_asset_unlock_tx(asset_unlock_info_bytes).unwrap();
-                    let asset_unlock_payload :AssetUnlockPayload = asset_unlock_tx.clone().special_transaction_payload.unwrap().to_asset_unlock_payload().unwrap();
 
-                    let mut request_id_engine = QuorumSigningRequestId::engine();
-                    {
-                        const ASSET_UNLOCK_REQUEST_ID_PREFIX: &str = "plwdtx";
-                        let prefix_len = VarInt(ASSET_UNLOCK_REQUEST_ID_PREFIX.len() as u64);
-                        prefix_len.consensus_encode(&mut request_id_engine).unwrap();
-                        request_id_engine.input(ASSET_UNLOCK_REQUEST_ID_PREFIX.as_bytes());
-                        request_id_engine.input(&asset_unlock_payload.base.index.to_le_bytes());
-                    }
-                    let request_id = QuorumSigningRequestId::from_engine(request_id_engine);
-
-                    let mut message_hash_engine = QuorumSigningRequestId::engine();
-                    {
-                        message_hash_engine.input(&asset_unlock_tx.txid().to_byte_array().to_vec().as_slice());
-                    }
-                    let message_hash = QuorumSigningRequestId::from_engine(message_hash_engine);
-
-                    let mut signature_hash_engine = QuorumSigningRequestId::engine();
-                    {
-                        // TODO(withdrawals): get the llmq_type properly
-                        let llmq_type :u8 = 106;
-                        signature_hash_engine.input(&llmq_type.to_le_bytes());
-                        signature_hash_engine.input(&asset_unlock_payload.request_info.quorum_hash.as_byte_array().as_slice());
-                        signature_hash_engine.input(&request_id.as_byte_array().as_slice());
-                        signature_hash_engine.input(&message_hash.as_byte_array().as_slice());
-                    }
-                    // TODO(withdrawals): Probably need to do double-sha according to Core implementation
-                    let signature_hash = QuorumSigningRequestId::from_engine(signature_hash_engine);
+                    let signature_hash = get_withdrawal_sighash(
+                        &asset_unlock_tx,
+                        self.platform.config.quorum_type() as u8,
+                    );
 
                     proto::ExtendVoteExtension {
                         r#type: VoteExtensionType::ThresholdRecover as i32,
-                        extension: Vec::from(signature_hash.to_byte_array()),
+                        extension: signature_hash,
                     }
                 })
                 .collect();
@@ -615,10 +590,15 @@ where
             .map(|asset_unlock_info_bytes| {
                 let asset_unlock_tx = build_asset_unlock_tx(asset_unlock_info_bytes).unwrap();
 
+                let signature_hash = get_withdrawal_sighash(
+                    &asset_unlock_tx,
+                    self.platform.config.quorum_type() as u8,
+                );
+
                 proto::ExtendVoteExtension {
                     r#type: VoteExtensionType::ThresholdRecover as i32,
                     // TODO(withdrawals): Do the same here as in extend_vote
-                    extension: asset_unlock_tx.txid().to_byte_array().to_vec(),
+                    extension: signature_hash,
                 }
             })
             .collect::<Vec<_>>()
