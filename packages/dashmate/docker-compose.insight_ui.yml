@@ -7,7 +7,7 @@ services:
       org.dashmate.service.title: "Core Insight UI"
     restart: unless-stopped
     ports:
-      - ${DOCKER_NETWORK_PRIVATE_INTERFACE:?err}:${CORE_INSIGHT_PORT:?err}:${CORE_INSIGHT_PORT:?err}
+      - 127.0.0.1:${CORE_INSIGHT_PORT:?err}:${CORE_INSIGHT_PORT:?err}
     depends_on:
       - core
     volumes:

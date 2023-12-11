@@ -19,7 +19,7 @@ export default function waitForNodeToBeReadyTaskFactory(
       {
         title: `Wait for node ${config.getName()} to be ready`,
         task: async () => {
-          const host = config.get('docker.network.privateInterface');
+          const host = config.get('platform.drive.tenderdash.rpc.host');
           const port = config.get('platform.drive.tenderdash.rpc.port');
 
           const tenderdashRpcClient = createTenderdashRpcClient({ host, port });

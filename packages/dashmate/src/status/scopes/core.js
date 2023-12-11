@@ -25,7 +25,7 @@ export default function getCoreScopeFactory(
    */
   async function getCoreScope(config) {
     const network = config.get('network');
-    const rpcService = `${config.get('docker.network.privateInterface')}:${config.get('core.rpc.port')}`;
+    const rpcService = `${config.get('core.rpc.host')}:${config.get('core.rpc.port')}`;
     const p2pService = config.get('externalIp') ? `${config.get('externalIp')}:${config.get('core.p2p.port')}` : null;
 
     const core = {
@@ -78,7 +78,7 @@ export default function getCoreScopeFactory(
         port: config.get('core.rpc.port'),
         user: config.get('core.rpc.user'),
         pass: config.get('core.rpc.password'),
-        host: await getConnectionHost(config, 'core'),
+        host: await getConnectionHost(config, 'core', 'core.rpc.host'),
       });
 
       const [mnsyncStatus, networkInfo, blockchainInfo] = await Promise.all([

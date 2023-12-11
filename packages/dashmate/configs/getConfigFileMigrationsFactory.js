@@ -358,11 +358,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.25.16-rc.7': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            if (options.docker.network.bindIp) {
-              options.docker.network.publicInterface = options.docker.network.bindIp;
-              options.docker.network.privateInterface = base.get('docker.network.privateInterface');
-              delete options.docker.network.bindIp;
-            }
+            delete options.docker.network.bindIp;
+
+            options.core.p2p.host = base.get('core.p2p.host');
+            options.core.rpc.host = base.get('core.rpc.host');
+            options.platform.dapi.envoy.http.host = base.get('platform.dapi.envoy.http.host');
+            options.platform.drive.tenderdash.p2p.host = base.get('platform.drive.tenderdash.p2p.host');
+            options.platform.drive.tenderdash.rpc.host = base.get('platform.drive.tenderdash.rpc.host');
+            options.platform.drive.tenderdash.metrics.host = base.get('platform.drive.tenderdash.metrics.host');
           });
 
         return configFile;

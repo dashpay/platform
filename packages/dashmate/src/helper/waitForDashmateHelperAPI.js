@@ -19,7 +19,7 @@ export default async function waitForDashmateHelperAPI(config, options =
 
   const { maxRetries, delay } = options;
 
-  const host = config.get('docker.network.privateInterface');
+  const host = '127.0.0.1';
   const port = config.get('dashmate.helper.api.port');
 
   do {

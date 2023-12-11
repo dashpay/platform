@@ -47,8 +47,6 @@ export default function getBaseConfigFactory(homeDir) {
       docker: {
         network: {
           subnet: '0.0.0.0/0',
-          privateInterface: '127.0.0.1',
-          publicInterface: '0.0.0.0',
         },
         baseImage: {
           build: {
@@ -77,9 +75,12 @@ export default function getBaseConfigFactory(homeDir) {
           image: 'dashpay/dashd:20', commandArgs: [],
         },
         p2p: {
-          port: 9999, seeds: [],
+          host: '0.0.0.0',
+          port: 9999,
+          seeds: [],
         },
         rpc: {
+          host: '127.0.0.1',
           port: 9998,
           user: 'dashrpc',
           password: 'rpcpassword',
@@ -115,6 +116,7 @@ export default function getBaseConfigFactory(homeDir) {
               image: 'dashpay/envoy:1.22.11',
             },
             http: {
+              host: '0.0.0.0',
               port: 443,
             },
             rateLimiter: {
@@ -169,16 +171,22 @@ export default function getBaseConfigFactory(homeDir) {
               image: 'dashpay/tenderdash:0.13.3',
             },
             p2p: {
-              port: 26656, persistentPeers: [], seeds: [],
+              host: '0.0.0.0',
+              port: 26656,
+              persistentPeers: [],
+              seeds: [],
             },
             rpc: {
+              host: '127.0.0.1',
               port: 26657,
             },
             pprof: {
               enabled: false, port: 6060,
             },
             metrics: {
-              enabled: false, port: 26660,
+              enabled: false,
+              host: '127.0.0.1',
+              port: 26660,
             },
             consensus: {
               createEmptyBlocks: true, createEmptyBlocksInterval: '3m',
