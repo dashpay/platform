@@ -16,11 +16,10 @@ drive = { path = "../rs-drive", default-features = false, features = [
     "verify",
 ] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
-# drive-abci is only needed for core rpc; TODO remove once we have correct core rpc impl
-drive-abci = { path = "../rs-drive-abci", default-features = false }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
-
+simple-signer = { path = "../simple-signer" }
 bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
+bincode_derive = { version = "2.0.0-rc.3", optional = true }
 thiserror = "1.0.47"
 tokio = { version = "1.32.0", features = ["macros"] }
 tokio-util = { version = "0.7.8" }
@@ -51,7 +50,7 @@ dpp = { path = "../rs-dpp", features = [
 ] }
 data-contracts = { path = "../data-contracts" }
 tokio-test = { version = "0.4.3" }
-
+clap = { version = "4.4.10", features = ["derive"] }
 [features]
 default = ["mocks", "offline-testing"]
 mocks = [
@@ -63,6 +62,7 @@ mocks = [
     "dpp/random-identities",
     "drive-proof-verifier/mocks",
     "dep:bincode",
+    "dep:bincode_derive",
     "dep:hex",
     "dep:dotenvy",
     "dep:envy",

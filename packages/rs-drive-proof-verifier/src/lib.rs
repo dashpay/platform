@@ -2,7 +2,7 @@
 #![warn(missing_docs)]
 
 /// Errors that can occur during proof verification
-mod error;
+pub mod error;
 /// Implementation of proof verification
 mod proof;
 mod provider;

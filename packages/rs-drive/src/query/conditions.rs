@@ -30,11 +30,11 @@
 //! Query Conditions
 //!
 
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use grovedb::Query;
 use sqlparser::ast;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 use WhereOperator::{
     Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
@@ -1093,7 +1093,7 @@ impl<'a> WhereClause {
                     )));
                 }
 
-                let field_name : String = if let ast::Expr::Identifier(ident) = &**expr {
+                let field_name: String = if let ast::Expr::Identifier(ident) = &**expr {
                     ident.value.clone()
                 } else {
                     return Err(Error::Query(QuerySyntaxError::InvalidInClause(
@@ -1102,19 +1102,14 @@ impl<'a> WhereClause {
                 };
 
                 let property_type = match field_name.as_str() {
-                    "$id" | "$ownerId" => {
-                        Cow::Owned(DocumentPropertyType::Identifier)
-                    }
-                    "$createdAt" | "$updatedAt" => {
-                        Cow::Owned(DocumentPropertyType::Date)
-                    }
-                    "$revision" => {
-                        Cow::Owned(DocumentPropertyType::Integer)
-                    }
+                    "$id" | "$ownerId" => Cow::Owned(DocumentPropertyType::Identifier),
+                    "$createdAt" | "$updatedAt" => Cow::Owned(DocumentPropertyType::Date),
+                    "$revision" => Cow::Owned(DocumentPropertyType::Integer),
                     property_name => {
                         let Some(property) = document_type.properties().get(property_name) else {
                             return Err(Error::Query(QuerySyntaxError::InvalidInClause(
-                                "Invalid query: in clause property not in document type".to_string(),
+                                "Invalid query: in clause property not in document type"
+                                    .to_string(),
                             )));
                         };
                         Cow::Borrowed(&property.property_type)
@@ -1124,11 +1119,12 @@ impl<'a> WhereClause {
                 let mut in_values: Vec<Value> = Vec::new();
                 for value in list {
                     if let ast::Expr::Value(sql_value) = value {
-                        let platform_value = sql_value_to_platform_value(sql_value.clone()).ok_or({
-                            Error::Query(QuerySyntaxError::InvalidSQL(
-                                "Invalid query: unexpected value type".to_string(),
-                            ))
-                        })?;
+                        let platform_value =
+                            sql_value_to_platform_value(sql_value.clone()).ok_or({
+                                Error::Query(QuerySyntaxError::InvalidSQL(
+                                    "Invalid query: unexpected value type".to_string(),
+                                ))
+                            })?;
                         let transformed_value = if let Value::Text(text_value) = &platform_value {
                             property_type.value_from_string(text_value)?
                         } else {
@@ -1151,7 +1147,12 @@ impl<'a> WhereClause {
 
                 Ok(())
             }
-            ast::Expr::Like { negated, expr, pattern, escape_char } => {
+            ast::Expr::Like {
+                negated,
+                expr,
+                pattern,
+                escape_char,
+            } => {
                 let where_operator = WhereOperator::StartsWith;
                 if *negated {
                     return Err(Error::Query(QuerySyntaxError::Unsupported(
@@ -1159,7 +1160,7 @@ impl<'a> WhereClause {
                     )));
                 }
 
-                let field_name : String = if let ast::Expr::Identifier(ident) = &**expr {
+                let field_name: String = if let ast::Expr::Identifier(ident) = &**expr {
                     ident.value.clone()
                 } else {
                     panic!("unreachable: confirmed it's identifier variant");
@@ -1179,9 +1180,7 @@ impl<'a> WhereClause {
                         ))
                     })?;
                     let match_locations: Vec<_> = inner_text.match_indices('%').collect();
-                    if match_locations.len() == 1
-                        && match_locations[0].0 == inner_text.len() - 1
-                    {
+                    if match_locations.len() == 1 && match_locations[0].0 == inner_text.len() - 1 {
                         Value::Text(String::from(&inner_text[..(inner_text.len() - 1)]))
                     } else {
                         return Err(Error::Query(QuerySyntaxError::Unsupported(
@@ -1226,31 +1225,28 @@ impl<'a> WhereClause {
                         where_operator = where_operator.flip()?;
                     } else {
                         return Err(Error::Query(QuerySyntaxError::InvalidSQL(
-                            "Invalid query: where clause should have field name and value".to_string(),
+                            "Invalid query: where clause should have field name and value"
+                                .to_string(),
                         )));
                     }
 
-                    let field_name : String = if let ast::Expr::Identifier(ident) = identifier {
+                    let field_name: String = if let ast::Expr::Identifier(ident) = identifier {
                         ident.value.clone()
                     } else {
                         panic!("unreachable: confirmed it's identifier variant");
                     };
 
                     let property_type = match field_name.as_str() {
-                        "$id" | "$ownerId" => {
-                            Cow::Owned(DocumentPropertyType::Identifier)
-                        }
-                        "$createdAt" | "$updatedAt" => {
-                            Cow::Owned(DocumentPropertyType::Date)
-                        }
-                        "$revision" => {
-                            Cow::Owned(DocumentPropertyType::Integer)
-                        }
+                        "$id" | "$ownerId" => Cow::Owned(DocumentPropertyType::Identifier),
+                        "$createdAt" | "$updatedAt" => Cow::Owned(DocumentPropertyType::Date),
+                        "$revision" => Cow::Owned(DocumentPropertyType::Integer),
                         property_name => {
-                            let Some(property) = document_type.properties().get(property_name) else {
-                                return Err(Error::Query(QuerySyntaxError::InvalidSQL(
-                                    format!("Invalid query: property named {} not in document type", field_name.as_str())
-                                )));
+                            let Some(property) = document_type.properties().get(property_name)
+                            else {
+                                return Err(Error::Query(QuerySyntaxError::InvalidSQL(format!(
+                                    "Invalid query: property named {} not in document type",
+                                    field_name.as_str()
+                                ))));
                             };
                             Cow::Borrowed(&property.property_type)
                         }

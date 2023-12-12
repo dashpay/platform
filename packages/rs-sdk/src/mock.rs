@@ -12,20 +12,21 @@
 //! ## Example
 //!
 //! ```no_run
-//! let mut sdk = dash_platform_sdk::Sdk::new_mock();
+//! let sdk = dash_platform_sdk::Sdk::new_mock();
 //! let query = dash_platform_sdk::platform::Identifier::random();
 //! sdk.mock().expect_fetch(query, None as Option<dash_platform_sdk::platform::Identity>);
 //! ```
 //!
 //! See tests/mock_*.rs for more detailed examples.
 
+#[cfg(not(feature = "mocks"))]
+mod noop;
+#[cfg(feature = "mocks")]
+pub mod provider;
 #[cfg(feature = "mocks")]
 mod requests;
 #[cfg(feature = "mocks")]
 pub mod sdk;
-
-#[cfg(not(feature = "mocks"))]
-mod noop;
 
 // Mockable reexport is needed even if mocks feature is disabled - it just does nothing.
 // Otherwise  dapi_grpc_macros::Mockable fails.
@@ -35,6 +36,3 @@ pub use dapi_grpc::mock::Mockable;
 pub use requests::*;
 #[cfg(feature = "mocks")]
 pub use sdk::MockDashPlatformSdk;
-
-#[cfg(not(feature = "mocks"))]
-pub use noop::*;

@@ -61,11 +61,12 @@
 #![allow(rustdoc::private_intra_doc_links)]
 
 pub mod core;
-pub mod core_client;
+mod core_client;
 pub mod error;
 pub mod mock;
 pub mod platform;
 pub mod sdk;
+
 pub use error::Error;
 pub use sdk::{Sdk, SdkBuilder};
 

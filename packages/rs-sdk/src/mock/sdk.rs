@@ -6,7 +6,7 @@ use dapi_grpc::{
     platform::v0::{self as proto},
 };
 use dpp::version::PlatformVersion;
-use drive_proof_verifier::{FromProof, MockContextProvider};
+use drive_proof_verifier::{error::ContextProviderError, FromProof, MockContextProvider};
 use rs_dapi_client::{
     mock::{Key, MockDapiClient},
     transport::TransportRequest,
@@ -32,6 +32,7 @@ use super::MockResponse;
 /// ## Panics
 ///
 /// Can panic on errors.
+#[derive(Debug)]
 pub struct MockDashPlatformSdk {
     from_proof_expectations: BTreeMap<Key, Vec<u8>>,
     platform_version: &'static PlatformVersion,
@@ -214,7 +215,7 @@ impl MockDashPlatformSdk {
     ///     api.mock().expect_fetch(query, Some(expected.clone())).await;
     ///
     ///     // Fetch the identity
-    ///     let retrieved = dpp::prelude::Identity::fetch(&mut api, query)
+    ///     let retrieved = dpp::prelude::Identity::fetch(&api, query)
     ///         .await
     ///         .unwrap()
     ///         .expect("object should exist");
@@ -328,9 +329,9 @@ impl MockDashPlatformSdk {
             None => {
                 let version = self.version();
                 let provider = self.quorum_provider.as_ref()
-                    .ok_or(drive_proof_verifier::Error::InvalidQuorum{
-                        error:"expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
-                    })?;
+                    .ok_or(ContextProviderError::InvalidQuorum(
+                     "expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
+                    ))?;
                 O::maybe_from_proof(request, response, version, provider)?
             }
         };

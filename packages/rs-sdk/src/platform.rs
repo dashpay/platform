@@ -15,19 +15,19 @@ pub mod transition;
 pub mod types;
 
 pub use dapi_grpc::platform::v0::{self as proto};
-pub use drive::{
-    dpp::{
-        self as dpp,
-        document::Document,
-        prelude::{DataContract, Identifier, Identity, IdentityPublicKey, Revision},
-    },
-    query::DriveQuery,
+pub use dpp::{
+    self as dpp,
+    document::Document,
+    prelude::{DataContract, Identifier, Identity, IdentityPublicKey, Revision},
 };
+pub use drive::query::DriveQuery;
+pub use drive_proof_verifier::ContextProvider;
+#[cfg(feature = "mocks")]
+pub use drive_proof_verifier::MockContextProvider;
+pub use rs_dapi_client as dapi;
 pub use {
     document_query::DocumentQuery,
     fetch::Fetch,
     fetch_many::FetchMany,
     query::{LimitQuery, Query, DEFAULT_EPOCH_QUERY_LIMIT},
 };
-
-pub use rs_dapi_client as dapi;

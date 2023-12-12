@@ -80,7 +80,7 @@ async fn test_epoch_list() {
     setup_logs();
 
     let cfg = Config::new();
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
     // Given some starting epoch and current epoch
     // Note the devnet does not necessarily start with epoch 0
@@ -89,7 +89,7 @@ async fn test_epoch_list() {
 
     // When we fetch epochs from the server, starting with `starting_epoch`
     let epochs: BTreeMap<u16, Option<ExtendedEpochInfo>> =
-        ExtendedEpochInfo::fetch_many(&mut sdk, starting_epoch)
+        ExtendedEpochInfo::fetch_many(&sdk, starting_epoch)
             .await
             .expect("list epochs");
 
@@ -107,7 +107,7 @@ async fn test_epoch_list_limit() {
     setup_logs();
 
     let cfg = Config::new();
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
     // Given some starting epoch and current epoch
     // Note the devnet does not necessarily start with epoch 0
@@ -120,7 +120,7 @@ async fn test_epoch_list_limit() {
         limit: Some(limit),
     };
 
-    let epochs = ExtendedEpochInfo::fetch_many(&mut sdk, query)
+    let epochs = ExtendedEpochInfo::fetch_many(&sdk, query)
         .await
         .expect("list epochs");
 
@@ -170,12 +170,12 @@ async fn test_epoch_fetch_current() {
     setup_logs();
 
     let cfg = Config::new();
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
     // Given some current epoch
     let expected_epoch = get_current_epoch(&sdk, &cfg).await;
 
-    let epoch = ExtendedEpochInfo::fetch_current(&mut sdk)
+    let epoch = ExtendedEpochInfo::fetch_current(&sdk)
         .await
         .expect("fetch current epoch");
 

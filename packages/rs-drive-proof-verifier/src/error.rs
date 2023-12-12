@@ -55,14 +55,6 @@ pub enum Error {
     #[error("error during signature verification: {error}")]
     SignatureVerificationError { error: String },
 
-    /// Provided quorum is invalid
-    #[error("invalid quorum: {error}")]
-    InvalidQuorum { error: String },
-
-    /// Data contract is invalid or not found, or some error occurred during data contract retrieval
-    #[error("cannot get data contract: {error}")]
-    InvalidDataContract { error: String },
-
     /// Signature format is invalid
     #[error("invalid signature format: {error}")]
     InvalidSignatureFormat { error: String },
@@ -82,6 +74,34 @@ pub enum Error {
     /// Invalid version of object in response
     #[error("invalid version of message")]
     InvalidVersion(#[from] dpp::version::PlatformVersionError),
+
+    /// Context provider is not set
+    #[error("context provider is not set")]
+    ContextProviderNotSet,
+
+    /// Context provider error
+    #[error("context provider error: {0}")]
+    ContextProviderError(#[from] ContextProviderError),
+}
+
+/// Errors returned by the context provider
+#[derive(Debug, thiserror::Error)]
+pub enum ContextProviderError {
+    /// Generic Context provider error
+    #[error("Context provider error: {0}")]
+    Generic(String),
+
+    /// Configuration error
+    #[error("Configuration error: {0}")]
+    Config(String),
+
+    /// Data contract is invalid or not found, or some error occurred during data contract retrieval
+    #[error("cannot get data contract: {0}")]
+    InvalidDataContract(String),
+
+    /// Provided quorum is invalid
+    #[error("invalid quorum: {0}")]
+    InvalidQuorum(String),
 }
 
 impl From<drive::error::Error> for Error {

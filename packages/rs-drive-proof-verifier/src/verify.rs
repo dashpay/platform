@@ -34,7 +34,6 @@ pub(crate) fn verify_tenderdash_proof(
     root_hash: &[u8],
     provider: &dyn ContextProvider,
 ) -> Result<(), Error> {
-    return Ok(());
     let block_id_hash = proof.block_id_hash.to_vec();
 
     let version = mtd.protocol_version as u64;
@@ -42,7 +41,7 @@ pub(crate) fn verify_tenderdash_proof(
     let round = proof.round;
     let core_locked_height = mtd.core_chain_locked_height;
     let quorum_hash = TryInto::<[u8; 32]>::try_into(proof.quorum_hash.as_slice()).map_err(|e| {
-        Error::InvalidQuorum {
+        Error::ResponseDecodeError {
             error: "invalid quorum hash size: ".to_string() + &e.to_string(),
         }
     })?;
