@@ -182,13 +182,13 @@ impl Dapi for DapiClient {
                     }
                     Err(error) => {
                         if error.can_retry() {
-                            let mut address_list = self
-                                .address_list
-                                .write()
-                                .expect("can't get address list for write");
-
-                            address_list.ban_address(&address)
-                                .map_err(DapiClientError::<<R::Client as TransportClient>::Error>::AddressList)?;
+                            // let mut address_list = self
+                            //     .address_list
+                            //     .write()
+                            //     .expect("can't get address list for write");
+                            //
+                            // address_list.ban_address(&address)
+                            //     .map_err(DapiClientError::<<R::Client as TransportClient>::Error>::AddressList)?;
                         } else {
                             tracing::trace!(?response, ?error, "received error");
                         }

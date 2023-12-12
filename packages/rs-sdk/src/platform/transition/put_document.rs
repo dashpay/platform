@@ -47,6 +47,16 @@ pub trait PutDocument<S: Signer> {
         data_contract: Arc<DataContract>,
         signer: &S,
     ) -> Result<Document, Error>;
+
+    async fn put_to_platform_with_settings(
+        &self,
+        sdk: &Sdk,
+        document_type: DocumentType,
+        document_state_transition_entropy: [u8; 32],
+        identity_public_key: IdentityPublicKey,
+        signer: &S,
+        settings: RequestSettings,
+    ) -> Result<StateTransition, Error>;
 }
 
 #[async_trait::async_trait]
@@ -58,6 +68,26 @@ impl<S: Signer> PutDocument<S> for Document {
         document_state_transition_entropy: [u8; 32],
         identity_public_key: IdentityPublicKey,
         signer: &S,
+    ) -> Result<StateTransition, Error> {
+        self.put_to_platform_with_settings(
+            sdk,
+            document_type,
+            document_state_transition_entropy,
+            identity_public_key,
+            signer,
+            RequestSettings::default(),
+        )
+        .await
+    }
+
+    async fn put_to_platform_with_settings(
+        &self,
+        sdk: &Sdk,
+        document_type: DocumentType,
+        document_state_transition_entropy: [u8; 32],
+        identity_public_key: IdentityPublicKey,
+        signer: &S,
+        settings: RequestSettings,
     ) -> Result<StateTransition, Error> {
         let transition = DocumentsBatchTransition::new_document_creation_transition_from_document(
             self.clone(),
@@ -73,10 +103,7 @@ impl<S: Signer> PutDocument<S> for Document {
 
         let request = transition.broadcast_request_for_state_transition()?;
 
-        request
-            .clone()
-            .execute(sdk, RequestSettings::default())
-            .await?;
+        request.clone().execute(sdk, settings).await?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
 
