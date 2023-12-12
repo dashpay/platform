@@ -94,7 +94,10 @@ where
         // TODO: Remove this when inflationary bug is fixed
         if matches!(state_transition, StateTransition::IdentityCreditTransfer(_)) {
             return Ok(ValidationResult::new_with_error(
-                BalanceIsNotEnoughError::new(0, 0).into(),
+                SerializedObjectParsingError::new(String::from(
+                    "this transition type is temporary not supported",
+                ))
+                .into(),
             ));
         }
 

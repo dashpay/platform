@@ -488,7 +488,7 @@ describe('Platform', () => {
         );
       });
 
-      // TODO: Remove this when inflationary bug is fixed
+      // TODO: Enable this when inflationary bug is fixed
       describe.skip('Credit transfer', () => {
         let recipient;
         before(async () => {
