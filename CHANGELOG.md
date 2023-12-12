@@ -1,3 +1,10 @@
+### [0.25.18](https://github.com/dashpay/platform/compare/v0.25.17...v0.25.18) (2023-12-12)
+
+
+### Bug Fixes
+
+* **drive:** temporary disable credit transfer transitions ([#1635](https://github.com/dashpay/platform/issues/1635))
+
 ### [0.25.17](https://github.com/dashpay/platform/compare/v0.25.16...v0.25.17) (2023-12-11)
 
 Increment version to overcome already published Dash SDK 3.25.16
