@@ -8,8 +8,8 @@ use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
 
-use dpp::document::DocumentV0Getters;
-use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
+use dpp::document::{Document, DocumentV0Getters};
+use dpp::identity::{Identity, KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
     PlatformSerializableWithPlatformVersion,
@@ -24,7 +24,6 @@ use drive::drive::Drive;
 
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
-use drive::query::DriveQuery;
 use rand::prelude::{IteratorRandom, StdRng};
 use rand::Rng;
 use std::borrow::Cow;
@@ -32,6 +31,7 @@ use std::collections::{BTreeMap, HashSet};
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
+use dpp::data_contract::document_type::DocumentType;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::BinaryData;
 use dpp::ProtocolError;
@@ -42,7 +42,6 @@ use dpp::state_transition::documents_batch_transition::document_transition::docu
 use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
 use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition, DocumentsBatchTransitionV0};
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
-use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 
 use simple_signer::signer::SimpleSigner;
@@ -94,6 +93,16 @@ pub struct Strategy {
     pub identities_inserts: Frequency,
     pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct RandomDocumentQuery<'a> {
+    pub data_contract: &'a DataContract,
+    pub document_type: &'a DocumentType,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum LocalDocumentQuery<'a> {
+    RandomDocumentQuery(RandomDocumentQuery<'a>)
 }
 
 #[derive(Clone, Debug, Encode, Decode)]
@@ -560,7 +569,8 @@ impl Strategy {
     /// transitions for the given block.
     pub fn state_transitions_for_block(
         &self,
-        drive: &Drive,
+        document_query_callback: &mut impl FnMut(LocalDocumentQuery) -> Vec<Document>,
+        identity_fetch_callback: &mut impl FnMut(Identifier, Option<IdentityKeysRequest>) -> PartialIdentity,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
@@ -796,18 +806,20 @@ impl Strategy {
                         document_type,
                         contract,
                     }) => {
-                        let any_item_query =
-                            DriveQuery::any_item_query(contract, document_type.as_ref());
-                        let mut items = drive
-                            .query_documents(
-                                any_item_query,
-                                Some(&block_info.epoch),
-                                false,
-                                None,
-                                Some(platform_version.protocol_version),
-                            )
-                            .expect("expect to execute query")
-                            .documents_owned();
+                        let mut items = document_query_callback(LocalDocumentQuery::RandomDocumentQuery(RandomDocumentQuery {
+                            data_contract: contract,
+                            document_type,
+                        }));
+                        // let mut items = drive
+                        //     .query_documents(
+                        //         any_item_query,
+                        //         Some(&block_info.epoch),
+                        //         false,
+                        //         None,
+                        //         Some(platform_version.protocol_version),
+                        //     )
+                        //     .expect("expect to execute query")
+                        //     .documents_owned();
 
                         items.retain(|item| !deleted.contains(&item.id()));
 
@@ -827,10 +839,7 @@ impl Strategy {
                                 limit: Some(1),
                                 offset: None,
                             };
-                            let identity = drive
-                                .fetch_identity_balance_with_keys(request, None, platform_version)
-                                .expect("expected to be able to get identity")
-                                .expect("expected to get an identity");
+                            let identity = identity_fetch_callback(request.identity_id.into(), Some(request));
                             let identity_contract_nonce = contract_nonce_counter
                                 .get_mut(&(identity.id, contract.id()))
                                 .expect(
@@ -888,18 +897,22 @@ impl Strategy {
                         document_type,
                         contract,
                     }) => {
-                        let any_item_query =
-                            DriveQuery::any_item_query(contract, document_type.as_ref());
-                        let mut items = drive
-                            .query_documents(
-                                any_item_query,
-                                Some(&block_info.epoch),
-                                false,
-                                None,
-                                Some(platform_version.protocol_version),
-                            )
-                            .expect("expect to execute query")
-                            .documents_owned();
+                        let mut items = document_query_callback(LocalDocumentQuery::RandomDocumentQuery(RandomDocumentQuery {
+                            data_contract: contract,
+                            document_type,
+                        }));
+                        // let any_item_query =
+                        //     DriveQuery::any_item_query(contract, document_type.as_ref());
+                        // let mut items = drive
+                        //     .query_documents(
+                        //         any_item_query,
+                        //         Some(&block_info.epoch),
+                        //         false,
+                        //         None,
+                        //         Some(platform_version.protocol_version),
+                        //     )
+                        //     .expect("expect to execute query")
+                        //     .documents_owned();
 
                         items.retain(|item| !deleted.contains(&item.id()));
 
@@ -922,10 +935,7 @@ impl Strategy {
                                 limit: Some(1),
                                 offset: None,
                             };
-                            let identity = drive
-                                .fetch_identity_balance_with_keys(request, None, platform_version)
-                                .expect("expected to be able to get identity")
-                                .expect("expected to get an identity");
+                            let identity = identity_fetch_callback(request.identity_id.into(), Some(request));
                             let identity_contract_nonce = contract_nonce_counter
                                 .get_mut(&(identity.id, contract.id()))
                                 .expect(
@@ -1069,6 +1079,8 @@ impl Strategy {
                         let owner = current_identities.get(indices[0]).unwrap();
                         let recipient = current_identities.get(indices[1]).unwrap();
 
+                        let fetched_owner_balance = identity_fetch_callback(owner.id(), None);
+
                         let state_transition =
                             crate::transitions::create_identity_credit_transfer_transition(
                                 owner,
@@ -1128,7 +1140,8 @@ impl Strategy {
     /// ```
     pub fn state_transitions_for_block_with_new_identities(
         &mut self,
-        drive: &Drive,
+        document_query_callback: &mut impl FnMut(LocalDocumentQuery) -> Vec<Document>,
+        identity_fetch_callback: &mut impl FnMut(Identifier, Option<IdentityKeysRequest>) -> PartialIdentity,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
@@ -1152,7 +1165,8 @@ impl Strategy {
             // Don't do any state transitions on block 1
             let (mut document_state_transitions, mut add_to_finalize_block_operations) = self
                 .state_transitions_for_block(
-                    drive,
+                    document_query_callback,
+                    identity_fetch_callback,
                     block_info,
                     current_identities,
                     signer,
