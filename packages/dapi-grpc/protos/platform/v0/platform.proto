@@ -230,28 +230,31 @@ message GetIdentityKeysResponse {
 
 message GetProofsRequest {
   message GetProofsRequestV0 {
+    // DocumentRequest specifies a request for a document proof
     message DocumentRequest {
-      bytes contract_id = 1;
-      string document_type = 2;
-      bool document_type_keeps_history = 3;
-      bytes document_id = 4;
+      bytes contract_id = 1;                     // ID of the contract the document belongs to
+      string document_type = 2;                  // Type of document being requested
+      bool document_type_keeps_history = 3;      // Indicates if the document type keeps a history of changes
+      bytes document_id = 4;                     // ID of the specific document being requested
     }
 
+    // IdentityRequest specifies a request for an identity proof
     message IdentityRequest {
       enum Type {
-        FULL_IDENTITY = 0;
-        BALANCE = 1;
-        KEYS = 2;
+        FULL_IDENTITY = 0;  // Request for the full identity
+        BALANCE = 1;        // Request for the identity's balance
+        KEYS = 2;           // Request for the identity's keys
       }
-      bytes identity_id = 1;
-      Type request_type = 2;
+      bytes identity_id = 1;  // ID of the identity for which the proof is requested
+      Type request_type = 2;  // Type of identity request
     }
 
-    message ContractRequest { bytes contract_id = 1; }
+    // ContractRequest specifies a request for a data contract proof.
+    message ContractRequest { bytes contract_id = 1; }  // ID of the contract for which the proof is requested
 
-    repeated IdentityRequest identities = 1;
-    repeated ContractRequest contracts = 2;
-    repeated DocumentRequest documents = 3;
+    repeated IdentityRequest identities = 1;  // List of identity requests
+    repeated ContractRequest contracts = 2;   // List of contract requests
+    repeated DocumentRequest documents = 3;   // List of document requests
   }
 
   oneof version { GetProofsRequestV0 v0 = 1; }
@@ -259,9 +262,11 @@ message GetProofsRequest {
 
 message GetProofsResponse {
   message GetProofsResponseV0 {
-    oneof result { Proof proof = 1; }
+    oneof result {
+      Proof proof = 1;  // Cryptographic proof for the requested data
+    }
 
-    ResponseMetadata metadata = 2;
+    ResponseMetadata metadata = 2;  // Metadata about the blockchain state
   }
   oneof version { GetProofsResponseV0 v0 = 1; }
 }
