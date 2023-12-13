@@ -355,29 +355,34 @@ message GetDataContractHistoryResponse {
 
 message GetDocumentsRequest {
   message GetDocumentsRequestV0 {
-    bytes data_contract_id = 1;
-    string document_type = 2;
-    bytes where = 3;
-    bytes order_by = 4;
-    uint32 limit = 5;
+    bytes data_contract_id = 1;  // The ID of the data contract containing the documents
+    string document_type = 2;    // The type of document being requested
+    bytes where = 3;             // Conditions to be met by the requested documents
+    bytes order_by = 4;          // Ordering criteria for the documents
+    uint32 limit = 5;            // Maximum number of documents to return
+
+    // Specifies the starting point for the document retrieval
     oneof start {
-      bytes start_after = 6;
-      bytes start_at = 7;
+      bytes start_after = 6;  // Start retrieval after this document
+      bytes start_at = 7;     // Start retrieval at this document
     }
-    bool prove = 8;
+    bool prove = 8;  // Flag to request a proof as the response
   }
   oneof version { GetDocumentsRequestV0 v0 = 1; }
 }
 
 message GetDocumentsResponse {
   message GetDocumentsResponseV0 {
-    message Documents { repeated bytes documents = 1; }
+    // Represents a collection of documents
+    message Documents {
+      repeated bytes documents = 1;  // The actual documents in binary form
+    }
 
     oneof result {
-      Documents documents = 1;
-      Proof proof = 2;
+      Documents documents = 1;  // The actual documents requested
+      Proof proof = 2;          // Cryptographic proof of the documents, if requested
     }
-    ResponseMetadata metadata = 3;
+    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
   }
   oneof version { GetDocumentsResponseV0 v0 = 1; }
 }
