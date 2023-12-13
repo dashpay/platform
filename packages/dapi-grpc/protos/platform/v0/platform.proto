@@ -440,8 +440,8 @@ message GetIdentityByPublicKeyHashResponse {
 
 message WaitForStateTransitionResultRequest {
   message WaitForStateTransitionResultRequestV0 {
-    bytes state_transition_hash = 1;
-    bool prove = 2;
+    bytes state_transition_hash = 1;  // The hash of the state transition to wait for
+    bool prove = 2;                   // Flag to request a proof as the response
   }
   oneof version { WaitForStateTransitionResultRequestV0 v0 = 1; }
 }
@@ -449,38 +449,38 @@ message WaitForStateTransitionResultRequest {
 message WaitForStateTransitionResultResponse {
   message WaitForStateTransitionResultResponseV0 {
     oneof result {
-      StateTransitionBroadcastError error = 1;
-      Proof proof = 2;
+      StateTransitionBroadcastError error = 1;  // Any error that occurred during the state transition broadcast
+      Proof proof = 2;                          // Cryptographic proof for the state transition, if requested
     }
-    ResponseMetadata metadata = 3;
+    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
   }
   oneof version { WaitForStateTransitionResultResponseV0 v0 = 1; }
 }
 
 message GetConsensusParamsRequest {
   message GetConsensusParamsRequestV0 {
-    int32 height = 1;
-    bool prove = 2;
+    int32 height = 1;  // The blockchain height at which to get the consensus parameters
+    bool prove = 2;    // Flag to request a proof as the response
   }
   oneof version { GetConsensusParamsRequestV0 v0 = 1; }
 }
 
 message GetConsensusParamsResponse {
   message ConsensusParamsBlock {
-    string max_bytes = 1;
-    string max_gas = 2;
-    string time_iota_ms = 3;
+    string max_bytes = 1;     // The maximum size of a block in bytes
+    string max_gas = 2;       // The maximum gas allowed in a block
+    string time_iota_ms = 3;  // The minimum time increment between consecutive blocks, in milliseconds
   }
 
   message ConsensusParamsEvidence {
-    string max_age_num_blocks = 1;
-    string max_age_duration = 2;
-    string max_bytes = 3;
+    string max_age_num_blocks = 1;  // The maximum age of evidence, in number of blocks
+    string max_age_duration = 2;    // The maximum age of evidence, as a duration
+    string max_bytes = 3;           // The maximum size of evidence in bytes
   }
 
   message GetConsensusParamsResponseV0 {
-    ConsensusParamsBlock block = 1;
-    ConsensusParamsEvidence evidence = 2;
+    ConsensusParamsBlock block = 1;        // Consensus parameters related to block creation and validation
+    ConsensusParamsEvidence evidence = 2;  // Consensus parameters related to evidence
   }
   oneof version { GetConsensusParamsResponseV0 v0 = 1; }
 }
@@ -488,7 +488,7 @@ message GetConsensusParamsResponse {
 
 message GetProtocolVersionUpgradeStateRequest {
   message GetProtocolVersionUpgradeStateRequestV0 {
-    bool prove = 1;
+    bool prove = 1;  // Flag to request a proof as the response
   }
 
   oneof version {
@@ -498,20 +498,22 @@ message GetProtocolVersionUpgradeStateRequest {
 
 message GetProtocolVersionUpgradeStateResponse {
   message GetProtocolVersionUpgradeStateResponseV0 {
+    // Versions holds a collection of version entries
     message Versions {
-      repeated VersionEntry versions = 1;
+      repeated VersionEntry versions = 1;  // List of protocol version entries
     }
 
+    // VersionEntry represents a single entry of a protocol version
     message VersionEntry {
-      uint32 version_number = 1;
-      uint32 vote_count = 2;
+      uint32 version_number = 1;  // The protocol version number
+      uint32 vote_count = 2;      // The vote count for this protocol version
     }
 
     oneof result {
-      Versions versions = 1;
-      Proof proof = 2;
+      Versions versions = 1;  // The actual protocol version information
+      Proof proof = 2;        // Cryptographic proof of the protocol version information, if requested
     }
-    ResponseMetadata metadata = 3;
+    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
   }
 
   oneof version {
@@ -521,9 +523,9 @@ message GetProtocolVersionUpgradeStateResponse {
 
 message GetProtocolVersionUpgradeVoteStatusRequest {
   message GetProtocolVersionUpgradeVoteStatusRequestV0 {
-    bytes start_pro_tx_hash = 1;
-    uint32 count = 2;
-    bool prove = 3;
+    bytes start_pro_tx_hash = 1;  // The starting masternode provider transaction hash to filter the votes by
+    uint32 count = 2;             // The number of vote entries to retrieve
+    bool prove = 3;               // Flag to request a proof as the response
   }
 
   oneof version {
@@ -533,20 +535,22 @@ message GetProtocolVersionUpgradeVoteStatusRequest {
 
 message GetProtocolVersionUpgradeVoteStatusResponse {
   message GetProtocolVersionUpgradeVoteStatusResponseV0 {
+    // VersionSignals holds a collection of version signal entries
     message VersionSignals {
-      repeated VersionSignal version_signals = 1;
+      repeated VersionSignal version_signals = 1;  // List of version signal entries
     }
 
+    // VersionSignal represents a single voting signal for a protocol version
     message VersionSignal {
-      bytes pro_tx_hash = 1;
-      uint32 version = 2;
+      bytes pro_tx_hash = 1;  // The masternode provider transaction hash associated with the vote
+      uint32 version = 2;     // The protocol version number that is being voted on
     }
 
     oneof result {
-      VersionSignals versions = 1;
-      Proof proof = 2;
+      VersionSignals versions = 1;  // The actual version signal information
+      Proof proof = 2;              // Cryptographic proof of the version signal information, if requested
     }
-    ResponseMetadata metadata = 3;
+    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
   }
 
   oneof version {
@@ -556,10 +560,10 @@ message GetProtocolVersionUpgradeVoteStatusResponse {
 
 message GetEpochsInfoRequest {
   message GetEpochsInfoRequestV0 {
-    google.protobuf.UInt32Value start_epoch = 1;
-    uint32 count = 2;
-    bool ascending = 3;
-    bool prove = 4;
+    google.protobuf.UInt32Value start_epoch = 1;  // The starting epoch for the request
+    uint32 count = 2;                             // The number of epochs to retrieve information for
+    bool ascending = 3;                           // Flag indicating if the epochs should be listed in ascending order
+    bool prove = 4;                               // Flag to request a proof as the response
   }
 
   oneof version {
@@ -569,23 +573,26 @@ message GetEpochsInfoRequest {
 
 message GetEpochsInfoResponse {
   message GetEpochsInfoResponseV0 {
+    // EpochInfos holds a collection of epoch information entries
     message EpochInfos {
-      repeated EpochInfo epoch_infos = 1;
+      repeated EpochInfo epoch_infos = 1;  // List of information for each requested epoch
     }
 
+    // EpochInfo represents information about a single epoch
     message EpochInfo {
-      uint32 number = 1;
-      uint64 first_block_height = 2;
-      uint32 first_core_block_height = 3;
-      uint64 start_time = 4;
-      double fee_multiplier = 5;
+      uint32 number = 1;                   // The number of the epoch
+      uint64 first_block_height = 2;       // The height of the first block in this epoch
+      uint32 first_core_block_height = 3;  // The height of the first Core block in this epoch
+      uint64 start_time = 4;               // The start time of the epoch
+      double fee_multiplier = 5;           // The fee multiplier applicable in this epoch
     }
 
     oneof result {
-      EpochInfos epochs = 1;
-      Proof proof = 2;
+      EpochInfos epochs = 1;  // The actual information about the requested epochs
+      Proof proof = 2;        // Cryptographic proof of the epoch information, if requested
     }
-    ResponseMetadata metadata = 3;
+
+    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
   }
 
   oneof version {
