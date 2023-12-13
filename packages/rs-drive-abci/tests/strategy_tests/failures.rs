@@ -78,6 +78,7 @@ mod tests {
             }),
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -162,6 +163,7 @@ mod tests {
             }),
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -362,6 +364,7 @@ mod tests {
             }),
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
 
         let mut core_block_heights = vec![10, 11];

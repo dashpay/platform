@@ -141,6 +141,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -196,6 +197,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -251,6 +253,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -392,6 +395,7 @@ mod tests {
             }),
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -528,6 +532,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -596,6 +601,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -651,6 +657,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
@@ -713,6 +720,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let hour_in_s = 60 * 60;
         let three_mins_in_ms = 1000 * 60 * 3;
@@ -780,6 +788,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 10,
@@ -869,6 +878,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 10,
@@ -943,6 +953,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 10,
@@ -1012,6 +1023,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 10,
@@ -1111,6 +1123,7 @@ mod tests {
                 },
             }),
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1167,6 +1180,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1251,6 +1265,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1362,6 +1377,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1468,6 +1484,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1550,6 +1567,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1660,6 +1678,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1770,6 +1789,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1894,6 +1914,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -2024,6 +2045,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -2099,6 +2121,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -2182,6 +2205,7 @@ mod tests {
             // because we can add an identity and add keys to it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -2270,6 +2294,7 @@ mod tests {
             // because we can add an identity and remove keys to it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -2365,6 +2390,7 @@ mod tests {
             // because we can add an identity and withdraw from it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -2423,6 +2449,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2579,6 +2606,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2706,6 +2734,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2833,6 +2862,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2974,6 +3004,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
 
         let config = PlatformConfig {

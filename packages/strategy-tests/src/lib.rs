@@ -97,6 +97,18 @@ pub struct Strategy {
     pub signer: Option<SimpleSigner>,
 }
 
+impl Default for Strategy {
+    fn default() -> Self {
+        Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![],
+            start_identities: vec![],
+            identities_inserts: Frequency::default(),
+            signer: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Encode, Decode)]
 struct StrategyInSerializationFormat {
     pub contracts_with_updates: Vec<(Vec<u8>, Option<BTreeMap<u64, Vec<u8>>>)>,
