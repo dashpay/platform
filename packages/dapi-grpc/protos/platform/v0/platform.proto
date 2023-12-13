@@ -273,8 +273,8 @@ message GetProofsResponse {
 
 message GetDataContractRequest {
   message GetDataContractRequestV0 {
-    bytes id = 1;
-    bool prove = 2;
+    bytes id = 1;    // The ID of the data contract being requested
+    bool prove = 2;  // Flag to request a proof as the response
   }
   oneof version { GetDataContractRequestV0 v0 = 1; }
 }
@@ -282,69 +282,73 @@ message GetDataContractRequest {
 message GetDataContractResponse {
   message GetDataContractResponseV0 {
     oneof result {
-      bytes data_contract = 1;
-      Proof proof = 2;
+      bytes data_contract = 1;  // The actual data contract in binary form
+      Proof proof = 2;          // Cryptographic proof of the data contract, if requested
     }
-    ResponseMetadata metadata = 3;
+    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
   }
   oneof version { GetDataContractResponseV0 v0 = 1; }
 }
 
 message GetDataContractsRequest {
   message GetDataContractsRequestV0 {
-    repeated bytes ids = 1;
-    bool prove = 2;
+    repeated bytes ids = 1;  // A list of unique IDs for the data contracts being requested
+    bool prove = 2;          // Flag to request a proof as the response
   }
   oneof version { GetDataContractsRequestV0 v0 = 1; }
 }
 
 message GetDataContractsResponse {
   message DataContractEntry {
-    bytes identifier = 1;
-    google.protobuf.BytesValue data_contract = 2;
+    bytes identifier = 1;                          // The unique identifier of the data contract
+    google.protobuf.BytesValue data_contract = 2;  // The actual data contract content
   }
+
+  // DataContracts is a collection of data contract entries.
   message DataContracts {
-    repeated DataContractEntry data_contract_entries = 1;
+    repeated DataContractEntry data_contract_entries = 1;  // A list of data contract entries
   }
 
   message GetDataContractsResponseV0 {
     oneof result {
-      DataContracts data_contracts = 1;
-      Proof proof = 2;
+      DataContracts data_contracts = 1;  // The actual data contracts requested
+      Proof proof = 2;                   // Cryptographic proof for the data contracts, if requested
     }
-    ResponseMetadata metadata = 3;
+    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
   }
   oneof version { GetDataContractsResponseV0 v0 = 1; }
 }
 
 message GetDataContractHistoryRequest {
   message GetDataContractHistoryRequestV0 {
-    bytes id = 1;
-    google.protobuf.UInt32Value limit = 2;
-    google.protobuf.UInt32Value offset = 3;
-    uint64 start_at_ms = 4;
-    bool prove = 5;
+    bytes id = 1;                              // The unique ID of the data contract
+    google.protobuf.UInt32Value limit = 2;     // The maximum number of history entries to return
+    google.protobuf.UInt32Value offset = 3;    // The offset for pagination through the contract history
+    uint64 start_at_ms = 4;                    // Only return results starting at this time in milliseconds
+    bool prove = 5;                            // Flag to request a proof as the response
   }
   oneof version { GetDataContractHistoryRequestV0 v0 = 1; }
 }
 
 message GetDataContractHistoryResponse {
   message GetDataContractHistoryResponseV0 {
+    // Represents a single entry in the data contract's history
     message DataContractHistoryEntry {
-      uint64 date = 1;
-      bytes value = 2;
+      uint64 date = 1;  // The date of the history entry
+      bytes value = 2;  // The value of the data contract at this point in history
     }
 
+    // Collection of data contract history entries
     message DataContractHistory {
-      repeated DataContractHistoryEntry data_contract_entries = 1;
+      repeated DataContractHistoryEntry data_contract_entries = 1;  // List of history entries
     }
 
     oneof result {
-      DataContractHistory data_contract_history = 1;
-      Proof proof = 2;
+      DataContractHistory data_contract_history = 1;  // The actual history of the data contract
+      Proof proof = 2;                                // Cryptographic proof of the data contract history, if requested
     }
 
-    ResponseMetadata metadata = 3;
+    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
   }
   oneof version { GetDataContractHistoryResponseV0 v0 = 1; }
 }
