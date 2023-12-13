@@ -3066,6 +3066,7 @@ mod tests {
         assert!(last_identity_balance > 100000000000u64);
     }
 
+    // Test should filter out transactions exceeding max tx bytes per block
     #[test]
     fn run_transactions_exceeding_max_block_size() {
         let strategy = NetworkStrategy {
