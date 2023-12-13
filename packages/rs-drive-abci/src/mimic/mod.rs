@@ -104,7 +104,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         // PREPARE (also processes internally)
 
         let request_prepare_proposal = RequestPrepareProposal {
-            max_tx_bytes: 0,
+            max_tx_bytes: 44800,
             txs: serialized_state_transitions.clone(),
             local_last_commit: None,
             misbehavior: vec![],
