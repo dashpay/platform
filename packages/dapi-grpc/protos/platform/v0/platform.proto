@@ -36,22 +36,24 @@ service Platform {
   rpc getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse);
 }
 
+// Proof message includes cryptographic proofs for validating responses
 message Proof {
-  bytes grovedb_proof = 1;
-  bytes quorum_hash = 2;
-  bytes signature = 3;
-  uint32 round = 4;
-  bytes block_id_hash = 5;
-  uint32 quorum_type = 6;
+  bytes grovedb_proof = 1;  // GroveDB proof for the data
+  bytes quorum_hash = 2;    // Hash of the quorum validating the data
+  bytes signature = 3;      // Signature proving data authenticity
+  uint32 round = 4;         // Consensus round number
+  bytes block_id_hash = 5;  // Hash of the block ID
+  uint32 quorum_type = 6;   // Type of the quorum
 }
 
+// ResponseMetadata provides metadata about the blockchain state at the time of response
 message ResponseMetadata {
-  uint64 height = 1;
-  uint32 core_chain_locked_height = 2;
-  uint32 epoch = 3;
-  uint64 time_ms = 4;
-  uint32 protocol_version = 5;
-  string chain_id = 6;
+  uint64 height = 1;                    // Current blockchain height
+  uint32 core_chain_locked_height = 2;  // Height of the core ChainLock
+  uint32 epoch = 3;                     // Current epoch number
+  uint64 time_ms = 4;                   // Timestamp in milliseconds
+  uint32 protocol_version = 5;          // Protocol version
+  string chain_id = 6;                  // Identifier of the blockchain
 }
 
 message StateTransitionBroadcastError {
