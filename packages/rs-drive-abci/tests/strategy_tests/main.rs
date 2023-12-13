@@ -88,6 +88,7 @@ mod tests {
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
     use itertools::Itertools;
+    use rand::distributions::uniform::SampleBorrow;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
     use tenderdash_abci::proto::types::CoreChainLock;
     use tenderdash_abci::Application;
@@ -3063,5 +3064,53 @@ mod tests {
         let last_identity_balance = balances[&last_identity.id().to_buffer()];
         // We transferred funds to the last identity, so we need to check that last identity balance was increased
         assert!(last_identity_balance > 100000000000u64);
+    }
+
+    #[test]
+    fn run_transactions_exceeding_max_block_size() {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                identities_inserts: Frequency {
+                    times_per_block_range: 5..6,
+                    chance_per_block: None,
+                },
+                ..Default::default()
+            },
+            max_tx_bytes_per_block: 3500,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            quorum_size: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+
+        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15);
+        let state_transitions = outcome
+            .state_transition_results_per_block
+            .get(&1)
+            .expect("expected state transition results");
+
+        // Only three out of five transitions should've made to the block
+        assert_eq!(state_transitions.len(), 3);
     }
 }
