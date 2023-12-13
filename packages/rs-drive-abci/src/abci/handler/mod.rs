@@ -260,7 +260,9 @@ where
                 TxAction::Unmodified
             } as i32;
 
-            tx_results.push(tx_result);
+            if action != TxAction::Removed as i32 {
+                tx_results.push(tx_result);
+            }
             tx_records.push(TxRecord { action, tx });
         }
 
