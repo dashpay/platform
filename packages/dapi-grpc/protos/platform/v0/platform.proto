@@ -124,8 +124,8 @@ message GetIdentitiesResponse {
   message IdentityValue { bytes value = 1; }  // Represents a single identity's value
 
   message IdentityEntry {
-    bytes key = 1;           // The key associated with the identity
-    IdentityValue value = 2; // The value of the identity
+    bytes key = 1;            // The key associated with the identity
+    IdentityValue value = 2;  // The value of the identity
   }
 
   message Identities { repeated IdentityEntry identity_entries = 1; }  // Collection of identity entries
@@ -173,9 +173,9 @@ message GetIdentityBalanceAndRevisionResponse {
 
 message KeyRequestType {
   oneof request {
-    AllKeys all_keys = 1;              // Request for all keys
-    SpecificKeys specific_keys = 2;    // Request for specific keys by their IDs
-    SearchKey search_key = 3;          // Request for keys based on a search criteria
+    AllKeys all_keys = 1;            // Request for all keys
+    SpecificKeys specific_keys = 2;  // Request for specific keys by their IDs
+    SearchKey search_key = 3;        // Request for keys based on a search criteria
   }
 }
 
@@ -232,10 +232,10 @@ message GetProofsRequest {
   message GetProofsRequestV0 {
     // DocumentRequest specifies a request for a document proof
     message DocumentRequest {
-      bytes contract_id = 1;                     // ID of the contract the document belongs to
-      string document_type = 2;                  // Type of document being requested
-      bool document_type_keeps_history = 3;      // Indicates if the document type keeps a history of changes
-      bytes document_id = 4;                     // ID of the specific document being requested
+      bytes contract_id = 1;                 // ID of the contract the document belongs to
+      string document_type = 2;              // Type of document being requested
+      bool document_type_keeps_history = 3;  // Indicates if the document type keeps a history of changes
+      bytes document_id = 4;                 // ID of the specific document being requested
     }
 
     // IdentityRequest specifies a request for an identity proof
@@ -321,11 +321,11 @@ message GetDataContractsResponse {
 
 message GetDataContractHistoryRequest {
   message GetDataContractHistoryRequestV0 {
-    bytes id = 1;                              // The unique ID of the data contract
-    google.protobuf.UInt32Value limit = 2;     // The maximum number of history entries to return
-    google.protobuf.UInt32Value offset = 3;    // The offset for pagination through the contract history
-    uint64 start_at_ms = 4;                    // Only return results starting at this time in milliseconds
-    bool prove = 5;                            // Flag to request a proof as the response
+    bytes id = 1;                            // The unique ID of the data contract
+    google.protobuf.UInt32Value limit = 2;   // The maximum number of history entries to return
+    google.protobuf.UInt32Value offset = 3;  // The offset for pagination through the contract history
+    uint64 start_at_ms = 4;                  // Only return results starting at this time in milliseconds
+    bool prove = 5;                          // Flag to request a proof as the response
   }
   oneof version { GetDataContractHistoryRequestV0 v0 = 1; }
 }
@@ -591,7 +591,6 @@ message GetEpochsInfoResponse {
       EpochInfos epochs = 1;  // The actual information about the requested epochs
       Proof proof = 2;        // Cryptographic proof of the epoch information, if requested
     }
-
     ResponseMetadata metadata = 3;  // Metadata about the blockchain state
   }
 
