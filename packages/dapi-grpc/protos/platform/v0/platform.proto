@@ -69,8 +69,8 @@ message BroadcastStateTransitionResponse {}
 message GetIdentityRequest {
 
   message GetIdentityRequestV0 {
-    bytes id = 1;
-    bool prove = 2;
+    bytes id = 1;    // The ID of the identity being requested
+    bool prove = 2;  // Flag to request a proof as the response
   }
 
   oneof version { GetIdentityRequestV0 v0 = 1; }
@@ -79,8 +79,8 @@ message GetIdentityRequest {
 message GetIdentityBalanceRequest {
 
   message GetIdentityBalanceRequestV0 {
-    bytes id = 1;
-    bool prove = 2;
+    bytes id = 1;    // ID of the identity whose balance is requested
+    bool prove = 2;  // Flag to request a proof as the response
   }
 
   oneof version { GetIdentityBalanceRequestV0 v0 = 1; }
@@ -89,8 +89,8 @@ message GetIdentityBalanceRequest {
 message GetIdentityBalanceAndRevisionRequest {
 
   message GetIdentityBalanceAndRevisionRequestV0 {
-    bytes id = 1;
-    bool prove = 2;
+    bytes id = 1;    // ID of the identity for balance and revision
+    bool prove = 2;  // Flag to request a proof as the response
   }
 
   oneof version { GetIdentityBalanceAndRevisionRequestV0 v0 = 1; }
@@ -100,10 +100,10 @@ message GetIdentityResponse {
 
   message GetIdentityResponseV0 {
     oneof result {
-      bytes identity = 1;
-      Proof proof = 2;
+      bytes identity = 1;  // The requested identity data
+      Proof proof = 2;     // Proof of the identity data, if requested
     }
-    ResponseMetadata metadata = 3;
+    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
   }
 
   oneof version { GetIdentityResponseV0 v0 = 1; }
@@ -145,10 +145,10 @@ message GetIdentityBalanceResponse {
 
   message GetIdentityBalanceResponseV0 {
     oneof result {
-      uint64 balance = 1;
-      Proof proof = 2;
+      uint64 balance = 1;  // The balance of the requested identity
+      Proof proof = 2;     // Proof of the balance, if requested
     }
-    ResponseMetadata metadata = 3;
+    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
   }
 
   oneof version { GetIdentityBalanceResponseV0 v0 = 1; }
@@ -158,15 +158,15 @@ message GetIdentityBalanceAndRevisionResponse {
 
   message GetIdentityBalanceAndRevisionResponseV0 {
     message BalanceAndRevision {
-      uint64 balance = 1;
-      uint64 revision = 2;
+      uint64 balance = 1;   // Balance of the identity
+      uint64 revision = 2;  // Revision number of the identity
     }
 
     oneof result {
-      BalanceAndRevision balance_and_revision = 1;
-      Proof proof = 2;
+      BalanceAndRevision balance_and_revision = 1;  // The balance and revision data
+      Proof proof = 2;                              // Proof of the data, if requested
     }
-    ResponseMetadata metadata = 3;
+    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
   }
 
   oneof version { GetIdentityBalanceAndRevisionResponseV0 v0 = 1; }
