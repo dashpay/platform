@@ -306,7 +306,7 @@ describe('Platform', () => {
     });
 
     describe.only('Credits withdrawal', () => {
-      const INITIAL_BALANCE = 400000;
+      const INITIAL_BALANCE = 10000000;
 
       let newIdentity;
       before(async () => {
