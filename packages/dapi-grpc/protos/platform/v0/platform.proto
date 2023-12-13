@@ -173,33 +173,41 @@ message GetIdentityBalanceAndRevisionResponse {
 
 message KeyRequestType {
   oneof request {
-    AllKeys all_keys = 1;
-    SpecificKeys specific_keys = 2;
-    SearchKey search_key = 3;
+    AllKeys all_keys = 1;              // Request for all keys
+    SpecificKeys specific_keys = 2;    // Request for specific keys by their IDs
+    SearchKey search_key = 3;          // Request for keys based on a search criteria
   }
 }
 
+// AllKeys is an empty message used to signify a request for all keys
 message AllKeys {}
 
-message SpecificKeys { repeated uint32 key_ids = 1; }
+// SpecificKeys is used to request specific keys by their IDs
+message SpecificKeys {
+  repeated uint32 key_ids = 1;  // List of key IDs
+}
 
-message SearchKey { map<uint32, SecurityLevelMap> purpose_map = 1; }
+// SearchKey represents a request to search for keys based on specific criteria
+message SearchKey {
+  map<uint32, SecurityLevelMap> purpose_map = 1;  // Map of purposes to their security level maps
+}
 
+// SecurityLevelMap maps security levels to a request type for key retrieval
 message SecurityLevelMap {
   enum KeyKindRequestType {
-    CURRENT_KEY_OF_KIND_REQUEST = 0;
-    ALL_KEYS_OF_KIND_REQUEST = 1;
+    CURRENT_KEY_OF_KIND_REQUEST = 0;  // Request the current key of a particular kind
+    ALL_KEYS_OF_KIND_REQUEST = 1;     // Request all keys of a particular kind
   }
-  map<uint32, KeyKindRequestType> security_level_map = 1;
+  map<uint32, KeyKindRequestType> security_level_map = 1;  // Maps security levels to key request types
 }
 
 message GetIdentityKeysRequest {
 
   message GetIdentityKeysRequestV0 {
     bytes identity_id = 1;                   // ID of the identity for key retrieval
-    KeyRequestType request_type = 2;         // Type of key request (all, specific, search)
-    google.protobuf.UInt32Value limit = 3;   // Limit on the number of keys returned
-    google.protobuf.UInt32Value offset = 4;  // Offset for key pagination
+    KeyRequestType request_type = 2;         // Type of key request: all, specific, or search
+    google.protobuf.UInt32Value limit = 3;   // Limit on the number of keys to be returned
+    google.protobuf.UInt32Value offset = 4;  // Offset for pagination through the keys
     bool prove = 5;                          // Flag to request a proof as the response
   }
 
@@ -209,10 +217,10 @@ message GetIdentityKeysRequest {
 message GetIdentityKeysResponse {
 
   message GetIdentityKeysResponseV0 {
-    message Keys { repeated bytes keys_bytes = 1; }  // Collection of keys
+    message Keys { repeated bytes keys_bytes = 1; }  // Collection of keys as byte sequences
 
     oneof result {
-      Keys keys = 1;    // The actual keys data
+      Keys keys = 1;    // The actual key data
       Proof proof = 2;  // Proof of the keys data, if requested
     }
     ResponseMetadata metadata = 3;  // Metadata about the blockchain state
