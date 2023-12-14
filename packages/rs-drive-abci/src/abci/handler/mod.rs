@@ -291,7 +291,7 @@ where
             transactions_exceeding_max_block_size
                 .into_iter()
                 .map(|tx| TxRecord {
-                    action: TxAction::Removed as i32,
+                    action: TxAction::Delayed as i32,
                     tx,
                 }),
         );
