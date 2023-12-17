@@ -18,6 +18,12 @@
 @class BroadcastStateTransitionResponse;
 @class GetConsensusParamsRequest;
 @class GetConsensusParamsResponse;
+@class GetContestedResourceVoteStateRequest;
+@class GetContestedResourceVoteStateResponse;
+@class GetContestedResourceVoteStatusRequest;
+@class GetContestedResourceVoteStatusResponse;
+@class GetContestedResourcesRequest;
+@class GetContestedResourcesResponse;
 @class GetDataContractHistoryRequest;
 @class GetDataContractHistoryResponse;
 @class GetDataContractRequest;
@@ -152,6 +158,18 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getEpochsInfoWithMessage:(GetEpochsInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
+#pragma mark getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse)
+
+- (GRPCUnaryProtoCall *)getContestedResourcesWithMessage:(GetContestedResourcesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse)
+
+- (GRPCUnaryProtoCall *)getContestedResourceVoteStateWithMessage:(GetContestedResourceVoteStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContestedResourceVoteStatus(GetContestedResourceVoteStatusRequest) returns (GetContestedResourceVoteStatusResponse)
+
+- (GRPCUnaryProtoCall *)getContestedResourceVoteStatusWithMessage:(GetContestedResourceVoteStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
 @end
 
 /**
@@ -284,6 +302,27 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getEpochsInfoWithRequest:(GetEpochsInfoRequest *)request handler:(void(^)(GetEpochsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetEpochsInfoWithRequest:(GetEpochsInfoRequest *)request handler:(void(^)(GetEpochsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse)
+
+- (void)getContestedResourcesWithRequest:(GetContestedResourcesRequest *)request handler:(void(^)(GetContestedResourcesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContestedResourcesWithRequest:(GetContestedResourcesRequest *)request handler:(void(^)(GetContestedResourcesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse)
+
+- (void)getContestedResourceVoteStateWithRequest:(GetContestedResourceVoteStateRequest *)request handler:(void(^)(GetContestedResourceVoteStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContestedResourceVoteStateWithRequest:(GetContestedResourceVoteStateRequest *)request handler:(void(^)(GetContestedResourceVoteStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContestedResourceVoteStatus(GetContestedResourceVoteStatusRequest) returns (GetContestedResourceVoteStatusResponse)
+
+- (void)getContestedResourceVoteStatusWithRequest:(GetContestedResourceVoteStatusRequest *)request handler:(void(^)(GetContestedResourceVoteStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContestedResourceVoteStatusWithRequest:(GetContestedResourceVoteStatusRequest *)request handler:(void(^)(GetContestedResourceVoteStatusResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end

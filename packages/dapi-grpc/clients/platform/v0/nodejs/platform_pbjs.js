@@ -680,6 +680,105 @@ $root.org = (function() {
                          * @variation 2
                          */
 
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getContestedResources}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getContestedResourcesCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse} [response] GetContestedResourcesResponse
+                         */
+
+                        /**
+                         * Calls getContestedResources.
+                         * @function getContestedResources
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourcesRequest} request GetContestedResourcesRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getContestedResourcesCallback} callback Node-style callback called with the error, if any, and GetContestedResourcesResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getContestedResources = function getContestedResources(request, callback) {
+                            return this.rpcCall(getContestedResources, $root.org.dash.platform.dapi.v0.GetContestedResourcesRequest, $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse, request, callback);
+                        }, "name", { value: "getContestedResources" });
+
+                        /**
+                         * Calls getContestedResources.
+                         * @function getContestedResources
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourcesRequest} request GetContestedResourcesRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetContestedResourcesResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getContestedResourceVoteState}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getContestedResourceVoteStateCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse} [response] GetContestedResourceVoteStateResponse
+                         */
+
+                        /**
+                         * Calls getContestedResourceVoteState.
+                         * @function getContestedResourceVoteState
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStateRequest} request GetContestedResourceVoteStateRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getContestedResourceVoteStateCallback} callback Node-style callback called with the error, if any, and GetContestedResourceVoteStateResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getContestedResourceVoteState = function getContestedResourceVoteState(request, callback) {
+                            return this.rpcCall(getContestedResourceVoteState, $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest, $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse, request, callback);
+                        }, "name", { value: "getContestedResourceVoteState" });
+
+                        /**
+                         * Calls getContestedResourceVoteState.
+                         * @function getContestedResourceVoteState
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStateRequest} request GetContestedResourceVoteStateRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getContestedResourceVoteStatus}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getContestedResourceVoteStatusCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse} [response] GetContestedResourceVoteStatusResponse
+                         */
+
+                        /**
+                         * Calls getContestedResourceVoteStatus.
+                         * @function getContestedResourceVoteStatus
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStatusRequest} request GetContestedResourceVoteStatusRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getContestedResourceVoteStatusCallback} callback Node-style callback called with the error, if any, and GetContestedResourceVoteStatusResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getContestedResourceVoteStatus = function getContestedResourceVoteStatus(request, callback) {
+                            return this.rpcCall(getContestedResourceVoteStatus, $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest, $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse, request, callback);
+                        }, "name", { value: "getContestedResourceVoteStatus" });
+
+                        /**
+                         * Calls getContestedResourceVoteStatus.
+                         * @function getContestedResourceVoteStatus
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStatusRequest} request GetContestedResourceVoteStatusRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse>} Promise
+                         * @variation 2
+                         */
+
                         return Platform;
                     })();
 
@@ -24124,6 +24223,4372 @@ $root.org = (function() {
                         })();
 
                         return GetEpochsInfoResponse;
+                    })();
+
+                    v0.GetContestedResourcesRequest = (function() {
+
+                        /**
+                         * Properties of a GetContestedResourcesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetContestedResourcesRequest
+                         * @property {org.dash.platform.dapi.v0.GetContestedResourcesRequest.IGetContestedResourcesRequestV0|null} [v0] GetContestedResourcesRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetContestedResourcesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetContestedResourcesRequest.
+                         * @implements IGetContestedResourcesRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourcesRequest=} [properties] Properties to set
+                         */
+                        function GetContestedResourcesRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetContestedResourcesRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetContestedResourcesRequest.IGetContestedResourcesRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest
+                         * @instance
+                         */
+                        GetContestedResourcesRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetContestedResourcesRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetContestedResourcesRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetContestedResourcesRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourcesRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourcesRequest} GetContestedResourcesRequest instance
+                         */
+                        GetContestedResourcesRequest.create = function create(properties) {
+                            return new GetContestedResourcesRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetContestedResourcesRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourcesRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourcesRequest} message GetContestedResourcesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContestedResourcesRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetContestedResourcesRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourcesRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourcesRequest} message GetContestedResourcesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContestedResourcesRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetContestedResourcesRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourcesRequest} GetContestedResourcesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContestedResourcesRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourcesRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetContestedResourcesRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourcesRequest} GetContestedResourcesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContestedResourcesRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetContestedResourcesRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetContestedResourcesRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetContestedResourcesRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourcesRequest} GetContestedResourcesRequest
+                         */
+                        GetContestedResourcesRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourcesRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetContestedResourcesRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourcesRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetContestedResourcesRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetContestedResourcesRequest} message GetContestedResourcesRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetContestedResourcesRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetContestedResourcesRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetContestedResourcesRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetContestedResourcesRequest.GetContestedResourcesRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetContestedResourcesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest
+                             * @interface IGetContestedResourcesRequestV0
+                             * @property {boolean|null} [prove] GetContestedResourcesRequestV0 prove
+                             * @property {Array.<Uint8Array>|null} [resourcePath] GetContestedResourcesRequestV0 resourcePath
+                             * @property {Uint8Array|null} [startContestedResourceIdentifier] GetContestedResourcesRequestV0 startContestedResourceIdentifier
+                             * @property {number|null} [count] GetContestedResourcesRequestV0 count
+                             * @property {boolean|null} [ascending] GetContestedResourcesRequestV0 ascending
+                             */
+
+                            /**
+                             * Constructs a new GetContestedResourcesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest
+                             * @classdesc Represents a GetContestedResourcesRequestV0.
+                             * @implements IGetContestedResourcesRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourcesRequest.IGetContestedResourcesRequestV0=} [properties] Properties to set
+                             */
+                            function GetContestedResourcesRequestV0(properties) {
+                                this.resourcePath = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetContestedResourcesRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0
+                             * @instance
+                             */
+                            GetContestedResourcesRequestV0.prototype.prove = false;
+
+                            /**
+                             * GetContestedResourcesRequestV0 resourcePath.
+                             * @member {Array.<Uint8Array>} resourcePath
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0
+                             * @instance
+                             */
+                            GetContestedResourcesRequestV0.prototype.resourcePath = $util.emptyArray;
+
+                            /**
+                             * GetContestedResourcesRequestV0 startContestedResourceIdentifier.
+                             * @member {Uint8Array} startContestedResourceIdentifier
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0
+                             * @instance
+                             */
+                            GetContestedResourcesRequestV0.prototype.startContestedResourceIdentifier = $util.newBuffer([]);
+
+                            /**
+                             * GetContestedResourcesRequestV0 count.
+                             * @member {number} count
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0
+                             * @instance
+                             */
+                            GetContestedResourcesRequestV0.prototype.count = 0;
+
+                            /**
+                             * GetContestedResourcesRequestV0 ascending.
+                             * @member {boolean} ascending
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0
+                             * @instance
+                             */
+                            GetContestedResourcesRequestV0.prototype.ascending = false;
+
+                            /**
+                             * Creates a new GetContestedResourcesRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourcesRequest.IGetContestedResourcesRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} GetContestedResourcesRequestV0 instance
+                             */
+                            GetContestedResourcesRequestV0.create = function create(properties) {
+                                return new GetContestedResourcesRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetContestedResourcesRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourcesRequest.IGetContestedResourcesRequestV0} message GetContestedResourcesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContestedResourcesRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).bool(message.prove);
+                                if (message.resourcePath != null && message.resourcePath.length)
+                                    for (var i = 0; i < message.resourcePath.length; ++i)
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.resourcePath[i]);
+                                if (message.startContestedResourceIdentifier != null && Object.hasOwnProperty.call(message, "startContestedResourceIdentifier"))
+                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.startContestedResourceIdentifier);
+                                if (message.count != null && Object.hasOwnProperty.call(message, "count"))
+                                    writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.count);
+                                if (message.ascending != null && Object.hasOwnProperty.call(message, "ascending"))
+                                    writer.uint32(/* id 5, wireType 0 =*/40).bool(message.ascending);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetContestedResourcesRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourcesRequest.IGetContestedResourcesRequestV0} message GetContestedResourcesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContestedResourcesRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetContestedResourcesRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} GetContestedResourcesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContestedResourcesRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.prove = reader.bool();
+                                        break;
+                                    case 2:
+                                        if (!(message.resourcePath && message.resourcePath.length))
+                                            message.resourcePath = [];
+                                        message.resourcePath.push(reader.bytes());
+                                        break;
+                                    case 3:
+                                        message.startContestedResourceIdentifier = reader.bytes();
+                                        break;
+                                    case 4:
+                                        message.count = reader.uint32();
+                                        break;
+                                    case 5:
+                                        message.ascending = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetContestedResourcesRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} GetContestedResourcesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContestedResourcesRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetContestedResourcesRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetContestedResourcesRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                if (message.resourcePath != null && message.hasOwnProperty("resourcePath")) {
+                                    if (!Array.isArray(message.resourcePath))
+                                        return "resourcePath: array expected";
+                                    for (var i = 0; i < message.resourcePath.length; ++i)
+                                        if (!(message.resourcePath[i] && typeof message.resourcePath[i].length === "number" || $util.isString(message.resourcePath[i])))
+                                            return "resourcePath: buffer[] expected";
+                                }
+                                if (message.startContestedResourceIdentifier != null && message.hasOwnProperty("startContestedResourceIdentifier"))
+                                    if (!(message.startContestedResourceIdentifier && typeof message.startContestedResourceIdentifier.length === "number" || $util.isString(message.startContestedResourceIdentifier)))
+                                        return "startContestedResourceIdentifier: buffer expected";
+                                if (message.count != null && message.hasOwnProperty("count"))
+                                    if (!$util.isInteger(message.count))
+                                        return "count: integer expected";
+                                if (message.ascending != null && message.hasOwnProperty("ascending"))
+                                    if (typeof message.ascending !== "boolean")
+                                        return "ascending: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetContestedResourcesRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} GetContestedResourcesRequestV0
+                             */
+                            GetContestedResourcesRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0();
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                if (object.resourcePath) {
+                                    if (!Array.isArray(object.resourcePath))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.resourcePath: array expected");
+                                    message.resourcePath = [];
+                                    for (var i = 0; i < object.resourcePath.length; ++i)
+                                        if (typeof object.resourcePath[i] === "string")
+                                            $util.base64.decode(object.resourcePath[i], message.resourcePath[i] = $util.newBuffer($util.base64.length(object.resourcePath[i])), 0);
+                                        else if (object.resourcePath[i].length >= 0)
+                                            message.resourcePath[i] = object.resourcePath[i];
+                                }
+                                if (object.startContestedResourceIdentifier != null)
+                                    if (typeof object.startContestedResourceIdentifier === "string")
+                                        $util.base64.decode(object.startContestedResourceIdentifier, message.startContestedResourceIdentifier = $util.newBuffer($util.base64.length(object.startContestedResourceIdentifier)), 0);
+                                    else if (object.startContestedResourceIdentifier.length >= 0)
+                                        message.startContestedResourceIdentifier = object.startContestedResourceIdentifier;
+                                if (object.count != null)
+                                    message.count = object.count >>> 0;
+                                if (object.ascending != null)
+                                    message.ascending = Boolean(object.ascending);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetContestedResourcesRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0} message GetContestedResourcesRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetContestedResourcesRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.resourcePath = [];
+                                if (options.defaults) {
+                                    object.prove = false;
+                                    if (options.bytes === String)
+                                        object.startContestedResourceIdentifier = "";
+                                    else {
+                                        object.startContestedResourceIdentifier = [];
+                                        if (options.bytes !== Array)
+                                            object.startContestedResourceIdentifier = $util.newBuffer(object.startContestedResourceIdentifier);
+                                    }
+                                    object.count = 0;
+                                    object.ascending = false;
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                if (message.resourcePath && message.resourcePath.length) {
+                                    object.resourcePath = [];
+                                    for (var j = 0; j < message.resourcePath.length; ++j)
+                                        object.resourcePath[j] = options.bytes === String ? $util.base64.encode(message.resourcePath[j], 0, message.resourcePath[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.resourcePath[j]) : message.resourcePath[j];
+                                }
+                                if (message.startContestedResourceIdentifier != null && message.hasOwnProperty("startContestedResourceIdentifier"))
+                                    object.startContestedResourceIdentifier = options.bytes === String ? $util.base64.encode(message.startContestedResourceIdentifier, 0, message.startContestedResourceIdentifier.length) : options.bytes === Array ? Array.prototype.slice.call(message.startContestedResourceIdentifier) : message.startContestedResourceIdentifier;
+                                if (message.count != null && message.hasOwnProperty("count"))
+                                    object.count = message.count;
+                                if (message.ascending != null && message.hasOwnProperty("ascending"))
+                                    object.ascending = message.ascending;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetContestedResourcesRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetContestedResourcesRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetContestedResourcesRequestV0;
+                        })();
+
+                        return GetContestedResourcesRequest;
+                    })();
+
+                    v0.GetContestedResourcesResponse = (function() {
+
+                        /**
+                         * Properties of a GetContestedResourcesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetContestedResourcesResponse
+                         * @property {org.dash.platform.dapi.v0.GetContestedResourcesResponse.IGetContestedResourcesResponseV0|null} [v0] GetContestedResourcesResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetContestedResourcesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetContestedResourcesResponse.
+                         * @implements IGetContestedResourcesResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourcesResponse=} [properties] Properties to set
+                         */
+                        function GetContestedResourcesResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetContestedResourcesResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetContestedResourcesResponse.IGetContestedResourcesResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse
+                         * @instance
+                         */
+                        GetContestedResourcesResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetContestedResourcesResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetContestedResourcesResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetContestedResourcesResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourcesResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourcesResponse} GetContestedResourcesResponse instance
+                         */
+                        GetContestedResourcesResponse.create = function create(properties) {
+                            return new GetContestedResourcesResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetContestedResourcesResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourcesResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourcesResponse} message GetContestedResourcesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContestedResourcesResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetContestedResourcesResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourcesResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourcesResponse} message GetContestedResourcesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContestedResourcesResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetContestedResourcesResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourcesResponse} GetContestedResourcesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContestedResourcesResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetContestedResourcesResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourcesResponse} GetContestedResourcesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContestedResourcesResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetContestedResourcesResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetContestedResourcesResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetContestedResourcesResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourcesResponse} GetContestedResourcesResponse
+                         */
+                        GetContestedResourcesResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourcesResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetContestedResourcesResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse} message GetContestedResourcesResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetContestedResourcesResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetContestedResourcesResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetContestedResourcesResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetContestedResourcesResponse.GetContestedResourcesResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetContestedResourcesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse
+                             * @interface IGetContestedResourcesResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.IContestedResources|null} [contestedResources] GetContestedResourcesResponseV0 contestedResources
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetContestedResourcesResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetContestedResourcesResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetContestedResourcesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse
+                             * @classdesc Represents a GetContestedResourcesResponseV0.
+                             * @implements IGetContestedResourcesResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse.IGetContestedResourcesResponseV0=} [properties] Properties to set
+                             */
+                            function GetContestedResourcesResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetContestedResourcesResponseV0 contestedResources.
+                             * @member {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.IContestedResources|null|undefined} contestedResources
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                             * @instance
+                             */
+                            GetContestedResourcesResponseV0.prototype.contestedResources = null;
+
+                            /**
+                             * GetContestedResourcesResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                             * @instance
+                             */
+                            GetContestedResourcesResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetContestedResourcesResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                             * @instance
+                             */
+                            GetContestedResourcesResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetContestedResourcesResponseV0 result.
+                             * @member {"contestedResources"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetContestedResourcesResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["contestedResources", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetContestedResourcesResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse.IGetContestedResourcesResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0} GetContestedResourcesResponseV0 instance
+                             */
+                            GetContestedResourcesResponseV0.create = function create(properties) {
+                                return new GetContestedResourcesResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetContestedResourcesResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse.IGetContestedResourcesResponseV0} message GetContestedResourcesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContestedResourcesResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.contestedResources != null && Object.hasOwnProperty.call(message, "contestedResources"))
+                                    $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.encode(message.contestedResources, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetContestedResourcesResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse.IGetContestedResourcesResponseV0} message GetContestedResourcesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContestedResourcesResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetContestedResourcesResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0} GetContestedResourcesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContestedResourcesResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.contestedResources = $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetContestedResourcesResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0} GetContestedResourcesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContestedResourcesResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetContestedResourcesResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetContestedResourcesResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.contestedResources != null && message.hasOwnProperty("contestedResources")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.verify(message.contestedResources);
+                                        if (error)
+                                            return "contestedResources." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetContestedResourcesResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0} GetContestedResourcesResponseV0
+                             */
+                            GetContestedResourcesResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0();
+                                if (object.contestedResources != null) {
+                                    if (typeof object.contestedResources !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.contestedResources: object expected");
+                                    message.contestedResources = $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.fromObject(object.contestedResources);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetContestedResourcesResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0} message GetContestedResourcesResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetContestedResourcesResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.contestedResources != null && message.hasOwnProperty("contestedResources")) {
+                                    object.contestedResources = $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.toObject(message.contestedResources, options);
+                                    if (options.oneofs)
+                                        object.result = "contestedResources";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetContestedResourcesResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetContestedResourcesResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetContestedResourcesResponseV0.ContestedResources = (function() {
+
+                                /**
+                                 * Properties of a ContestedResources.
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                                 * @interface IContestedResources
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.IContestedResource>|null} [contestedResources] ContestedResources contestedResources
+                                 * @property {boolean|null} [finishedResults] ContestedResources finishedResults
+                                 */
+
+                                /**
+                                 * Constructs a new ContestedResources.
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                                 * @classdesc Represents a ContestedResources.
+                                 * @implements IContestedResources
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.IContestedResources=} [properties] Properties to set
+                                 */
+                                function ContestedResources(properties) {
+                                    this.contestedResources = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * ContestedResources contestedResources.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.IContestedResource>} contestedResources
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources
+                                 * @instance
+                                 */
+                                ContestedResources.prototype.contestedResources = $util.emptyArray;
+
+                                /**
+                                 * ContestedResources finishedResults.
+                                 * @member {boolean} finishedResults
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources
+                                 * @instance
+                                 */
+                                ContestedResources.prototype.finishedResults = false;
+
+                                /**
+                                 * Creates a new ContestedResources instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.IContestedResources=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources} ContestedResources instance
+                                 */
+                                ContestedResources.create = function create(properties) {
+                                    return new ContestedResources(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified ContestedResources message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.IContestedResources} message ContestedResources message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ContestedResources.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.contestedResources != null && message.contestedResources.length)
+                                        for (var i = 0; i < message.contestedResources.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.encode(message.contestedResources[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    if (message.finishedResults != null && Object.hasOwnProperty.call(message, "finishedResults"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).bool(message.finishedResults);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified ContestedResources message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.IContestedResources} message ContestedResources message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ContestedResources.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a ContestedResources message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources} ContestedResources
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ContestedResources.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.contestedResources && message.contestedResources.length))
+                                                message.contestedResources = [];
+                                            message.contestedResources.push($root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.decode(reader, reader.uint32()));
+                                            break;
+                                        case 2:
+                                            message.finishedResults = reader.bool();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a ContestedResources message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources} ContestedResources
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ContestedResources.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a ContestedResources message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                ContestedResources.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.contestedResources != null && message.hasOwnProperty("contestedResources")) {
+                                        if (!Array.isArray(message.contestedResources))
+                                            return "contestedResources: array expected";
+                                        for (var i = 0; i < message.contestedResources.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.verify(message.contestedResources[i]);
+                                            if (error)
+                                                return "contestedResources." + error;
+                                        }
+                                    }
+                                    if (message.finishedResults != null && message.hasOwnProperty("finishedResults"))
+                                        if (typeof message.finishedResults !== "boolean")
+                                            return "finishedResults: boolean expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a ContestedResources message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources} ContestedResources
+                                 */
+                                ContestedResources.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources();
+                                    if (object.contestedResources) {
+                                        if (!Array.isArray(object.contestedResources))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.contestedResources: array expected");
+                                        message.contestedResources = [];
+                                        for (var i = 0; i < object.contestedResources.length; ++i) {
+                                            if (typeof object.contestedResources[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.contestedResources: object expected");
+                                            message.contestedResources[i] = $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.fromObject(object.contestedResources[i]);
+                                        }
+                                    }
+                                    if (object.finishedResults != null)
+                                        message.finishedResults = Boolean(object.finishedResults);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a ContestedResources message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources} message ContestedResources
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                ContestedResources.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.contestedResources = [];
+                                    if (options.defaults)
+                                        object.finishedResults = false;
+                                    if (message.contestedResources && message.contestedResources.length) {
+                                        object.contestedResources = [];
+                                        for (var j = 0; j < message.contestedResources.length; ++j)
+                                            object.contestedResources[j] = $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.toObject(message.contestedResources[j], options);
+                                    }
+                                    if (message.finishedResults != null && message.hasOwnProperty("finishedResults"))
+                                        object.finishedResults = message.finishedResults;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this ContestedResources to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                ContestedResources.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return ContestedResources;
+                            })();
+
+                            GetContestedResourcesResponseV0.ContestedResource = (function() {
+
+                                /**
+                                 * Properties of a ContestedResource.
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                                 * @interface IContestedResource
+                                 * @property {Uint8Array|null} [identifier] ContestedResource identifier
+                                 */
+
+                                /**
+                                 * Constructs a new ContestedResource.
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0
+                                 * @classdesc Represents a ContestedResource.
+                                 * @implements IContestedResource
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.IContestedResource=} [properties] Properties to set
+                                 */
+                                function ContestedResource(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * ContestedResource identifier.
+                                 * @member {Uint8Array} identifier
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource
+                                 * @instance
+                                 */
+                                ContestedResource.prototype.identifier = $util.newBuffer([]);
+
+                                /**
+                                 * Creates a new ContestedResource instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.IContestedResource=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource} ContestedResource instance
+                                 */
+                                ContestedResource.create = function create(properties) {
+                                    return new ContestedResource(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified ContestedResource message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.IContestedResource} message ContestedResource message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ContestedResource.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.identifier != null && Object.hasOwnProperty.call(message, "identifier"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identifier);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified ContestedResource message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.IContestedResource} message ContestedResource message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ContestedResource.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a ContestedResource message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource} ContestedResource
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ContestedResource.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.identifier = reader.bytes();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a ContestedResource message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource} ContestedResource
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ContestedResource.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a ContestedResource message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                ContestedResource.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.identifier != null && message.hasOwnProperty("identifier"))
+                                        if (!(message.identifier && typeof message.identifier.length === "number" || $util.isString(message.identifier)))
+                                            return "identifier: buffer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a ContestedResource message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource} ContestedResource
+                                 */
+                                ContestedResource.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource();
+                                    if (object.identifier != null)
+                                        if (typeof object.identifier === "string")
+                                            $util.base64.decode(object.identifier, message.identifier = $util.newBuffer($util.base64.length(object.identifier)), 0);
+                                        else if (object.identifier.length >= 0)
+                                            message.identifier = object.identifier;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a ContestedResource message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource} message ContestedResource
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                ContestedResource.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults)
+                                        if (options.bytes === String)
+                                            object.identifier = "";
+                                        else {
+                                            object.identifier = [];
+                                            if (options.bytes !== Array)
+                                                object.identifier = $util.newBuffer(object.identifier);
+                                        }
+                                    if (message.identifier != null && message.hasOwnProperty("identifier"))
+                                        object.identifier = options.bytes === String ? $util.base64.encode(message.identifier, 0, message.identifier.length) : options.bytes === Array ? Array.prototype.slice.call(message.identifier) : message.identifier;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this ContestedResource to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                ContestedResource.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return ContestedResource;
+                            })();
+
+                            return GetContestedResourcesResponseV0;
+                        })();
+
+                        return GetContestedResourcesResponse;
+                    })();
+
+                    v0.GetContestedResourceVoteStateRequest = (function() {
+
+                        /**
+                         * Properties of a GetContestedResourceVoteStateRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetContestedResourceVoteStateRequest
+                         * @property {org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.IGetContestedResourceVoteStateRequestV0|null} [v0] GetContestedResourceVoteStateRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetContestedResourceVoteStateRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetContestedResourceVoteStateRequest.
+                         * @implements IGetContestedResourceVoteStateRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStateRequest=} [properties] Properties to set
+                         */
+                        function GetContestedResourceVoteStateRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetContestedResourceVoteStateRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.IGetContestedResourceVoteStateRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest
+                         * @instance
+                         */
+                        GetContestedResourceVoteStateRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetContestedResourceVoteStateRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetContestedResourceVoteStateRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetContestedResourceVoteStateRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStateRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest} GetContestedResourceVoteStateRequest instance
+                         */
+                        GetContestedResourceVoteStateRequest.create = function create(properties) {
+                            return new GetContestedResourceVoteStateRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetContestedResourceVoteStateRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStateRequest} message GetContestedResourceVoteStateRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContestedResourceVoteStateRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetContestedResourceVoteStateRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStateRequest} message GetContestedResourceVoteStateRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContestedResourceVoteStateRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetContestedResourceVoteStateRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest} GetContestedResourceVoteStateRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContestedResourceVoteStateRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetContestedResourceVoteStateRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest} GetContestedResourceVoteStateRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContestedResourceVoteStateRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetContestedResourceVoteStateRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetContestedResourceVoteStateRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetContestedResourceVoteStateRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest} GetContestedResourceVoteStateRequest
+                         */
+                        GetContestedResourceVoteStateRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetContestedResourceVoteStateRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest} message GetContestedResourceVoteStateRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetContestedResourceVoteStateRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetContestedResourceVoteStateRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetContestedResourceVoteStateRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetContestedResourceVoteStateRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest
+                             * @interface IGetContestedResourceVoteStateRequestV0
+                             * @property {boolean|null} [prove] GetContestedResourceVoteStateRequestV0 prove
+                             * @property {Array.<Uint8Array>|null} [resourcePath] GetContestedResourceVoteStateRequestV0 resourcePath
+                             * @property {Uint8Array|null} [contestedResource] GetContestedResourceVoteStateRequestV0 contestedResource
+                             * @property {Uint8Array|null} [startIdentifier] GetContestedResourceVoteStateRequestV0 startIdentifier
+                             * @property {number|null} [count] GetContestedResourceVoteStateRequestV0 count
+                             * @property {boolean|null} [ascending] GetContestedResourceVoteStateRequestV0 ascending
+                             */
+
+                            /**
+                             * Constructs a new GetContestedResourceVoteStateRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest
+                             * @classdesc Represents a GetContestedResourceVoteStateRequestV0.
+                             * @implements IGetContestedResourceVoteStateRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.IGetContestedResourceVoteStateRequestV0=} [properties] Properties to set
+                             */
+                            function GetContestedResourceVoteStateRequestV0(properties) {
+                                this.resourcePath = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetContestedResourceVoteStateRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStateRequestV0.prototype.prove = false;
+
+                            /**
+                             * GetContestedResourceVoteStateRequestV0 resourcePath.
+                             * @member {Array.<Uint8Array>} resourcePath
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStateRequestV0.prototype.resourcePath = $util.emptyArray;
+
+                            /**
+                             * GetContestedResourceVoteStateRequestV0 contestedResource.
+                             * @member {Uint8Array} contestedResource
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStateRequestV0.prototype.contestedResource = $util.newBuffer([]);
+
+                            /**
+                             * GetContestedResourceVoteStateRequestV0 startIdentifier.
+                             * @member {Uint8Array} startIdentifier
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStateRequestV0.prototype.startIdentifier = $util.newBuffer([]);
+
+                            /**
+                             * GetContestedResourceVoteStateRequestV0 count.
+                             * @member {number} count
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStateRequestV0.prototype.count = 0;
+
+                            /**
+                             * GetContestedResourceVoteStateRequestV0 ascending.
+                             * @member {boolean} ascending
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStateRequestV0.prototype.ascending = false;
+
+                            /**
+                             * Creates a new GetContestedResourceVoteStateRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.IGetContestedResourceVoteStateRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} GetContestedResourceVoteStateRequestV0 instance
+                             */
+                            GetContestedResourceVoteStateRequestV0.create = function create(properties) {
+                                return new GetContestedResourceVoteStateRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetContestedResourceVoteStateRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.IGetContestedResourceVoteStateRequestV0} message GetContestedResourceVoteStateRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContestedResourceVoteStateRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).bool(message.prove);
+                                if (message.resourcePath != null && message.resourcePath.length)
+                                    for (var i = 0; i < message.resourcePath.length; ++i)
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.resourcePath[i]);
+                                if (message.contestedResource != null && Object.hasOwnProperty.call(message, "contestedResource"))
+                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.contestedResource);
+                                if (message.startIdentifier != null && Object.hasOwnProperty.call(message, "startIdentifier"))
+                                    writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.startIdentifier);
+                                if (message.count != null && Object.hasOwnProperty.call(message, "count"))
+                                    writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.count);
+                                if (message.ascending != null && Object.hasOwnProperty.call(message, "ascending"))
+                                    writer.uint32(/* id 6, wireType 0 =*/48).bool(message.ascending);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetContestedResourceVoteStateRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.IGetContestedResourceVoteStateRequestV0} message GetContestedResourceVoteStateRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContestedResourceVoteStateRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetContestedResourceVoteStateRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} GetContestedResourceVoteStateRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContestedResourceVoteStateRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.prove = reader.bool();
+                                        break;
+                                    case 2:
+                                        if (!(message.resourcePath && message.resourcePath.length))
+                                            message.resourcePath = [];
+                                        message.resourcePath.push(reader.bytes());
+                                        break;
+                                    case 3:
+                                        message.contestedResource = reader.bytes();
+                                        break;
+                                    case 4:
+                                        message.startIdentifier = reader.bytes();
+                                        break;
+                                    case 5:
+                                        message.count = reader.uint32();
+                                        break;
+                                    case 6:
+                                        message.ascending = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetContestedResourceVoteStateRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} GetContestedResourceVoteStateRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContestedResourceVoteStateRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetContestedResourceVoteStateRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetContestedResourceVoteStateRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                if (message.resourcePath != null && message.hasOwnProperty("resourcePath")) {
+                                    if (!Array.isArray(message.resourcePath))
+                                        return "resourcePath: array expected";
+                                    for (var i = 0; i < message.resourcePath.length; ++i)
+                                        if (!(message.resourcePath[i] && typeof message.resourcePath[i].length === "number" || $util.isString(message.resourcePath[i])))
+                                            return "resourcePath: buffer[] expected";
+                                }
+                                if (message.contestedResource != null && message.hasOwnProperty("contestedResource"))
+                                    if (!(message.contestedResource && typeof message.contestedResource.length === "number" || $util.isString(message.contestedResource)))
+                                        return "contestedResource: buffer expected";
+                                if (message.startIdentifier != null && message.hasOwnProperty("startIdentifier"))
+                                    if (!(message.startIdentifier && typeof message.startIdentifier.length === "number" || $util.isString(message.startIdentifier)))
+                                        return "startIdentifier: buffer expected";
+                                if (message.count != null && message.hasOwnProperty("count"))
+                                    if (!$util.isInteger(message.count))
+                                        return "count: integer expected";
+                                if (message.ascending != null && message.hasOwnProperty("ascending"))
+                                    if (typeof message.ascending !== "boolean")
+                                        return "ascending: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetContestedResourceVoteStateRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} GetContestedResourceVoteStateRequestV0
+                             */
+                            GetContestedResourceVoteStateRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0();
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                if (object.resourcePath) {
+                                    if (!Array.isArray(object.resourcePath))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.resourcePath: array expected");
+                                    message.resourcePath = [];
+                                    for (var i = 0; i < object.resourcePath.length; ++i)
+                                        if (typeof object.resourcePath[i] === "string")
+                                            $util.base64.decode(object.resourcePath[i], message.resourcePath[i] = $util.newBuffer($util.base64.length(object.resourcePath[i])), 0);
+                                        else if (object.resourcePath[i].length >= 0)
+                                            message.resourcePath[i] = object.resourcePath[i];
+                                }
+                                if (object.contestedResource != null)
+                                    if (typeof object.contestedResource === "string")
+                                        $util.base64.decode(object.contestedResource, message.contestedResource = $util.newBuffer($util.base64.length(object.contestedResource)), 0);
+                                    else if (object.contestedResource.length >= 0)
+                                        message.contestedResource = object.contestedResource;
+                                if (object.startIdentifier != null)
+                                    if (typeof object.startIdentifier === "string")
+                                        $util.base64.decode(object.startIdentifier, message.startIdentifier = $util.newBuffer($util.base64.length(object.startIdentifier)), 0);
+                                    else if (object.startIdentifier.length >= 0)
+                                        message.startIdentifier = object.startIdentifier;
+                                if (object.count != null)
+                                    message.count = object.count >>> 0;
+                                if (object.ascending != null)
+                                    message.ascending = Boolean(object.ascending);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetContestedResourceVoteStateRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0} message GetContestedResourceVoteStateRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetContestedResourceVoteStateRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.resourcePath = [];
+                                if (options.defaults) {
+                                    object.prove = false;
+                                    if (options.bytes === String)
+                                        object.contestedResource = "";
+                                    else {
+                                        object.contestedResource = [];
+                                        if (options.bytes !== Array)
+                                            object.contestedResource = $util.newBuffer(object.contestedResource);
+                                    }
+                                    if (options.bytes === String)
+                                        object.startIdentifier = "";
+                                    else {
+                                        object.startIdentifier = [];
+                                        if (options.bytes !== Array)
+                                            object.startIdentifier = $util.newBuffer(object.startIdentifier);
+                                    }
+                                    object.count = 0;
+                                    object.ascending = false;
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                if (message.resourcePath && message.resourcePath.length) {
+                                    object.resourcePath = [];
+                                    for (var j = 0; j < message.resourcePath.length; ++j)
+                                        object.resourcePath[j] = options.bytes === String ? $util.base64.encode(message.resourcePath[j], 0, message.resourcePath[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.resourcePath[j]) : message.resourcePath[j];
+                                }
+                                if (message.contestedResource != null && message.hasOwnProperty("contestedResource"))
+                                    object.contestedResource = options.bytes === String ? $util.base64.encode(message.contestedResource, 0, message.contestedResource.length) : options.bytes === Array ? Array.prototype.slice.call(message.contestedResource) : message.contestedResource;
+                                if (message.startIdentifier != null && message.hasOwnProperty("startIdentifier"))
+                                    object.startIdentifier = options.bytes === String ? $util.base64.encode(message.startIdentifier, 0, message.startIdentifier.length) : options.bytes === Array ? Array.prototype.slice.call(message.startIdentifier) : message.startIdentifier;
+                                if (message.count != null && message.hasOwnProperty("count"))
+                                    object.count = message.count;
+                                if (message.ascending != null && message.hasOwnProperty("ascending"))
+                                    object.ascending = message.ascending;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetContestedResourceVoteStateRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetContestedResourceVoteStateRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetContestedResourceVoteStateRequestV0;
+                        })();
+
+                        return GetContestedResourceVoteStateRequest;
+                    })();
+
+                    v0.GetContestedResourceVoteStateResponse = (function() {
+
+                        /**
+                         * Properties of a GetContestedResourceVoteStateResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetContestedResourceVoteStateResponse
+                         * @property {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.IGetContestedResourceVoteStateResponseV0|null} [v0] GetContestedResourceVoteStateResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetContestedResourceVoteStateResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetContestedResourceVoteStateResponse.
+                         * @implements IGetContestedResourceVoteStateResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStateResponse=} [properties] Properties to set
+                         */
+                        function GetContestedResourceVoteStateResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetContestedResourceVoteStateResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.IGetContestedResourceVoteStateResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse
+                         * @instance
+                         */
+                        GetContestedResourceVoteStateResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetContestedResourceVoteStateResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetContestedResourceVoteStateResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetContestedResourceVoteStateResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStateResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse} GetContestedResourceVoteStateResponse instance
+                         */
+                        GetContestedResourceVoteStateResponse.create = function create(properties) {
+                            return new GetContestedResourceVoteStateResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetContestedResourceVoteStateResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStateResponse} message GetContestedResourceVoteStateResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContestedResourceVoteStateResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetContestedResourceVoteStateResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStateResponse} message GetContestedResourceVoteStateResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContestedResourceVoteStateResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetContestedResourceVoteStateResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse} GetContestedResourceVoteStateResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContestedResourceVoteStateResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetContestedResourceVoteStateResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse} GetContestedResourceVoteStateResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContestedResourceVoteStateResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetContestedResourceVoteStateResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetContestedResourceVoteStateResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetContestedResourceVoteStateResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse} GetContestedResourceVoteStateResponse
+                         */
+                        GetContestedResourceVoteStateResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetContestedResourceVoteStateResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse} message GetContestedResourceVoteStateResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetContestedResourceVoteStateResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetContestedResourceVoteStateResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetContestedResourceVoteStateResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetContestedResourceVoteStateResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse
+                             * @interface IGetContestedResourceVoteStateResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.IContestedResourceContenders|null} [contestedResourceContenders] GetContestedResourceVoteStateResponseV0 contestedResourceContenders
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetContestedResourceVoteStateResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetContestedResourceVoteStateResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetContestedResourceVoteStateResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse
+                             * @classdesc Represents a GetContestedResourceVoteStateResponseV0.
+                             * @implements IGetContestedResourceVoteStateResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.IGetContestedResourceVoteStateResponseV0=} [properties] Properties to set
+                             */
+                            function GetContestedResourceVoteStateResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetContestedResourceVoteStateResponseV0 contestedResourceContenders.
+                             * @member {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.IContestedResourceContenders|null|undefined} contestedResourceContenders
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStateResponseV0.prototype.contestedResourceContenders = null;
+
+                            /**
+                             * GetContestedResourceVoteStateResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStateResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetContestedResourceVoteStateResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStateResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetContestedResourceVoteStateResponseV0 result.
+                             * @member {"contestedResourceContenders"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetContestedResourceVoteStateResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["contestedResourceContenders", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetContestedResourceVoteStateResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.IGetContestedResourceVoteStateResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0} GetContestedResourceVoteStateResponseV0 instance
+                             */
+                            GetContestedResourceVoteStateResponseV0.create = function create(properties) {
+                                return new GetContestedResourceVoteStateResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetContestedResourceVoteStateResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.IGetContestedResourceVoteStateResponseV0} message GetContestedResourceVoteStateResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContestedResourceVoteStateResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.contestedResourceContenders != null && Object.hasOwnProperty.call(message, "contestedResourceContenders"))
+                                    $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.encode(message.contestedResourceContenders, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetContestedResourceVoteStateResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.IGetContestedResourceVoteStateResponseV0} message GetContestedResourceVoteStateResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContestedResourceVoteStateResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetContestedResourceVoteStateResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0} GetContestedResourceVoteStateResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContestedResourceVoteStateResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.contestedResourceContenders = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetContestedResourceVoteStateResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0} GetContestedResourceVoteStateResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContestedResourceVoteStateResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetContestedResourceVoteStateResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetContestedResourceVoteStateResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.contestedResourceContenders != null && message.hasOwnProperty("contestedResourceContenders")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.verify(message.contestedResourceContenders);
+                                        if (error)
+                                            return "contestedResourceContenders." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetContestedResourceVoteStateResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0} GetContestedResourceVoteStateResponseV0
+                             */
+                            GetContestedResourceVoteStateResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0();
+                                if (object.contestedResourceContenders != null) {
+                                    if (typeof object.contestedResourceContenders !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.contestedResourceContenders: object expected");
+                                    message.contestedResourceContenders = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.fromObject(object.contestedResourceContenders);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetContestedResourceVoteStateResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0} message GetContestedResourceVoteStateResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetContestedResourceVoteStateResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.contestedResourceContenders != null && message.hasOwnProperty("contestedResourceContenders")) {
+                                    object.contestedResourceContenders = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.toObject(message.contestedResourceContenders, options);
+                                    if (options.oneofs)
+                                        object.result = "contestedResourceContenders";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetContestedResourceVoteStateResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetContestedResourceVoteStateResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetContestedResourceVoteStateResponseV0.ContestedResourceContenders = (function() {
+
+                                /**
+                                 * Properties of a ContestedResourceContenders.
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                                 * @interface IContestedResourceContenders
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.IContender>|null} [contenders] ContestedResourceContenders contenders
+                                 * @property {boolean|null} [finishedResults] ContestedResourceContenders finishedResults
+                                 */
+
+                                /**
+                                 * Constructs a new ContestedResourceContenders.
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                                 * @classdesc Represents a ContestedResourceContenders.
+                                 * @implements IContestedResourceContenders
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.IContestedResourceContenders=} [properties] Properties to set
+                                 */
+                                function ContestedResourceContenders(properties) {
+                                    this.contenders = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * ContestedResourceContenders contenders.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.IContender>} contenders
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders
+                                 * @instance
+                                 */
+                                ContestedResourceContenders.prototype.contenders = $util.emptyArray;
+
+                                /**
+                                 * ContestedResourceContenders finishedResults.
+                                 * @member {boolean} finishedResults
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders
+                                 * @instance
+                                 */
+                                ContestedResourceContenders.prototype.finishedResults = false;
+
+                                /**
+                                 * Creates a new ContestedResourceContenders instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.IContestedResourceContenders=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders} ContestedResourceContenders instance
+                                 */
+                                ContestedResourceContenders.create = function create(properties) {
+                                    return new ContestedResourceContenders(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified ContestedResourceContenders message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.IContestedResourceContenders} message ContestedResourceContenders message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ContestedResourceContenders.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.contenders != null && message.contenders.length)
+                                        for (var i = 0; i < message.contenders.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.encode(message.contenders[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    if (message.finishedResults != null && Object.hasOwnProperty.call(message, "finishedResults"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).bool(message.finishedResults);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified ContestedResourceContenders message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.IContestedResourceContenders} message ContestedResourceContenders message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ContestedResourceContenders.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a ContestedResourceContenders message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders} ContestedResourceContenders
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ContestedResourceContenders.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.contenders && message.contenders.length))
+                                                message.contenders = [];
+                                            message.contenders.push($root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.decode(reader, reader.uint32()));
+                                            break;
+                                        case 2:
+                                            message.finishedResults = reader.bool();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a ContestedResourceContenders message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders} ContestedResourceContenders
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ContestedResourceContenders.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a ContestedResourceContenders message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                ContestedResourceContenders.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.contenders != null && message.hasOwnProperty("contenders")) {
+                                        if (!Array.isArray(message.contenders))
+                                            return "contenders: array expected";
+                                        for (var i = 0; i < message.contenders.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.verify(message.contenders[i]);
+                                            if (error)
+                                                return "contenders." + error;
+                                        }
+                                    }
+                                    if (message.finishedResults != null && message.hasOwnProperty("finishedResults"))
+                                        if (typeof message.finishedResults !== "boolean")
+                                            return "finishedResults: boolean expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a ContestedResourceContenders message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders} ContestedResourceContenders
+                                 */
+                                ContestedResourceContenders.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders();
+                                    if (object.contenders) {
+                                        if (!Array.isArray(object.contenders))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.contenders: array expected");
+                                        message.contenders = [];
+                                        for (var i = 0; i < object.contenders.length; ++i) {
+                                            if (typeof object.contenders[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.contenders: object expected");
+                                            message.contenders[i] = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.fromObject(object.contenders[i]);
+                                        }
+                                    }
+                                    if (object.finishedResults != null)
+                                        message.finishedResults = Boolean(object.finishedResults);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a ContestedResourceContenders message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders} message ContestedResourceContenders
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                ContestedResourceContenders.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.contenders = [];
+                                    if (options.defaults)
+                                        object.finishedResults = false;
+                                    if (message.contenders && message.contenders.length) {
+                                        object.contenders = [];
+                                        for (var j = 0; j < message.contenders.length; ++j)
+                                            object.contenders[j] = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.toObject(message.contenders[j], options);
+                                    }
+                                    if (message.finishedResults != null && message.hasOwnProperty("finishedResults"))
+                                        object.finishedResults = message.finishedResults;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this ContestedResourceContenders to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                ContestedResourceContenders.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return ContestedResourceContenders;
+                            })();
+
+                            GetContestedResourceVoteStateResponseV0.Contender = (function() {
+
+                                /**
+                                 * Properties of a Contender.
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                                 * @interface IContender
+                                 * @property {Uint8Array|null} [identifier] Contender identifier
+                                 * @property {number|null} [voteCount] Contender voteCount
+                                 */
+
+                                /**
+                                 * Constructs a new Contender.
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0
+                                 * @classdesc Represents a Contender.
+                                 * @implements IContender
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.IContender=} [properties] Properties to set
+                                 */
+                                function Contender(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Contender identifier.
+                                 * @member {Uint8Array} identifier
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender
+                                 * @instance
+                                 */
+                                Contender.prototype.identifier = $util.newBuffer([]);
+
+                                /**
+                                 * Contender voteCount.
+                                 * @member {number} voteCount
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender
+                                 * @instance
+                                 */
+                                Contender.prototype.voteCount = 0;
+
+                                /**
+                                 * Creates a new Contender instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.IContender=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender} Contender instance
+                                 */
+                                Contender.create = function create(properties) {
+                                    return new Contender(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Contender message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.IContender} message Contender message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Contender.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.identifier != null && Object.hasOwnProperty.call(message, "identifier"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identifier);
+                                    if (message.voteCount != null && Object.hasOwnProperty.call(message, "voteCount"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.voteCount);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Contender message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.IContender} message Contender message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Contender.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Contender message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender} Contender
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Contender.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.identifier = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.voteCount = reader.uint32();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Contender message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender} Contender
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Contender.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Contender message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Contender.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.identifier != null && message.hasOwnProperty("identifier"))
+                                        if (!(message.identifier && typeof message.identifier.length === "number" || $util.isString(message.identifier)))
+                                            return "identifier: buffer expected";
+                                    if (message.voteCount != null && message.hasOwnProperty("voteCount"))
+                                        if (!$util.isInteger(message.voteCount))
+                                            return "voteCount: integer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Contender message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender} Contender
+                                 */
+                                Contender.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender();
+                                    if (object.identifier != null)
+                                        if (typeof object.identifier === "string")
+                                            $util.base64.decode(object.identifier, message.identifier = $util.newBuffer($util.base64.length(object.identifier)), 0);
+                                        else if (object.identifier.length >= 0)
+                                            message.identifier = object.identifier;
+                                    if (object.voteCount != null)
+                                        message.voteCount = object.voteCount >>> 0;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Contender message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender} message Contender
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Contender.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.identifier = "";
+                                        else {
+                                            object.identifier = [];
+                                            if (options.bytes !== Array)
+                                                object.identifier = $util.newBuffer(object.identifier);
+                                        }
+                                        object.voteCount = 0;
+                                    }
+                                    if (message.identifier != null && message.hasOwnProperty("identifier"))
+                                        object.identifier = options.bytes === String ? $util.base64.encode(message.identifier, 0, message.identifier.length) : options.bytes === Array ? Array.prototype.slice.call(message.identifier) : message.identifier;
+                                    if (message.voteCount != null && message.hasOwnProperty("voteCount"))
+                                        object.voteCount = message.voteCount;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Contender to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Contender.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Contender;
+                            })();
+
+                            return GetContestedResourceVoteStateResponseV0;
+                        })();
+
+                        return GetContestedResourceVoteStateResponse;
+                    })();
+
+                    v0.GetContestedResourceVoteStatusRequest = (function() {
+
+                        /**
+                         * Properties of a GetContestedResourceVoteStatusRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetContestedResourceVoteStatusRequest
+                         * @property {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.IGetContestedResourceVoteStatusRequestV0|null} [v0] GetContestedResourceVoteStatusRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetContestedResourceVoteStatusRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetContestedResourceVoteStatusRequest.
+                         * @implements IGetContestedResourceVoteStatusRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStatusRequest=} [properties] Properties to set
+                         */
+                        function GetContestedResourceVoteStatusRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetContestedResourceVoteStatusRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.IGetContestedResourceVoteStatusRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest
+                         * @instance
+                         */
+                        GetContestedResourceVoteStatusRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetContestedResourceVoteStatusRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetContestedResourceVoteStatusRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetContestedResourceVoteStatusRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStatusRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest} GetContestedResourceVoteStatusRequest instance
+                         */
+                        GetContestedResourceVoteStatusRequest.create = function create(properties) {
+                            return new GetContestedResourceVoteStatusRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetContestedResourceVoteStatusRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStatusRequest} message GetContestedResourceVoteStatusRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContestedResourceVoteStatusRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetContestedResourceVoteStatusRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStatusRequest} message GetContestedResourceVoteStatusRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContestedResourceVoteStatusRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetContestedResourceVoteStatusRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest} GetContestedResourceVoteStatusRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContestedResourceVoteStatusRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetContestedResourceVoteStatusRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest} GetContestedResourceVoteStatusRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContestedResourceVoteStatusRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetContestedResourceVoteStatusRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetContestedResourceVoteStatusRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetContestedResourceVoteStatusRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest} GetContestedResourceVoteStatusRequest
+                         */
+                        GetContestedResourceVoteStatusRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetContestedResourceVoteStatusRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest} message GetContestedResourceVoteStatusRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetContestedResourceVoteStatusRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetContestedResourceVoteStatusRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetContestedResourceVoteStatusRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetContestedResourceVoteStatusRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest
+                             * @interface IGetContestedResourceVoteStatusRequestV0
+                             * @property {boolean|null} [prove] GetContestedResourceVoteStatusRequestV0 prove
+                             * @property {Array.<Uint8Array>|null} [resourcePath] GetContestedResourceVoteStatusRequestV0 resourcePath
+                             * @property {Uint8Array|null} [resourceIdentifier] GetContestedResourceVoteStatusRequestV0 resourceIdentifier
+                             * @property {Uint8Array|null} [voterIdentifier] GetContestedResourceVoteStatusRequestV0 voterIdentifier
+                             * @property {number|null} [count] GetContestedResourceVoteStatusRequestV0 count
+                             * @property {boolean|null} [ascending] GetContestedResourceVoteStatusRequestV0 ascending
+                             */
+
+                            /**
+                             * Constructs a new GetContestedResourceVoteStatusRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest
+                             * @classdesc Represents a GetContestedResourceVoteStatusRequestV0.
+                             * @implements IGetContestedResourceVoteStatusRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.IGetContestedResourceVoteStatusRequestV0=} [properties] Properties to set
+                             */
+                            function GetContestedResourceVoteStatusRequestV0(properties) {
+                                this.resourcePath = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetContestedResourceVoteStatusRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStatusRequestV0.prototype.prove = false;
+
+                            /**
+                             * GetContestedResourceVoteStatusRequestV0 resourcePath.
+                             * @member {Array.<Uint8Array>} resourcePath
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStatusRequestV0.prototype.resourcePath = $util.emptyArray;
+
+                            /**
+                             * GetContestedResourceVoteStatusRequestV0 resourceIdentifier.
+                             * @member {Uint8Array} resourceIdentifier
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStatusRequestV0.prototype.resourceIdentifier = $util.newBuffer([]);
+
+                            /**
+                             * GetContestedResourceVoteStatusRequestV0 voterIdentifier.
+                             * @member {Uint8Array} voterIdentifier
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStatusRequestV0.prototype.voterIdentifier = $util.newBuffer([]);
+
+                            /**
+                             * GetContestedResourceVoteStatusRequestV0 count.
+                             * @member {number} count
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStatusRequestV0.prototype.count = 0;
+
+                            /**
+                             * GetContestedResourceVoteStatusRequestV0 ascending.
+                             * @member {boolean} ascending
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStatusRequestV0.prototype.ascending = false;
+
+                            /**
+                             * Creates a new GetContestedResourceVoteStatusRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.IGetContestedResourceVoteStatusRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} GetContestedResourceVoteStatusRequestV0 instance
+                             */
+                            GetContestedResourceVoteStatusRequestV0.create = function create(properties) {
+                                return new GetContestedResourceVoteStatusRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetContestedResourceVoteStatusRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.IGetContestedResourceVoteStatusRequestV0} message GetContestedResourceVoteStatusRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContestedResourceVoteStatusRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).bool(message.prove);
+                                if (message.resourcePath != null && message.resourcePath.length)
+                                    for (var i = 0; i < message.resourcePath.length; ++i)
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.resourcePath[i]);
+                                if (message.resourceIdentifier != null && Object.hasOwnProperty.call(message, "resourceIdentifier"))
+                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.resourceIdentifier);
+                                if (message.voterIdentifier != null && Object.hasOwnProperty.call(message, "voterIdentifier"))
+                                    writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.voterIdentifier);
+                                if (message.count != null && Object.hasOwnProperty.call(message, "count"))
+                                    writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.count);
+                                if (message.ascending != null && Object.hasOwnProperty.call(message, "ascending"))
+                                    writer.uint32(/* id 6, wireType 0 =*/48).bool(message.ascending);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetContestedResourceVoteStatusRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.IGetContestedResourceVoteStatusRequestV0} message GetContestedResourceVoteStatusRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContestedResourceVoteStatusRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetContestedResourceVoteStatusRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} GetContestedResourceVoteStatusRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContestedResourceVoteStatusRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.prove = reader.bool();
+                                        break;
+                                    case 2:
+                                        if (!(message.resourcePath && message.resourcePath.length))
+                                            message.resourcePath = [];
+                                        message.resourcePath.push(reader.bytes());
+                                        break;
+                                    case 3:
+                                        message.resourceIdentifier = reader.bytes();
+                                        break;
+                                    case 4:
+                                        message.voterIdentifier = reader.bytes();
+                                        break;
+                                    case 5:
+                                        message.count = reader.uint32();
+                                        break;
+                                    case 6:
+                                        message.ascending = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetContestedResourceVoteStatusRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} GetContestedResourceVoteStatusRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContestedResourceVoteStatusRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetContestedResourceVoteStatusRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetContestedResourceVoteStatusRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                if (message.resourcePath != null && message.hasOwnProperty("resourcePath")) {
+                                    if (!Array.isArray(message.resourcePath))
+                                        return "resourcePath: array expected";
+                                    for (var i = 0; i < message.resourcePath.length; ++i)
+                                        if (!(message.resourcePath[i] && typeof message.resourcePath[i].length === "number" || $util.isString(message.resourcePath[i])))
+                                            return "resourcePath: buffer[] expected";
+                                }
+                                if (message.resourceIdentifier != null && message.hasOwnProperty("resourceIdentifier"))
+                                    if (!(message.resourceIdentifier && typeof message.resourceIdentifier.length === "number" || $util.isString(message.resourceIdentifier)))
+                                        return "resourceIdentifier: buffer expected";
+                                if (message.voterIdentifier != null && message.hasOwnProperty("voterIdentifier"))
+                                    if (!(message.voterIdentifier && typeof message.voterIdentifier.length === "number" || $util.isString(message.voterIdentifier)))
+                                        return "voterIdentifier: buffer expected";
+                                if (message.count != null && message.hasOwnProperty("count"))
+                                    if (!$util.isInteger(message.count))
+                                        return "count: integer expected";
+                                if (message.ascending != null && message.hasOwnProperty("ascending"))
+                                    if (typeof message.ascending !== "boolean")
+                                        return "ascending: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetContestedResourceVoteStatusRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} GetContestedResourceVoteStatusRequestV0
+                             */
+                            GetContestedResourceVoteStatusRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0();
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                if (object.resourcePath) {
+                                    if (!Array.isArray(object.resourcePath))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.resourcePath: array expected");
+                                    message.resourcePath = [];
+                                    for (var i = 0; i < object.resourcePath.length; ++i)
+                                        if (typeof object.resourcePath[i] === "string")
+                                            $util.base64.decode(object.resourcePath[i], message.resourcePath[i] = $util.newBuffer($util.base64.length(object.resourcePath[i])), 0);
+                                        else if (object.resourcePath[i].length >= 0)
+                                            message.resourcePath[i] = object.resourcePath[i];
+                                }
+                                if (object.resourceIdentifier != null)
+                                    if (typeof object.resourceIdentifier === "string")
+                                        $util.base64.decode(object.resourceIdentifier, message.resourceIdentifier = $util.newBuffer($util.base64.length(object.resourceIdentifier)), 0);
+                                    else if (object.resourceIdentifier.length >= 0)
+                                        message.resourceIdentifier = object.resourceIdentifier;
+                                if (object.voterIdentifier != null)
+                                    if (typeof object.voterIdentifier === "string")
+                                        $util.base64.decode(object.voterIdentifier, message.voterIdentifier = $util.newBuffer($util.base64.length(object.voterIdentifier)), 0);
+                                    else if (object.voterIdentifier.length >= 0)
+                                        message.voterIdentifier = object.voterIdentifier;
+                                if (object.count != null)
+                                    message.count = object.count >>> 0;
+                                if (object.ascending != null)
+                                    message.ascending = Boolean(object.ascending);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetContestedResourceVoteStatusRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0} message GetContestedResourceVoteStatusRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetContestedResourceVoteStatusRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.resourcePath = [];
+                                if (options.defaults) {
+                                    object.prove = false;
+                                    if (options.bytes === String)
+                                        object.resourceIdentifier = "";
+                                    else {
+                                        object.resourceIdentifier = [];
+                                        if (options.bytes !== Array)
+                                            object.resourceIdentifier = $util.newBuffer(object.resourceIdentifier);
+                                    }
+                                    if (options.bytes === String)
+                                        object.voterIdentifier = "";
+                                    else {
+                                        object.voterIdentifier = [];
+                                        if (options.bytes !== Array)
+                                            object.voterIdentifier = $util.newBuffer(object.voterIdentifier);
+                                    }
+                                    object.count = 0;
+                                    object.ascending = false;
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                if (message.resourcePath && message.resourcePath.length) {
+                                    object.resourcePath = [];
+                                    for (var j = 0; j < message.resourcePath.length; ++j)
+                                        object.resourcePath[j] = options.bytes === String ? $util.base64.encode(message.resourcePath[j], 0, message.resourcePath[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.resourcePath[j]) : message.resourcePath[j];
+                                }
+                                if (message.resourceIdentifier != null && message.hasOwnProperty("resourceIdentifier"))
+                                    object.resourceIdentifier = options.bytes === String ? $util.base64.encode(message.resourceIdentifier, 0, message.resourceIdentifier.length) : options.bytes === Array ? Array.prototype.slice.call(message.resourceIdentifier) : message.resourceIdentifier;
+                                if (message.voterIdentifier != null && message.hasOwnProperty("voterIdentifier"))
+                                    object.voterIdentifier = options.bytes === String ? $util.base64.encode(message.voterIdentifier, 0, message.voterIdentifier.length) : options.bytes === Array ? Array.prototype.slice.call(message.voterIdentifier) : message.voterIdentifier;
+                                if (message.count != null && message.hasOwnProperty("count"))
+                                    object.count = message.count;
+                                if (message.ascending != null && message.hasOwnProperty("ascending"))
+                                    object.ascending = message.ascending;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetContestedResourceVoteStatusRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetContestedResourceVoteStatusRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetContestedResourceVoteStatusRequestV0;
+                        })();
+
+                        return GetContestedResourceVoteStatusRequest;
+                    })();
+
+                    v0.GetContestedResourceVoteStatusResponse = (function() {
+
+                        /**
+                         * Properties of a GetContestedResourceVoteStatusResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetContestedResourceVoteStatusResponse
+                         * @property {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.IGetContestedResourceVoteStatusResponseV0|null} [v0] GetContestedResourceVoteStatusResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetContestedResourceVoteStatusResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetContestedResourceVoteStatusResponse.
+                         * @implements IGetContestedResourceVoteStatusResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStatusResponse=} [properties] Properties to set
+                         */
+                        function GetContestedResourceVoteStatusResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetContestedResourceVoteStatusResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.IGetContestedResourceVoteStatusResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse
+                         * @instance
+                         */
+                        GetContestedResourceVoteStatusResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetContestedResourceVoteStatusResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetContestedResourceVoteStatusResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetContestedResourceVoteStatusResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStatusResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse} GetContestedResourceVoteStatusResponse instance
+                         */
+                        GetContestedResourceVoteStatusResponse.create = function create(properties) {
+                            return new GetContestedResourceVoteStatusResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetContestedResourceVoteStatusResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStatusResponse} message GetContestedResourceVoteStatusResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContestedResourceVoteStatusResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetContestedResourceVoteStatusResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetContestedResourceVoteStatusResponse} message GetContestedResourceVoteStatusResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetContestedResourceVoteStatusResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetContestedResourceVoteStatusResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse} GetContestedResourceVoteStatusResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContestedResourceVoteStatusResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetContestedResourceVoteStatusResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse} GetContestedResourceVoteStatusResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetContestedResourceVoteStatusResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetContestedResourceVoteStatusResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetContestedResourceVoteStatusResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetContestedResourceVoteStatusResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse} GetContestedResourceVoteStatusResponse
+                         */
+                        GetContestedResourceVoteStatusResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetContestedResourceVoteStatusResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse} message GetContestedResourceVoteStatusResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetContestedResourceVoteStatusResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetContestedResourceVoteStatusResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetContestedResourceVoteStatusResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetContestedResourceVoteStatusResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse
+                             * @interface IGetContestedResourceVoteStatusResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.IContestedResourceVoters|null} [contestedResourceVoters] GetContestedResourceVoteStatusResponseV0 contestedResourceVoters
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetContestedResourceVoteStatusResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetContestedResourceVoteStatusResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetContestedResourceVoteStatusResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse
+                             * @classdesc Represents a GetContestedResourceVoteStatusResponseV0.
+                             * @implements IGetContestedResourceVoteStatusResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.IGetContestedResourceVoteStatusResponseV0=} [properties] Properties to set
+                             */
+                            function GetContestedResourceVoteStatusResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetContestedResourceVoteStatusResponseV0 contestedResourceVoters.
+                             * @member {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.IContestedResourceVoters|null|undefined} contestedResourceVoters
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStatusResponseV0.prototype.contestedResourceVoters = null;
+
+                            /**
+                             * GetContestedResourceVoteStatusResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStatusResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetContestedResourceVoteStatusResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                             * @instance
+                             */
+                            GetContestedResourceVoteStatusResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetContestedResourceVoteStatusResponseV0 result.
+                             * @member {"contestedResourceVoters"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetContestedResourceVoteStatusResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["contestedResourceVoters", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetContestedResourceVoteStatusResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.IGetContestedResourceVoteStatusResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0} GetContestedResourceVoteStatusResponseV0 instance
+                             */
+                            GetContestedResourceVoteStatusResponseV0.create = function create(properties) {
+                                return new GetContestedResourceVoteStatusResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetContestedResourceVoteStatusResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.IGetContestedResourceVoteStatusResponseV0} message GetContestedResourceVoteStatusResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContestedResourceVoteStatusResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.contestedResourceVoters != null && Object.hasOwnProperty.call(message, "contestedResourceVoters"))
+                                    $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.encode(message.contestedResourceVoters, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetContestedResourceVoteStatusResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.IGetContestedResourceVoteStatusResponseV0} message GetContestedResourceVoteStatusResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetContestedResourceVoteStatusResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetContestedResourceVoteStatusResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0} GetContestedResourceVoteStatusResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContestedResourceVoteStatusResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.contestedResourceVoters = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetContestedResourceVoteStatusResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0} GetContestedResourceVoteStatusResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetContestedResourceVoteStatusResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetContestedResourceVoteStatusResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetContestedResourceVoteStatusResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.contestedResourceVoters != null && message.hasOwnProperty("contestedResourceVoters")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.verify(message.contestedResourceVoters);
+                                        if (error)
+                                            return "contestedResourceVoters." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetContestedResourceVoteStatusResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0} GetContestedResourceVoteStatusResponseV0
+                             */
+                            GetContestedResourceVoteStatusResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0();
+                                if (object.contestedResourceVoters != null) {
+                                    if (typeof object.contestedResourceVoters !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.contestedResourceVoters: object expected");
+                                    message.contestedResourceVoters = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.fromObject(object.contestedResourceVoters);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetContestedResourceVoteStatusResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0} message GetContestedResourceVoteStatusResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetContestedResourceVoteStatusResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.contestedResourceVoters != null && message.hasOwnProperty("contestedResourceVoters")) {
+                                    object.contestedResourceVoters = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.toObject(message.contestedResourceVoters, options);
+                                    if (options.oneofs)
+                                        object.result = "contestedResourceVoters";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetContestedResourceVoteStatusResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetContestedResourceVoteStatusResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters = (function() {
+
+                                /**
+                                 * Properties of a ContestedResourceVoters.
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                                 * @interface IContestedResourceVoters
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.IVoter>|null} [voters] ContestedResourceVoters voters
+                                 * @property {boolean|null} [finishedResults] ContestedResourceVoters finishedResults
+                                 */
+
+                                /**
+                                 * Constructs a new ContestedResourceVoters.
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                                 * @classdesc Represents a ContestedResourceVoters.
+                                 * @implements IContestedResourceVoters
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.IContestedResourceVoters=} [properties] Properties to set
+                                 */
+                                function ContestedResourceVoters(properties) {
+                                    this.voters = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * ContestedResourceVoters voters.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.IVoter>} voters
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters
+                                 * @instance
+                                 */
+                                ContestedResourceVoters.prototype.voters = $util.emptyArray;
+
+                                /**
+                                 * ContestedResourceVoters finishedResults.
+                                 * @member {boolean} finishedResults
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters
+                                 * @instance
+                                 */
+                                ContestedResourceVoters.prototype.finishedResults = false;
+
+                                /**
+                                 * Creates a new ContestedResourceVoters instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.IContestedResourceVoters=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters} ContestedResourceVoters instance
+                                 */
+                                ContestedResourceVoters.create = function create(properties) {
+                                    return new ContestedResourceVoters(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified ContestedResourceVoters message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.IContestedResourceVoters} message ContestedResourceVoters message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ContestedResourceVoters.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.voters != null && message.voters.length)
+                                        for (var i = 0; i < message.voters.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.encode(message.voters[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    if (message.finishedResults != null && Object.hasOwnProperty.call(message, "finishedResults"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).bool(message.finishedResults);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified ContestedResourceVoters message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.IContestedResourceVoters} message ContestedResourceVoters message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ContestedResourceVoters.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a ContestedResourceVoters message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters} ContestedResourceVoters
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ContestedResourceVoters.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.voters && message.voters.length))
+                                                message.voters = [];
+                                            message.voters.push($root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.decode(reader, reader.uint32()));
+                                            break;
+                                        case 2:
+                                            message.finishedResults = reader.bool();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a ContestedResourceVoters message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters} ContestedResourceVoters
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ContestedResourceVoters.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a ContestedResourceVoters message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                ContestedResourceVoters.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.voters != null && message.hasOwnProperty("voters")) {
+                                        if (!Array.isArray(message.voters))
+                                            return "voters: array expected";
+                                        for (var i = 0; i < message.voters.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.verify(message.voters[i]);
+                                            if (error)
+                                                return "voters." + error;
+                                        }
+                                    }
+                                    if (message.finishedResults != null && message.hasOwnProperty("finishedResults"))
+                                        if (typeof message.finishedResults !== "boolean")
+                                            return "finishedResults: boolean expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a ContestedResourceVoters message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters} ContestedResourceVoters
+                                 */
+                                ContestedResourceVoters.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters();
+                                    if (object.voters) {
+                                        if (!Array.isArray(object.voters))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.voters: array expected");
+                                        message.voters = [];
+                                        for (var i = 0; i < object.voters.length; ++i) {
+                                            if (typeof object.voters[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.voters: object expected");
+                                            message.voters[i] = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.fromObject(object.voters[i]);
+                                        }
+                                    }
+                                    if (object.finishedResults != null)
+                                        message.finishedResults = Boolean(object.finishedResults);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a ContestedResourceVoters message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters} message ContestedResourceVoters
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                ContestedResourceVoters.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.voters = [];
+                                    if (options.defaults)
+                                        object.finishedResults = false;
+                                    if (message.voters && message.voters.length) {
+                                        object.voters = [];
+                                        for (var j = 0; j < message.voters.length; ++j)
+                                            object.voters[j] = $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.toObject(message.voters[j], options);
+                                    }
+                                    if (message.finishedResults != null && message.hasOwnProperty("finishedResults"))
+                                        object.finishedResults = message.finishedResults;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this ContestedResourceVoters to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                ContestedResourceVoters.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return ContestedResourceVoters;
+                            })();
+
+                            GetContestedResourceVoteStatusResponseV0.Voter = (function() {
+
+                                /**
+                                 * Properties of a Voter.
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                                 * @interface IVoter
+                                 * @property {Uint8Array|null} [identifier] Voter identifier
+                                 */
+
+                                /**
+                                 * Constructs a new Voter.
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0
+                                 * @classdesc Represents a Voter.
+                                 * @implements IVoter
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.IVoter=} [properties] Properties to set
+                                 */
+                                function Voter(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Voter identifier.
+                                 * @member {Uint8Array} identifier
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter
+                                 * @instance
+                                 */
+                                Voter.prototype.identifier = $util.newBuffer([]);
+
+                                /**
+                                 * Creates a new Voter instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.IVoter=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter} Voter instance
+                                 */
+                                Voter.create = function create(properties) {
+                                    return new Voter(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Voter message. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.IVoter} message Voter message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Voter.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.identifier != null && Object.hasOwnProperty.call(message, "identifier"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identifier);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Voter message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.IVoter} message Voter message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Voter.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Voter message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter} Voter
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Voter.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.identifier = reader.bytes();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Voter message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter} Voter
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Voter.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Voter message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Voter.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.identifier != null && message.hasOwnProperty("identifier"))
+                                        if (!(message.identifier && typeof message.identifier.length === "number" || $util.isString(message.identifier)))
+                                            return "identifier: buffer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Voter message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter} Voter
+                                 */
+                                Voter.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter();
+                                    if (object.identifier != null)
+                                        if (typeof object.identifier === "string")
+                                            $util.base64.decode(object.identifier, message.identifier = $util.newBuffer($util.base64.length(object.identifier)), 0);
+                                        else if (object.identifier.length >= 0)
+                                            message.identifier = object.identifier;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Voter message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter} message Voter
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Voter.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults)
+                                        if (options.bytes === String)
+                                            object.identifier = "";
+                                        else {
+                                            object.identifier = [];
+                                            if (options.bytes !== Array)
+                                                object.identifier = $util.newBuffer(object.identifier);
+                                        }
+                                    if (message.identifier != null && message.hasOwnProperty("identifier"))
+                                        object.identifier = options.bytes === String ? $util.base64.encode(message.identifier, 0, message.identifier.length) : options.bytes === Array ? Array.prototype.slice.call(message.identifier) : message.identifier;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Voter to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Voter.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Voter;
+                            })();
+
+                            return GetContestedResourceVoteStatusResponseV0;
+                        })();
+
+                        return GetContestedResourceVoteStatusResponse;
                     })();
 
                     return v0;

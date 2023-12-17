@@ -34,6 +34,9 @@ service Platform {
   rpc getProtocolVersionUpgradeState(GetProtocolVersionUpgradeStateRequest) returns (GetProtocolVersionUpgradeStateResponse);
   rpc getProtocolVersionUpgradeVoteStatus(GetProtocolVersionUpgradeVoteStatusRequest) returns (GetProtocolVersionUpgradeVoteStatusResponse);
   rpc getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse);
+  rpc getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse);
+  rpc getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse);
+  rpc getContestedResourceVoteStatus(GetContestedResourceVoteStatusRequest) returns (GetContestedResourceVoteStatusResponse);
 }
 
 message Proof {
@@ -566,5 +569,121 @@ message GetEpochsInfoResponse {
 
   oneof version {
     GetEpochsInfoResponseV0 v0 = 1;
+  }
+}
+
+
+message GetContestedResourcesRequest {
+  message GetContestedResourcesRequestV0 {
+    bool prove = 1;
+    repeated bytes resource_path = 2;
+    optional bytes start_contested_resource_identifier = 3;
+    optional uint32 count = 4;
+    optional bool ascending = 5;
+  }
+
+  oneof version {
+    GetContestedResourcesRequestV0 v0 = 1;
+  }
+}
+
+message GetContestedResourcesResponse {
+  message GetContestedResourcesResponseV0 {
+    message ContestedResources {
+      repeated ContestedResource contested_resources = 1;
+      bool finished_results = 2;
+    }
+
+    message ContestedResource {
+      bytes identifier = 1;
+    }
+
+    oneof result {
+      ContestedResources contested_resources = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetContestedResourcesResponseV0 v0 = 1;
+  }
+}
+
+message GetContestedResourceVoteStateRequest {
+  message GetContestedResourceVoteStateRequestV0 {
+    bool prove = 1;
+    repeated bytes resource_path = 2;
+    bytes contested_resource = 3;
+    optional bytes start_identifier = 4;
+    optional uint32 count = 5;
+    optional bool ascending = 6;
+  }
+
+  oneof version {
+    GetContestedResourceVoteStateRequestV0 v0 = 1;
+  }
+}
+
+message GetContestedResourceVoteStateResponse {
+  message GetContestedResourceVoteStateResponseV0 {
+    message ContestedResourceContenders {
+      repeated Contender contenders = 1;
+      bool finished_results = 2;
+    }
+
+    message Contender {
+      bytes identifier = 1;
+      uint32 vote_count = 2;
+    }
+
+    oneof result {
+      ContestedResourceContenders contested_resource_contenders = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetContestedResourceVoteStateResponseV0 v0 = 1;
+  }
+}
+
+
+message GetContestedResourceVoteStatusRequest {
+  message GetContestedResourceVoteStatusRequestV0 {
+    bool prove = 1;
+    repeated bytes resource_path = 2;
+    bytes resource_identifier = 3;
+    optional bytes voter_identifier = 4;
+    optional uint32 count = 5;
+    optional bool ascending = 6;
+  }
+
+  oneof version {
+    GetContestedResourceVoteStatusRequestV0 v0 = 1;
+  }
+}
+
+message GetContestedResourceVoteStatusResponse {
+  message GetContestedResourceVoteStatusResponseV0 {
+    message ContestedResourceVoters {
+      repeated Voter voters = 1;
+      bool finished_results = 2;
+    }
+
+    message Voter {
+      bytes identifier = 1;
+    }
+
+    oneof result {
+      ContestedResourceVoters contested_resource_voters = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetContestedResourceVoteStatusResponseV0 v0 = 1;
   }
 }

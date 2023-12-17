@@ -1855,6 +1855,317 @@ pub mod get_epochs_info_response {
         V0(GetEpochsInfoResponseV0),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetContestedResourcesRequest {
+    #[prost(oneof = "get_contested_resources_request::Version", tags = "1")]
+    pub version: ::core::option::Option<get_contested_resources_request::Version>,
+}
+/// Nested message and enum types in `GetContestedResourcesRequest`.
+pub mod get_contested_resources_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetContestedResourcesRequestV0 {
+        #[prost(bool, tag = "1")]
+        pub prove: bool,
+        #[prost(bytes = "vec", repeated, tag = "2")]
+        pub resource_path: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+        #[prost(bytes = "vec", optional, tag = "3")]
+        pub start_contested_resource_identifier: ::core::option::Option<
+            ::prost::alloc::vec::Vec<u8>,
+        >,
+        #[prost(uint32, optional, tag = "4")]
+        pub count: ::core::option::Option<u32>,
+        #[prost(bool, optional, tag = "5")]
+        pub ascending: ::core::option::Option<bool>,
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetContestedResourcesRequestV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetContestedResourcesResponse {
+    #[prost(oneof = "get_contested_resources_response::Version", tags = "1")]
+    pub version: ::core::option::Option<get_contested_resources_response::Version>,
+}
+/// Nested message and enum types in `GetContestedResourcesResponse`.
+pub mod get_contested_resources_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetContestedResourcesResponseV0 {
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(oneof = "get_contested_resources_response_v0::Result", tags = "1, 2")]
+        pub result: ::core::option::Option<get_contested_resources_response_v0::Result>,
+    }
+    /// Nested message and enum types in `GetContestedResourcesResponseV0`.
+    pub mod get_contested_resources_response_v0 {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct ContestedResources {
+            #[prost(message, repeated, tag = "1")]
+            pub contested_resources: ::prost::alloc::vec::Vec<ContestedResource>,
+            #[prost(bool, tag = "2")]
+            pub finished_results: bool,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct ContestedResource {
+            #[prost(bytes = "vec", tag = "1")]
+            pub identifier: ::prost::alloc::vec::Vec<u8>,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(message, tag = "1")]
+            ContestedResources(ContestedResources),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetContestedResourcesResponseV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetContestedResourceVoteStateRequest {
+    #[prost(oneof = "get_contested_resource_vote_state_request::Version", tags = "1")]
+    pub version: ::core::option::Option<
+        get_contested_resource_vote_state_request::Version,
+    >,
+}
+/// Nested message and enum types in `GetContestedResourceVoteStateRequest`.
+pub mod get_contested_resource_vote_state_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetContestedResourceVoteStateRequestV0 {
+        #[prost(bool, tag = "1")]
+        pub prove: bool,
+        #[prost(bytes = "vec", repeated, tag = "2")]
+        pub resource_path: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+        #[prost(bytes = "vec", tag = "3")]
+        pub contested_resource: ::prost::alloc::vec::Vec<u8>,
+        #[prost(bytes = "vec", optional, tag = "4")]
+        pub start_identifier: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+        #[prost(uint32, optional, tag = "5")]
+        pub count: ::core::option::Option<u32>,
+        #[prost(bool, optional, tag = "6")]
+        pub ascending: ::core::option::Option<bool>,
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetContestedResourceVoteStateRequestV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetContestedResourceVoteStateResponse {
+    #[prost(oneof = "get_contested_resource_vote_state_response::Version", tags = "1")]
+    pub version: ::core::option::Option<
+        get_contested_resource_vote_state_response::Version,
+    >,
+}
+/// Nested message and enum types in `GetContestedResourceVoteStateResponse`.
+pub mod get_contested_resource_vote_state_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetContestedResourceVoteStateResponseV0 {
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(
+            oneof = "get_contested_resource_vote_state_response_v0::Result",
+            tags = "1, 2"
+        )]
+        pub result: ::core::option::Option<
+            get_contested_resource_vote_state_response_v0::Result,
+        >,
+    }
+    /// Nested message and enum types in `GetContestedResourceVoteStateResponseV0`.
+    pub mod get_contested_resource_vote_state_response_v0 {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct ContestedResourceContenders {
+            #[prost(message, repeated, tag = "1")]
+            pub contenders: ::prost::alloc::vec::Vec<Contender>,
+            #[prost(bool, tag = "2")]
+            pub finished_results: bool,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct Contender {
+            #[prost(bytes = "vec", tag = "1")]
+            pub identifier: ::prost::alloc::vec::Vec<u8>,
+            #[prost(uint32, tag = "2")]
+            pub vote_count: u32,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(message, tag = "1")]
+            ContestedResourceContenders(ContestedResourceContenders),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetContestedResourceVoteStateResponseV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetContestedResourceVoteStatusRequest {
+    #[prost(oneof = "get_contested_resource_vote_status_request::Version", tags = "1")]
+    pub version: ::core::option::Option<
+        get_contested_resource_vote_status_request::Version,
+    >,
+}
+/// Nested message and enum types in `GetContestedResourceVoteStatusRequest`.
+pub mod get_contested_resource_vote_status_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetContestedResourceVoteStatusRequestV0 {
+        #[prost(bool, tag = "1")]
+        pub prove: bool,
+        #[prost(bytes = "vec", repeated, tag = "2")]
+        pub resource_path: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+        #[prost(bytes = "vec", tag = "3")]
+        pub resource_identifier: ::prost::alloc::vec::Vec<u8>,
+        #[prost(bytes = "vec", optional, tag = "4")]
+        pub voter_identifier: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+        #[prost(uint32, optional, tag = "5")]
+        pub count: ::core::option::Option<u32>,
+        #[prost(bool, optional, tag = "6")]
+        pub ascending: ::core::option::Option<bool>,
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetContestedResourceVoteStatusRequestV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetContestedResourceVoteStatusResponse {
+    #[prost(oneof = "get_contested_resource_vote_status_response::Version", tags = "1")]
+    pub version: ::core::option::Option<
+        get_contested_resource_vote_status_response::Version,
+    >,
+}
+/// Nested message and enum types in `GetContestedResourceVoteStatusResponse`.
+pub mod get_contested_resource_vote_status_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetContestedResourceVoteStatusResponseV0 {
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(
+            oneof = "get_contested_resource_vote_status_response_v0::Result",
+            tags = "1, 2"
+        )]
+        pub result: ::core::option::Option<
+            get_contested_resource_vote_status_response_v0::Result,
+        >,
+    }
+    /// Nested message and enum types in `GetContestedResourceVoteStatusResponseV0`.
+    pub mod get_contested_resource_vote_status_response_v0 {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct ContestedResourceVoters {
+            #[prost(message, repeated, tag = "1")]
+            pub voters: ::prost::alloc::vec::Vec<Voter>,
+            #[prost(bool, tag = "2")]
+            pub finished_results: bool,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct Voter {
+            #[prost(bytes = "vec", tag = "1")]
+            pub identifier: ::prost::alloc::vec::Vec<u8>,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(message, tag = "1")]
+            ContestedResourceVoters(ContestedResourceVoters),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetContestedResourceVoteStatusResponseV0),
+    }
+}
 /// Generated client implementations.
 pub mod platform_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -2473,6 +2784,98 @@ pub mod platform_client {
                     GrpcMethod::new(
                         "org.dash.platform.dapi.v0.Platform",
                         "getEpochsInfo",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_contested_resources(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetContestedResourcesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetContestedResourcesResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getContestedResources",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getContestedResources",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_contested_resource_vote_state(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetContestedResourceVoteStateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetContestedResourceVoteStateResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getContestedResourceVoteState",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getContestedResourceVoteState",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_contested_resource_vote_status(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::GetContestedResourceVoteStatusRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::GetContestedResourceVoteStatusResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getContestedResourceVoteStatus",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getContestedResourceVoteStatus",
                     ),
                 );
             self.inner.unary(req, path, codec).await

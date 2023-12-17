@@ -166,6 +166,33 @@ type PlatformgetEpochsInfo = {
   readonly responseType: typeof platform_pb.GetEpochsInfoResponse;
 };
 
+type PlatformgetContestedResources = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContestedResourcesRequest;
+  readonly responseType: typeof platform_pb.GetContestedResourcesResponse;
+};
+
+type PlatformgetContestedResourceVoteState = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContestedResourceVoteStateRequest;
+  readonly responseType: typeof platform_pb.GetContestedResourceVoteStateResponse;
+};
+
+type PlatformgetContestedResourceVoteStatus = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContestedResourceVoteStatusRequest;
+  readonly responseType: typeof platform_pb.GetContestedResourceVoteStatusResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -186,6 +213,9 @@ export class Platform {
   static readonly getProtocolVersionUpgradeState: PlatformgetProtocolVersionUpgradeState;
   static readonly getProtocolVersionUpgradeVoteStatus: PlatformgetProtocolVersionUpgradeVoteStatus;
   static readonly getEpochsInfo: PlatformgetEpochsInfo;
+  static readonly getContestedResources: PlatformgetContestedResources;
+  static readonly getContestedResourceVoteState: PlatformgetContestedResourceVoteState;
+  static readonly getContestedResourceVoteStatus: PlatformgetContestedResourceVoteStatus;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -381,6 +411,33 @@ export class PlatformClient {
   getEpochsInfo(
     requestMessage: platform_pb.GetEpochsInfoRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetEpochsInfoResponse|null) => void
+  ): UnaryResponse;
+  getContestedResources(
+    requestMessage: platform_pb.GetContestedResourcesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContestedResourcesResponse|null) => void
+  ): UnaryResponse;
+  getContestedResources(
+    requestMessage: platform_pb.GetContestedResourcesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContestedResourcesResponse|null) => void
+  ): UnaryResponse;
+  getContestedResourceVoteState(
+    requestMessage: platform_pb.GetContestedResourceVoteStateRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContestedResourceVoteStateResponse|null) => void
+  ): UnaryResponse;
+  getContestedResourceVoteState(
+    requestMessage: platform_pb.GetContestedResourceVoteStateRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContestedResourceVoteStateResponse|null) => void
+  ): UnaryResponse;
+  getContestedResourceVoteStatus(
+    requestMessage: platform_pb.GetContestedResourceVoteStatusRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContestedResourceVoteStatusResponse|null) => void
+  ): UnaryResponse;
+  getContestedResourceVoteStatus(
+    requestMessage: platform_pb.GetContestedResourceVoteStatusRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContestedResourceVoteStatusResponse|null) => void
   ): UnaryResponse;
 }
 

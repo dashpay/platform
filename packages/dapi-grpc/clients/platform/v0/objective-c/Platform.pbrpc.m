@@ -430,5 +430,65 @@
              responseClass:[GetEpochsInfoResponse class]];
 }
 
+#pragma mark getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse)
+
+- (void)getContestedResourcesWithRequest:(GetContestedResourcesRequest *)request handler:(void(^)(GetContestedResourcesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContestedResourcesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContestedResourcesWithRequest:(GetContestedResourcesRequest *)request handler:(void(^)(GetContestedResourcesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContestedResources"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContestedResourcesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContestedResourcesWithMessage:(GetContestedResourcesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContestedResources"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContestedResourcesResponse class]];
+}
+
+#pragma mark getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse)
+
+- (void)getContestedResourceVoteStateWithRequest:(GetContestedResourceVoteStateRequest *)request handler:(void(^)(GetContestedResourceVoteStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContestedResourceVoteStateWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContestedResourceVoteStateWithRequest:(GetContestedResourceVoteStateRequest *)request handler:(void(^)(GetContestedResourceVoteStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContestedResourceVoteState"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContestedResourceVoteStateResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContestedResourceVoteStateWithMessage:(GetContestedResourceVoteStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContestedResourceVoteState"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContestedResourceVoteStateResponse class]];
+}
+
+#pragma mark getContestedResourceVoteStatus(GetContestedResourceVoteStatusRequest) returns (GetContestedResourceVoteStatusResponse)
+
+- (void)getContestedResourceVoteStatusWithRequest:(GetContestedResourceVoteStatusRequest *)request handler:(void(^)(GetContestedResourceVoteStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContestedResourceVoteStatusWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContestedResourceVoteStatusWithRequest:(GetContestedResourceVoteStatusRequest *)request handler:(void(^)(GetContestedResourceVoteStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContestedResourceVoteStatus"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContestedResourceVoteStatusResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContestedResourceVoteStatusWithMessage:(GetContestedResourceVoteStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContestedResourceVoteStatus"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContestedResourceVoteStatusResponse class]];
+}
+
 @end
 #endif

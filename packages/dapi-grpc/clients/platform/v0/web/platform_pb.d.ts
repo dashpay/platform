@@ -3051,3 +3051,598 @@ export namespace GetEpochsInfoResponse {
   }
 }
 
+export class GetContestedResourcesRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetContestedResourcesRequest.GetContestedResourcesRequestV0 | undefined;
+  setV0(value?: GetContestedResourcesRequest.GetContestedResourcesRequestV0): void;
+
+  getVersionCase(): GetContestedResourcesRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetContestedResourcesRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetContestedResourcesRequest): GetContestedResourcesRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetContestedResourcesRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetContestedResourcesRequest;
+  static deserializeBinaryFromReader(message: GetContestedResourcesRequest, reader: jspb.BinaryReader): GetContestedResourcesRequest;
+}
+
+export namespace GetContestedResourcesRequest {
+  export type AsObject = {
+    v0?: GetContestedResourcesRequest.GetContestedResourcesRequestV0.AsObject,
+  }
+
+  export class GetContestedResourcesRequestV0 extends jspb.Message {
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    clearResourcePathList(): void;
+    getResourcePathList(): Array<Uint8Array | string>;
+    getResourcePathList_asU8(): Array<Uint8Array>;
+    getResourcePathList_asB64(): Array<string>;
+    setResourcePathList(value: Array<Uint8Array | string>): void;
+    addResourcePath(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    hasStartContestedResourceIdentifier(): boolean;
+    clearStartContestedResourceIdentifier(): void;
+    getStartContestedResourceIdentifier(): Uint8Array | string;
+    getStartContestedResourceIdentifier_asU8(): Uint8Array;
+    getStartContestedResourceIdentifier_asB64(): string;
+    setStartContestedResourceIdentifier(value: Uint8Array | string): void;
+
+    hasCount(): boolean;
+    clearCount(): void;
+    getCount(): number;
+    setCount(value: number): void;
+
+    hasAscending(): boolean;
+    clearAscending(): void;
+    getAscending(): boolean;
+    setAscending(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetContestedResourcesRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetContestedResourcesRequestV0): GetContestedResourcesRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetContestedResourcesRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetContestedResourcesRequestV0;
+    static deserializeBinaryFromReader(message: GetContestedResourcesRequestV0, reader: jspb.BinaryReader): GetContestedResourcesRequestV0;
+  }
+
+  export namespace GetContestedResourcesRequestV0 {
+    export type AsObject = {
+      prove: boolean,
+      resourcePathList: Array<Uint8Array | string>,
+      startContestedResourceIdentifier: Uint8Array | string,
+      count: number,
+      ascending: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetContestedResourcesResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetContestedResourcesResponse.GetContestedResourcesResponseV0 | undefined;
+  setV0(value?: GetContestedResourcesResponse.GetContestedResourcesResponseV0): void;
+
+  getVersionCase(): GetContestedResourcesResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetContestedResourcesResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetContestedResourcesResponse): GetContestedResourcesResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetContestedResourcesResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetContestedResourcesResponse;
+  static deserializeBinaryFromReader(message: GetContestedResourcesResponse, reader: jspb.BinaryReader): GetContestedResourcesResponse;
+}
+
+export namespace GetContestedResourcesResponse {
+  export type AsObject = {
+    v0?: GetContestedResourcesResponse.GetContestedResourcesResponseV0.AsObject,
+  }
+
+  export class GetContestedResourcesResponseV0 extends jspb.Message {
+    hasContestedResources(): boolean;
+    clearContestedResources(): void;
+    getContestedResources(): GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources | undefined;
+    setContestedResources(value?: GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetContestedResourcesResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetContestedResourcesResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetContestedResourcesResponseV0): GetContestedResourcesResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetContestedResourcesResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetContestedResourcesResponseV0;
+    static deserializeBinaryFromReader(message: GetContestedResourcesResponseV0, reader: jspb.BinaryReader): GetContestedResourcesResponseV0;
+  }
+
+  export namespace GetContestedResourcesResponseV0 {
+    export type AsObject = {
+      contestedResources?: GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResources.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class ContestedResources extends jspb.Message {
+      clearContestedResourcesList(): void;
+      getContestedResourcesList(): Array<GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource>;
+      setContestedResourcesList(value: Array<GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource>): void;
+      addContestedResources(value?: GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource, index?: number): GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource;
+
+      getFinishedResults(): boolean;
+      setFinishedResults(value: boolean): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): ContestedResources.AsObject;
+      static toObject(includeInstance: boolean, msg: ContestedResources): ContestedResources.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: ContestedResources, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): ContestedResources;
+      static deserializeBinaryFromReader(message: ContestedResources, reader: jspb.BinaryReader): ContestedResources;
+    }
+
+    export namespace ContestedResources {
+      export type AsObject = {
+        contestedResourcesList: Array<GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResource.AsObject>,
+        finishedResults: boolean,
+      }
+    }
+
+    export class ContestedResource extends jspb.Message {
+      getIdentifier(): Uint8Array | string;
+      getIdentifier_asU8(): Uint8Array;
+      getIdentifier_asB64(): string;
+      setIdentifier(value: Uint8Array | string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): ContestedResource.AsObject;
+      static toObject(includeInstance: boolean, msg: ContestedResource): ContestedResource.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: ContestedResource, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): ContestedResource;
+      static deserializeBinaryFromReader(message: ContestedResource, reader: jspb.BinaryReader): ContestedResource;
+    }
+
+    export namespace ContestedResource {
+      export type AsObject = {
+        identifier: Uint8Array | string,
+      }
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      CONTESTED_RESOURCES = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetContestedResourceVoteStateRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0 | undefined;
+  setV0(value?: GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0): void;
+
+  getVersionCase(): GetContestedResourceVoteStateRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetContestedResourceVoteStateRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetContestedResourceVoteStateRequest): GetContestedResourceVoteStateRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetContestedResourceVoteStateRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetContestedResourceVoteStateRequest;
+  static deserializeBinaryFromReader(message: GetContestedResourceVoteStateRequest, reader: jspb.BinaryReader): GetContestedResourceVoteStateRequest;
+}
+
+export namespace GetContestedResourceVoteStateRequest {
+  export type AsObject = {
+    v0?: GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.AsObject,
+  }
+
+  export class GetContestedResourceVoteStateRequestV0 extends jspb.Message {
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    clearResourcePathList(): void;
+    getResourcePathList(): Array<Uint8Array | string>;
+    getResourcePathList_asU8(): Array<Uint8Array>;
+    getResourcePathList_asB64(): Array<string>;
+    setResourcePathList(value: Array<Uint8Array | string>): void;
+    addResourcePath(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    getContestedResource(): Uint8Array | string;
+    getContestedResource_asU8(): Uint8Array;
+    getContestedResource_asB64(): string;
+    setContestedResource(value: Uint8Array | string): void;
+
+    hasStartIdentifier(): boolean;
+    clearStartIdentifier(): void;
+    getStartIdentifier(): Uint8Array | string;
+    getStartIdentifier_asU8(): Uint8Array;
+    getStartIdentifier_asB64(): string;
+    setStartIdentifier(value: Uint8Array | string): void;
+
+    hasCount(): boolean;
+    clearCount(): void;
+    getCount(): number;
+    setCount(value: number): void;
+
+    hasAscending(): boolean;
+    clearAscending(): void;
+    getAscending(): boolean;
+    setAscending(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetContestedResourceVoteStateRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetContestedResourceVoteStateRequestV0): GetContestedResourceVoteStateRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetContestedResourceVoteStateRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetContestedResourceVoteStateRequestV0;
+    static deserializeBinaryFromReader(message: GetContestedResourceVoteStateRequestV0, reader: jspb.BinaryReader): GetContestedResourceVoteStateRequestV0;
+  }
+
+  export namespace GetContestedResourceVoteStateRequestV0 {
+    export type AsObject = {
+      prove: boolean,
+      resourcePathList: Array<Uint8Array | string>,
+      contestedResource: Uint8Array | string,
+      startIdentifier: Uint8Array | string,
+      count: number,
+      ascending: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetContestedResourceVoteStateResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0 | undefined;
+  setV0(value?: GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0): void;
+
+  getVersionCase(): GetContestedResourceVoteStateResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetContestedResourceVoteStateResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetContestedResourceVoteStateResponse): GetContestedResourceVoteStateResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetContestedResourceVoteStateResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetContestedResourceVoteStateResponse;
+  static deserializeBinaryFromReader(message: GetContestedResourceVoteStateResponse, reader: jspb.BinaryReader): GetContestedResourceVoteStateResponse;
+}
+
+export namespace GetContestedResourceVoteStateResponse {
+  export type AsObject = {
+    v0?: GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.AsObject,
+  }
+
+  export class GetContestedResourceVoteStateResponseV0 extends jspb.Message {
+    hasContestedResourceContenders(): boolean;
+    clearContestedResourceContenders(): void;
+    getContestedResourceContenders(): GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders | undefined;
+    setContestedResourceContenders(value?: GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetContestedResourceVoteStateResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetContestedResourceVoteStateResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetContestedResourceVoteStateResponseV0): GetContestedResourceVoteStateResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetContestedResourceVoteStateResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetContestedResourceVoteStateResponseV0;
+    static deserializeBinaryFromReader(message: GetContestedResourceVoteStateResponseV0, reader: jspb.BinaryReader): GetContestedResourceVoteStateResponseV0;
+  }
+
+  export namespace GetContestedResourceVoteStateResponseV0 {
+    export type AsObject = {
+      contestedResourceContenders?: GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContenders.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class ContestedResourceContenders extends jspb.Message {
+      clearContendersList(): void;
+      getContendersList(): Array<GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender>;
+      setContendersList(value: Array<GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender>): void;
+      addContenders(value?: GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender, index?: number): GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender;
+
+      getFinishedResults(): boolean;
+      setFinishedResults(value: boolean): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): ContestedResourceContenders.AsObject;
+      static toObject(includeInstance: boolean, msg: ContestedResourceContenders): ContestedResourceContenders.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: ContestedResourceContenders, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): ContestedResourceContenders;
+      static deserializeBinaryFromReader(message: ContestedResourceContenders, reader: jspb.BinaryReader): ContestedResourceContenders;
+    }
+
+    export namespace ContestedResourceContenders {
+      export type AsObject = {
+        contendersList: Array<GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender.AsObject>,
+        finishedResults: boolean,
+      }
+    }
+
+    export class Contender extends jspb.Message {
+      getIdentifier(): Uint8Array | string;
+      getIdentifier_asU8(): Uint8Array;
+      getIdentifier_asB64(): string;
+      setIdentifier(value: Uint8Array | string): void;
+
+      getVoteCount(): number;
+      setVoteCount(value: number): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Contender.AsObject;
+      static toObject(includeInstance: boolean, msg: Contender): Contender.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Contender, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Contender;
+      static deserializeBinaryFromReader(message: Contender, reader: jspb.BinaryReader): Contender;
+    }
+
+    export namespace Contender {
+      export type AsObject = {
+        identifier: Uint8Array | string,
+        voteCount: number,
+      }
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      CONTESTED_RESOURCE_CONTENDERS = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetContestedResourceVoteStatusRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0 | undefined;
+  setV0(value?: GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0): void;
+
+  getVersionCase(): GetContestedResourceVoteStatusRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetContestedResourceVoteStatusRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetContestedResourceVoteStatusRequest): GetContestedResourceVoteStatusRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetContestedResourceVoteStatusRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetContestedResourceVoteStatusRequest;
+  static deserializeBinaryFromReader(message: GetContestedResourceVoteStatusRequest, reader: jspb.BinaryReader): GetContestedResourceVoteStatusRequest;
+}
+
+export namespace GetContestedResourceVoteStatusRequest {
+  export type AsObject = {
+    v0?: GetContestedResourceVoteStatusRequest.GetContestedResourceVoteStatusRequestV0.AsObject,
+  }
+
+  export class GetContestedResourceVoteStatusRequestV0 extends jspb.Message {
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    clearResourcePathList(): void;
+    getResourcePathList(): Array<Uint8Array | string>;
+    getResourcePathList_asU8(): Array<Uint8Array>;
+    getResourcePathList_asB64(): Array<string>;
+    setResourcePathList(value: Array<Uint8Array | string>): void;
+    addResourcePath(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    getResourceIdentifier(): Uint8Array | string;
+    getResourceIdentifier_asU8(): Uint8Array;
+    getResourceIdentifier_asB64(): string;
+    setResourceIdentifier(value: Uint8Array | string): void;
+
+    hasVoterIdentifier(): boolean;
+    clearVoterIdentifier(): void;
+    getVoterIdentifier(): Uint8Array | string;
+    getVoterIdentifier_asU8(): Uint8Array;
+    getVoterIdentifier_asB64(): string;
+    setVoterIdentifier(value: Uint8Array | string): void;
+
+    hasCount(): boolean;
+    clearCount(): void;
+    getCount(): number;
+    setCount(value: number): void;
+
+    hasAscending(): boolean;
+    clearAscending(): void;
+    getAscending(): boolean;
+    setAscending(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetContestedResourceVoteStatusRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetContestedResourceVoteStatusRequestV0): GetContestedResourceVoteStatusRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetContestedResourceVoteStatusRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetContestedResourceVoteStatusRequestV0;
+    static deserializeBinaryFromReader(message: GetContestedResourceVoteStatusRequestV0, reader: jspb.BinaryReader): GetContestedResourceVoteStatusRequestV0;
+  }
+
+  export namespace GetContestedResourceVoteStatusRequestV0 {
+    export type AsObject = {
+      prove: boolean,
+      resourcePathList: Array<Uint8Array | string>,
+      resourceIdentifier: Uint8Array | string,
+      voterIdentifier: Uint8Array | string,
+      count: number,
+      ascending: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetContestedResourceVoteStatusResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0 | undefined;
+  setV0(value?: GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0): void;
+
+  getVersionCase(): GetContestedResourceVoteStatusResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetContestedResourceVoteStatusResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetContestedResourceVoteStatusResponse): GetContestedResourceVoteStatusResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetContestedResourceVoteStatusResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetContestedResourceVoteStatusResponse;
+  static deserializeBinaryFromReader(message: GetContestedResourceVoteStatusResponse, reader: jspb.BinaryReader): GetContestedResourceVoteStatusResponse;
+}
+
+export namespace GetContestedResourceVoteStatusResponse {
+  export type AsObject = {
+    v0?: GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.AsObject,
+  }
+
+  export class GetContestedResourceVoteStatusResponseV0 extends jspb.Message {
+    hasContestedResourceVoters(): boolean;
+    clearContestedResourceVoters(): void;
+    getContestedResourceVoters(): GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters | undefined;
+    setContestedResourceVoters(value?: GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetContestedResourceVoteStatusResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetContestedResourceVoteStatusResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetContestedResourceVoteStatusResponseV0): GetContestedResourceVoteStatusResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetContestedResourceVoteStatusResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetContestedResourceVoteStatusResponseV0;
+    static deserializeBinaryFromReader(message: GetContestedResourceVoteStatusResponseV0, reader: jspb.BinaryReader): GetContestedResourceVoteStatusResponseV0;
+  }
+
+  export namespace GetContestedResourceVoteStatusResponseV0 {
+    export type AsObject = {
+      contestedResourceVoters?: GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.ContestedResourceVoters.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class ContestedResourceVoters extends jspb.Message {
+      clearVotersList(): void;
+      getVotersList(): Array<GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter>;
+      setVotersList(value: Array<GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter>): void;
+      addVoters(value?: GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter, index?: number): GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter;
+
+      getFinishedResults(): boolean;
+      setFinishedResults(value: boolean): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): ContestedResourceVoters.AsObject;
+      static toObject(includeInstance: boolean, msg: ContestedResourceVoters): ContestedResourceVoters.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: ContestedResourceVoters, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): ContestedResourceVoters;
+      static deserializeBinaryFromReader(message: ContestedResourceVoters, reader: jspb.BinaryReader): ContestedResourceVoters;
+    }
+
+    export namespace ContestedResourceVoters {
+      export type AsObject = {
+        votersList: Array<GetContestedResourceVoteStatusResponse.GetContestedResourceVoteStatusResponseV0.Voter.AsObject>,
+        finishedResults: boolean,
+      }
+    }
+
+    export class Voter extends jspb.Message {
+      getIdentifier(): Uint8Array | string;
+      getIdentifier_asU8(): Uint8Array;
+      getIdentifier_asB64(): string;
+      setIdentifier(value: Uint8Array | string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Voter.AsObject;
+      static toObject(includeInstance: boolean, msg: Voter): Voter.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Voter, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Voter;
+      static deserializeBinaryFromReader(message: Voter, reader: jspb.BinaryReader): Voter;
+    }
+
+    export namespace Voter {
+      export type AsObject = {
+        identifier: Uint8Array | string,
+      }
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      CONTESTED_RESOURCE_VOTERS = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
