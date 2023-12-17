@@ -14,7 +14,7 @@ export default function updateNodeFactory(getServiceList, docker) {
    *
    * @return {object[]}
    */
-  function updateNode(config) {
+  async function updateNode(config) {
     const services = getServiceList(config);
 
     return Promise.all(
