@@ -372,7 +372,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
-      '0.25.19': (configFile) => {
+      '0.25.20': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             options.platform.dapi.envoy.http.connectTimeout = base.get('platform.dapi.envoy.http.connectTimeout');
