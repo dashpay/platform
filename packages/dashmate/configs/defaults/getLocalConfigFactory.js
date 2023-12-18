@@ -49,6 +49,10 @@ export default function getLocalConfigFactory(getBaseConfig) {
           tenderdash: {
             p2p: {
               port: 46656,
+              flushThrottleTimeout: '100ms',
+              maxPacketMsgPayloadSize: 1024,
+              sendRate: 20000000,
+              recvRate: 20000000,
             },
             rpc: {
               port: 46657,

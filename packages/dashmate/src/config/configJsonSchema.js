@@ -360,8 +360,16 @@ export default {
                     port: {
                       $ref: '#/definitions/port',
                     },
+                    connectTimeout: {
+                      type: 'string',
+                      pattern: '^[0-9\\.]+s$',
+                    },
+                    responseTimeout: {
+                      type: 'string',
+                      pattern: '^[0-9\\.]+s$',
+                    },
                   },
-                  required: ['host', 'port'],
+                  required: ['host', 'port', 'connectTimeout', 'responseTimeout'],
                   additionalProperties: false,
                 },
                 rateLimiter: {
@@ -532,6 +540,22 @@ export default {
                         $ref: '#/definitions/tenderdashNodeAddress',
                       },
                     },
+                    flushThrottleTimeout: {
+                      type: 'string',
+                      pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                    },
+                    maxPacketMsgPayloadSize: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    sendRate: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    recvRate: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
                   },
                   required: ['host', 'port', 'persistentPeers', 'seeds'],
                   additionalProperties: false,
@@ -544,11 +568,75 @@ export default {
                     },
                     createEmptyBlocksInterval: {
                       type: 'string',
-                      pattern: '^[0-9]+(.[0-9]+)?(m|s|h)$',
+                      pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                    },
+                    peer: {
+                      type: 'object',
+                      properties: {
+                        gossipSleepDuration: {
+                          type: 'string',
+                          pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                        },
+                        queryMaj23SleepDuration: {
+                          type: 'string',
+                          pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                        },
+                      },
+                    },
+                    unsafeOverride: {
+                      type: 'object',
+                      properties: {
+                        propose: {
+                          type: 'object',
+                          properties: {
+                            timeout: {
+                              type: ['string', 'null'],
+                              pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                            },
+                            delta: {
+                              type: ['string', 'null'],
+                              pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                            },
+                          },
+                          additionalProperties: false,
+                          required: ['timeout', 'delta'],
+                        },
+                        vote: {
+                          type: 'object',
+                          properties: {
+                            timeout: {
+                              type: ['string', 'null'],
+                              pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                            },
+                            delta: {
+                              type: ['string', 'null'],
+                              pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                            },
+                          },
+                          additionalProperties: false,
+                          required: ['timeout', 'delta'],
+                        },
+                        commit: {
+                          type: 'object',
+                          properties: {
+                            timeout: {
+                              type: ['string', 'null'],
+                              pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                            },
+                            bypass: {
+                              type: ['boolean', 'null'],
+                            },
+                          },
+                          additionalProperties: false,
+                          required: ['timeout', 'bypass'],
+                        },
+                      },
+                      additionalProperties: false,
+                      required: ['propose', 'vote', 'commit'],
                     },
                   },
                   additionalProperties: false,
-                  required: ['createEmptyBlocks', 'createEmptyBlocksInterval'],
+                  required: ['createEmptyBlocks', 'createEmptyBlocksInterval', 'peer', 'unsafeOverride'],
                 },
                 log: {
                   type: 'object',
