@@ -1,3 +1,15 @@
+### [0.25.19](https://github.com/dashpay/platform/compare/v0.25.18...v0.25.19) (2023-12-18)
+
+
+### Features
+
+* **dashmate:** add config render command ([#1637](https://github.com/dashpay/platform/issues/1637))
+
+
+### Miscellaneous Chores
+
+* update cargo lock
+
 ### [0.25.18](https://github.com/dashpay/platform/compare/v0.25.17...v0.25.18) (2023-12-12)
 
 
