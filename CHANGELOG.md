@@ -6,11 +6,6 @@
 * **dashmate:** add config render command ([#1637](https://github.com/dashpay/platform/issues/1637))
 
 
-### Miscellaneous Chores
-
-* update cargo lock
-
-
 ### Reverts
 
 * **drive:** temporary disable credit transfer transitions ([#1642](https://github.com/dashpay/platform/issues/1642))
