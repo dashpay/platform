@@ -378,6 +378,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.platform.dapi.envoy.http.connectTimeout = base.get('platform.dapi.envoy.http.connectTimeout');
             options.platform.dapi.envoy.http.responseTimeout = base.get('platform.dapi.envoy.http.responseTimeout');
 
+            options.platform.drive.tenderdash.rpc.maxOpenConnections = base.get('platform.drive.tenderdash.rpc.maxOpenConnections');
+
             let defaultConfig = 'base';
             if (options.group === 'local') {
               defaultConfig = 'local';

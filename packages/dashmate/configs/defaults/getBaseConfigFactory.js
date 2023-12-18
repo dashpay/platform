@@ -185,6 +185,7 @@ export default function getBaseConfigFactory(homeDir) {
             rpc: {
               host: '127.0.0.1',
               port: 26657,
+              maxOpenConnections: 900,
             },
             pprof: {
               enabled: false, port: 6060,

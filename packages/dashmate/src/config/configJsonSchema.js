@@ -668,6 +668,10 @@ export default {
                     port: {
                       $ref: '#/definitions/port',
                     },
+                    maxOpenConnections: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
                   },
                   required: ['host', 'port'],
                   additionalProperties: false,
