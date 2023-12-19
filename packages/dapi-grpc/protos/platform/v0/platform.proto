@@ -49,7 +49,7 @@ message Proof {
 // ResponseMetadata provides metadata about the blockchain state at the time of response
 message ResponseMetadata {
   uint64 height = 1;                    // Current blockchain height
-  uint32 core_chain_locked_height = 2;  // Height of the core ChainLock
+  uint32 core_chain_locked_height = 2;  // Latest known core height in consensus
   uint32 epoch = 3;                     // Current epoch number
   uint64 time_ms = 4;                   // Timestamp in milliseconds
   uint32 protocol_version = 5;          // Protocol version
