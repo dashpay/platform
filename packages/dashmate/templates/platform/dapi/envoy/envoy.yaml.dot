@@ -196,7 +196,7 @@ static_resources:
         {{?}}
   clusters:
    - name: core_and_platform
-     connect_timeout: 15s
+     connect_timeout: 0.5s
      type: logical_dns
      lb_policy: round_robin
      typed_extension_protocol_options:
@@ -217,7 +217,7 @@ static_resources:
                      address: dapi_api
                      port_value: 3005
    - name: tx_filter_stream
-     connect_timeout: 15s
+     connect_timeout: 0.5s
      type: logical_dns
      lb_policy: round_robin
      typed_extension_protocol_options:

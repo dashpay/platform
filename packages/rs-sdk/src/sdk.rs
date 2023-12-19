@@ -26,7 +26,7 @@ use rs_dapi_client::mock::MockDapiClient;
 pub use rs_dapi_client::AddressList;
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
-    Dapi, DapiClient, DapiClientError, RequestSettings,
+    DapiClient, DapiClientError, DapiRequestExecutor, RequestSettings,
 };
 use tokio::sync::Mutex;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
@@ -308,7 +308,7 @@ impl ContextProvider for Sdk {
 }
 
 #[async_trait::async_trait]
-impl Dapi for Sdk {
+impl DapiRequestExecutor for Sdk {
     async fn execute<R: TransportRequest>(
         &self,
         request: R,
@@ -326,13 +326,13 @@ impl Dapi for Sdk {
 }
 
 #[async_trait::async_trait]
-impl Dapi for &Sdk {
+impl DapiRequestExecutor for &Sdk {
     async fn execute<R: TransportRequest>(
         &self,
         request: R,
         settings: RequestSettings,
     ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
-        Dapi::execute(self, request, settings).await
+        DapiRequestExecutor::execute(self, request, settings).await
     }
 }
 

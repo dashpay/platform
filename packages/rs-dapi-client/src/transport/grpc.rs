@@ -56,7 +56,7 @@ impl TransportClient for CoreGrpcClient {
 }
 
 impl CanRetry for dapi_grpc::tonic::Status {
-    fn can_retry(&self) -> bool {
+    fn is_node_failure(&self) -> bool {
         let code = self.code();
 
         use dapi_grpc::tonic::Code::*;

@@ -13,7 +13,7 @@ use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProo
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
 
-use rs_dapi_client::{Dapi, RequestSettings};
+use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
 

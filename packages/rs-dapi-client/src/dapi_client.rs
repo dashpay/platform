@@ -32,11 +32,11 @@ pub enum DapiClientError<TE> {
 }
 
 impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
-    fn can_retry(&self) -> bool {
+    fn is_node_failure(&self) -> bool {
         use DapiClientError::*;
         match self {
             NoAvailableAddresses => false,
-            Transport(transport_error, _) => transport_error.can_retry(),
+            Transport(transport_error, _) => transport_error.is_node_failure(),
             AddressList(_) => false,
             #[cfg(feature = "mocks")]
             MockExpectationNotFound(_) => false,
@@ -46,7 +46,7 @@ impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
 
 #[async_trait]
 /// DAPI client executor trait.
-pub trait Dapi {
+pub trait DapiRequestExecutor {
     /// Execute request using this DAPI client.
     async fn execute<R>(
         &self,
@@ -80,7 +80,7 @@ impl DapiClient {
 }
 
 #[async_trait]
-impl Dapi for DapiClient {
+impl DapiRequestExecutor for DapiClient {
     /// Execute the [DapiRequest](crate::DapiRequest).
     async fn execute<R>(
         &self,
@@ -168,6 +168,7 @@ impl Dapi for DapiClient {
 
                 match &response {
                     Ok(_) => {
+                        // Unban the address if it was banned and node responded successfully this time
                         if address.is_banned() {
                             let mut address_list = self
                                 .address_list
@@ -181,16 +182,18 @@ impl Dapi for DapiClient {
                         tracing::trace!(?response, "received {} response", response_name);
                     }
                     Err(error) => {
-                        if error.can_retry() {
-                            // let mut address_list = self
-                            //     .address_list
-                            //     .write()
-                            //     .expect("can't get address list for write");
-                            //
-                            // address_list.ban_address(&address)
-                            //     .map_err(DapiClientError::<<R::Client as TransportClient>::Error>::AddressList)?;
+                        if error.is_node_failure() {
+                            if applied_settings.ban_failed_address {
+                                let mut address_list = self
+                                    .address_list
+                                    .write()
+                                    .expect("can't get address list for write");
+
+                                address_list.ban_address(&address)
+                                    .map_err(DapiClientError::<<R::Client as TransportClient>::Error>::AddressList)?;
+                            }
                         } else {
-                            tracing::trace!(?response, ?error, "received error");
+                            tracing::trace!(?error, "received error");
                         }
                     }
                 };
@@ -201,7 +204,6 @@ impl Dapi for DapiClient {
 
         // Start the routine with retry policy applied:
         // We allow let_and_return because `result` is used later if dump feature is enabled
-        #[allow(clippy::let_and_return)]
         let result = routine
             .retry(&retry_settings)
             .notify(|error, duration| {
@@ -211,12 +213,12 @@ impl Dapi for DapiClient {
                     duration.as_secs_f32()
                 )
             })
-            .when(|e| e.can_retry())
+            .when(|e| e.is_node_failure())
             .instrument(tracing::info_span!("request routine"))
             .await;
 
         if let Err(error) = &result {
-            if error.can_retry() {
+            if error.is_node_failure() {
                 tracing::error!(?error, "request failed");
             }
         }
