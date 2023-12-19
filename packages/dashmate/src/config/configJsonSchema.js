@@ -72,9 +72,9 @@ export default {
       required: ['id', 'host', 'port'],
       additionalProperties: false,
     },
-    tenderdashLogModule: {
+    duration: {
       type: 'string',
-      enum: ['debug', 'info', 'error'],
+      pattern: '^[0-9]+(\\.[0-9]+)?(ms|m|s|h)?$',
     },
   },
   properties: {
@@ -262,8 +262,7 @@ export default {
               type: 'boolean',
             },
             interval: {
-              type: 'string',
-              pattern: '^[0-9]+(.[0-9]+)?(m|s|h)$',
+              $ref: '#/definitions/duration',
             },
             mediantime: {
               type: ['integer', 'null'],
@@ -361,12 +360,10 @@ export default {
                       $ref: '#/definitions/port',
                     },
                     connectTimeout: {
-                      type: 'string',
-                      pattern: '^[0-9\\.]+s$',
+                      $ref: '#/definitions/duration',
                     },
                     responseTimeout: {
-                      type: 'string',
-                      pattern: '^[0-9\\.]+s$',
+                      $ref: '#/definitions/duration',
                     },
                   },
                   required: ['host', 'port', 'connectTimeout', 'responseTimeout'],
@@ -384,8 +381,7 @@ export default {
                       minimum: 0,
                     },
                     fillInterval: {
-                      type: 'string',
-                      pattern: '^[0-9]+(ms|s|m|h)$',
+                      $ref: '#/definitions/duration',
                     },
                     enabled: {
                       type: 'boolean',
@@ -541,8 +537,7 @@ export default {
                       },
                     },
                     flushThrottleTimeout: {
-                      type: 'string',
-                      pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                      $ref: '#/definitions/duration',
                     },
                     maxPacketMsgPayloadSize: {
                       type: 'integer',
@@ -557,8 +552,23 @@ export default {
                       minimum: 0,
                     },
                   },
-                  required: ['host', 'port', 'persistentPeers', 'seeds'],
+                  required: ['host', 'port', 'persistentPeers', 'seeds', 'flushThrottleTimeout', 'maxPacketMsgPayloadSize', 'sendRate', 'recvRate'],
                   additionalProperties: false,
+                },
+                mempool: {
+                  type: 'object',
+                  properties: {
+                    size: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    maxTxsBytes: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['size', 'maxTxsBytes'],
                 },
                 consensus: {
                   type: 'object',
@@ -567,21 +577,20 @@ export default {
                       type: 'boolean',
                     },
                     createEmptyBlocksInterval: {
-                      type: 'string',
-                      pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                      $ref: '#/definitions/duration',
                     },
                     peer: {
                       type: 'object',
                       properties: {
                         gossipSleepDuration: {
-                          type: 'string',
-                          pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                          $ref: '#/definitions/duration',
                         },
                         queryMaj23SleepDuration: {
-                          type: 'string',
-                          pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                          $ref: '#/definitions/duration',
                         },
                       },
+                      additionalProperties: false,
+                      required: ['gossipSleepDuration', 'queryMaj23SleepDuration'],
                     },
                     unsafeOverride: {
                       type: 'object',
@@ -590,12 +599,24 @@ export default {
                           type: 'object',
                           properties: {
                             timeout: {
-                              type: ['string', 'null'],
-                              pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                              oneOf: [
+                                {
+                                  type: 'null',
+                                },
+                                {
+                                  $ref: '#/definitions/duration',
+                                },
+                              ],
                             },
                             delta: {
-                              type: ['string', 'null'],
-                              pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                              oneOf: [
+                                {
+                                  type: 'null',
+                                },
+                                {
+                                  $ref: '#/definitions/duration',
+                                },
+                              ],
                             },
                           },
                           additionalProperties: false,
@@ -605,12 +626,24 @@ export default {
                           type: 'object',
                           properties: {
                             timeout: {
-                              type: ['string', 'null'],
-                              pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                              oneOf: [
+                                {
+                                  type: 'null',
+                                },
+                                {
+                                  $ref: '#/definitions/duration',
+                                },
+                              ],
                             },
                             delta: {
-                              type: ['string', 'null'],
-                              pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                              oneOf: [
+                                {
+                                  type: 'null',
+                                },
+                                {
+                                  $ref: '#/definitions/duration',
+                                },
+                              ],
                             },
                           },
                           additionalProperties: false,
@@ -620,8 +653,14 @@ export default {
                           type: 'object',
                           properties: {
                             timeout: {
-                              type: ['string', 'null'],
-                              pattern: '^[0-9]+(.[0-9]+)?(ms|m|s|h)$',
+                              oneOf: [
+                                {
+                                  type: 'null',
+                                },
+                                {
+                                  $ref: '#/definitions/duration',
+                                },
+                              ],
                             },
                             bypass: {
                               type: ['boolean', 'null'],
@@ -673,7 +712,7 @@ export default {
                       minimum: 0,
                     },
                   },
-                  required: ['host', 'port'],
+                  required: ['host', 'port', 'maxOpenConnections'],
                   additionalProperties: false,
                 },
                 pprof: {
@@ -727,7 +766,7 @@ export default {
                   type: 'object',
                 },
               },
-              required: ['mode', 'docker', 'p2p', 'consensus', 'log', 'rpc', 'pprof', 'node', 'moniker', 'genesis', 'metrics'],
+              required: ['mode', 'docker', 'p2p', 'mempool', 'consensus', 'log', 'rpc', 'pprof', 'node', 'moniker', 'genesis', 'metrics'],
               additionalProperties: false,
             },
           },
