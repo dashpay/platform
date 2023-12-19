@@ -187,7 +187,7 @@ static_resources:
         {{?}}
   clusters:
    - name: core_and_platform
-     connect_timeout: {{= it.platform.dapi.envoy.http.connectTimeout }}}
+     connect_timeout: {{= it.platform.dapi.envoy.http.connectTimeout }}
      type: logical_dns
      lb_policy: round_robin
      typed_extension_protocol_options:
@@ -208,7 +208,7 @@ static_resources:
                      address: dapi_api
                      port_value: 3005
    - name: tx_filter_stream
-     connect_timeout: {{= it.platform.dapi.envoy.http.connectTimeout }}}
+     connect_timeout: {{= it.platform.dapi.envoy.http.connectTimeout }}
      type: logical_dns
      lb_policy: round_robin
      typed_extension_protocol_options:
@@ -229,7 +229,7 @@ static_resources:
                      address: dapi_tx_filter_stream
                      port_value: 3006
    - name: json_rpc
-     connect_timeout: {{= it.platform.dapi.envoy.http.connectTimeout }}}
+     connect_timeout: {{= it.platform.dapi.envoy.http.connectTimeout }}
      type: logical_dns
      lb_policy: round_robin
      load_assignment:

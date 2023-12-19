@@ -76,6 +76,10 @@ export default {
       type: 'string',
       pattern: '^[0-9]+(\\.[0-9]+)?(ms|m|s|h)?$',
     },
+    durationSeconds: {
+      type: 'string',
+      pattern: '^[0-9]+(\\.[0-9]+)?s$',
+    },
   },
   properties: {
     description: {
@@ -360,10 +364,10 @@ export default {
                       $ref: '#/definitions/port',
                     },
                     connectTimeout: {
-                      $ref: '#/definitions/duration',
+                      $ref: '#/definitions/durationSeconds',
                     },
                     responseTimeout: {
-                      $ref: '#/definitions/duration',
+                      $ref: '#/definitions/durationSeconds',
                     },
                   },
                   required: ['host', 'port', 'connectTimeout', 'responseTimeout'],
