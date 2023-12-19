@@ -1,6 +1,6 @@
 use dapi_grpc::platform::v0::{GetIdentityRequest, GetIdentityResponse, Proof};
 
-use rs_dapi_client::{mock::MockDapiClient, Dapi, DapiRequest, RequestSettings};
+use rs_dapi_client::{mock::MockDapiClient, DapiRequest, DapiRequestExecutor, RequestSettings};
 
 #[tokio::test]
 async fn test_mock_get_identity_dapi_client() {

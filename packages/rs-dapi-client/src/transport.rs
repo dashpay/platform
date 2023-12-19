@@ -49,6 +49,9 @@ pub trait TransportClient: Send + Sized {
     /// Error type for the specific client.
     type Error: CanRetry + Send + Debug;
 
-    /// Build client using peer's url.
+    /// Build client using node's url.
     fn with_uri(uri: Uri) -> Self;
+
+    /// Build client using node's url and [AppliedRequestSettings].
+    fn with_uri_and_settings(uri: Uri, settings: &AppliedRequestSettings) -> Self;
 }

@@ -17,11 +17,29 @@ pub type PlatformGrpcClient = PlatformClient<Channel>;
 /// Core Client using gRPC transport.
 pub type CoreGrpcClient = CoreClient<Channel>;
 
+fn channel_with_uri(uri: Uri) -> Channel {
+    Channel::builder(uri).connect_lazy()
+}
+
+fn channel_with_uri_and_settings(uri: Uri, settings: &AppliedRequestSettings) -> Channel {
+    let mut builder = Channel::builder(uri);
+
+    if let Some(timeout) = settings.connect_timeout {
+        builder = builder.connect_timeout(timeout);
+    }
+
+    builder.connect_lazy()
+}
+
 impl TransportClient for PlatformGrpcClient {
     type Error = dapi_grpc::tonic::Status;
 
     fn with_uri(uri: Uri) -> Self {
-        Self::new(Channel::builder(uri).connect_lazy())
+        Self::new(channel_with_uri(uri))
+    }
+
+    fn with_uri_and_settings(uri: Uri, settings: &AppliedRequestSettings) -> Self {
+        Self::new(channel_with_uri_and_settings(uri, settings))
     }
 }
 
@@ -29,12 +47,16 @@ impl TransportClient for CoreGrpcClient {
     type Error = dapi_grpc::tonic::Status;
 
     fn with_uri(uri: Uri) -> Self {
-        Self::new(Channel::builder(uri).connect_lazy())
+        Self::new(channel_with_uri(uri))
+    }
+
+    fn with_uri_and_settings(uri: Uri, settings: &AppliedRequestSettings) -> Self {
+        Self::new(channel_with_uri_and_settings(uri, settings))
     }
 }
 
 impl CanRetry for dapi_grpc::tonic::Status {
-    fn can_retry(&self) -> bool {
+    fn is_node_failure(&self) -> bool {
         let code = self.code();
 
         use dapi_grpc::tonic::Code::*;
@@ -145,7 +167,8 @@ impl_transport_request_grpc!(
     platform_proto::WaitForStateTransitionResultResponse,
     PlatformGrpcClient,
     RequestSettings {
-        timeout: Some(Duration::from_secs(120)),
+        timeout: Some(Duration::from_secs(80)),
+        retries: Some(0),
         ..RequestSettings::default()
     },
     wait_for_state_transition_result
