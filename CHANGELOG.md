@@ -1,9 +1,14 @@
-### [0.25.19](https://github.com/dashpay/platform/compare/v0.25.18...v0.25.19) (2023-12-18)
+### [0.25.19](https://github.com/dashpay/platform/compare/v0.25.18...v0.25.19) (2023-12-19)
 
 
 ### Features
 
 * **dashmate:** add config render command ([#1637](https://github.com/dashpay/platform/issues/1637))
+
+
+### Bug Fixes
+
+* **drive**: filtering of failed and exceeding limit transactions ([#1639](https://github.com/dashpay/platform/issues/1639))
 
 
 ### Reverts
