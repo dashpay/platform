@@ -9,7 +9,7 @@
 ### Bug Fixes
 
 * **drive**: filtering of failed and exceeding limit transactions ([#1639](https://github.com/dashpay/platform/issues/1639))
-
+* runtime error: index out of range 28 with length 28
 
 ### Reverts
 
