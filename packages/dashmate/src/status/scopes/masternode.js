@@ -19,7 +19,7 @@ export default function getMasternodeScopeFactory(
       port: config.get('core.rpc.port'),
       user: config.get('core.rpc.user'),
       pass: config.get('core.rpc.password'),
-      host: await getConnectionHost(config, 'core'),
+      host: await getConnectionHost(config, 'core', 'core.rpc.host'),
     });
 
     const mnsyncStatus = await rpcClient.mnsync('status');
@@ -33,7 +33,7 @@ export default function getMasternodeScopeFactory(
       port: config.get('core.rpc.port'),
       user: config.get('core.rpc.user'),
       pass: config.get('core.rpc.password'),
-      host: await getConnectionHost(config, 'core'),
+      host: await getConnectionHost(config, 'core', 'core.rpc.host'),
     });
 
     const info = {

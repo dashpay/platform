@@ -64,22 +64,6 @@ describe('Local Network', function main() {
     assertLocalServicesRunning = container.resolve('assertLocalServicesRunning');
   });
 
-  after(async () => {
-    const resetNodeTask = await container.resolve('resetNodeTask');
-
-    for (const config of configFile.getGroupConfigs(groupName)) {
-      const resetTask = resetNodeTask(config);
-
-      await resetTask.run({
-        isVerbose: true,
-        isHardReset: false,
-        isForce: true,
-      });
-    }
-
-    homeDir.remove();
-  });
-
   describe('setup', () => {
     it('should setup local network', async function testSetup() {
       if (process.env.DASHMATE_E2E_TESTS_LOCAL_HOMEDIR) {
@@ -166,6 +150,24 @@ describe('Local Network', function main() {
       }
 
       await assertLocalServicesRunning(configGroup, false);
+    });
+  });
+
+  describe('reset', () => {
+    it('should reset local network', async () => {
+      const resetNodeTask = await container.resolve('resetNodeTask');
+
+      for (const config of configFile.getGroupConfigs(groupName)) {
+        const resetTask = resetNodeTask(config);
+
+        await resetTask.run({
+          isVerbose: true,
+          isHardReset: false,
+          isForce: true,
+        });
+      }
+
+      homeDir.remove();
     });
   });
 });

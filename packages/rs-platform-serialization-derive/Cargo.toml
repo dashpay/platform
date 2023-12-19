@@ -2,7 +2,7 @@
 name = "platform-serialization-derive"
 authors = ["Samuel Westrich <sam@dash.org>"]
 description = "Bincode serialization and deserialization derivations"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 edition = "2021"
 rust-version = "1.73"
 license = "MIT"

@@ -69,13 +69,34 @@ async function main() {
     port: config.tendermintCore.port,
   });
 
-  // const dppForParsingContracts = new DashPlatformProtocol(null, 1);
-  // const driveStateRepository = new DriveStateRepository(driveClient, dppForParsingContracts);
+  const tenderdashLogger = logger.child({
+    process: 'TenderdashWs',
+  });
 
-  logger.info(`Connecting to Tenderdash on ${config.tendermintCore.host}:${config.tendermintCore.port}`);
+  tenderdashLogger.info(`Connecting to Tenderdash on ${config.tendermintCore.host}:${config.tendermintCore.port}`);
 
-  tenderDashWsClient.on('error', (e) => {
-    logger.error('Tenderdash connection error', e);
+  tenderDashWsClient.on('connect', () => {
+    tenderdashLogger.info('Connection to Tenderdash established.');
+  });
+
+  tenderDashWsClient.on('connect:retry', ({ interval }) => {
+    tenderdashLogger.info(`Reconnect to Tenderdash in ${interval} ms`);
+  });
+
+  tenderDashWsClient.on('connect:max_retry_exceeded', ({ maxRetries }) => {
+    tenderdashLogger.info(`Connection retry limit ${maxRetries} is reached`);
+  });
+
+  tenderDashWsClient.on('error', ({ error }) => {
+    tenderdashLogger.error(`Tenderdash connection error: ${error.message}`);
+  });
+
+  tenderDashWsClient.on('close', ({ error }) => {
+    tenderdashLogger.warn(`Connection closed: ${error.code}`);
+  });
+
+  tenderDashWsClient.on('disconnect', () => {
+    tenderdashLogger.fatal('Disconnected from Tenderdash... exiting');
 
     process.exit(1);
   });
@@ -84,8 +105,6 @@ async function main() {
 
   const blockchainListener = new BlockchainListener(tenderDashWsClient);
   blockchainListener.start();
-
-  logger.info('Connection to Tenderdash established.');
 
   // Start JSON RPC server
   logger.info('Starting JSON RPC server');
@@ -147,5 +166,10 @@ process.on('unhandledRejection', (e) => {
 
 // break on ^C
 process.on('SIGINT', () => {
+  logger.info('Received SIGINT. Exiting...');
+
   process.exit();
 });
+
+// Tell PM2 that process ready to receive connections
+process.send('ready');

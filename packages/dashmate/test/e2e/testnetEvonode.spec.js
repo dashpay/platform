@@ -47,21 +47,6 @@ describe('Testnet Evonode', function main() {
     assertServiceRunning = container.resolve('assertServiceRunning');
   });
 
-  after(async () => {
-    if (config) {
-      const resetNodeTask = container.resolve('resetNodeTask');
-      const resetTask = resetNodeTask(config);
-
-      await resetTask.run({
-        isHardReset: false,
-        isForce: true,
-        isVerbose: true,
-      });
-    }
-
-    homeDir.remove();
-  });
-
   describe('setup', () => {
     it('should setup fullnode', async () => {
       // TODO: Refactor setup command to extract setup logic to
@@ -142,6 +127,7 @@ describe('Testnet Evonode', function main() {
   describe('sync', () => {
     it('should sync Dash Core', async () => {
       const coreRpcClient = createRpcClient({
+        host: config.get('core.rpc.host'),
         port: config.get('core.rpc.port'),
         user: config.get('core.rpc.user'),
         pass: config.get('core.rpc.password'),
@@ -248,6 +234,21 @@ describe('Testnet Evonode', function main() {
 
       // TODO: Assert all services are running
       await assertServiceRunning(config, 'core', false);
+    });
+  });
+
+  describe('reset', () => {
+    it('should reset fullnode', async () => {
+      const resetNodeTask = container.resolve('resetNodeTask');
+      const resetTask = resetNodeTask(config);
+
+      await resetTask.run({
+        isHardReset: false,
+        isForce: true,
+        isVerbose: true,
+      });
+
+      homeDir.remove();
     });
   });
 });
