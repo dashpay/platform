@@ -403,7 +403,7 @@ where
 
                 // While it is true that the length could be same, seeing how this is such a rare situation
                 // It does not seem worth to deal with situations where the length is the same but the transactions have changed
-                return if expected_transactions.len() == request.txs.len()
+                if expected_transactions.len() == request.txs.len()
                     && proposal_info.core_chain_lock_update == request.core_chain_lock_update
                 {
                     let (app_hash, tx_results, consensus_param_updates, validator_set_update) = {
@@ -434,28 +434,21 @@ where
                                 "block hash is not 32 bytes in process proposal".to_string(),
                             ))
                         })?));
-                    Ok(ResponseProcessProposal {
+                    return Ok(ResponseProcessProposal {
                         status: proto::response_process_proposal::ProposalStatus::Accept.into(),
                         app_hash,
                         tx_results,
                         consensus_param_updates,
                         validator_set_update,
-                    })
+                    });
                 } else {
                     tracing::debug!(
                             method = "process_proposal",
-                            "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}, but we are requesting a different amount of transactions",
+                            "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}, but we are requesting a different amount of transactions, dropping the cache",
                             proposal_info,
                         );
 
-                    // Even though we were the proposer, we got back a block where we were also the proposer for the same round with a different set of transactions.
-                    // We should just reject the block and move to a new round, as this is very weird scenario
-                    let response = ResponseProcessProposal {
-                        status: proto::response_process_proposal::ProposalStatus::Reject.into(),
-                        ..Default::default()
-                    };
-
-                    Ok(response)
+                    drop_block_execution_context = true;
                 };
             }
         }
