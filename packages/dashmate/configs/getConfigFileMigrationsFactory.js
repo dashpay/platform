@@ -380,6 +380,32 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '0.25.20': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            options.platform.dapi.envoy.http.connectTimeout = base.get('platform.dapi.envoy.http.connectTimeout');
+            options.platform.dapi.envoy.http.responseTimeout = base.get('platform.dapi.envoy.http.responseTimeout');
+
+            options.platform.drive.tenderdash.rpc.maxOpenConnections = base.get('platform.drive.tenderdash.rpc.maxOpenConnections');
+
+            let defaultConfigName = 'base';
+            if (options.group === 'local' || name === 'local') {
+              defaultConfigName = 'local';
+            }
+            const defaultConfig = defaultConfigs.get(defaultConfigName);
+
+            options.platform.drive.tenderdash.p2p.flushThrottleTimeout = defaultConfig.get('platform.drive.tenderdash.p2p.flushThrottleTimeout');
+            options.platform.drive.tenderdash.p2p.maxPacketMsgPayloadSize = defaultConfig.get('platform.drive.tenderdash.p2p.maxPacketMsgPayloadSize');
+            options.platform.drive.tenderdash.p2p.sendRate = defaultConfig.get('platform.drive.tenderdash.p2p.sendRate');
+            options.platform.drive.tenderdash.p2p.recvRate = defaultConfig.get('platform.drive.tenderdash.p2p.recvRate');
+
+            options.platform.drive.tenderdash.mempool = base.get('platform.drive.tenderdash.mempool');
+            options.platform.drive.tenderdash.consensus.peer = base.get('platform.drive.tenderdash.consensus.peer');
+            options.platform.drive.tenderdash.consensus.unsafeOverride = base.get('platform.drive.tenderdash.consensus.unsafeOverride');
+          });
+
+        return configFile;
+      },
     };
   }
 

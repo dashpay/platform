@@ -118,6 +118,8 @@ export default function getBaseConfigFactory(homeDir) {
             http: {
               host: '0.0.0.0',
               port: 443,
+              connectTimeout: '5s',
+              responseTimeout: '15s',
             },
             rateLimiter: {
               maxTokens: 300, tokensPerFill: 150, fillInterval: '60s', enabled: true,
@@ -175,10 +177,15 @@ export default function getBaseConfigFactory(homeDir) {
               port: 26656,
               persistentPeers: [],
               seeds: [],
+              flushThrottleTimeout: '100ms',
+              maxPacketMsgPayloadSize: 10240,
+              sendRate: 5120000,
+              recvRate: 5120000,
             },
             rpc: {
               host: '127.0.0.1',
               port: 26657,
+              maxOpenConnections: 900,
             },
             pprof: {
               enabled: false, port: 6060,
@@ -188,8 +195,31 @@ export default function getBaseConfigFactory(homeDir) {
               host: '127.0.0.1',
               port: 26660,
             },
+            mempool: {
+              size: 5000,
+              maxTxsBytes: 1073741824,
+            },
             consensus: {
-              createEmptyBlocks: true, createEmptyBlocksInterval: '3m',
+              createEmptyBlocks: true,
+              createEmptyBlocksInterval: '3m',
+              peer: {
+                gossipSleepDuration: '100ms',
+                queryMaj23SleepDuration: '2s',
+              },
+              unsafeOverride: {
+                propose: {
+                  timeout: null,
+                  delta: null,
+                },
+                vote: {
+                  timeout: null,
+                  delta: null,
+                },
+                commit: {
+                  timeout: null,
+                  bypass: null,
+                },
+              },
             },
             log: {
               level: 'info', format: 'plain', path: null,
