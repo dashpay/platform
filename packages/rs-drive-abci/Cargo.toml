@@ -1,6 +1,6 @@
 [package]
 name = "drive-abci"
-version = "0.25.18"
+version = "0.25.19"
 authors = [
     "Samuel Westrich <sam@dash.org>",
     "Ivan Shumkov <ivan@shumkov.ru>",
@@ -58,7 +58,7 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
     "tracing-log",
 ], optional = false }
 atty = { version = "0.2.14", optional = false }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", tag = "v0.13.1", version = "0.13.1" }
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", tag = "v0.14.0-dev.1", version = "0.14.0-dev.1" }
 lazy_static = "1.4.0"
 itertools = { version = "0.10.5" }
 file-rotate = { version = "0.7.3" }

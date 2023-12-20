@@ -1,3 +1,21 @@
+### [0.25.19](https://github.com/dashpay/platform/compare/v0.25.18...v0.25.19) (2023-12-19)
+
+
+### Features
+
+* **dashmate:** add config render command ([#1637](https://github.com/dashpay/platform/issues/1637))
+
+
+### Bug Fixes
+
+* **drive**: filtering of failed and exceeding limit transactions ([#1639](https://github.com/dashpay/platform/issues/1639))
+* runtime error: index out of range 28 with length 28
+
+### Reverts
+
+* **drive:** temporary disable credit transfer transitions ([#1642](https://github.com/dashpay/platform/issues/1642))
+
+
 ### [0.25.18](https://github.com/dashpay/platform/compare/v0.25.17...v0.25.18) (2023-12-12)
 
 

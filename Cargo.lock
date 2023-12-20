@@ -817,7 +817,7 @@ dependencies = [
  "clap 2.34.0",
  "criterion-plot",
  "csv",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "num-traits",
  "oorandom",
@@ -839,7 +839,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2673cc8207403546f45f5fd319a974b1e6983ad1a3ee7e6041650013be041876"
 dependencies = [
  "cast",
- "itertools 0.10.5",
+ "itertools",
 ]
 
 [[package]]
@@ -945,21 +945,21 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "dapi-grpc-macros",
  "platform-version",
  "prost 0.11.9",
  "serde",
  "serde_bytes",
- "tenderdash-proto 0.13.2 (git+https://github.com/dashpay/rs-tenderdash-abci)",
+ "tenderdash-proto",
  "tonic",
  "tonic-build",
 ]
 
 [[package]]
 name = "dapi-grpc-macros"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "dapi-grpc",
  "heck",
@@ -1065,7 +1065,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -1073,7 +1073,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1164,7 +1164,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "dpns-contract"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -1172,7 +1172,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1194,7 +1194,7 @@ dependencies = [
  "hex",
  "indexmap 2.1.0",
  "integer-encoding 4.0.0",
- "itertools 0.10.5",
+ "itertools",
  "json-patch",
  "jsonptr",
  "jsonschema",
@@ -1223,7 +1223,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "anyhow",
  "base64 0.21.5",
@@ -1243,7 +1243,7 @@ dependencies = [
  "indexmap 1.9.3",
  "integer-encoding 4.0.0",
  "intmap",
- "itertools 0.10.5",
+ "itertools",
  "moka",
  "nohash-hasher",
  "platform-version",
@@ -1258,7 +1258,7 @@ dependencies = [
 
 [[package]]
 name = "drive-abci"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "atty",
  "base64 0.20.0",
@@ -1280,7 +1280,7 @@ dependencies = [
  "hex",
  "indexmap 1.9.3",
  "integer-encoding 4.0.0",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "metrics",
  "metrics-exporter-prometheus",
@@ -1300,7 +1300,7 @@ dependencies = [
  "simple-signer",
  "strategy-tests",
  "tempfile",
- "tenderdash-abci 0.13.1 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.13.1)",
+ "tenderdash-abci",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -1312,7 +1312,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "dapi-grpc",
  "dpp",
@@ -1321,7 +1321,7 @@ dependencies = [
  "lazy_static",
  "serde",
  "serde_json",
- "tenderdash-abci 0.13.1 (git+https://github.com/dashpay/rs-tenderdash-abci)",
+ "tenderdash-abci",
  "thiserror",
  "tracing",
 ]
@@ -1513,7 +1513,7 @@ checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 
 [[package]]
 name = "feature-flags-contract"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -1766,7 +1766,7 @@ dependencies = [
  "indexmap 1.9.3",
  "integer-encoding 3.0.4",
  "intmap",
- "itertools 0.10.5",
+ "itertools",
  "nohash-hasher",
  "serde",
  "tempfile",
@@ -1837,7 +1837,7 @@ version = "1.0.0-rc.2"
 source = "git+https://github.com/dashpay/grovedb?rev=b40dd1a35f852c81caeda2d3c2910c40fae3a67f#b40dd1a35f852c81caeda2d3c2910c40fae3a67f"
 dependencies = [
  "hex",
- "itertools 0.10.5",
+ "itertools",
 ]
 
 [[package]]
@@ -2148,15 +2148,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2241,7 +2232,7 @@ source = "git+https://github.com/fominok/jsonschema-rs?branch=feat-unevaluated-p
 dependencies = [
  "ahash 0.7.7",
  "anyhow",
- "base64 0.21.5",
+ "base64 0.13.1",
  "bytecount",
  "fancy-regex",
  "fraction",
@@ -2370,7 +2361,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -2848,7 +2839,7 @@ checksum = "26072860ba924cbfa98ea39c8c19b4dd6a4a25423dbdf219c1eca91aa0cf6964"
 
 [[package]]
 name = "platform-serialization"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "platform-version",
@@ -2856,7 +2847,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2866,7 +2857,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "base64 0.13.1",
  "bincode 2.0.0-rc.3",
@@ -2887,7 +2878,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value-convertible"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "quote",
  "syn 2.0.41",
@@ -2895,14 +2886,14 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "platform-versioning"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2985,7 +2976,7 @@ checksum = "59230a63c37f3e18569bdb90e4a89cbf5bf8b06fea0b84e65ea10cc4df47addd"
 dependencies = [
  "difflib",
  "float-cmp",
- "itertools 0.10.5",
+ "itertools",
  "normalize-line-endings",
  "predicates-core",
  "regex",
@@ -3118,7 +3109,7 @@ checksum = "119533552c9a7ffacc21e099c24a0ac8bb19c2a2a3f363de84cd9b844feab270"
 dependencies = [
  "bytes",
  "heck",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "log",
  "multimap",
@@ -3140,7 +3131,7 @@ checksum = "c55e02e35260070b6f716a2423c2ff1c3bb1642ddca6f99e1f26d06268a0e2d2"
 dependencies = [
  "bytes",
  "heck",
- "itertools 0.11.0",
+ "itertools",
  "log",
  "multimap",
  "once_cell",
@@ -3161,7 +3152,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5d2d8d10f3c6ded6da8b05b5fb3b8a5082514344d56c9f871412d29b4e075b4"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 1.0.109",
@@ -3174,7 +3165,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "efb6c9a1dd1def8e2124d17e83a20af56f1570d6c2d2bd9e266ccb768df3840e"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 2.0.41",
@@ -3445,7 +3436,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "backon",
  "chrono",
@@ -3465,7 +3456,7 @@ dependencies = [
 
 [[package]]
 name = "rs-sdk"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "async-trait",
  "base64 0.21.5",
@@ -3915,7 +3906,7 @@ checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 
 [[package]]
 name = "simple-signer"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -4006,7 +3997,7 @@ dependencies = [
 
 [[package]]
 name = "strategy-tests"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dpp",
@@ -4141,8 +4132,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "0.13.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.13.1#f413119a5c7f4b519ba3eec5746cd013a73e45db"
+version = "0.14.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#b4df6543efb0457a477db30153131495da1b8bbb"
 dependencies = [
  "bytes",
  "futures",
@@ -4150,28 +4141,7 @@ dependencies = [
  "lhash",
  "prost 0.12.3",
  "semver",
- "tenderdash-proto 0.13.2 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.13.1)",
- "thiserror",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid 1.6.1",
-]
-
-[[package]]
-name = "tenderdash-abci"
-version = "0.13.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#865fd059564c203ae20ae0f9343f1e7f3fe1b200"
-dependencies = [
- "bytes",
- "futures",
- "hex",
- "lhash",
- "prost 0.12.3",
- "semver",
- "tenderdash-proto 0.13.2 (git+https://github.com/dashpay/rs-tenderdash-abci)",
+ "tenderdash-proto",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -4183,8 +4153,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "0.13.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.13.1#f413119a5c7f4b519ba3eec5746cd013a73e45db"
+version = "0.14.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#b4df6543efb0457a477db30153131495da1b8bbb"
 dependencies = [
  "bytes",
  "chrono",
@@ -4195,46 +4165,14 @@ dependencies = [
  "prost 0.12.3",
  "serde",
  "subtle-encoding",
- "tenderdash-proto-compiler 0.1.0 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.13.1)",
- "time",
-]
-
-[[package]]
-name = "tenderdash-proto"
-version = "0.13.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#865fd059564c203ae20ae0f9343f1e7f3fe1b200"
-dependencies = [
- "bytes",
- "chrono",
- "derive_more",
- "flex-error",
- "num-derive",
- "num-traits",
- "prost 0.12.3",
- "serde",
- "subtle-encoding",
- "tenderdash-proto-compiler 0.1.0 (git+https://github.com/dashpay/rs-tenderdash-abci)",
+ "tenderdash-proto-compiler",
  "time",
 ]
 
 [[package]]
 name = "tenderdash-proto-compiler"
-version = "0.1.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.13.1#f413119a5c7f4b519ba3eec5746cd013a73e45db"
-dependencies = [
- "fs_extra",
- "prost-build 0.12.3",
- "regex",
- "tempfile",
- "ureq",
- "walkdir",
- "zip",
-]
-
-[[package]]
-name = "tenderdash-proto-compiler"
-version = "0.1.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#865fd059564c203ae20ae0f9343f1e7f3fe1b200"
+version = "0.14.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#b4df6543efb0457a477db30153131495da1b8bbb"
 dependencies = [
  "fs_extra",
  "prost-build 0.12.3",
@@ -4913,13 +4851,13 @@ checksum = "ed9d5b4305409d1fc9482fee2d7f9bcbf24b3972bf59817ef757e23982242a93"
 
 [[package]]
 name = "wasm-dpp"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "anyhow",
  "async-trait",
  "dpp",
  "hex",
- "itertools 0.10.5",
+ "itertools",
  "js-sys",
  "log",
  "num_enum",
@@ -5155,7 +5093,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-version = "0.25.18"
+version = "0.25.19"
 dependencies = [
  "num_enum",
  "platform-value",

@@ -58,6 +58,7 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
+                    ..Default::default()
                 };
                 let twenty_minutes_in_ms = 1000 * 60 * 20;
                 let mut config = PlatformConfig {
@@ -326,6 +327,7 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
+                    ..Default::default()
                 };
                 let one_hour_in_s = 60 * 60;
                 let thirty_seconds_in_ms = 1000 * 30;
@@ -587,6 +589,7 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
+                    ..Default::default()
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
@@ -847,6 +850,7 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
+                    ..Default::default()
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let mut config = PlatformConfig {
@@ -1027,6 +1031,7 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
+                    ..Default::default()
                 };
 
                 let block_start = platform
@@ -1211,6 +1216,7 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
+                    ..Default::default()
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
@@ -1322,6 +1328,7 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
+                    ..Default::default()
                 };
 
                 // we hit the required threshold to upgrade

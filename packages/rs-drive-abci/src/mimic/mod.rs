@@ -79,6 +79,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         expect_validation_errors: &[u32],
         expect_vote_extension_errors: bool,
         state_transitions: Vec<StateTransition>,
+        max_tx_bytes_per_block: i64,
         options: MimicExecuteBlockOptions,
     ) -> Result<MimicExecuteBlockOutcome, Error> {
         const APP_VERSION: u64 = 0;
@@ -104,7 +105,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         // PREPARE (also processes internally)
 
         let request_prepare_proposal = RequestPrepareProposal {
-            max_tx_bytes: 0,
+            max_tx_bytes: max_tx_bytes_per_block,
             txs: serialized_state_transitions.clone(),
             local_last_commit: None,
             misbehavior: vec![],

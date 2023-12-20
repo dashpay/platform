@@ -167,6 +167,29 @@ pub struct NetworkStrategy {
     pub failure_testing: Option<FailureStrategy>,
     pub query_testing: Option<QueryStrategy>,
     pub verify_state_transition_results: bool,
+    pub max_tx_bytes_per_block: i64,
+}
+
+impl Default for NetworkStrategy {
+    fn default() -> Self {
+        NetworkStrategy {
+            strategy: Default::default(),
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+            max_tx_bytes_per_block: 44800,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

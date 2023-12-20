@@ -415,6 +415,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
@@ -525,6 +526,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
@@ -636,6 +638,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
