@@ -170,7 +170,7 @@ where
 
     fn prepare_proposal(
         &self,
-        request: RequestPrepareProposal,
+        mut request: RequestPrepareProposal,
     ) -> Result<ResponsePrepareProposal, proto::ResponseException> {
         let _timer = crate::metrics::abci_request_duration("prepare_proposal");
 
@@ -189,6 +189,26 @@ where
             }
             Err(_) => None,
         };
+
+        // Filter out transactions exceeding max_block_size
+        let mut transactions_exceeding_max_block_size = Vec::new();
+        {
+            let mut total_transactions_size = 0;
+            let mut index_to_remove_at = None;
+            for (i, raw_transaction) in request.txs.iter().enumerate() {
+                total_transactions_size += raw_transaction.len();
+
+                if total_transactions_size as i64 > request.max_tx_bytes {
+                    index_to_remove_at = Some(i);
+                    break;
+                }
+            }
+
+            if let Some(index_to_remove_at) = index_to_remove_at {
+                transactions_exceeding_max_block_size
+                    .extend(request.txs.drain(index_to_remove_at..));
+            }
+        }
 
         let mut block_proposal: BlockProposal = (&request).try_into()?;
 
@@ -260,9 +280,21 @@ where
                 TxAction::Unmodified
             } as i32;
 
-            tx_results.push(tx_result);
+            if action != TxAction::Removed as i32 {
+                tx_results.push(tx_result);
+            }
             tx_records.push(TxRecord { action, tx });
         }
+
+        // Add up exceeding transactions to the response
+        tx_records.extend(
+            transactions_exceeding_max_block_size
+                .into_iter()
+                .map(|tx| TxRecord {
+                    action: TxAction::Delayed as i32,
+                    tx,
+                }),
+        );
 
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponsePrepareProposal {
