@@ -38,6 +38,7 @@ use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGetter
 use crate::identity::signer::Signer;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 pub use state_transitions::*;
+use crate::prelude::AssetLockProof;
 
 use crate::serialization::Signable;
 use crate::state_transition::data_contract_create_transition::{
@@ -248,6 +249,17 @@ impl StateTransition {
     pub fn requires_state_to_validate_structure(&self) -> bool {
         matches!(self, StateTransition::DocumentsBatch(_))
     }
+
+    /// This means we should do the full validation on check_tx
+    pub fn requires_check_tx_full_validation(&self) -> bool {
+        matches!(self, StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_))
+    }
+
+    /// Uses asset locks for funding
+    pub fn asset_lock(&self) -> Option<&AssetLockProof> {
+        call_method!(self, asset_lock)
+    }
+
     /// This means we should transform into the action before validation of the identity and signatures
     pub fn requires_state_to_validate_identity_and_signatures(&self) -> bool {
         matches!(self, StateTransition::DocumentsBatch(_))

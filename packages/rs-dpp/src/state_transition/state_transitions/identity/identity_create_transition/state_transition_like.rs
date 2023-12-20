@@ -2,6 +2,8 @@ use crate::state_transition::identity_create_transition::IdentityCreateTransitio
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
+use crate::identity::state_transition::AssetLockProved;
+use crate::prelude::AssetLockProof;
 
 impl StateTransitionLike for IdentityCreateTransition {
     /// Returns ID of the created contract
@@ -44,6 +46,12 @@ impl StateTransitionLike for IdentityCreateTransition {
     fn owner_id(&self) -> Identifier {
         match self {
             IdentityCreateTransition::V0(transition) => transition.owner_id(),
+        }
+    }
+
+    fn asset_lock(&self) -> Option<&AssetLockProof> {
+        match self {
+            IdentityCreateTransition::V0(transition) => transition.asset_lock(),
         }
     }
 }

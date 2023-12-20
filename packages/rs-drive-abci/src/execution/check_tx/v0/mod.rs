@@ -23,6 +23,8 @@ use dpp::validation::SimpleConsensusValidationResult;
 use dpp::validation::ValidationResult;
 #[cfg(test)]
 use drive::grovedb::Transaction;
+use crate::execution::check_tx::CheckTxLevel;
+use crate::execution::validation::state_transition::check_tx_verification::check_state_transition;
 
 impl<C> Platform<C>
 where
@@ -79,6 +81,7 @@ where
     pub(super) fn check_tx_v0(
         &self,
         raw_tx: &[u8],
+        check_tx_level: CheckTxLevel,
     ) -> Result<ValidationResult<FeeResult, ConsensusError>, Error> {
         let state_transition = match StateTransition::deserialize_from_bytes(raw_tx) {
             Ok(state_transition) => state_transition,
@@ -90,16 +93,6 @@ where
                 ))
             }
         };
-
-        // TODO: Remove this when inflationary bug is fixed
-        if matches!(state_transition, StateTransition::IdentityCreditTransfer(_)) {
-            return Ok(ValidationResult::new_with_error(
-                SerializedObjectParsingError::new(String::from(
-                    "this transition type is temporary not supported",
-                ))
-                .into(),
-            ));
-        }
 
         let state_read_guard = self.state.read().unwrap();
 
@@ -114,9 +107,9 @@ where
             block_info,
         };
 
-        let execution_event = process_state_transition(&platform_ref, state_transition, None)?;
-
         let platform_version = platform_ref.state.current_platform_version()?;
+
+        let execution_event = check_state_transition(&platform_ref, state_transition, check_tx_level)?;
 
         // We should run the execution event in dry run to see if we would have enough fees for the transition
         execution_event.and_then_borrowed_validation(|execution_event| {
@@ -178,6 +171,7 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
+    use crate::execution::check_tx::CheckTxLevel::FirstTimeCheck;
 
     // This test needs to be finished, but is still useful for debugging
     #[test]
@@ -245,7 +239,7 @@ mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        let check_result = platform.check_tx(&tx).expect("expected to check tx");
+        let check_result = platform.check_tx(&tx, FirstTimeCheck).expect("expected to check tx");
 
         let result = platform
             .platform
@@ -319,7 +313,7 @@ mod tests {
             .expect("expected to insert identity");
 
         let validation_result = platform
-            .check_tx(serialized.as_slice())
+            .check_tx(serialized.as_slice(), FirstTimeCheck)
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
@@ -506,7 +500,7 @@ mod tests {
             .expect("expected to commit transaction");
 
         let validation_result = platform
-            .check_tx(documents_batch_update_serialized_transition.as_slice())
+            .check_tx(documents_batch_update_serialized_transition.as_slice(), FirstTimeCheck)
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
@@ -621,7 +615,7 @@ mod tests {
             .expect("serialized state transition");
 
         let validation_result = platform
-            .check_tx(identity_top_up_serialized_transition.as_slice())
+            .check_tx(identity_top_up_serialized_transition.as_slice(), FirstTimeCheck)
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
@@ -754,7 +748,7 @@ mod tests {
             .expect("serialized state transition");
 
         let validation_result = platform
-            .check_tx(identity_top_up_serialized_transition.as_slice())
+            .check_tx(identity_top_up_serialized_transition.as_slice(), FirstTimeCheck)
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
@@ -778,7 +772,7 @@ mod tests {
             .expect("expected to commit transaction");
 
         let validation_result = platform
-            .check_tx(identity_top_up_serialized_transition.as_slice())
+            .check_tx(identity_top_up_serialized_transition.as_slice(), FirstTimeCheck)
             .expect("expected to check tx");
 
         assert!(matches!(
@@ -865,7 +859,7 @@ mod tests {
             .expect("serialized state transition");
 
         let validation_result = platform
-            .check_tx(identity_top_up_serialized_transition.as_slice())
+            .check_tx(identity_top_up_serialized_transition.as_slice(), FirstTimeCheck)
             .expect("expected to check tx");
 
         // This errors because we never created the identity
@@ -985,7 +979,7 @@ mod tests {
             .expect("serialized state transition");
 
         let validation_result = platform
-            .check_tx(identity_top_up_serialized_transition.as_slice())
+            .check_tx(identity_top_up_serialized_transition.as_slice(), FirstTimeCheck)
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
@@ -1049,7 +1043,7 @@ mod tests {
             .expect("serialized state transition");
 
         let validation_result = platform
-            .check_tx(identity_create_serialized_transition.as_slice())
+            .check_tx(identity_create_serialized_transition.as_slice(), FirstTimeCheck)
             .expect("expected to check tx");
 
         assert!(matches!(
@@ -1160,7 +1154,7 @@ mod tests {
             .expect("expected to serialize");
 
         let validation_result = platform
-            .check_tx(update_transition_bytes.as_slice())
+            .check_tx(update_transition_bytes.as_slice(), FirstTimeCheck)
             .expect("expected to execute identity top up tx");
 
         // Only master keys can sign an update
@@ -1284,7 +1278,7 @@ mod tests {
             .expect("expected to serialize");
 
         let validation_result = platform
-            .check_tx(update_transition_bytes.as_slice())
+            .check_tx(update_transition_bytes.as_slice(), FirstTimeCheck)
             .expect("expected to execute identity top up tx");
 
         // we won't have enough funds
