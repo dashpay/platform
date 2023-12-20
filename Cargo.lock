@@ -1300,7 +1300,7 @@ dependencies = [
  "simple-signer",
  "strategy-tests",
  "tempfile",
- "tenderdash-abci 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.1)",
+ "tenderdash-abci 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2)",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -4133,7 +4133,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-abci"
 version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.1#b4df6543efb0457a477db30153131495da1b8bbb"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2#6ebfaa31052f7ad538d6589323e5daf7e5e55999"
 dependencies = [
  "bytes",
  "futures",
@@ -4141,7 +4141,7 @@ dependencies = [
  "lhash",
  "prost 0.12.3",
  "semver",
- "tenderdash-proto 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.1)",
+ "tenderdash-proto 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2)",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -4175,7 +4175,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto"
 version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.1#b4df6543efb0457a477db30153131495da1b8bbb"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2#6ebfaa31052f7ad538d6589323e5daf7e5e55999"
 dependencies = [
  "bytes",
  "chrono",
@@ -4186,7 +4186,7 @@ dependencies = [
  "prost 0.12.3",
  "serde",
  "subtle-encoding",
- "tenderdash-proto-compiler 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.1)",
+ "tenderdash-proto-compiler 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2)",
  "time",
 ]
 
@@ -4211,7 +4211,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto-compiler"
 version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.1#b4df6543efb0457a477db30153131495da1b8bbb"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2#6ebfaa31052f7ad538d6589323e5daf7e5e55999"
 dependencies = [
  "fs_extra",
  "prost-build 0.12.3",
