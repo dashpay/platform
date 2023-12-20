@@ -349,47 +349,74 @@ where
                     )))?;
                 }
             } else {
-                let (app_hash, tx_results, consensus_param_updates, validator_set_update) = {
-                    let Some(proposal_info) = block_execution_context.proposer_results() else {
-                        return Err(Error::Abci(AbciError::BadRequest(
-                            "received a process proposal request twice".to_string(),
-                        )))?;
+                let Some(proposal_info) = block_execution_context.proposer_results() else {
+                    return Err(Error::Abci(AbciError::BadRequest(
+                        "received a process proposal request twice".to_string(),
+                    )))?;
+                };
+
+                let expected_transactions = proposal_info.tx_records.iter().filter_map(|record| {
+                    if record.action == TxAction::Removed as i32 {
+                        None
+                    } else {
+                        Some(&record.tx)
+                    }
+                }).collect::<Vec<_>>();
+
+                // While it is true that the length could be same, seeing how this is such a rare situation
+                // It does not seem worth to deal with situations where the length is the same but the transactions have changed
+                return if expected_transactions.len() == request.txs.len() {
+                    let (app_hash, tx_results, consensus_param_updates, validator_set_update) = {
+                        tracing::debug!(
+                            method = "process_proposal",
+                            "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}",
+                            proposal_info,
+                        );
+
+                        // Cloning all required properties from proposal_info and then dropping it
+                        let app_hash = proposal_info.app_hash.clone();
+                        let tx_results = proposal_info.tx_results.clone();
+                        let consensus_param_updates = proposal_info.consensus_param_updates.clone();
+                        let validator_set_update = proposal_info.validator_set_update.clone();
+                        (
+                            app_hash,
+                            tx_results,
+                            consensus_param_updates,
+                            validator_set_update,
+                        )
                     };
 
-                    tracing::debug!(
-                        method = "process_proposal",
-                        "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}",
-                        proposal_info,
-                    );
-
-                    // Cloning all required properties from proposal_info and then dropping it
-                    let app_hash = proposal_info.app_hash.clone();
-                    let tx_results = proposal_info.tx_results.clone();
-                    let consensus_param_updates = proposal_info.consensus_param_updates.clone();
-                    let validator_set_update = proposal_info.validator_set_update.clone();
-                    (
+                    // We need to set the block hash
+                    block_execution_context
+                        .block_state_info_mut()
+                        .set_block_hash(Some(request.hash.clone().try_into().map_err(|_| {
+                            Error::Abci(AbciError::BadRequestDataSize(
+                                "block hash is not 32 bytes in process proposal".to_string(),
+                            ))
+                        })?));
+                    Ok(ResponseProcessProposal {
+                        status: proto::response_process_proposal::ProposalStatus::Accept.into(),
                         app_hash,
                         tx_results,
                         consensus_param_updates,
                         validator_set_update,
-                    )
-                };
+                    })
+                } else {
+                    tracing::debug!(
+                            method = "process_proposal",
+                            "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}, but we are requesting a different amount of transactions",
+                            proposal_info,
+                        );
 
-                // We need to set the block hash
-                block_execution_context
-                    .block_state_info_mut()
-                    .set_block_hash(Some(request.hash.clone().try_into().map_err(|_| {
-                        Error::Abci(AbciError::BadRequestDataSize(
-                            "block hash is not 32 bytes in process proposal".to_string(),
-                        ))
-                    })?));
-                return Ok(ResponseProcessProposal {
-                    status: proto::response_process_proposal::ProposalStatus::Accept.into(),
-                    app_hash,
-                    tx_results,
-                    consensus_param_updates,
-                    validator_set_update,
-                });
+                    // Even though we were the proposer, we got back a block where we were also the proposer for the same round with a different set of transactions.
+                    // We should just reject the block and move to a new round, as this is very weird scenario
+                    let response = ResponseProcessProposal {
+                        status: proto::response_process_proposal::ProposalStatus::Reject.into(),
+                        ..Default::default()
+                    };
+
+                    Ok(response)
+                }
             }
         }
 
