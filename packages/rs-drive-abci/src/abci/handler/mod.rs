@@ -387,17 +387,25 @@ where
                     )))?;
                 };
 
-                let expected_transactions = proposal_info.tx_records.iter().filter_map(|record| {
-                    if record.action == TxAction::Removed as i32 {
-                        None
-                    } else {
-                        Some(&record.tx)
-                    }
-                }).collect::<Vec<_>>();
+                let expected_transactions = proposal_info
+                    .tx_records
+                    .iter()
+                    .filter_map(|record| {
+                        if record.action == TxAction::Removed as i32
+                            || record.action == TxAction::Delayed as i32
+                        {
+                            None
+                        } else {
+                            Some(&record.tx)
+                        }
+                    })
+                    .collect::<Vec<_>>();
 
                 // While it is true that the length could be same, seeing how this is such a rare situation
                 // It does not seem worth to deal with situations where the length is the same but the transactions have changed
-                return if expected_transactions.len() == request.txs.len() && proposal_info.core_chain_lock_update == request.core_chain_lock_update {
+                return if expected_transactions.len() == request.txs.len()
+                    && proposal_info.core_chain_lock_update == request.core_chain_lock_update
+                {
                     let (app_hash, tx_results, consensus_param_updates, validator_set_update) = {
                         tracing::debug!(
                             method = "process_proposal",
@@ -448,7 +456,7 @@ where
                     };
 
                     Ok(response)
-                }
+                };
             }
         }
 
