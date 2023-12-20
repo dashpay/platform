@@ -74,9 +74,13 @@ export default {
     },
     duration: {
       type: 'string',
-      pattern: '^[0-9]+(\\.[0-9]+)?(ms|m|s|h)?$',
+      pattern: '^[0-9]+(\\.[0-9]+)?(ms|m|s|h)$',
     },
-    durationSeconds: {
+    optionalDuration: {
+      type: ['null', 'string'],
+      pattern: '^[0-9]+(\\.[0-9]+)?(ms|m|s|h)$',
+    },
+    durationInSeconds: {
       type: 'string',
       pattern: '^[0-9]+(\\.[0-9]+)?s$',
     },
@@ -364,10 +368,10 @@ export default {
                       $ref: '#/definitions/port',
                     },
                     connectTimeout: {
-                      $ref: '#/definitions/durationSeconds',
+                      $ref: '#/definitions/durationInSeconds',
                     },
                     responseTimeout: {
-                      $ref: '#/definitions/durationSeconds',
+                      $ref: '#/definitions/durationInSeconds',
                     },
                   },
                   required: ['host', 'port', 'connectTimeout', 'responseTimeout'],
@@ -603,24 +607,10 @@ export default {
                           type: 'object',
                           properties: {
                             timeout: {
-                              oneOf: [
-                                {
-                                  type: 'null',
-                                },
-                                {
-                                  $ref: '#/definitions/duration',
-                                },
-                              ],
+                              $ref: '#/definitions/optionalDuration',
                             },
                             delta: {
-                              oneOf: [
-                                {
-                                  type: 'null',
-                                },
-                                {
-                                  $ref: '#/definitions/duration',
-                                },
-                              ],
+                              $ref: '#/definitions/optionalDuration',
                             },
                           },
                           additionalProperties: false,
@@ -630,24 +620,10 @@ export default {
                           type: 'object',
                           properties: {
                             timeout: {
-                              oneOf: [
-                                {
-                                  type: 'null',
-                                },
-                                {
-                                  $ref: '#/definitions/duration',
-                                },
-                              ],
+                              $ref: '#/definitions/optionalDuration',
                             },
                             delta: {
-                              oneOf: [
-                                {
-                                  type: 'null',
-                                },
-                                {
-                                  $ref: '#/definitions/duration',
-                                },
-                              ],
+                              $ref: '#/definitions/optionalDuration',
                             },
                           },
                           additionalProperties: false,
@@ -657,14 +633,7 @@ export default {
                           type: 'object',
                           properties: {
                             timeout: {
-                              oneOf: [
-                                {
-                                  type: 'null',
-                                },
-                                {
-                                  $ref: '#/definitions/duration',
-                                },
-                              ],
+                              $ref: '#/definitions/optionalDuration',
                             },
                             bypass: {
                               type: ['boolean', 'null'],

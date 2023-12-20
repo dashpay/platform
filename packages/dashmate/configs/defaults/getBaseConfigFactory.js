@@ -177,7 +177,7 @@ export default function getBaseConfigFactory(homeDir) {
               port: 26656,
               persistentPeers: [],
               seeds: [],
-              flushThrottleTimeout: '10',
+              flushThrottleTimeout: '100ms',
               maxPacketMsgPayloadSize: 10240,
               sendRate: 5120000,
               recvRate: 5120000,
