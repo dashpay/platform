@@ -365,7 +365,7 @@ where
 
                 // While it is true that the length could be same, seeing how this is such a rare situation
                 // It does not seem worth to deal with situations where the length is the same but the transactions have changed
-                return if expected_transactions.len() == request.txs.len() {
+                return if expected_transactions.len() == request.txs.len() && proposal_info.core_chain_lock_update == request.core_chain_lock_update {
                     let (app_hash, tx_results, consensus_param_updates, validator_set_update) = {
                         tracing::debug!(
                             method = "process_proposal",
