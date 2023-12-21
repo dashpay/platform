@@ -747,6 +747,7 @@ pub(crate) fn continue_chain_for_strategy(
                         expected_validation_errors.as_slice(),
                         false,
                         state_transitions.clone(),
+                        strategy.max_tx_bytes_per_block,
                         MimicExecuteBlockOptions {
                             dont_finalize_block: strategy.dont_finalize_block(),
                             rounds_before_finalization: strategy.failure_testing.as_ref().and_then(

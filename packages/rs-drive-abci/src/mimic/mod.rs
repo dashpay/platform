@@ -28,6 +28,7 @@ use tenderdash_abci::proto::types::{
 };
 use tenderdash_abci::signatures::SignBytes;
 use tenderdash_abci::{signatures::SignDigest, proto::version::Consensus, Application};
+use tenderdash_abci::proto::abci::tx_record::TxAction;
 use crate::mimic::test_quorum::TestQuorumInfo;
 
 /// Test quorum for mimic block execution
@@ -79,6 +80,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         expect_validation_errors: &[u32],
         expect_vote_extension_errors: bool,
         state_transitions: Vec<StateTransition>,
+        max_tx_bytes_per_block: i64,
         options: MimicExecuteBlockOptions,
     ) -> Result<MimicExecuteBlockOutcome, Error> {
         const APP_VERSION: u64 = 0;
@@ -104,7 +106,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         // PREPARE (also processes internally)
 
         let request_prepare_proposal = RequestPrepareProposal {
-            max_tx_bytes: 0,
+            max_tx_bytes: max_tx_bytes_per_block,
             txs: serialized_state_transitions.clone(),
             local_last_commit: None,
             misbehavior: vec![],
@@ -151,6 +153,19 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             }
         })?;
 
+        let state_transactions_to_process = tx_records
+            .into_iter()
+            .filter_map(|tx_record| {
+                if tx_record.action == TxAction::Removed as i32
+                    || tx_record.action == TxAction::Delayed as i32
+                {
+                    None
+                } else {
+                    Some(tx_record.tx)
+                }
+            })
+            .collect::<Vec<_>>();
+
         let state_transaction_results = state_transitions.into_iter().zip(tx_results).collect();
 
         // PROCESS
@@ -180,7 +195,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             .expect("cannot hash block id");
 
         let request_process_proposal = RequestProcessProposal {
-            txs: serialized_state_transitions,
+            txs: state_transactions_to_process.clone(),
             proposed_last_commit: None,
             misbehavior: vec![],
             hash: block_header_hash.to_vec(),
@@ -210,8 +225,6 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                     block_info.height, block_info.time_ms, e
                 )
             });
-
-        let tx_order_for_finalize_block = tx_records.into_iter().map(|record| record.tx).collect();
 
         let request_extend_vote = RequestExtendVote {
             hash: block_header_hash.to_vec(),
@@ -391,7 +404,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 core_chain_locked_height: core_height,
             }),
             data: Some(Data {
-                txs: tx_order_for_finalize_block,
+                txs: state_transactions_to_process,
             }),
             evidence: Some(EvidenceList { evidence: vec![] }),
             last_commit: None,

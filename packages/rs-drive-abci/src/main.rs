@@ -126,8 +126,8 @@ fn main() -> Result<(), ExitCode> {
     // Start tokio runtime and thread listening for signals.
     // The runtime will be reused by Prometheus and rs-tenderdash-abci.
 
-    // 8 MB stack threads as some recursions in GroveDB can be pretty deep
-    // We could remove such a stack stack size once deletion of a node doesn't recurse in grovedb
+    // TODO: 8 MB stack threads as some recursions in GroveDB can be pretty deep
+    //  We could remove such a stack stack size once deletion of a node doesn't recurse in grovedb
 
     let runtime = Builder::new_multi_thread()
         .enable_all()
@@ -153,7 +153,7 @@ fn main() -> Result<(), ExitCode> {
 
     drop(rt_guard);
     runtime.shutdown_timeout(Duration::from_millis(SHUTDOWN_TIMEOUT_MILIS));
-    tracing::info!("drive-abci server is down");
+    tracing::info!("drive-abci server is stopped");
 
     Err(status)
 }

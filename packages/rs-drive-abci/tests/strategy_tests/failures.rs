@@ -78,6 +78,7 @@ mod tests {
             }),
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -162,6 +163,7 @@ mod tests {
             }),
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -362,6 +364,7 @@ mod tests {
             }),
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
 
         let mut core_block_heights = vec![10, 11];
@@ -397,12 +400,9 @@ mod tests {
             .1;
         assert_eq!(first_document_insert_result.code, 0);
 
-        let second_document_insert_result = &state_transitions_block_2
-            .get(1)
-            .as_ref()
-            .expect("expected a document insert")
-            .1;
+        let second_document_insert_result = &state_transitions_block_2.get(1);
 
-        assert_eq!(second_document_insert_result.code, 4009); // we expect an error
+        // Second document should not be present
+        assert!(second_document_insert_result.is_none());
     }
 }

@@ -24,10 +24,10 @@ let testPreprocessors = {
   [testFilesPattern]: processors,
 };
 
-if (process.env.BROWSER_TEST_BATCH_TOTAL !== '0') {
-  const batchTotal = parseInt(process.env.BROWSER_TEST_BATCH_TOTAL, 10);
-  const batchIndex = parseInt(process.env.BROWSER_TEST_BATCH_INDEX, 10);
+const batchTotal = parseInt(process.env.BROWSER_TEST_BATCH_TOTAL, 10);
+const batchIndex = parseInt(process.env.BROWSER_TEST_BATCH_INDEX, 10);
 
+if (batchTotal !== 0) {
   const files = glob.sync(testFilesPattern);
   const batchSize = Math.ceil(files.length / batchTotal);
 
@@ -44,6 +44,9 @@ if (process.env.BROWSER_TEST_BATCH_TOTAL !== '0') {
     return acc;
   }, {});
 }
+
+process.env.FAUCET_ADDRESS = process.env[`FAUCET_${batchIndex + 1}_ADDRESS`];
+process.env.FAUCET_PRIVATE_KEY = process.env[`FAUCET_${batchIndex + 1}_PRIVATE_KEY`];
 
 module.exports = (config) => {
   config.set({
@@ -73,7 +76,11 @@ module.exports = (config) => {
           process: require.resolve('process/browser'),
         }),
         new webpack.EnvironmentPlugin(
-          dotenvResult.parsed,
+          {
+            ...dotenvResult.parsed,
+            FAUCET_ADDRESS: process.env.FAUCET_ADDRESS,
+            FAUCET_PRIVATE_KEY: process.env.FAUCET_PRIVATE_KEY,
+          },
         ),
       ],
       resolve: {
@@ -92,6 +99,7 @@ module.exports = (config) => {
           crypto: require.resolve('crypto-browserify'),
           events: require.resolve('events/'),
           util: require.resolve('util/'),
+          process: require.resolve('process/browser'),
         },
         extensions: ['.ts', '.js', '.json'],
       },
