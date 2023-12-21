@@ -616,7 +616,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     },
             },
             process_state_transition: 0,
-            check_state_transition: 0,
+            check_tx_state_transition_to_execution_event: 0,
         },
         query: DriveAbciQueryVersions {
             response_metadata: 0,

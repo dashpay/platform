@@ -1,9 +1,9 @@
+use crate::identity::state_transition::AssetLockProved;
+use crate::prelude::AssetLockProof;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
-use crate::identity::state_transition::AssetLockProved;
-use crate::prelude::AssetLockProof;
 
 impl StateTransitionLike for IdentityCreateTransition {
     /// Returns ID of the created contract

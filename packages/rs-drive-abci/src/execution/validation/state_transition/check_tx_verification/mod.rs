@@ -21,7 +21,7 @@ use crate::execution::check_tx::CheckTxLevel;
 /// For identity create and identity top up, make sure asset lock has not been used up
 /// For other state transitions verify that the user still has enough balance
 ///
-pub(in crate::execution) fn check_state_transition<'a, C: CoreRPCLike>(
+pub(in crate::execution) fn check_tx_state_transition_to_execution_event<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     state_transition: StateTransition,
     check_tx_level: CheckTxLevel,
@@ -30,16 +30,16 @@ pub(in crate::execution) fn check_state_transition<'a, C: CoreRPCLike>(
     match platform_version
         .drive_abci
         .validation_and_processing
-        .check_state_transition
+        .check_tx_state_transition_to_execution_event
     {
-        0 => v0::check_state_transition_v0(
+        0 => v0::check_tx_state_transition_to_execution_event_v0(
             platform,
             state_transition,
             check_tx_level,
             platform_version,
         ),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-            method: "check_state_transition".to_string(),
+            method: "check_tx_state_transition_to_execution_event".to_string(),
             known_versions: vec![0],
             received: version,
         })),

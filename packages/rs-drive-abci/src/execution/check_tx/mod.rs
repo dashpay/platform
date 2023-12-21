@@ -2,11 +2,11 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
+use crate::abci::AbciError;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::ConsensusError;
 use dpp::fee::fee_result::FeeResult;
 use dpp::validation::ValidationResult;
-use crate::abci::AbciError;
 
 mod v0;
 
@@ -15,7 +15,7 @@ mod v0;
 #[derive(Copy, Clone, Debug)]
 pub enum CheckTxLevel {
     FirstTimeCheck,
-    Recheck
+    Recheck,
 }
 
 impl TryFrom<u8> for CheckTxLevel {
@@ -25,7 +25,10 @@ impl TryFrom<u8> for CheckTxLevel {
         match value {
             0 => Ok(CheckTxLevel::FirstTimeCheck),
             1 => Ok(CheckTxLevel::Recheck),
-            value => Err(Error::Abci(AbciError::BadRequest(format!("Invalid value for CheckTxLevel {}", value)))),
+            value => Err(Error::Abci(AbciError::BadRequest(format!(
+                "Invalid value for CheckTxLevel {}",
+                value
+            )))),
         }
     }
 }
@@ -37,12 +40,13 @@ impl TryFrom<i32> for CheckTxLevel {
         match value {
             0 => Ok(CheckTxLevel::FirstTimeCheck),
             1 => Ok(CheckTxLevel::Recheck),
-            value => Err(Error::Abci(AbciError::BadRequest(format!("Invalid value for CheckTxLevel {}", value)))),
+            value => Err(Error::Abci(AbciError::BadRequest(format!(
+                "Invalid value for CheckTxLevel {}",
+                value
+            )))),
         }
     }
 }
-
-
 
 impl<C> Platform<C>
 where

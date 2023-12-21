@@ -673,7 +673,7 @@ where
         let _timer = crate::metrics::abci_request_duration("check_tx");
 
         let RequestCheckTx { tx, r#type } = request;
-        match self.platform.check_tx(tx.as_slice() , r#type.try_into()?) {
+        match self.platform.check_tx(tx.as_slice(), r#type.try_into()?) {
             Ok(validation_result) => {
                 let platform_state = self.platform.state.read().unwrap();
                 let platform_version = platform_state.current_platform_version()?;

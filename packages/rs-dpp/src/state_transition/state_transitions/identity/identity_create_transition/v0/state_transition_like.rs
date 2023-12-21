@@ -1,11 +1,11 @@
 use platform_value::BinaryData;
 
+use crate::prelude::AssetLockProof;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
 };
-use crate::prelude::AssetLockProof;
 
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::StateTransition;

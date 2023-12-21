@@ -1,8 +1,8 @@
+use crate::prelude::AssetLockProof;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
-use crate::prelude::AssetLockProof;
 
 impl StateTransitionLike for IdentityTopUpTransition {
     /// Returns ID of the topupd contract

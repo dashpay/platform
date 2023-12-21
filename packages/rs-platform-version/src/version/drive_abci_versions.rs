@@ -75,7 +75,7 @@ pub struct DriveAbciMethodVersions {
 pub struct DriveAbciValidationVersions {
     pub state_transitions: DriveAbciStateTransitionValidationVersions,
     pub process_state_transition: FeatureVersion,
-    pub check_state_transition: FeatureVersion,
+    pub check_tx_state_transition_to_execution_event: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

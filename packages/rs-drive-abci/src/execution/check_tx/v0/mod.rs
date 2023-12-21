@@ -1,4 +1,6 @@
 use crate::error::Error;
+use crate::execution::check_tx::CheckTxLevel;
+use crate::execution::validation::state_transition::check_tx_verification::check_tx_state_transition_to_execution_event;
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -23,8 +25,6 @@ use dpp::validation::SimpleConsensusValidationResult;
 use dpp::validation::ValidationResult;
 #[cfg(test)]
 use drive::grovedb::Transaction;
-use crate::execution::check_tx::CheckTxLevel;
-use crate::execution::validation::state_transition::check_tx_verification::check_state_transition;
 
 impl<C> Platform<C>
 where
@@ -109,7 +109,11 @@ where
 
         let platform_version = platform_ref.state.current_platform_version()?;
 
-        let execution_event = check_state_transition(&platform_ref, state_transition, check_tx_level)?;
+        let execution_event = check_tx_state_transition_to_execution_event(
+            &platform_ref,
+            state_transition,
+            check_tx_level,
+        )?;
 
         // We should run the execution event in dry run to see if we would have enough fees for the transition
         execution_event.and_then_borrowed_validation(|execution_event| {
@@ -163,6 +167,7 @@ mod tests {
     use dpp::version::PlatformVersion;
     use dpp::NativeBlsModule;
 
+    use crate::execution::check_tx::CheckTxLevel::FirstTimeCheck;
     use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
     use dpp::platform_value::Bytes32;
     use dpp::system_data_contracts::dashpay_contract;
@@ -171,7 +176,6 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
-    use crate::execution::check_tx::CheckTxLevel::FirstTimeCheck;
 
     // This test needs to be finished, but is still useful for debugging
     #[test]
@@ -239,7 +243,9 @@ mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        let check_result = platform.check_tx(&tx, FirstTimeCheck).expect("expected to check tx");
+        let check_result = platform
+            .check_tx(&tx, FirstTimeCheck)
+            .expect("expected to check tx");
 
         let result = platform
             .platform
@@ -500,7 +506,10 @@ mod tests {
             .expect("expected to commit transaction");
 
         let validation_result = platform
-            .check_tx(documents_batch_update_serialized_transition.as_slice(), FirstTimeCheck)
+            .check_tx(
+                documents_batch_update_serialized_transition.as_slice(),
+                FirstTimeCheck,
+            )
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
@@ -615,7 +624,10 @@ mod tests {
             .expect("serialized state transition");
 
         let validation_result = platform
-            .check_tx(identity_top_up_serialized_transition.as_slice(), FirstTimeCheck)
+            .check_tx(
+                identity_top_up_serialized_transition.as_slice(),
+                FirstTimeCheck,
+            )
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
@@ -748,7 +760,10 @@ mod tests {
             .expect("serialized state transition");
 
         let validation_result = platform
-            .check_tx(identity_top_up_serialized_transition.as_slice(), FirstTimeCheck)
+            .check_tx(
+                identity_top_up_serialized_transition.as_slice(),
+                FirstTimeCheck,
+            )
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
@@ -772,7 +787,10 @@ mod tests {
             .expect("expected to commit transaction");
 
         let validation_result = platform
-            .check_tx(identity_top_up_serialized_transition.as_slice(), FirstTimeCheck)
+            .check_tx(
+                identity_top_up_serialized_transition.as_slice(),
+                FirstTimeCheck,
+            )
             .expect("expected to check tx");
 
         assert!(matches!(
@@ -859,7 +877,10 @@ mod tests {
             .expect("serialized state transition");
 
         let validation_result = platform
-            .check_tx(identity_top_up_serialized_transition.as_slice(), FirstTimeCheck)
+            .check_tx(
+                identity_top_up_serialized_transition.as_slice(),
+                FirstTimeCheck,
+            )
             .expect("expected to check tx");
 
         // This errors because we never created the identity
@@ -979,7 +1000,10 @@ mod tests {
             .expect("serialized state transition");
 
         let validation_result = platform
-            .check_tx(identity_top_up_serialized_transition.as_slice(), FirstTimeCheck)
+            .check_tx(
+                identity_top_up_serialized_transition.as_slice(),
+                FirstTimeCheck,
+            )
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
@@ -1043,7 +1067,10 @@ mod tests {
             .expect("serialized state transition");
 
         let validation_result = platform
-            .check_tx(identity_create_serialized_transition.as_slice(), FirstTimeCheck)
+            .check_tx(
+                identity_create_serialized_transition.as_slice(),
+                FirstTimeCheck,
+            )
             .expect("expected to check tx");
 
         assert!(matches!(
