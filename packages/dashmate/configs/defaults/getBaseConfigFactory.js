@@ -164,7 +164,7 @@ export default function getBaseConfigFactory(homeDir) {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:0.13.3',
+              image: 'dashpay/tenderdash:withdrawals',
             },
             p2p: {
               port: 26656, persistentPeers: [], seeds: [],

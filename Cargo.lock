@@ -968,7 +968,7 @@ dependencies = [
  "prost 0.11.9",
  "serde",
  "serde_bytes",
- "tenderdash-proto",
+ "tenderdash-proto 0.13.2",
  "tonic",
  "tonic-build",
 ]
@@ -1345,7 +1345,7 @@ dependencies = [
  "simple-signer",
  "strategy-tests",
  "tempfile",
- "tenderdash-abci",
+ "tenderdash-abci 0.14.0-dev.1",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -1366,7 +1366,7 @@ dependencies = [
  "lazy_static",
  "serde",
  "serde_json",
- "tenderdash-abci",
+ "tenderdash-abci 0.13.1",
  "thiserror",
  "tracing",
 ]
@@ -4177,7 +4177,28 @@ dependencies = [
  "lhash",
  "prost 0.12.1",
  "semver",
- "tenderdash-proto",
+ "tenderdash-proto 0.13.2",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid 1.5.0",
+]
+
+[[package]]
+name = "tenderdash-abci"
+version = "0.14.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/withdrawals#b02ef2770999cfbc5dedd0de0803c478dc18628d"
+dependencies = [
+ "bytes",
+ "futures",
+ "hex",
+ "lhash",
+ "prost 0.12.1",
+ "semver",
+ "tenderdash-proto 0.14.0-dev.1",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -4201,7 +4222,25 @@ dependencies = [
  "prost 0.12.1",
  "serde",
  "subtle-encoding",
- "tenderdash-proto-compiler",
+ "tenderdash-proto-compiler 0.1.0",
+ "time",
+]
+
+[[package]]
+name = "tenderdash-proto"
+version = "0.14.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/withdrawals#b02ef2770999cfbc5dedd0de0803c478dc18628d"
+dependencies = [
+ "bytes",
+ "chrono",
+ "derive_more",
+ "flex-error",
+ "num-derive",
+ "num-traits",
+ "prost 0.12.1",
+ "serde",
+ "subtle-encoding",
+ "tenderdash-proto-compiler 0.14.0-dev.1",
  "time",
 ]
 
@@ -4209,6 +4248,20 @@ dependencies = [
 name = "tenderdash-proto-compiler"
 version = "0.1.0"
 source = "git+https://github.com/dashpay/rs-tenderdash-abci#f413119a5c7f4b519ba3eec5746cd013a73e45db"
+dependencies = [
+ "fs_extra",
+ "prost-build 0.12.1",
+ "regex",
+ "tempfile",
+ "ureq",
+ "walkdir",
+ "zip",
+]
+
+[[package]]
+name = "tenderdash-proto-compiler"
+version = "0.14.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/withdrawals#b02ef2770999cfbc5dedd0de0803c478dc18628d"
 dependencies = [
  "fs_extra",
  "prost-build 0.12.1",

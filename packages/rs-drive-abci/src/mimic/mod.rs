@@ -273,6 +273,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 VoteExtension {
                     r#type: VoteExtensionType::ThresholdRecover as i32,
                     extension: tx_id.to_byte_array().to_vec(),
+                    sign_request_id: None,
                     signature: vec![], //todo: signature
                 }
             })

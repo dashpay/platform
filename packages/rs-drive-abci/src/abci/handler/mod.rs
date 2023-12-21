@@ -72,7 +72,9 @@ use crate::platform_types::block_proposal::v0::BlockProposal;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::withdrawal_txs;
-use crate::platform_types::withdrawal::withdrawal_txs::v0::get_withdrawal_sighash;
+use crate::platform_types::withdrawal::withdrawal_txs::v0::{
+    get_withdrawal_request_id, get_withdrawal_sighash,
+};
 use dpp::dashcore::hashes::Hash;
 use dpp::fee::SignedCredits;
 use dpp::version::TryIntoPlatformVersioned;
@@ -540,14 +542,16 @@ where
                 .map(|asset_unlock_info_bytes| {
                     let asset_unlock_tx = build_asset_unlock_tx(asset_unlock_info_bytes).unwrap();
 
-                    let signature_hash = get_withdrawal_sighash(
-                        &asset_unlock_tx,
-                        self.platform.config.quorum_type() as u8,
-                    );
+                    let mut request_id = get_withdrawal_request_id(&asset_unlock_tx);
+                    let mut extension = asset_unlock_tx.txid().as_byte_array().to_vec();
+
+                    // request_id.reverse();
+                    extension.reverse();
 
                     proto::ExtendVoteExtension {
-                        r#type: VoteExtensionType::ThresholdRecover as i32,
-                        extension: signature_hash,
+                        r#type: VoteExtensionType::ThresholdRecoverRaw as i32,
+                        extension,
+                        sign_request_id: Some(request_id),
                     }
                 })
                 .collect();
@@ -590,15 +594,17 @@ where
             .map(|asset_unlock_info_bytes| {
                 let asset_unlock_tx = build_asset_unlock_tx(asset_unlock_info_bytes).unwrap();
 
-                let signature_hash = get_withdrawal_sighash(
-                    &asset_unlock_tx,
-                    self.platform.config.quorum_type() as u8,
-                );
+                let mut request_id = get_withdrawal_request_id(&asset_unlock_tx);
+                let mut extension = asset_unlock_tx.txid().as_byte_array().to_vec();
+
+                // request_id.reverse();
+                extension.reverse();
 
                 proto::ExtendVoteExtension {
-                    r#type: VoteExtensionType::ThresholdRecover as i32,
+                    r#type: VoteExtensionType::ThresholdRecoverRaw as i32,
                     // TODO(withdrawals): Do the same here as in extend_vote
-                    extension: signature_hash,
+                    extension,
+                    sign_request_id: Some(request_id),
                 }
             })
             .collect::<Vec<_>>()
@@ -622,6 +628,7 @@ where
         //     });
         // };
 
+        // TODO: provide validator public key and quorum_hash
         let validation_result = self.platform.check_withdrawals(
             &got,
             &expected,

@@ -213,8 +213,20 @@ where
         // // Finalize withdrawal processing
         // our_withdrawals.finalize(Some(transaction), &self.drive, &to_commit_block_info)?;
 
+        tracing::trace!(
+            "[Withdrawals] Transactions {}, extensions {}",
+            block_execution_context.withdrawal_transactions().len(),
+            commit_info.threshold_vote_extensions.len()
+        );
         // Block proposer broadcasts asset unlock transactions
-        if block_execution_context.proposer_results().is_some() {
+        // if block_execution_context.proposer_results().is_some() {
+        if !block_execution_context.withdrawal_transactions().is_empty()
+            && !commit_info.threshold_vote_extensions.is_empty()
+        {
+            tracing::trace!(
+                "[Withdrawals] Broadcasting {} items",
+                block_execution_context.withdrawal_transactions().len()
+            );
             for (index, (_, tx)) in block_execution_context
                 .withdrawal_transactions()
                 .iter()
@@ -243,14 +255,22 @@ where
 
                 match result {
                     Ok(_) => {
-                        tracing::trace!("Broadcasted asset unlock tx: {}", hex::encode(tx_bytes));
+                        tracing::trace!(
+                            "[Withdrawals] Broadcasted asset unlock tx: {}",
+                            hex::encode(tx_bytes)
+                        );
                     }
                     Err(e) => {
-                        tracing::error!("Failed to broadcast asset unlock tx: {}", e);
+                        tracing::error!("[Withdrawals] Failed to broadcast asset unlock tx: {}", e);
                     }
                 }
             }
+        } else if !block_execution_context.withdrawal_transactions().is_empty()
+            && commit_info.threshold_vote_extensions.is_empty()
+        {
+            tracing::error!("[Withdrawals] No quorum signatures for withdrawals");
         }
+        // }
 
         // At the end we update the state cache
         drop(guarded_block_execution_context);

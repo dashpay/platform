@@ -42,6 +42,7 @@ impl<'a> WithdrawalTxs<'a> {
             .map(|(_k, v)| VoteExtension {
                 r#type: VoteExtensionType::ThresholdRecover.into(),
                 extension: v,
+                sign_request_id: None,
                 signature: Default::default(),
             })
             .collect::<Vec<VoteExtension>>();
@@ -99,6 +100,7 @@ impl<'a> WithdrawalTxs<'a> {
             .iter()
             .map(|v| ExtendVoteExtension {
                 r#type: v.r#type,
+                sign_request_id: None,
                 extension: v.extension.clone(),
             })
             .collect::<Vec<ExtendVoteExtension>>()
@@ -110,6 +112,7 @@ impl<'a> WithdrawalTxs<'a> {
             .map(|v| ExtendVoteExtension {
                 r#type: v.r#type,
                 extension: v.extension,
+                sign_request_id: None,
             })
             .collect::<Vec<ExtendVoteExtension>>()
     }
@@ -193,6 +196,7 @@ impl<'a> From<Vec<ExtendVoteExtension>> for WithdrawalTxs<'a> {
                 .map(|v| VoteExtension {
                     r#type: v.r#type,
                     extension: v.extension,
+                    sign_request_id: None,
                     signature: Default::default(),
                 })
                 .collect::<Vec<VoteExtension>>(),
@@ -208,6 +212,26 @@ impl<'a> From<&Vec<VoteExtension>> for WithdrawalTxs<'a> {
             drive_operations: Vec::<DriveOperation>::new(),
         }
     }
+}
+
+pub fn get_withdrawal_request_id(asset_unlock_tx: &Transaction) -> Vec<u8> {
+    let asset_unlock_payload: AssetUnlockPayload = asset_unlock_tx
+        .clone()
+        .special_transaction_payload
+        .unwrap()
+        .to_asset_unlock_payload()
+        .unwrap();
+
+    let mut request_id = vec![];
+    const ASSET_UNLOCK_REQUEST_ID_PREFIX: &str = "plwdtx";
+    let prefix_len = VarInt(ASSET_UNLOCK_REQUEST_ID_PREFIX.len() as u64);
+    let index = asset_unlock_payload.base.index.to_le_bytes();
+
+    prefix_len.consensus_encode(&mut request_id).unwrap();
+    request_id.extend_from_slice(ASSET_UNLOCK_REQUEST_ID_PREFIX.as_bytes());
+    request_id.extend_from_slice(&index);
+
+    request_id
 }
 
 pub fn get_withdrawal_sighash(asset_unlock_tx: &Transaction, quorum_type: u8) -> Vec<u8> {
