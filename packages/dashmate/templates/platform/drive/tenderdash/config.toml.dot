@@ -148,7 +148,7 @@ unsafe = false
 # 0 - unlimited.
 # Should be < {ulimit -Sn} - {MaxNumInboundPeers} - {MaxNumOutboundPeers} - {N of wal, db and other open files}
 # 1024 - 40 - 10 - 50 = 924 = ~900
-max-open-connections = 900
+max-open-connections = {{= it.platform.drive.tenderdash.rpc.maxOpenConnections }}
 
 # Maximum number of unique clientIDs that can /subscribe
 # If you're using /broadcast_tx_commit, set to the estimated maximum number
@@ -222,6 +222,7 @@ pprof-laddr = "{{? it.platform.drive.tenderdash.pprof.enabled}}:{{=it.platform.d
 #######################################################
 [p2p]
 
+# TODO: Investigate which one is the most suitable for Dash Platform
 # Select the p2p internal queue.
 # Options are: "fifo" and "simple-priority", and "priority",
 # with the default being "simple-priority".
@@ -278,19 +279,19 @@ dial-timeout = "3s"
 
 # Time to wait before flushing messages out on the connection
 # TODO: Remove once MConnConnection is removed.
-flush-throttle-timeout = "100ms"
+flush-throttle-timeout = "{{= it.platform.drive.tenderdash.p2p.flushThrottleTimeout }}"
 
 # Maximum size of a message packet payload, in bytes
 # TODO: Remove once MConnConnection is removed.
-max-packet-msg-payload-size = 1024
+max-packet-msg-payload-size = {{= it.platform.drive.tenderdash.p2p.maxPacketMsgPayloadSize }}
 
 # Rate at which packets can be sent, in bytes/second
 # TODO: Remove once MConnConnection is removed.
-send-rate = 5120000
+send-rate = {{= it.platform.drive.tenderdash.p2p.sendRate }}
 
 # Rate at which packets can be received, in bytes/second
 # TODO: Remove once MConnConnection is removed.
-recv-rate = 5120000
+recv-rate = {{= it.platform.drive.tenderdash.p2p.recvRate }}
 
 
 #######################################################
@@ -306,12 +307,12 @@ recv-rate = 5120000
 broadcast = true
 
 # Maximum number of transactions in the mempool
-size = 5000
+size = {{= it.platform.drive.tenderdash.mempool.size }}
 
 # Limit the total size of all txs in the mempool.
 # This only accounts for raw transactions (e.g. given 1MB transactions and
 # max-txs-bytes=5MB, mempool will only accept 5 transactions).
-max-txs-bytes = 1073741824
+max-txs-bytes = {{= it.platform.drive.tenderdash.mempool.maxTxsBytes }}
 
 # Size of the cache (used to filter transactions we saw earlier) in transactions
 cache-size = 10000
@@ -319,7 +320,7 @@ cache-size = 10000
 # Do not remove invalid transactions from the cache (default: false)
 # Set to true if it's not possible for any invalid transaction to become valid
 # again in the future.
-keep-invalid-txs-in-cache = true
+keep-invalid-txs-in-cache = false
 
 # Maximum size of a single transaction.
 # NOTE: the max size of a tx transmitted over the network is {max-tx-bytes}.
@@ -412,8 +413,8 @@ create-empty-blocks = {{? it.platform.drive.tenderdash.consensus.createEmptyBloc
 create-empty-blocks-interval = "{{= it.platform.drive.tenderdash.consensus.createEmptyBlocksInterval }}"
 
 # Reactor sleep duration parameters
-peer-gossip-sleep-duration = "100ms"
-peer-query-maj23-sleep-duration = "2s"
+peer-gossip-sleep-duration = "{{= it.platform.drive.tenderdash.consensus.peer.gossipSleepDuration }}"
+peer-query-maj23-sleep-duration = "{{= it.platform.drive.tenderdash.consensus.peer.queryMaj23SleepDuration }}"
 
 ### Unsafe Timeout Overrides ###
 
@@ -428,36 +429,62 @@ peer-query-maj23-sleep-duration = "2s"
 # This field provides an unsafe override of the Propose timeout consensus parameter.
 # This field configures how long the consensus engine will wait for a proposal block before prevoting nil.
 # If this field is set to a value greater than 0, it will take effect.
+{{? it.platform.drive.tenderdash.consensus.unsafeOverride.propose.timeout === null }}
 # unsafe-propose-timeout-override = 0s
+{{??}}
+unsafe-propose-timeout-override = "{{= it.platform.drive.tenderdash.consensus.unsafeOverride.propose.timeout }}"
+{{?}}
 
 # This field provides an unsafe override of the ProposeDelta timeout consensus parameter.
 # This field configures how much the propose timeout increases with each round.
 # If this field is set to a value greater than 0, it will take effect.
+{{? it.platform.drive.tenderdash.consensus.unsafeOverride.propose.delta === null }}
 # unsafe-propose-timeout-delta-override = 0s
+{{??}}
+unsafe-propose-timeout-delta-override = "{{= it.platform.drive.tenderdash.consensus.unsafeOverride.propose.delta }}"
+{{?}}
+
 
 # This field provides an unsafe override of the Vote timeout consensus parameter.
 # This field configures how long the consensus engine will wait after
 # receiving +2/3 votes in a round.
 # If this field is set to a value greater than 0, it will take effect.
+{{? it.platform.drive.tenderdash.consensus.unsafeOverride.vote.timeout === null }}
 # unsafe-vote-timeout-override = 0s
+{{??}}
+unsafe-vote-timeout-override = "{{= it.platform.drive.tenderdash.consensus.unsafeOverride.vote.timeout }}"
+{{?}}
 
 # This field provides an unsafe override of the VoteDelta timeout consensus parameter.
 # This field configures how much the vote timeout increases with each round.
 # If this field is set to a value greater than 0, it will take effect.
+{{? it.platform.drive.tenderdash.consensus.unsafeOverride.vote.delta === null }}
 # unsafe-vote-timeout-delta-override = 0s
+{{??}}
+unsafe-vote-timeout-delta-override = "{{= it.platform.drive.tenderdash.consensus.unsafeOverride.vote.delta }}"
+{{?}}
 
 # This field provides an unsafe override of the Commit timeout consensus parameter.
 # This field configures how long the consensus engine will wait after receiving
 # +2/3 precommits before beginning the next height.
 # If this field is set to a value greater than 0, it will take effect.
+{{? it.platform.drive.tenderdash.consensus.unsafeOverride.commit.timeout === null }}
 # unsafe-commit-timeout-override = 0s
+{{??}}
+unsafe-commit-timeout-override = "{{= it.platform.drive.tenderdash.consensus.unsafeOverride.commit.timeout }}"
+{{?}}
 
 # This field provides an unsafe override of the BypassCommitTimeout consensus parameter.
 # This field configures if the consensus engine will wait for the full Commit timeout
 # before proceeding to the next height.
 # If this field is set to true, the consensus engine will proceed to the next height
 # as soon as the node has gathered votes from all of the validators on the network.
+{{? it.platform.drive.tenderdash.consensus.unsafeOverride.commit.bypass === null }}
 # unsafe-bypass-commit-timeout-override =
+{{??}}
+unsafe-bypass-commit-timeout-override = {{? it.platform.drive.tenderdash.consensus.unsafeOverride.commit.bypass }}true{{??}}false{{?}}
+{{?}}
+
 
 #######################################################
 ###   Transaction Indexer Configuration Options     ###
