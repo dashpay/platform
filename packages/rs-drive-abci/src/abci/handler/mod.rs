@@ -286,6 +286,8 @@ where
             tx_records.push(TxRecord { action, tx });
         }
 
+        let delayed_tx_count = transactions_exceeding_max_block_size.len();
+
         // Add up exceeding transactions to the response
         tx_records.extend(
             transactions_exceeding_max_block_size
@@ -317,6 +319,7 @@ where
         tracing::info!(
             invalid_tx_count,
             valid_txs_count,
+            delayed_tx_count,
             "Prepared proposal with {} transitions for height: {}, round: {}",
             valid_txs_count,
             request.height,
@@ -442,7 +445,7 @@ where
                         validator_set_update,
                     });
                 } else {
-                    tracing::debug!(
+                    tracing::warn!(
                             method = "process_proposal",
                             "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}, but we are requesting a different amount of transactions, dropping the cache",
                             proposal_info,
@@ -493,7 +496,7 @@ where
                 ..Default::default()
             };
 
-            tracing::info!(
+            tracing::warn!(
                 errors = ?run_result.errors,
                 "Rejected invalid proposal for height: {}, round: {}",
                 request.height,
