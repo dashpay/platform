@@ -70,7 +70,7 @@ where
         &self,
         raw_tx: &[u8],
         check_tx_level: CheckTxLevel,
-    ) -> Result<ValidationResult<FeeResult, ConsensusError>, Error> {
+    ) -> Result<ValidationResult<Option<FeeResult>, ConsensusError>, Error> {
         let state = self.state.read().expect("expected to get state");
         let platform_version = state.current_platform_version()?;
         match platform_version.drive_abci.methods.engine.check_tx {

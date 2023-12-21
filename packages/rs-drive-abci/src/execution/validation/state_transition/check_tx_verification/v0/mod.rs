@@ -29,11 +29,11 @@ pub(super) fn check_tx_state_transition_to_execution_event_v0<'a, C: CoreRPCLike
     state_transition: StateTransition,
     check_tx_level: CheckTxLevel,
     platform_version: &PlatformVersion,
-) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
+) -> Result<ConsensusValidationResult<Option<ExecutionEvent<'a>>>, Error> {
     match check_tx_level {
         CheckTxLevel::FirstTimeCheck => {
             if state_transition.requires_check_tx_full_validation() {
-                return process_state_transition(platform, state_transition, None);
+                return Ok(process_state_transition(platform, state_transition, None)?.map(Some));
             } else {
                 // we need to validate the structure, the fees, and the signature
                 let mut state_transition_execution_context =
@@ -46,7 +46,7 @@ pub(super) fn check_tx_state_transition_to_execution_event_v0<'a, C: CoreRPCLike
                         state_transition.transform_into_action(platform, true, None)?;
                     if !state_transition_action_result.is_valid_with_data() {
                         return Ok(
-                            ConsensusValidationResult::<ExecutionEvent>::new_with_errors(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
                                 state_transition_action_result.errors,
                             ),
                         );
@@ -64,29 +64,32 @@ pub(super) fn check_tx_state_transition_to_execution_event_v0<'a, C: CoreRPCLike
                 )?;
                 if !result.is_valid() {
                     return Ok(
-                        ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors),
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
                     );
                 }
 
-                let action =
-                    if state_transition.requires_state_to_validate_identity_and_signatures() {
-                        if let Some(action) = action {
-                            Some(action)
-                        } else {
-                            let state_transition_action_result =
-                                state_transition.transform_into_action(platform, true, None)?;
-                            if !state_transition_action_result.is_valid_with_data() {
-                                return Ok(
-                                    ConsensusValidationResult::<ExecutionEvent>::new_with_errors(
+                let action = if state_transition
+                    .requires_state_to_validate_identity_and_signatures()
+                {
+                    if let Some(action) = action {
+                        Some(action)
+                    } else {
+                        let state_transition_action_result =
+                            state_transition.transform_into_action(platform, true, None)?;
+                        if !state_transition_action_result.is_valid_with_data() {
+                            return Ok(
+                                    ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
                                         state_transition_action_result.errors,
                                     ),
                                 );
-                            }
-                            Some(state_transition_action_result.into_data()?)
                         }
-                    } else {
-                        None
-                    };
+                        Some(state_transition_action_result.into_data()?)
+                    }
+                } else {
+                    None
+                };
 
                 //
                 let result = state_transition.validate_identity_and_signatures(
@@ -99,7 +102,9 @@ pub(super) fn check_tx_state_transition_to_execution_event_v0<'a, C: CoreRPCLike
                 // Validating signatures
                 if !result.is_valid() {
                     return Ok(
-                        ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors),
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
                     );
                 }
                 let maybe_identity = result.into_data()?;
@@ -111,7 +116,7 @@ pub(super) fn check_tx_state_transition_to_execution_event_v0<'a, C: CoreRPCLike
                         state_transition.transform_into_action(platform, true, None)?;
                     if !state_transition_action_result.is_valid_with_data() {
                         return Ok(
-                            ConsensusValidationResult::<ExecutionEvent>::new_with_errors(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
                                 state_transition_action_result.errors,
                             ),
                         );
@@ -126,9 +131,11 @@ pub(super) fn check_tx_state_transition_to_execution_event_v0<'a, C: CoreRPCLike
                     platform_version,
                 )?;
 
-                Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_data(
-                    execution_event,
-                ))
+                Ok(
+                    ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_data(Some(
+                        execution_event,
+                    )),
+                )
             }
         }
         CheckTxLevel::Recheck => {
@@ -136,12 +143,21 @@ pub(super) fn check_tx_state_transition_to_execution_event_v0<'a, C: CoreRPCLike
                 // we should check that the asset lock is still valid
                 let validation_result =
                     asset_lock.validate_state(platform, None, platform_version)?;
+                return if validation_result.is_valid() {
+                    Ok(ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_data(None))
+                } else {
+                    Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            validation_result.errors,
+                        ),
+                    )
+                };
             } else {
                 let state_transition_action_result =
                     state_transition.transform_into_action(platform, true, None)?;
                 if !state_transition_action_result.is_valid_with_data() {
                     return Ok(
-                        ConsensusValidationResult::<ExecutionEvent>::new_with_errors(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
                             state_transition_action_result.errors,
                         ),
                     );
@@ -161,9 +177,11 @@ pub(super) fn check_tx_state_transition_to_execution_event_v0<'a, C: CoreRPCLike
                     platform_version,
                 )?;
 
-                Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_data(
-                    execution_event,
-                ))
+                Ok(
+                    ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_data(Some(
+                        execution_event,
+                    )),
+                )
             }
         }
     }

@@ -693,7 +693,11 @@ where
 
                 let gas_wanted = validation_result
                     .data
-                    .map(|fee_result| fee_result.total_base_fee())
+                    .map(|fee_result| {
+                        fee_result
+                            .map(|fee_result| fee_result.total_base_fee())
+                            .unwrap_or_default()
+                    })
                     .unwrap_or_default();
 
                 Ok(ResponseCheckTx {

@@ -82,7 +82,7 @@ where
         &self,
         raw_tx: &[u8],
         check_tx_level: CheckTxLevel,
-    ) -> Result<ValidationResult<FeeResult, ConsensusError>, Error> {
+    ) -> Result<ValidationResult<Option<FeeResult>, ConsensusError>, Error> {
         let state_transition = match StateTransition::deserialize_from_bytes(raw_tx) {
             Ok(state_transition) => state_transition,
             Err(err) => {
@@ -117,7 +117,12 @@ where
 
         // We should run the execution event in dry run to see if we would have enough fees for the transition
         execution_event.and_then_borrowed_validation(|execution_event| {
-            self.validate_fees_of_event(execution_event, block_info, None, platform_version)
+            if let Some(execution_event) = execution_event {
+                self.validate_fees_of_event(execution_event, block_info, None, platform_version)
+                    .map(|validation_result| validation_result.map(Some))
+            } else {
+                Ok(ValidationResult::new_with_data(None))
+            }
         })
     }
 }
