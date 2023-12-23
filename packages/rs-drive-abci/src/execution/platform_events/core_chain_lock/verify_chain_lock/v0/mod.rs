@@ -1,6 +1,7 @@
 use crate::error::Error;
 use dpp::dashcore::ChainLock;
 use dpp::version::PlatformVersion;
+use crate::config::PlatformConfig;
 
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;

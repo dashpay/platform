@@ -198,6 +198,11 @@ pub struct PlatformConfig {
     /// The default quorum size
     pub quorum_size: u16,
 
+    /// The window for chain locks
+    /// On Mainnet Chain Locks are signed using 400_60: One quorum in every 288 blocks and activeQuorumCount is 4.
+    /// On Testnet Chain Locks are signed using 50_60: One quorum in every 24 blocks and activeQuorumCount is 24.
+    pub chain_lock_quorum_window: u32,
+
     // todo: this should probably be coming from Tenderdash config
     /// Approximately how often are blocks produced
     pub block_spacing_ms: u64,
@@ -310,12 +315,30 @@ impl Default for ExecutionConfig {
     }
 }
 
-impl Default for PlatformConfig {
-    fn default() -> Self {
+impl PlatformConfig {
+    pub fn default_testnet() -> Self {
+        Self {
+            validator_set_quorum_type: "llmq_25_67".to_string(),
+            chain_lock_quorum_type: "llmq_50_60".to_string(),
+            quorum_size: 25,
+            chain_lock_quorum_window: 24,
+            block_spacing_ms: 5000,
+            drive: Default::default(),
+            abci: Default::default(),
+            core: Default::default(),
+            execution: Default::default(),
+            db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            testing_configs: PlatformTestConfig::default(),
+            initial_protocol_version: 1,
+        }
+    }
+
+    pub fn default_mainnet() -> Self {
         Self {
             validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_400_60".to_string(),
             quorum_size: 100,
+            chain_lock_quorum_window: 288,
             block_spacing_ms: 5000,
             drive: Default::default(),
             abci: Default::default(),

@@ -504,6 +504,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 verify_chain_lock: 0,
                 verify_chain_lock_locally: 0,
                 verify_chain_lock_through_core: 0,
+                make_sure_core_is_synced_to_height: 0,
             },
             fee_pool_inwards_distribution: DriveAbciFeePoolInwardsDistributionMethodVersions {
                 add_distribute_block_fees_into_pools_operations: 0,

@@ -12,8 +12,11 @@ use crate::rpc::core::CoreRPCLike;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::version::PlatformVersion;
+use crate::config::PlatformConfig;
 
 const CHAIN_LOCK_REQUEST_ID_PREFIX: &str = "clsig";
+
+const SIGN_OFFSET : u32 = 8;
 
 impl<C> Platform<C>
 where
@@ -33,7 +36,7 @@ where
         // we attempt to verify the chain lock locally
         let chain_lock_height = chain_lock.block_height;
 
-        let window_width = 578;
+        let window_width = self.config.chain_lock_quorum_window;
 
         // The last block in the window where the quorums would be the same
         let last_block_in_window = platform_state.last_committed_core_height()
@@ -41,7 +44,7 @@ where
             + window_width
             - 1;
 
-        let verification_height = chain_lock.block_height - 8;
+        let verification_height = chain_lock.block_height - SIGN_OFFSET;
 
         if verification_height > last_block_in_window {
             return Ok(None); // the chain lock is too far in the future or the past to verify locally
@@ -72,7 +75,7 @@ where
             .expect("expected to encode the prefix");
 
         engine.input(CHAIN_LOCK_REQUEST_ID_PREFIX.as_bytes());
-        engine.input(chain_lock.block_height.to_be_bytes().as_slice());
+        engine.input(chain_lock.block_height.to_le_bytes().as_slice());
 
         let request_id = QuorumSigningRequestId::from_engine(engine);
 
@@ -95,7 +98,7 @@ where
 
         engine.input(&[self.config.chain_lock_quorum_type() as u8]);
         engine.input(quorum_hash.as_byte_array());
-        engine.input(chain_lock.block_hash.as_byte_array());
+        engine.input(request_id.as_byte_array());
         engine.input(chain_lock.block_hash.as_byte_array());
 
         let message_digest = sha256d::Hash::from_engine(engine);
