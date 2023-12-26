@@ -94,6 +94,11 @@ pub struct Strategy {
     pub signer: Option<SimpleSigner>,
 }
 #[derive(Clone, Debug, PartialEq)]
+pub struct StrategyConfig {
+    pub start_block_height: u64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct RandomDocumentQuery<'a> {
     pub data_contract: &'a DataContract,
     pub document_type: &'a DocumentType,
@@ -262,7 +267,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
 impl Strategy {
     /// Adds strategy contracts from the current operations into a specified Drive.
     ///
-    /// This method iterates over the operations present in the current strategy. For each operation
+    /// This method iterates over the operations present in the current strategy and for each operation
     /// of type `Document`, it serializes the associated contract and applies it to the provided drive.
     ///
     /// # Parameters
@@ -307,8 +312,6 @@ impl Strategy {
         }
     }
 
-    /// Generates state transitions for identities based on the block information provided.
-    ///
     /// This method creates a list of state transitions associated with identities. If the block height
     /// is `1` and there are starting identities present in the strategy, these identities are directly
     /// added to the state transitions list.
