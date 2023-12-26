@@ -296,6 +296,7 @@ impl Strategy {
         &mut self,
         drive: &Drive,
         platform_version: &PlatformVersion,
+        initial_block_info: &BlockInfo,
     ) {
         for op in &self.operations {
             if let OperationType::Document(doc_op) = &op.op_type {
@@ -307,7 +308,7 @@ impl Strategy {
                     .apply_contract_with_serialization(
                         &doc_op.contract,
                         serialize,
-                        BlockInfo::default(),
+                        initial_block_info.clone(),
                         true,
                         Some(Cow::Owned(SingleEpoch(0))),
                         None,
@@ -346,9 +347,10 @@ impl Strategy {
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
+        config: &StrategyConfig,
     ) -> Vec<(Identity, StateTransition)> {
         let mut state_transitions = vec![];
-        if block_info.height == 1 && !self.start_identities.is_empty() {
+        if block_info.height == config.start_block_height && !self.start_identities.is_empty() {
             state_transitions.append(&mut self.start_identities.clone());
         }
         let frequency = &self.identities_inserts;
@@ -813,6 +815,7 @@ impl Strategy {
                             data_contract: contract,
                             document_type,
                         }));
+                        //// the following is removed in favor of the local document query callback above
                         // let mut items = drive
                         //     .query_documents(
                         //         any_item_query,
@@ -1152,11 +1155,12 @@ impl Strategy {
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
+        config: &StrategyConfig,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
         let mut finalize_block_operations = vec![];
         let identity_state_transitions =
-            self.identity_state_transitions_for_block(block_info, signer, rng, platform_version);
-        let (mut new_identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
+            self.identity_state_transitions_for_block(block_info, signer, rng, platform_version, config);
+        let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
 
         if block_info.height == 1 {
