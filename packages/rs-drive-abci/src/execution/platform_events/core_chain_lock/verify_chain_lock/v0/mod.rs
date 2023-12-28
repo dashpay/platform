@@ -17,16 +17,19 @@ where
         &self,
         platform_state: &PlatformState,
         chain_lock: &ChainLock,
+        make_sure_core_is_synced: bool,
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
         // first we try to verify the chain lock locally
         if let Some(valid) =
             self.verify_chain_lock_locally(platform_state, chain_lock, platform_version)?
         {
+            if valid && make_sure_core_is_synced {
+                self.make_sure_core_is_synced_to_chain_lock(chain_lock, platform_version)?;
+            }
             Ok(valid)
         } else {
-            // if we were not able to validate it locally then we should go to core
-            self.verify_chain_lock_through_core(chain_lock, platform_version)
+            self.verify_chain_lock_through_core(chain_lock, make_sure_core_is_synced, platform_version)
         }
     }
 }

@@ -24,8 +24,11 @@ pub trait CoreRPCLike {
     /// Get block hash by height
     fn get_block_hash(&self, height: CoreHeight) -> Result<BlockHash, Error>;
 
-    /// Get block hash by height
-    fn get_best_chain_lock(&self) -> Result<CoreChainLock, Error>;
+    /// Get the best chain lock
+    fn get_best_chain_lock(&self) -> Result<ChainLock, Error>;
+
+    /// Submit a chain lock
+    fn submit_chain_lock(&self, chain_lock: &ChainLock) -> Result<bool, Error>;
 
     /// Get transaction
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
@@ -109,12 +112,9 @@ pub trait CoreRPCLike {
     ) -> Result<bool, Error>;
 
     /// Verify a chain lock signature
-    /// If `max_height` is provided the chain lock will be verified
-    /// against quorums available at this height
     fn verify_chain_lock(
         &self,
         chain_lock: &ChainLock,
-        max_height: Option<u32>,
     ) -> Result<bool, Error>;
 
     /// Returns masternode sync status
@@ -202,19 +202,12 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self.inner.get_block_hash(height))
     }
 
-    fn get_best_chain_lock(&self) -> Result<CoreChainLock, Error> {
-        //no need to retry on this one
-        let GetBestChainLockResult {
-            blockhash,
-            height,
-            signature,
-            known_block: _,
-        } = self.inner.get_best_chain_lock()?;
-        Ok(CoreChainLock {
-            core_block_height: height,
-            core_block_hash: blockhash.to_byte_array().to_vec(),
-            signature,
-        })
+    fn get_best_chain_lock(&self) -> Result<ChainLock, Error> {
+        retry!(self.inner.get_best_chain_lock())
+    }
+
+    fn submit_chain_lock(&self, chain_lock: &ChainLock) -> Result<bool, Error> {
+        retry!(self.inner.submit_chain_lock(chain_lock))
     }
 
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error> {
@@ -300,19 +293,16 @@ impl CoreRPCLike for DefaultCoreRPC {
     }
 
     /// Verify a chain lock signature
-    /// If `max_height` is provided the chain lock will be verified
-    /// against quorums available at this height
     fn verify_chain_lock(
         &self,
         chain_lock: &ChainLock,
-        max_height: Option<u32>,
     ) -> Result<bool, Error> {
         let block_hash = chain_lock.block_hash.to_string();
         let signature = hex::encode(chain_lock.signature);
 
         retry!(self
             .inner
-            .get_verifychainlock(block_hash.as_str(), &signature, max_height))
+            .get_verifychainlock(block_hash.as_str(), &signature, Some(chain_lock.block_height)))
     }
 
     /// Returns masternode sync status

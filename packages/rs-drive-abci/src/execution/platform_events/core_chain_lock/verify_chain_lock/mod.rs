@@ -16,10 +16,13 @@ where
     C: CoreRPCLike,
 {
     /// Verify the chain lock
+    /// If submit is true, we try to submit the chain lock if it is considered valid or we can not check to see if it is
+    /// valid on platform.
     pub fn verify_chain_lock(
         &self,
         platform_state: &PlatformState,
         chain_lock: &ChainLock,
+        make_sure_core_is_synced: bool,
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
         match platform_version
@@ -28,7 +31,7 @@ where
             .core_chain_lock
             .verify_chain_lock
         {
-            0 => self.verify_chain_lock_v0(platform_state, chain_lock, platform_version),
+            0 => self.verify_chain_lock_v0(platform_state, chain_lock, make_sure_core_is_synced, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "verify_chain_lock".to_string(),
                 known_versions: vec![0],

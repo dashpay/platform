@@ -18,6 +18,7 @@ where
     pub fn verify_chain_lock_through_core(
         &self,
         chain_lock: &ChainLock,
+        submit: bool,
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
         match platform_version
@@ -26,7 +27,7 @@ where
             .core_chain_lock
             .verify_chain_lock_through_core
         {
-            0 => self.verify_chain_lock_through_core_v0(chain_lock),
+            0 => self.verify_chain_lock_through_core_v0(chain_lock, submit),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "verify_chain_lock_through_core".to_string(),
                 known_versions: vec![0],

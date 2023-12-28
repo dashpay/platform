@@ -202,7 +202,7 @@ pub struct DriveAbciCoreChainLockMethodVersions {
     pub verify_chain_lock: FeatureVersion,
     pub verify_chain_lock_locally: FeatureVersion,
     pub verify_chain_lock_through_core: FeatureVersion,
-    pub make_sure_core_is_synced_to_height: FeatureVersion,
+    pub make_sure_core_is_synced_to_chain_lock: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

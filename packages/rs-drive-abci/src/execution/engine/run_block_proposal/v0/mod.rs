@@ -46,6 +46,7 @@ where
     /// # Arguments
     ///
     /// * `block_proposal` - The block proposal to be processed.
+    /// * `known_from_us` - Do we know that we made this block proposal?.
     /// * `transaction` - The transaction associated with the block proposal.
     ///
     /// # Returns
@@ -63,6 +64,7 @@ where
     pub(super) fn run_block_proposal_v0(
         &self,
         block_proposal: block_proposal::v0::BlockProposal,
+        known_from_us: bool,
         epoch_info: EpochInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
@@ -125,19 +127,22 @@ where
 
         // If there is a core chain lock update, we should start by verifying it
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
-            let valid = self.verify_chain_lock(
-                &block_platform_state,
-                core_chain_lock_update,
-                platform_version,
-            )?;
-            if !valid {
-                return Ok(ValidationResult::new_with_error(
-                    AbciError::InvalidChainLock(format!(
-                        "received a chain lock for height {} that is invalid {:?}",
-                        block_info.height, core_chain_lock_update,
-                    ))
-                    .into(),
-                ));
+            if !known_from_us {
+                let valid = self.verify_chain_lock(
+                    &block_platform_state,
+                    core_chain_lock_update,
+                    true, // if it's not known from us, then we should try submitting it
+                    platform_version,
+                )?;
+                if !valid {
+                    return Ok(ValidationResult::new_with_error(
+                        AbciError::InvalidChainLock(format!(
+                            "received a chain lock for height {} that is invalid {:?}",
+                            block_info.height, core_chain_lock_update,
+                        ))
+                            .into(),
+                    ));
+                }
             }
         }
 
