@@ -1,8 +1,15 @@
 use crate::error::Error;
 use crate::execution::types::execution_operation::OperationLike;
 use dpp::fee::Credits;
-use dpp::identity::KeyType;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::{KeyType, PartialIdentity};
+use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
 use dpp::version::PlatformVersion;
+use drive::state_transition_action::StateTransitionAction;
+use sha2::digest::typenum::op;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SignatureVerificationOperation {
@@ -24,5 +31,53 @@ impl OperationLike for SignatureVerificationOperation {
 
     fn storage_cost(&self, _platform_version: &PlatformVersion) -> Result<Credits, Error> {
         Ok(0)
+    }
+}
+
+pub fn signature_verification_operations_from_state_transition(
+    state_transition: &StateTransition,
+    identity: Option<&PartialIdentity>,
+) -> Option<Vec<SignatureVerificationOperation>> {
+    match state_transition {
+        StateTransition::IdentityCreate(state_transition) => Some(
+            state_transition
+                .public_keys()
+                .iter()
+                .map(|key| SignatureVerificationOperation::new(key.key_type()))
+                .collect(),
+        ),
+        StateTransition::IdentityUpdate(state_transition) => {
+            let mut operations = vec![];
+
+            let identity = identity.unwrap();
+            let key = identity
+                .loaded_public_keys
+                .get(&state_transition.signature_public_key_id())
+                .unwrap();
+
+            operations.push(SignatureVerificationOperation::new(key.key_type()));
+            operations.extend(
+                state_transition
+                    .public_keys_to_add()
+                    .iter()
+                    .map(|key| SignatureVerificationOperation::new(key.key_type())),
+            );
+
+            Some(operations)
+        }
+        StateTransition::IdentityTopUp(_) => None,
+        state_transition => {
+            let mut operations = vec![];
+
+            let identity = identity.unwrap();
+            let key = identity
+                .loaded_public_keys
+                .get(&state_transition.signature_public_key_id().unwrap())
+                .unwrap();
+
+            operations.push(SignatureVerificationOperation::new(key.key_type()));
+
+            Some(operations)
+        }
     }
 }

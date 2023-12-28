@@ -164,6 +164,7 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
         }
 
         let operation = SignatureVerificationOperation::new(public_key.key_type());
+        // TODO: execution context isn't really used anywhere. Remove?
         execution_context.add_operation(ExecutionOperation::SignatureVerification(operation));
 
         // if execution_context.is_dry_run() {
