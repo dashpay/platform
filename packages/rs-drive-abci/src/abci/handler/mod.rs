@@ -52,6 +52,7 @@ use tenderdash_abci::proto::abci::{
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
     ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery, TxRecord,
 };
+use tenderdash_abci::proto::types::CoreChainLock;
 use tenderdash_abci::proto::types::VoteExtensionType;
 
 use super::AbciError;
@@ -181,7 +182,7 @@ where
 
         let core_chain_lock_update = match self.platform.core_rpc.get_best_chain_lock() {
             Ok(latest_chain_lock) => {
-                if request.core_chain_locked_height < latest_chain_lock.core_block_height {
+                if request.core_chain_locked_height < latest_chain_lock.block_height {
                     Some(latest_chain_lock)
                 } else {
                     None
@@ -217,10 +218,10 @@ where
             // todo: find a way to re-enable this without destroying CI
             tracing::debug!(
                 "propose chain lock update to height {} at block {}",
-                core_chain_lock_update.core_block_height,
+                core_chain_lock_update.block_height,
                 request.height
             );
-            block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
+            block_proposal.core_chain_locked_height = core_chain_lock_update.block_height;
         }
 
         // Prepare transaction
@@ -303,7 +304,11 @@ where
             tx_results,
             app_hash: app_hash.to_vec(),
             tx_records,
-            core_chain_lock_update,
+            core_chain_lock_update: Some(CoreChainLock {
+                core_block_hash: core_chain_lock_update.as_ref().unwrap().block_hash.to_byte_array().to_vec(),
+                core_block_height: core_chain_lock_update.as_ref().unwrap().block_height,
+                signature: core_chain_lock_update.as_ref().unwrap().signature.to_bytes().to_vec(),
+            }),
             validator_set_update,
             ..Default::default()
         };

@@ -15,11 +15,9 @@ impl<C> Platform<C>
         chain_lock: &ChainLock,
     ) -> Result<(), Error> {
         // We need to make sure core is synced to the core height we see as valid for the state transitions
+        self.core_rpc.submit_chain_lock(chain_lock)?;
 
-        match self.core_rpc.submit_chain_lock(chain_lock) {
-            Ok(_) => {}
-            Err(_) => {}
-        }
-
+        // If successful, proceed with further logic (if any), or just return Ok(())
+        Ok(())
     }
 }
