@@ -55,7 +55,6 @@ import getHostScopeFactory from './status/scopes/host.js';
 
 import generateToAddressTaskFactory from './listr/tasks/wallet/generateToAddressTaskFactory.js';
 import registerMasternodeTaskFactory from './listr/tasks/registerMasternodeTaskFactory.js';
-import featureFlagTaskFactory from './listr/tasks/platform/featureFlagTaskFactory.js';
 import startNodeTaskFactory from './listr/tasks/startNodeTaskFactory.js';
 
 import createTenderdashRpcClient from './tenderdash/createTenderdashRpcClient.js';
@@ -272,7 +271,6 @@ export default async function createDIContainer(options = {}) {
     startGroupNodesTask: asFunction(startGroupNodesTaskFactory).singleton(),
     generateToAddressTask: asFunction(generateToAddressTaskFactory).singleton(),
     registerMasternodeTask: asFunction(registerMasternodeTaskFactory).singleton(),
-    featureFlagTask: asFunction(featureFlagTaskFactory).singleton(),
     startNodeTask: asFunction(startNodeTaskFactory).singleton(),
     stopNodeTask: asFunction(stopNodeTaskFactory).singleton(),
     restartNodeTask: asFunction(restartNodeTaskFactory).singleton(),

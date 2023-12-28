@@ -20,6 +20,8 @@ const dotenvConfig = dotenvSafe.config({
 });
 dotenvExpand(dotenvConfig);
 
+process.env.LOG_LEVEL = 'silent';
+
 const rootPath = process.cwd();
 
 const dapiContainerOptions = {
