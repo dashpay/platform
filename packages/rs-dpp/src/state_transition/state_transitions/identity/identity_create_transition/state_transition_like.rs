@@ -1,5 +1,3 @@
-use crate::identity::state_transition::AssetLockProved;
-use crate::prelude::AssetLockProof;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
@@ -46,12 +44,6 @@ impl StateTransitionLike for IdentityCreateTransition {
     fn owner_id(&self) -> Identifier {
         match self {
             IdentityCreateTransition::V0(transition) => transition.owner_id(),
-        }
-    }
-
-    fn asset_lock(&self) -> Option<&AssetLockProof> {
-        match self {
-            IdentityCreateTransition::V0(transition) => transition.asset_lock(),
         }
     }
 }

@@ -16,3 +16,11 @@ pub trait AssetLockProved {
     /// Get asset lock proof
     fn asset_lock_proof(&self) -> &AssetLockProof;
 }
+
+/// Objects what optionally has Asset Lock Proof
+pub trait OptionallyAssetLockProved {
+    /// Get asset lock proof
+    fn optional_asset_lock_proof(&self) -> Option<&AssetLockProof> {
+        None
+    }
+}

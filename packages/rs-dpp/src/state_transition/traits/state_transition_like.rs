@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use platform_value::BinaryData;
 
-use crate::prelude::{AssetLockProof, Identifier};
+use crate::prelude::Identifier;
 use crate::version::FeatureVersion;
 
 use crate::state_transition::StateTransitionType;
@@ -56,8 +56,4 @@ pub trait StateTransitionLike:
 
     /// Get owner ID
     fn owner_id(&self) -> Identifier;
-
-    fn asset_lock(&self) -> Option<&AssetLockProof> {
-        None
-    }
 }
