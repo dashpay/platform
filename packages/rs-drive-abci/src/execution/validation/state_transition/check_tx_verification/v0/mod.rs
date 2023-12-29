@@ -1,30 +1,20 @@
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
+use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
-use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 
-use dpp::serialization::Signable;
 use dpp::state_transition::{StateTransition};
-use drive::state_transition_action::StateTransitionAction;
-use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
-use drive::drive::Drive;
-use drive::grovedb::TransactionArg;
-use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::execution::validation::state_transition::common::asset_lock::proof::AssetLockProofStateValidation;
+use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{ValidateStateTransitionIdentitySignature};
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::execution::validation::state_transition::processor::v0::{StateTransitionSignatureValidationV0, StateTransitionStructureValidationV0};
-use crate::execution::validation::state_transition::state_transitions::identity_update::identity_and_signatures::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
-use crate::execution::validation::state_transition::state_transitions::identity_create::identity_and_signatures::v0::IdentityCreateStateTransitionIdentityAndSignaturesValidationV0;
-use crate::execution::validation::state_transition::state_transitions::identity_top_up::identity_retrieval::v0::IdentityTopUpStateTransitionIdentityRetrievalV0;
-pub(super) fn check_tx_state_transition_to_execution_event_v0<'a, C: CoreRPCLike>(
+pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     state_transition: StateTransition,
     check_tx_level: CheckTxLevel,
@@ -33,7 +23,7 @@ pub(super) fn check_tx_state_transition_to_execution_event_v0<'a, C: CoreRPCLike
     match check_tx_level {
         CheckTxLevel::FirstTimeCheck => {
             if state_transition.requires_check_tx_full_validation() {
-                return Ok(process_state_transition(platform, state_transition, None)?.map(Some));
+                Ok(process_state_transition(platform, state_transition, None)?.map(Some))
             } else {
                 // we need to validate the structure, the fees, and the signature
                 let mut state_transition_execution_context =
@@ -142,8 +132,8 @@ pub(super) fn check_tx_state_transition_to_execution_event_v0<'a, C: CoreRPCLike
             if let Some(asset_lock) = state_transition.asset_lock() {
                 // we should check that the asset lock is still valid
                 let validation_result =
-                    asset_lock.validate_state(platform, None, platform_version)?;
-                return if validation_result.is_valid() {
+                    asset_lock.verify_is_not_spent(platform, None, platform_version)?;
+                if validation_result.is_valid() {
                     Ok(ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_data(None))
                 } else {
                     Ok(
@@ -151,7 +141,7 @@ pub(super) fn check_tx_state_transition_to_execution_event_v0<'a, C: CoreRPCLike
                             validation_result.errors,
                         ),
                     )
-                };
+                }
             } else {
                 let state_transition_action_result =
                     state_transition.transform_into_action(platform, true, None)?;

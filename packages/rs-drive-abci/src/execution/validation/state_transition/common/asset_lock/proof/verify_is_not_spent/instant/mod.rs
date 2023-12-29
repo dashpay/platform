@@ -1,21 +1,20 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::validation::state_transition::common::asset_lock::proof::AssetLockProofStateValidation;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
-    InvalidAssetLockProofCoreChainHeightError,
 };
-use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::platform_value::Bytes36;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
+use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 
 // TODO: Versioning
-impl AssetLockProofStateValidation for ChainAssetLockProof {
-    fn validate_state<C: CoreRPCLike>(
+impl AssetLockProofVerifyIsNotSpent for InstantAssetLockProof {
+    fn verify_is_not_spent<C>(
         &self,
         platform_ref: &PlatformRef<C>,
         transaction: TransactionArg,
@@ -23,20 +22,17 @@ impl AssetLockProofStateValidation for ChainAssetLockProof {
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let mut result = SimpleConsensusValidationResult::default();
 
-        if platform_ref.block_info.core_height < self.core_chain_locked_height {
-            result.add_error(InvalidAssetLockProofCoreChainHeightError::new(
-                self.core_chain_locked_height,
-                platform_ref.block_info.core_height,
-            ));
-
-            return Ok(result);
-        }
-
         // Make sure that asset lock isn't spent yet
 
-        let outpoint_bytes = self.out_point.try_into().map_err(|e| {
-            Error::Execution(ExecutionError::Conversion(String::from(
-                "can't convert output to bytes",
+        let Some(asset_lock_outpoint) = self.out_point() else {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "asset lock outpoint must be present",
+            )));
+        };
+
+        let outpoint_bytes = asset_lock_outpoint.try_into().map_err(|e| {
+            Error::Execution(ExecutionError::Conversion(format!(
+                "can't convert output to bytes: {e}",
             )))
         })?;
 
@@ -48,8 +44,8 @@ impl AssetLockProofStateValidation for ChainAssetLockProof {
 
         if is_already_spent {
             result.add_error(IdentityAssetLockTransactionOutPointAlreadyExistsError::new(
-                self.out_point.txid,
-                self.out_point.vout as usize,
+                asset_lock_outpoint.txid,
+                asset_lock_outpoint.vout as usize,
             ))
         }
 

@@ -22,7 +22,7 @@ use drive::grovedb::TransactionArg;
 use dpp::version::DefaultForPlatformVersion;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::execution::validation::state_transition::common::asset_lock::proof::AssetLockProofStateValidation;
+use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
 use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_in_state;
 
@@ -66,7 +66,7 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
         }
 
         // Validate asset lock proof state
-        validation_result.merge(self.asset_lock_proof().validate_state(
+        validation_result.merge(self.asset_lock_proof().validate(
             platform,
             tx,
             platform_version,
