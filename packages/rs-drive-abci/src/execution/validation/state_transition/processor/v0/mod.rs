@@ -15,8 +15,8 @@ use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
-use crate::execution::types::execution_operation::signature_verification_operation::signature_verification_operations_from_state_transition;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::types::validation_operation::signature_verification_operation::signature_verification_operations_from_state_transition;
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{ValidateStateTransitionIdentitySignature};
 use crate::execution::validation::state_transition::state_transitions::identity_update::identity_and_signatures::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_create::identity_and_signatures::v0::IdentityCreateStateTransitionIdentityAndSignaturesValidationV0;
@@ -92,7 +92,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     // Validating state
     let result = state_transition.validate_state(action, platform, transaction)?;
 
-    let signature_verification_operations = signature_verification_operations_from_state_transition(
+    let validation_operations = signature_verification_operations_from_state_transition(
         &state_transition,
         maybe_identity.as_ref(),
     );
@@ -102,7 +102,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
             action,
             maybe_identity,
             platform.state.epoch_ref(),
-            signature_verification_operations,
+            validation_operations,
             platform_version,
         )
     })

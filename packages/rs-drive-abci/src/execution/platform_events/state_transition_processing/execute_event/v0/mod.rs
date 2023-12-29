@@ -1,6 +1,7 @@
 use crate::error::Error;
+use crate::error::Error::Protocol;
 use crate::execution::types::execution_event::ExecutionEvent;
-use crate::execution::types::execution_operation::OperationLike;
+use crate::execution::types::validation_operation::OperationLike;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult;
 use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult::{
@@ -9,12 +10,9 @@ use crate::platform_types::state_transition_execution_result::StateTransitionExe
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
-use dpp::fee::Credits;
-use dpp::identity::KeyType;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0Methods;
-use drive::error::Error::Fee;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C>
@@ -59,13 +57,13 @@ where
             ExecutionEvent::PaidFromAssetLockDriveEvent {
                 identity,
                 operations,
-                signature_verifications,
+                validation_operations,
                 ..
             }
             | ExecutionEvent::PaidDriveEvent {
                 identity,
                 operations,
-                signature_verifications,
+                validation_operations,
             } => {
                 if validation_result.is_valid_with_data() {
                     //todo: make this into an atomic event with partial batches
@@ -80,22 +78,11 @@ where
                         )
                         .map_err(Error::Drive)?;
 
-                    // Apply signature verification costs
-                    if let Some(signature_verifications) = signature_verifications {
-                        let total_verification_cost: Credits =
-                            signature_verifications.iter().fold(0, |acc, op| {
-                                // TODO: handle error
-                                let cost = op.processing_cost(platform_version).unwrap();
-                                // TODO: handle error?
-                                acc.checked_add(cost).unwrap()
-                            });
-                        // TODO: handle error
+                    for validation_operation in validation_operations {
+                        let cost = validation_operation.processing_cost(platform_version)?;
                         individual_fee_result
-                            .checked_add_assign(FeeResult::default_with_fees(
-                                0,
-                                total_verification_cost,
-                            ))
-                            .unwrap();
+                            .checked_add_assign(FeeResult::default_with_fees(0, cost))
+                            .map_err(|err| (Protocol(err)))?;
                     }
 
                     let balance_change = individual_fee_result.into_balance_change(identity.id);

@@ -13,9 +13,7 @@ use dpp::identity::PartialIdentity;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
 
-use crate::execution::types::execution_operation::signature_verification_operation::{
-    signature_verification_operations_from_state_transition, SignatureVerificationOperation,
-};
+use crate::execution::types::validation_operation::ValidationOperation;
 use drive::drive::batch::transitions::DriveHighLevelOperationConverter;
 use drive::drive::batch::DriveOperation;
 
@@ -28,7 +26,7 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         identity: PartialIdentity,
         /// the operations that the identity is requesting to perform
         operations: Vec<DriveOperation<'a>>,
-        signature_verifications: Option<Vec<SignatureVerificationOperation>>,
+        validation_operations: Vec<ValidationOperation>,
     },
     /// A drive event that is paid from an asset lock
     PaidFromAssetLockDriveEvent {
@@ -38,7 +36,7 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         added_balance: Credits,
         /// the operations that should be performed
         operations: Vec<DriveOperation<'a>>,
-        signature_verifications: Option<Vec<SignatureVerificationOperation>>,
+        validation_operations: Vec<ValidationOperation>,
     },
     /// A drive event that is free
     FreeDriveEvent {
@@ -57,7 +55,7 @@ impl<'a> ExecutionEvent<'a> {
         Self::PaidDriveEvent {
             identity,
             operations: vec![operation],
-            signature_verifications: Some(vec![]),
+            validation_operations: vec![],
         }
     }
     /// Creates a new identity Insertion Event
@@ -68,7 +66,7 @@ impl<'a> ExecutionEvent<'a> {
         Self::PaidDriveEvent {
             identity,
             operations: vec![operation],
-            signature_verifications: Some(vec![]),
+            validation_operations: vec![],
         }
     }
     /// Creates a new identity Insertion Event
@@ -79,7 +77,7 @@ impl<'a> ExecutionEvent<'a> {
         Self::PaidDriveEvent {
             identity,
             operations,
-            signature_verifications: Some(vec![]),
+            validation_operations: vec![],
         }
     }
 }
@@ -89,7 +87,7 @@ impl<'a> ExecutionEvent<'a> {
         action: StateTransitionAction,
         identity: Option<PartialIdentity>,
         epoch: &Epoch,
-        signature_verification_operations: Option<Vec<SignatureVerificationOperation>>,
+        validation_operations: Vec<ValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         match &action {
@@ -101,7 +99,7 @@ impl<'a> ExecutionEvent<'a> {
                     identity,
                     added_balance: 0,
                     operations,
-                    signature_verifications: signature_verification_operations,
+                    validation_operations,
                 })
             }
             StateTransitionAction::IdentityTopUpAction(identity_top_up_action) => {
@@ -113,7 +111,7 @@ impl<'a> ExecutionEvent<'a> {
                         identity,
                         added_balance,
                         operations,
-                        signature_verifications: signature_verification_operations,
+                        validation_operations,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -128,7 +126,7 @@ impl<'a> ExecutionEvent<'a> {
                     Ok(PaidDriveEvent {
                         identity,
                         operations,
-                        signature_verifications: signature_verification_operations,
+                        validation_operations,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
