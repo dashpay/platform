@@ -26,7 +26,7 @@ use rs_dapi_client::mock::MockDapiClient;
 pub use rs_dapi_client::AddressList;
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
-    Dapi, DapiClient, DapiClientError, RequestSettings,
+    DapiClient, DapiClientError, DapiRequestExecutor, RequestSettings,
 };
 use tokio::sync::Mutex;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
@@ -308,7 +308,7 @@ impl ContextProvider for Sdk {
 }
 
 #[async_trait::async_trait]
-impl Dapi for Sdk {
+impl DapiRequestExecutor for Sdk {
     async fn execute<R: TransportRequest>(
         &self,
         request: R,
@@ -322,6 +322,17 @@ impl Dapi for Sdk {
                 dapi_guard.execute(request, settings).await
             }
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl DapiRequestExecutor for &Sdk {
+    async fn execute<R: TransportRequest>(
+        &self,
+        request: R,
+        settings: RequestSettings,
+    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
+        DapiRequestExecutor::execute(self, request, settings).await
     }
 }
 
@@ -485,7 +496,7 @@ impl SdkBuilder {
     ///
     /// For more control over the configuration, use [SdkBuilder::with_wallet()] and [SdkBuilder::with_context_provider()].
     ///
-    /// This is temporary implementation, intended for development purposes.   
+    /// This is temporary implementation, intended for development purposes.
     pub fn with_core(mut self, ip: &str, port: u16, user: &str, password: &str) -> Self {
         self.core_ip = ip.to_string();
         self.core_port = port;
