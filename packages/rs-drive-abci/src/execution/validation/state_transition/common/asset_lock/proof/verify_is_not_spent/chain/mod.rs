@@ -23,7 +23,7 @@ impl AssetLockProofVerifyIsNotSpent for ChainAssetLockProof {
 
         // Make sure that asset lock isn't spent yet
 
-        let outpoint_bytes = self.out_point.try_into().map_err(|e| {
+        let outpoint_bytes = self.out_point.try_into().map_err(|_e| {
             Error::Execution(ExecutionError::Conversion(String::from(
                 "can't convert output to bytes",
             )))

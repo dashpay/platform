@@ -5,7 +5,7 @@ use serde_json::Value as JsonValue;
 
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::{Identifier, Revision, TimestampMillis};
-use dpp::util::json_schema::JsonSchemaExt;
+
 use dpp::util::json_value::JsonValueExt;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -191,7 +191,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=set)]
     pub fn set(&mut self, path: String, js_value_to_set: JsValue) -> Result<(), JsValue> {
-        let mut value: Value = js_value_to_set.with_serde_to_platform_value()?;
+        let value: Value = js_value_to_set.with_serde_to_platform_value()?;
         self.0.set_untrusted(&path, value).with_js_error()
     }
 
@@ -260,7 +260,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=getMetadata)]
     pub fn get_metadata(&self) -> Option<MetadataWasm> {
-        self.0.metadata().clone().map(Into::into)
+        (*self.0.metadata()).map(Into::into)
     }
 
     #[wasm_bindgen(js_name=setMetadata)]

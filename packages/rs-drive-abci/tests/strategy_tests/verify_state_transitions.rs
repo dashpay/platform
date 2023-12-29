@@ -1,12 +1,13 @@
+use dapi_grpc::platform::v0::get_proofs_request::{get_proofs_request_v0, GetProofsRequestV0};
 use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
 use dapi_grpc::platform::VersionedGrpcResponse;
-
-use dapi_grpc::platform::v0::get_proofs_request::{get_proofs_request_v0, GetProofsRequestV0};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::Document;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
 use drive::drive::Drive;
@@ -21,9 +22,6 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 use prost::Message;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransition;
@@ -34,7 +32,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     expected_root_hash: &[u8; 32],
     state_transitions: &[(StateTransition, ExecTxResult)],
     block_info: &BlockInfo,
-    expected_validation_errors: &Vec<u32>,
+    expected_validation_errors: &[u32],
     platform_version: &PlatformVersion,
 ) -> bool {
     let state = abci_app.platform.state.read().unwrap();
@@ -85,7 +83,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
         })
         .collect::<Vec<_>>();
 
-    for (state_transition, action, was_executed) in &actions {
+    for (_state_transition, action, was_executed) in &actions {
         let mut proofs_request = GetProofsRequestV0 {
             identities: vec![],
             contracts: vec![],

@@ -4,13 +4,13 @@ use crate::BlockHeight;
 use dashcore_rpc::dashcore;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::created_data_contract::CreatedDataContract;
+
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
-    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
+    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, OperationType,
 };
 
 use dpp::document::DocumentV0Getters;
@@ -50,7 +50,7 @@ use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+
 use simple_signer::signer::SimpleSigner;
 
 #[derive(Clone, Debug, Default)]

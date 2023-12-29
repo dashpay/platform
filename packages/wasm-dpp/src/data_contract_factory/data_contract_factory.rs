@@ -1,5 +1,4 @@
 use std::convert::TryFrom;
-use std::sync::Arc;
 
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::{data_contract::DataContractFactory, platform_value, prelude::Identifier, ProtocolError};
@@ -9,13 +8,7 @@ use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::utils::{ToSerdeJSONExt, WithJsError};
 
 use crate::data_contract::{DataContractCreateTransitionWasm, DataContractWasm};
-use crate::{
-    data_contract::errors::InvalidDataContractError,
-    errors::{from_dpp_err, protocol_error::from_protocol_error},
-    with_js_error,
-};
-
-use dpp::util::entropy_generator::EntropyGenerator;
+use crate::{errors::protocol_error::from_protocol_error, with_js_error};
 
 #[wasm_bindgen(js_name=DataContractFactory)]
 pub struct DataContractFactoryWasm(DataContractFactory);

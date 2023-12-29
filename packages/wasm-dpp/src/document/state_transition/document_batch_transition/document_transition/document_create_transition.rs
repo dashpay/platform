@@ -1,43 +1,10 @@
-use std::convert;
-use std::convert::TryInto;
-
-use serde_json::Value as JsonValue;
-
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::platform_value::btreemap_extensions::{
-    BTreeValueMapHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
-};
-use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::platform_value::ReplacementType;
 use dpp::prelude::Revision;
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
-use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+
 use dpp::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
-use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
-use dpp::{
-    document::INITIAL_REVISION,
-    prelude::{DataContract, Identifier},
-    state_transition::documents_batch_transition::{
-        document_create_transition, DocumentsBatchTransition,
-    },
-    util::json_schema::JsonSchemaExt,
-    ProtocolError,
-};
-use serde::Serialize;
+
+use dpp::document::INITIAL_REVISION;
+
 use wasm_bindgen::prelude::*;
-
-use crate::{
-    buffer::Buffer,
-    document::document_batch_transition::document_transition::to_object,
-    identifier::IdentifierWrapper,
-    lodash::lodash_set,
-    utils::{ToSerdeJSONExt, WithJsError},
-};
-
-use crate::data_contract::DataContractWasm;
-use crate::document::BinaryType;
 
 #[wasm_bindgen(js_name=DocumentCreateTransition)]
 #[derive(Debug, Clone)]
