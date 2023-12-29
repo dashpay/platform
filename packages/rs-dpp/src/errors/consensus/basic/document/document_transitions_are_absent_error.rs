@@ -13,6 +13,12 @@ use thiserror::Error;
 #[platform_serialize(unversioned)]
 pub struct DocumentTransitionsAreAbsentError {}
 
+impl Default for DocumentTransitionsAreAbsentError {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DocumentTransitionsAreAbsentError {
     pub fn new() -> Self {
         Self {}

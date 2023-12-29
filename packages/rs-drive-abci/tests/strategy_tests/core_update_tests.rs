@@ -259,7 +259,7 @@ mod tests {
             ..Default::default()
         };
 
-        let quorum_size = 100;
+        let _quorum_size = 100;
 
         let config = PlatformConfig {
             quorum_size,

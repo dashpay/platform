@@ -82,7 +82,7 @@ pub mod transitions;
 ///
 /// # Note
 /// Ensure that when using or updating the `Strategy`, all associated operations, identities, and contracts are coherent with the intended workflow or simulation. Inconsistencies might lead to unexpected behaviors or simulation failures.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct Strategy {
     pub contracts_with_updates: Vec<(
         CreatedDataContract,
@@ -92,18 +92,6 @@ pub struct Strategy {
     pub start_identities: Vec<(Identity, StateTransition)>,
     pub identities_inserts: Frequency,
     pub signer: Option<SimpleSigner>,
-}
-
-impl Default for Strategy {
-    fn default() -> Self {
-        Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency::default(),
-            signer: None,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Encode, Decode)]

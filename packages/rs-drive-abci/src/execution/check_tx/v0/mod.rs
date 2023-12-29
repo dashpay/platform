@@ -7,7 +7,9 @@ use crate::platform_types::state_transition_execution_result::StateTransitionExe
 #[cfg(test)]
 use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult::ConsensusExecutionError;
 use crate::rpc::core::CoreRPCLike;
-
+#[cfg(test)]
+use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
@@ -138,7 +140,7 @@ mod tests {
     use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 
     use dpp::identity::KeyType::ECDSA_SECP256K1;
-    use dpp::identity::{Identity, IdentityV0, KeyType, Purpose, SecurityLevel};
+    use dpp::identity::{Identity, IdentityV0, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
     use dpp::serialization::{PlatformSerializable, Signable};
 
@@ -235,7 +237,7 @@ mod tests {
         let check_result = platform.check_tx(&tx).expect("expected to check tx");
         assert!(check_result.is_valid());
 
-        let _result = platform
+        platform
             .platform
             .process_raw_state_transitions(
                 &vec![tx],
@@ -1104,7 +1106,7 @@ mod tests {
             id: 2,
             purpose: Purpose::AUTHENTICATION,
             security_level: SecurityLevel::HIGH,
-            key_type: KeyType::ECDSA_SECP256K1,
+            key_type: ECDSA_SECP256K1,
             read_only: false,
             data: new_key_pair.public_key().serialize().to_vec().into(),
             signature: Default::default(),
