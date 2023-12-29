@@ -93,6 +93,10 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
             })),
         }
     }
+
+    fn requires_state_to_validate_structure(&self) -> bool {
+        true
+    }
 }
 
 impl StateTransitionStateValidationV0 for DocumentsBatchTransition {

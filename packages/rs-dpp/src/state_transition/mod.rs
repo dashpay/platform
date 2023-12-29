@@ -245,27 +245,9 @@ pub enum StateTransition {
 }
 
 impl StateTransition {
-    /// This means we should transform into the action before validation of the structure
-    pub fn requires_state_to_validate_structure(&self) -> bool {
-        matches!(self, StateTransition::DocumentsBatch(_))
-    }
-
-    /// This means we should do the full validation on check_tx
-    pub fn requires_check_tx_full_validation(&self) -> bool {
-        matches!(
-            self,
-            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_)
-        )
-    }
-
     /// Uses asset locks for funding
     pub fn asset_lock(&self) -> Option<&AssetLockProof> {
         call_method!(self, asset_lock)
-    }
-
-    /// This means we should transform into the action before validation of the identity and signatures
-    pub fn requires_state_to_validate_identity_and_signatures(&self) -> bool {
-        matches!(self, StateTransition::DocumentsBatch(_))
     }
 
     pub fn is_identity_signed(&self) -> bool {

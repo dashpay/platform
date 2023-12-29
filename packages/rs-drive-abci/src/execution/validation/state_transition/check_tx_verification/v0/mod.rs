@@ -14,6 +14,22 @@ use crate::execution::validation::state_transition::common::asset_lock::proof::v
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{ValidateStateTransitionIdentitySignature};
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::execution::validation::state_transition::processor::v0::{StateTransitionSignatureValidationV0, StateTransitionStructureValidationV0};
+
+/// A trait for validating state transitions within a blockchain.
+pub(crate) trait StateTransitionCheckTxValidationV0 {
+    /// This means we should do the full validation on check_tx
+    fn requires_check_tx_full_validation(&self) -> bool;
+}
+
+impl StateTransitionCheckTxValidationV0 for StateTransition {
+    fn requires_check_tx_full_validation(&self) -> bool {
+        matches!(
+            self,
+            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_)
+        )
+    }
+}
+
 pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     state_transition: StateTransition,
