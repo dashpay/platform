@@ -9,8 +9,9 @@ use crate::errors::consensus::basic::identity::{
     IdentityAssetLockProofLockedTransactionMismatchErrorWasm,
     IdentityAssetLockTransactionIsNotFoundErrorWasm,
     IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm,
-    IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityInsufficientBalanceErrorWasm,
-    InvalidAssetLockProofCoreChainHeightErrorWasm, InvalidAssetLockProofTransactionHeightErrorWasm,
+    IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityCreditTransferToSelfErrorWasm,
+    IdentityInsufficientBalanceErrorWasm, InvalidAssetLockProofCoreChainHeightErrorWasm,
+    InvalidAssetLockProofTransactionHeightErrorWasm,
     InvalidAssetLockTransactionOutputReturnSizeErrorWasm,
     InvalidIdentityAssetLockProofChainLockValidationErrorWasm,
     InvalidIdentityAssetLockTransactionErrorWasm,
@@ -314,6 +315,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::InvalidDataContractIdError(err) => {
             InvalidDataContractIdErrorWasm::from(err).into()
+        }
+        BasicError::IdentityCreditTransferToSelfError(err) => {
+            IdentityCreditTransferToSelfErrorWasm::from(err).into()
         }
         ProtocolVersionParsingError(e) => ProtocolVersionParsingErrorWasm::from(e).into(),
         SerializedObjectParsingError(e) => SerializedObjectParsingErrorWasm::from(e).into(),
