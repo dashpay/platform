@@ -2,8 +2,8 @@ use crate::drive::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::block::epoch::EpochIndex;
-use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+
+
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use nohash_hasher::IntMap;

@@ -1,12 +1,11 @@
 use crate::frequency::Frequency;
 use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
 use crate::operations::{
-    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation,
-    OperationInSerializationFormat, OperationType,
+    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::created_data_contract::{
-    CreatedDataContract, CreatedDataContractInSerializationFormat,
+    CreatedDataContract,
 };
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
@@ -46,7 +45,7 @@ use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+
 use simple_signer::signer::SimpleSigner;
 
 pub mod frequency;
@@ -86,6 +85,7 @@ pub mod transitions;
 /// # Note
 /// Ensure that when using or updating the `Strategy`, all associated operations, identities, and contracts are coherent with the intended workflow or simulation. Inconsistencies might lead to unexpected behaviors or simulation failures.
 #[derive(Clone, Debug, PartialEq)]
+#[derive(Default)]
 pub struct Strategy {
     pub contracts_with_updates: Vec<(
         CreatedDataContract,
@@ -97,17 +97,7 @@ pub struct Strategy {
     pub signer: Option<SimpleSigner>,
 }
 
-impl Default for Strategy {
-    fn default() -> Self {
-        Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency::default(),
-            signer: None,
-        }
-    }
-}
+
 
 #[derive(Clone, Debug, Encode, Decode)]
 struct StrategyInSerializationFormat {

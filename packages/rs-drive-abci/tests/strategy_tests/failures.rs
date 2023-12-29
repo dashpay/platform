@@ -3,7 +3,7 @@ mod tests {
     use crate::execution::run_chain_for_strategy;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
-    use std::collections::{BTreeMap, BTreeSet, HashMap};
+    use std::collections::{BTreeMap, HashMap};
     use strategy_tests::frequency::Frequency;
 
     use crate::strategy::{FailureStrategy, NetworkStrategy};
@@ -17,7 +17,7 @@ mod tests {
     };
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::platform_value::Value;
-    use dpp::prelude::{Identifier, Identity};
+    use dpp::prelude::{Identity};
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::version::PlatformVersion;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;

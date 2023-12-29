@@ -235,7 +235,7 @@ fn unique_event_id() -> [u8; 32] {
 pub(crate) mod tests {
     use std::option::Option::None;
 
-    use tempfile::TempDir;
+    
 
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;

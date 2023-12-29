@@ -9,7 +9,7 @@ use platform_value::{Identifier, Value};
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::identity::SecurityLevel;
 use indexmap::IndexMap;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeSet};
 
 impl DocumentTypeV0Getters for DocumentTypeV0 {
     fn name(&self) -> &String {

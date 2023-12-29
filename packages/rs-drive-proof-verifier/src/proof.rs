@@ -119,7 +119,7 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
@@ -166,7 +166,7 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
 
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
@@ -215,7 +215,7 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
 
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
@@ -380,7 +380,7 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
 
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
@@ -473,7 +473,7 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
 
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
@@ -522,7 +522,7 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
 
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
@@ -595,7 +595,7 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
 
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
@@ -861,7 +861,7 @@ where
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
 
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>

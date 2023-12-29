@@ -1,9 +1,9 @@
 mod v0;
 
-use crate::prelude::AssetLockProof;
+
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::NonConsensusError;
+
 use platform_value::Identifier;
 pub use v0::*;
 

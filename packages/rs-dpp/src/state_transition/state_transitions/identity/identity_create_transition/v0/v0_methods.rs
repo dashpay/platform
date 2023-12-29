@@ -1,5 +1,5 @@
 use crate::{
-    prelude::Identifier, state_transition::StateTransitionType, BlsModule, NonConsensusError,
+    prelude::Identifier, state_transition::StateTransitionType, BlsModule,
     ProtocolError,
 };
 

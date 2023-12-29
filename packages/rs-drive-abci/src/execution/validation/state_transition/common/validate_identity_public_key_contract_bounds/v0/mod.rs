@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::consensus::basic::document::{
-    DataContractNotPresentError, InvalidDocumentTypeError, MissingDocumentTypeError,
+    DataContractNotPresentError, InvalidDocumentTypeError,
 };
 use dpp::consensus::basic::identity::DataContractBoundsNotPresentError;
 use dpp::consensus::basic::BasicError;
@@ -22,7 +22,7 @@ use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyKindRequestType, KeyRequestType, OptionalSingleIdentityPublicKeyOutcome};
-use drive::grovedb::{Transaction, TransactionArg};
+use drive::grovedb::{TransactionArg};
 
 pub(super) fn validate_identity_public_keys_contract_bounds_v0(
     identity_id: Identifier,
@@ -55,7 +55,7 @@ fn validate_identity_public_key_contract_bounds_v0(
     identity_public_key_in_creation: &IdentityPublicKeyInCreation,
     drive: &Drive,
     transaction: TransactionArg,
-    execution_context: &mut StateTransitionExecutionContext,
+    _execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     //todo: we should add to the execution context the cost of fetching contracts

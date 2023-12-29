@@ -327,7 +327,7 @@ mod tests {
                     data_contract
                         .document_type_for_name(extended_document.document_type_name())
                         .unwrap(),
-                    extended_document.entropy().clone(),
+                    *extended_document.entropy(),
                 )
             })
             .collect::<Vec<_>>();

@@ -6,9 +6,9 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
 use crate::rpc::core::CoreRPCLike;
-use dpp::block::extended_block_info::ExtendedBlockInfo;
+
 use dpp::version::PlatformVersion;
-use drive::grovedb::Transaction;
+
 
 impl<C> Platform<C>
 where

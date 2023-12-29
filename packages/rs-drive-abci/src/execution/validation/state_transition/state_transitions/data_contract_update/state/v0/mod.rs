@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use serde::Serialize;
+
 
 use dpp::consensus::basic::data_contract::{
     DataContractInvalidIndexDefinitionUpdateError, IncompatibleDataContractSchemaError,
@@ -16,7 +16,7 @@ use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::schema::{
-    get_operation_and_property_name_json, validate_schema_compatibility, EMPTY_JSON,
+    get_operation_and_property_name_json, validate_schema_compatibility,
 };
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::JsonValue;
@@ -184,7 +184,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             let diffs =
                 validate_schema_compatibility(&old_defs_json, &new_defs_json, platform_version)?;
 
-            if diffs.len() > 0 {
+            if !diffs.is_empty() {
                 let (operation_name, property_name) =
                     get_operation_and_property_name_json(&diffs[0]);
 
@@ -224,7 +224,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 platform_version,
             )?;
 
-            if diffs.len() > 0 {
+            if !diffs.is_empty() {
                 let (operation_name, property_name) =
                     get_operation_and_property_name_json(&diffs[0]);
 

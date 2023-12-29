@@ -19,7 +19,7 @@ use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::borrow::{Borrow, Cow};
+use std::borrow::{Cow};
 use std::collections::HashMap;
 
 /// A wrapper for a document operation

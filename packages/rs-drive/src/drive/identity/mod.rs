@@ -44,7 +44,7 @@ use dpp::identity::{KeyID, Purpose, SecurityLevel};
 /// Everything related to withdrawals
 pub mod withdrawals;
 
-use dpp::identity::KeyType;
+
 #[cfg(feature = "full")]
 use dpp::identity::Purpose::AUTHENTICATION;
 #[cfg(feature = "full")]

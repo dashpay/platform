@@ -1,6 +1,6 @@
 use data_contracts::{DataContractSource, SystemDataContract};
-use platform_value::platform_value;
-use serde_json::json;
+
+
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::DataContractFactory;
@@ -17,7 +17,7 @@ pub fn get_dpns_data_contract_fixture(
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
 
     let DataContractSource {
-        mut document_schemas,
+        document_schemas,
         ..
     } = SystemDataContract::DPNS
         .source()

@@ -1,4 +1,4 @@
-use dashcore_rpc::dashcore::hashes::Hash;
+
 
 use dpp::block::epoch::Epoch;
 
@@ -126,7 +126,7 @@ where
                 block_header.core_chain_locked_height,
                 block_state_info.height(),
                 block_state_info.round(),
-                block_state_info.block_hash().map(|a| hex::encode(a)).unwrap_or("None".to_string()),
+                block_state_info.block_hash().map(hex::encode).unwrap_or("None".to_string()),
                 block_state_info.core_chain_locked_height()
             )));
             return Ok(validation_result.into());

@@ -1,5 +1,5 @@
 use crate::drive::protocol_upgrade::{
-    desired_version_for_validators_path_vec, versions_counter_path_vec,
+    desired_version_for_validators_path_vec,
 };
 use crate::drive::verify::RootHash;
 use crate::drive::Drive;

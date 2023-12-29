@@ -88,7 +88,7 @@ mod tests {
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
     use itertools::Itertools;
-    use rand::distributions::uniform::SampleBorrow;
+    
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
     use tenderdash_abci::proto::types::CoreChainLock;
     use tenderdash_abci::Application;

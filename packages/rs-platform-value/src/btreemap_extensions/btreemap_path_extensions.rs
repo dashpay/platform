@@ -179,7 +179,7 @@ where
 
     fn get_optional_identifier_at_path(&self, path: &str) -> Result<Option<[u8; 32]>, Error> {
         self.get_optional_at_path(path)?
-            .map(|v| v.borrow().to_hash256())
+            .map(|v| v.to_hash256())
             .transpose()
     }
 
@@ -192,7 +192,7 @@ where
     fn get_optional_string_at_path(&self, path: &str) -> Result<Option<String>, Error> {
         self.get_optional_at_path(path)?
             .map(|v| {
-                v.borrow()
+                v
                     .as_text()
                     .map(|str| str.to_string())
                     .ok_or_else(|| Error::StructureError(format!("{path} must be a string")))
@@ -208,7 +208,7 @@ where
     fn get_optional_str_at_path(&self, path: &str) -> Result<Option<&str>, Error> {
         self.get_optional_at_path(path)?
             .map(|v| {
-                v.borrow()
+                v
                     .as_text()
                     .ok_or_else(|| Error::StructureError(format!("{path} must be a string")))
             })
@@ -235,11 +235,11 @@ where
     {
         self.get_optional_at_path(path)?
             .and_then(|v| {
-                let borrowed = v.borrow();
+                let borrowed = v;
                 if borrowed.is_null() {
                     None
                 } else {
-                    Some(v.borrow().to_integer())
+                    Some(v.to_integer())
                 }
             })
             .transpose()
@@ -308,11 +308,11 @@ where
     fn get_optional_bool_at_path(&self, path: &str) -> Result<Option<bool>, Error> {
         self.get_optional_at_path(path)?
             .and_then(|v| {
-                let borrowed = v.borrow();
+                let borrowed = v;
                 if borrowed.is_null() {
                     None
                 } else {
-                    Some(v.borrow().to_bool())
+                    Some(v.to_bool())
                 }
             })
             .transpose()
@@ -329,7 +329,7 @@ where
     ) -> Result<Option<I>, Error> {
         self.get_optional_at_path(path)?
             .map(|v| {
-                v.borrow()
+                v
                     .as_array()
                     .map(|vec| vec.iter().collect())
                     .ok_or_else(|| Error::StructureError(format!("{path} must be a bool")))
@@ -353,7 +353,7 @@ where
     ) -> Result<Option<I>, Error> {
         self.get_optional_at_path(path)?
             .map(|v| {
-                v.borrow()
+                v
                     .as_array()
                     .map(|inner| {
                         inner
@@ -390,7 +390,7 @@ where
     ) -> Result<Option<&Vec<(Value, Value)>>, Error> {
         self.get_optional_at_path(path)?
             .map(|v| {
-                v.borrow()
+                v
                     .as_map()
                     .ok_or_else(|| Error::StructureError(format!("{path} must be a map")))
             })
@@ -406,7 +406,7 @@ where
     ) -> Result<Option<I>, Error> {
         self.get_optional_at_path(path)?
             .map(|v| {
-                v.borrow()
+                v
                     .as_map()
                     .map(|inner| {
                         inner
@@ -438,7 +438,7 @@ where
     ) -> Result<Option<I>, Error> {
         self.get_optional_at_path(path)?
             .map(|v| {
-                v.borrow()
+                v
                     .as_map()
                     .map(|inner| {
                         inner
@@ -466,7 +466,7 @@ where
 
     fn get_optional_hash256_bytes_at_path(&self, path: &str) -> Result<Option<[u8; 32]>, Error> {
         self.get_optional_at_path(path)?
-            .map(|v| v.borrow().to_hash256())
+            .map(|v| v.to_hash256())
             .transpose()
     }
 
@@ -477,7 +477,7 @@ where
 
     fn get_optional_bytes_at_path(&self, path: &str) -> Result<Option<Vec<u8>>, Error> {
         self.get_optional_at_path(path)?
-            .map(|v| v.borrow().to_bytes())
+            .map(|v| v.to_bytes())
             .transpose()
     }
 
@@ -489,7 +489,7 @@ where
 
     fn get_optional_identifier_bytes_at_path(&self, path: &str) -> Result<Option<Vec<u8>>, Error> {
         self.get_optional_at_path(path)?
-            .map(|v| v.borrow().to_identifier_bytes())
+            .map(|v| v.to_identifier_bytes())
             .transpose()
     }
 
@@ -502,7 +502,7 @@ where
 
     fn get_optional_binary_bytes_at_path(&self, path: &str) -> Result<Option<Vec<u8>>, Error> {
         self.get_optional_at_path(path)?
-            .map(|v| v.borrow().to_binary_bytes())
+            .map(|v| v.to_binary_bytes())
             .transpose()
     }
 
@@ -576,11 +576,11 @@ where
     fn get_optional_float_at_path(&self, path: &str) -> Result<Option<f64>, Error> {
         self.get_optional_at_path(path)?
             .and_then(|v| {
-                let borrowed = v.borrow();
+                let borrowed = v;
                 if borrowed.is_null() {
                     None
                 } else {
-                    Some(v.borrow().to_float())
+                    Some(v.to_float())
                 }
             })
             .transpose()
