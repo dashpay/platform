@@ -244,7 +244,7 @@ mod tests {
             .expect("expected to add identity");
 
         let transaction = platform.drive.grove.start_transaction();
-        
+
         let check_result = platform
             .check_tx(&tx, FirstTimeCheck)
             .expect("expected to check tx");
