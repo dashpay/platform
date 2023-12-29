@@ -1945,10 +1945,9 @@ impl<'a> From<&DriveQuery<'a>> for BTreeMap<String, Value> {
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
-    
+
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-    
-    
+
     use dpp::prelude::Identifier;
     use serde_json::json;
     use std::borrow::Cow;

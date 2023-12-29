@@ -187,7 +187,7 @@ mod tests {
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
     use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use crate::tests::json_document::json_document_to_contract;
-    
+
     use regex::Regex;
 
     #[test]

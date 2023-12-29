@@ -34,8 +34,8 @@ use std::convert::TryFrom;
     PartialOrd,
     Encode,
     Decode,
+    Default,
 )]
-#[derive(Default)]
 pub enum KeyType {
     #[default]
     ECDSA_SECP256K1 = 0,
@@ -45,13 +45,13 @@ pub enum KeyType {
     EDDSA_25519_HASH160 = 4,
 }
 
-
-
 lazy_static! {
-    static ref KEY_TYPE_SIZES: HashMap<KeyType, usize> = [(KeyType::ECDSA_SECP256K1, 33),
+    static ref KEY_TYPE_SIZES: HashMap<KeyType, usize> = [
+        (KeyType::ECDSA_SECP256K1, 33),
         (KeyType::BLS12_381, 48),
         (KeyType::ECDSA_HASH160, 20),
-        (KeyType::BIP13_SCRIPT_HASH, 20)]
+        (KeyType::BIP13_SCRIPT_HASH, 20)
+    ]
     .iter()
     .copied()
     .collect();

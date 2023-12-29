@@ -9,7 +9,6 @@ use crate::rpc::core::CoreRPCLike;
 
 use dpp::version::PlatformVersion;
 
-
 impl<C> Platform<C>
 where
     C: CoreRPCLike,

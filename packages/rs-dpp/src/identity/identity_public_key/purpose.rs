@@ -20,8 +20,8 @@ use std::convert::TryFrom;
     PartialOrd,
     Encode,
     Decode,
+    Default,
 )]
-#[derive(Default)]
 pub enum Purpose {
     /// at least one authentication key must be registered for all security levels
     #[default]
@@ -37,8 +37,6 @@ pub enum Purpose {
     /// this key cannot be used for signing documents
     VOTING = 5,
 }
-
-
 
 impl TryFrom<u8> for Purpose {
     type Error = anyhow::Error;

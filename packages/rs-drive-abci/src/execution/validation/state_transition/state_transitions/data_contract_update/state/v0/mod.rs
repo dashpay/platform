@@ -2,7 +2,6 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
-
 use dpp::consensus::basic::data_contract::{
     DataContractInvalidIndexDefinitionUpdateError, IncompatibleDataContractSchemaError,
     InvalidDataContractVersionError,

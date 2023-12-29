@@ -3,7 +3,6 @@ mod v0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::ProtocolError;
 
-
 impl IdentityPublicKeyInCreation {
     pub fn hash(&self) -> Result<[u8; 20], ProtocolError> {
         match self {

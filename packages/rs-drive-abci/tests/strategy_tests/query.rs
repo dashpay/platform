@@ -326,15 +326,9 @@ impl QueryStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::execution::{run_chain_for_strategy};
-    
-    use crate::strategy::{NetworkStrategy};
-    
-    
-    
-    
-    
-    
+    use crate::execution::run_chain_for_strategy;
+
+    use crate::strategy::NetworkStrategy;
 
     use dapi_grpc::platform::v0::get_epochs_info_request::{GetEpochsInfoRequestV0, Version};
     use dapi_grpc::platform::v0::{
@@ -342,22 +336,19 @@ mod tests {
     };
     use dpp::block::epoch::EpochIndex;
     use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
-    use dpp::data_contract::accessors::v0::{DataContractV0Getters};
-    
-    
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    
-    
-    
+
     use dpp::version::PlatformVersion;
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
-    
+
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
-    
+
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
-    
+
     use strategy_tests::Strategy;
-    
+
     use tenderdash_abci::proto::types::CoreChainLock;
     use tenderdash_abci::Application;
 

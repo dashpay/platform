@@ -4,7 +4,6 @@ use crate::platform_types::platform::Platform;
 
 use crate::query::QueryValidationResult;
 
-
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C> {

@@ -1,12 +1,11 @@
 use crate::drive::Drive;
 
 use crate::error::Error;
-use dpp::block::epoch::{EPOCH_KEY_OFFSET};
+use dpp::block::epoch::EPOCH_KEY_OFFSET;
 
 use dpp::ProtocolError;
 
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
-
 
 use crate::drive::credit_pools::pools_vec_path;
 use crate::error::query::QuerySyntaxError;

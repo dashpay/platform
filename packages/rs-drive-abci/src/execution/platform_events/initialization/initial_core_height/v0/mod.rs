@@ -3,7 +3,6 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
-
 impl<C> Platform<C>
 where
     C: CoreRPCLike,

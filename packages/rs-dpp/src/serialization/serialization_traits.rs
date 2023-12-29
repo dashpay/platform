@@ -3,7 +3,7 @@ use crate::identity::KeyType;
 use serde::{Deserialize, Serialize};
 
 use crate::validation::SimpleConsensusValidationResult;
-use crate::version::{PlatformVersion};
+use crate::version::PlatformVersion;
 use crate::{BlsModule, ProtocolError};
 use platform_value::Value;
 

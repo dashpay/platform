@@ -17,7 +17,7 @@ mod tests {
     };
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::platform_value::Value;
-    use dpp::prelude::{Identity};
+    use dpp::prelude::Identity;
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::version::PlatformVersion;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;

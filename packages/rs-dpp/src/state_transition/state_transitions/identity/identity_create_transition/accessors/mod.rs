@@ -1,6 +1,5 @@
 mod v0;
 
-
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 

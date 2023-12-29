@@ -11,7 +11,6 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
-
 impl<C> Platform<C>
 where
     C: CoreRPCLike,

@@ -77,7 +77,6 @@ mod tests {
     use rand::{random, Rng};
     use serde::{Deserialize, Serialize};
     use serde_json::json;
-    
 
     use crate::drive::config::DriveConfig;
     use crate::drive::flags::StorageFlags;

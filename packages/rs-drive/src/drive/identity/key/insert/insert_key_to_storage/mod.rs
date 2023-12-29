@@ -6,7 +6,6 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::IdentityPublicKey;
 
-
 use platform_version::version::PlatformVersion;
 
 impl Drive {

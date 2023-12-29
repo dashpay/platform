@@ -3,7 +3,6 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
-
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use nohash_hasher::IntMap;

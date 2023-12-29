@@ -4,7 +4,6 @@ use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
-
 use thiserror::Error;
 
 #[derive(

@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use std::collections::{BTreeSet};
+use std::collections::BTreeSet;
 
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;

@@ -4,7 +4,6 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 
-
 pub mod signature_verification_operation;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -110,7 +110,7 @@ use indexmap::IndexMap;
 use platform_value::{Identifier, Value};
 use rand::rngs::StdRng;
 use rand::Rng;
-use std::collections::{BTreeSet};
+use std::collections::BTreeSet;
 use std::ops::Range;
 
 impl DocumentTypeV0 {

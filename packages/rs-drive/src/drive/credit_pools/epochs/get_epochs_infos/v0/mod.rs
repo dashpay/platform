@@ -75,9 +75,7 @@ impl Drive {
                 if let QueryResultElement::PathKeyElementTrioResultItem((path, key, element)) =
                     result_item
                 {
-                    acc.entry(path)
-                        .or_default()
-                        .insert(key, element);
+                    acc.entry(path).or_default().insert(key, element);
                 }
                 acc
             },

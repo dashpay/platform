@@ -192,8 +192,7 @@ where
     fn get_optional_string_at_path(&self, path: &str) -> Result<Option<String>, Error> {
         self.get_optional_at_path(path)?
             .map(|v| {
-                v
-                    .as_text()
+                v.as_text()
                     .map(|str| str.to_string())
                     .ok_or_else(|| Error::StructureError(format!("{path} must be a string")))
             })
@@ -208,8 +207,7 @@ where
     fn get_optional_str_at_path(&self, path: &str) -> Result<Option<&str>, Error> {
         self.get_optional_at_path(path)?
             .map(|v| {
-                v
-                    .as_text()
+                v.as_text()
                     .ok_or_else(|| Error::StructureError(format!("{path} must be a string")))
             })
             .transpose()
@@ -329,8 +327,7 @@ where
     ) -> Result<Option<I>, Error> {
         self.get_optional_at_path(path)?
             .map(|v| {
-                v
-                    .as_array()
+                v.as_array()
                     .map(|vec| vec.iter().collect())
                     .ok_or_else(|| Error::StructureError(format!("{path} must be a bool")))
             })
@@ -353,8 +350,7 @@ where
     ) -> Result<Option<I>, Error> {
         self.get_optional_at_path(path)?
             .map(|v| {
-                v
-                    .as_array()
+                v.as_array()
                     .map(|inner| {
                         inner
                             .iter()
@@ -390,8 +386,7 @@ where
     ) -> Result<Option<&Vec<(Value, Value)>>, Error> {
         self.get_optional_at_path(path)?
             .map(|v| {
-                v
-                    .as_map()
+                v.as_map()
                     .ok_or_else(|| Error::StructureError(format!("{path} must be a map")))
             })
             .transpose()
@@ -406,8 +401,7 @@ where
     ) -> Result<Option<I>, Error> {
         self.get_optional_at_path(path)?
             .map(|v| {
-                v
-                    .as_map()
+                v.as_map()
                     .map(|inner| {
                         inner
                             .iter()
@@ -438,8 +432,7 @@ where
     ) -> Result<Option<I>, Error> {
         self.get_optional_at_path(path)?
             .map(|v| {
-                v
-                    .as_map()
+                v.as_map()
                     .map(|inner| {
                         inner
                             .iter()

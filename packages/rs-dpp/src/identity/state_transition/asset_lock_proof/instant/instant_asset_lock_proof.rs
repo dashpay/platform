@@ -6,13 +6,11 @@ use dashcore::transaction::special_transaction::TransactionPayload;
 use dashcore::{InstantLock, OutPoint, Transaction, TxIn, TxOut};
 use platform_value::{BinaryData, Value};
 
-
+use crate::identity::state_transition::asset_lock_proof::instant::methods;
+use platform_version::version::PlatformVersion;
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use platform_version::version::{PlatformVersion};
-use crate::identity::state_transition::asset_lock_proof::instant::methods;
-
 
 use crate::prelude::Identifier;
 #[cfg(feature = "cbor")]

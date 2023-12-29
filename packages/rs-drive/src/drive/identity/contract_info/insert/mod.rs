@@ -1,11 +1,6 @@
 mod add_potential_contract_info_for_contract_bounded_key;
 
-
-
-
 use crate::drive::identity::contract_info::insert::DataContractApplyInfo::ContractBased;
-
-
 
 use crate::drive::Drive;
 use crate::error::identity::IdentityError;
@@ -19,10 +14,9 @@ use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::{KeyID, Purpose};
 use dpp::version::PlatformVersion;
 
+use grovedb::TransactionArg;
 
-use grovedb::{TransactionArg};
-
-use std::collections::{BTreeMap};
+use std::collections::BTreeMap;
 
 pub enum DataContractApplyInfo {
     /// The root_id is either a contract id or an owner id

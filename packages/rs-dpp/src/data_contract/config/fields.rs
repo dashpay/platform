@@ -1,5 +1,3 @@
-
-
 pub const DEFAULT_CONTRACT_KEEPS_HISTORY: bool = false;
 pub const DEFAULT_CONTRACT_CAN_BE_DELETED: bool = false;
 pub const DEFAULT_CONTRACT_MUTABILITY: bool = true;

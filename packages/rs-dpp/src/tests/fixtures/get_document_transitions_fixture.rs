@@ -9,8 +9,6 @@ use crate::state_transition::documents_batch_transition::document_transition::Do
 
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 
-
-
 pub fn get_document_transitions_fixture<'a>(
     documents: impl IntoIterator<
         Item = (

@@ -9,7 +9,7 @@ use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
 use crate::ProtocolError;
 use platform_value::Identifier;
-use std::collections::{BTreeMap};
+use std::collections::BTreeMap;
 
 impl DataContractV0Getters for DataContractV0 {
     fn id(&self) -> Identifier {
@@ -52,8 +52,7 @@ impl DataContractV0Getters for DataContractV0 {
     }
 
     fn document_type_cloned_optional_for_name(&self, name: &str) -> Option<DocumentType> {
-        self.document_types
-            .get(name).cloned()
+        self.document_types.get(name).cloned()
     }
 
     fn has_document_type_for_name(&self, name: &str) -> bool {

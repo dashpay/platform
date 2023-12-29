@@ -52,8 +52,6 @@ use rand::{Rng, SeedableRng};
 #[cfg(feature = "full")]
 use serde::{Deserialize, Serialize};
 
-
-
 #[cfg(feature = "full")]
 use drive::drive::flags::StorageFlags;
 

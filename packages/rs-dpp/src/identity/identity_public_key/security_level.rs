@@ -21,8 +21,8 @@ use std::convert::TryFrom;
     Ord,
     Encode,
     Decode,
+    Default,
 )]
-#[derive(Default)]
 pub enum SecurityLevel {
     #[default]
     MASTER = 0,
@@ -30,8 +30,6 @@ pub enum SecurityLevel {
     HIGH = 2,
     MEDIUM = 3,
 }
-
-
 
 #[cfg(feature = "cbor")]
 impl Into<CborValue> for SecurityLevel {

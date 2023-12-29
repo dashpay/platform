@@ -1,7 +1,5 @@
 use data_contracts::{DataContractSource, SystemDataContract};
 
-
-
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::DataContractFactory;
 use crate::prelude::*;
@@ -17,8 +15,7 @@ pub fn get_dpns_data_contract_fixture(
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
 
     let DataContractSource {
-        document_schemas,
-        ..
+        document_schemas, ..
     } = SystemDataContract::DPNS
         .source()
         .expect("should return DPNS data contract source");

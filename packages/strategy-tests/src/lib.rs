@@ -4,9 +4,7 @@ use crate::operations::{
     DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
 };
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::created_data_contract::{
-    CreatedDataContract,
-};
+use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
 
@@ -84,8 +82,7 @@ pub mod transitions;
 ///
 /// # Note
 /// Ensure that when using or updating the `Strategy`, all associated operations, identities, and contracts are coherent with the intended workflow or simulation. Inconsistencies might lead to unexpected behaviors or simulation failures.
-#[derive(Clone, Debug, PartialEq)]
-#[derive(Default)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct Strategy {
     pub contracts_with_updates: Vec<(
         CreatedDataContract,
@@ -96,8 +93,6 @@ pub struct Strategy {
     pub identities_inserts: Frequency,
     pub signer: Option<SimpleSigner>,
 }
-
-
 
 #[derive(Clone, Debug, Encode, Decode)]
 struct StrategyInSerializationFormat {

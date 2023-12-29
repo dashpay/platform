@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 
- mod property_names {
+mod property_names {
     pub const REVISION: &str = "$revision";
     pub const UPDATED_AT: &str = "$updatedAt";
 }

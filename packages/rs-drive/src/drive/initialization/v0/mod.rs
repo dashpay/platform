@@ -194,13 +194,12 @@ impl Drive {
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
-    use crate::drive::{RootTree};
+    use crate::drive::RootTree;
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
     use grovedb::query_result_type::QueryResultType::QueryElementResultType;
     use grovedb::{PathQuery, Query, SizedQuery};
-    
 
     #[test]
     fn test_create_initial_state_structure() {

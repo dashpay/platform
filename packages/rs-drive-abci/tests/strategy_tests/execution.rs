@@ -19,7 +19,6 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 
-
 use dashcore_rpc::json::{ExtendedQuorumListResult, SoftforkInfo};
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;

@@ -1,5 +1,3 @@
-
-
 use dpp::block::epoch::Epoch;
 
 use dpp::validation::SimpleValidationResult;

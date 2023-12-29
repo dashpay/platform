@@ -1,17 +1,14 @@
-use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8};
+use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 
-use crate::drive::{Drive};
+use crate::drive::Drive;
 
 use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerCount::{PotentiallyAtMaxElements};
+use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerInformation;
-use grovedb::EstimatedLayerSizes::{AllSubtrees};
+use grovedb::EstimatedLayerSizes::AllSubtrees;
 
-
-use crate::drive::identity::{
-    identity_contract_info_root_path_vec,
-};
-use grovedb::EstimatedSumTrees::{NoSumTrees};
+use crate::drive::identity::identity_contract_info_root_path_vec;
+use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 impl Drive {
