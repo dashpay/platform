@@ -351,7 +351,7 @@ impl Strategy {
                     contract.clone(),
                     entropy,
                     &identity,
-                    0, // key id 1 should always be a high or critical auth key in these tests
+                    1, // key id 1 should always be a high or critical auth key in these tests
                     signer,
                     platform_version,
                     None,
@@ -499,7 +499,7 @@ impl Strategy {
                     contract.clone(),
                     *created_contract.entropy_used(),
                     &identity,
-                    0, // key id 1 should always be a high or critical auth key in these tests
+                    1, // key id 1 should always be a high or critical auth key in these tests
                     signer,
                     platform_version,
                     None,
@@ -571,7 +571,7 @@ impl Strategy {
                                 let state_transition = DataContractUpdateTransition::new_from_data_contract(
                                     contract_update.data_contract().clone(),
                                     &identity,
-                                    0, // Assume key id 1 is a high or critical auth key
+                                    1, // Assume key id 1 is a high or critical auth key
                                     *identity_contract_nonce,
                                     signer,
                                     platform_version,
