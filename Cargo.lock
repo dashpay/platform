@@ -1287,7 +1287,6 @@ dependencies = [
  "test-case",
  "thiserror",
  "tokio",
- "tracing",
 ]
 
 [[package]]

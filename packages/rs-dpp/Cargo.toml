@@ -12,7 +12,6 @@ authors = [
 ]
 
 [dependencies]
-tracing = "0.1"
 anyhow = { version = "1.0.75" }
 async-trait = { version = "0.1.68" }
 base64 = "0.20.0"
