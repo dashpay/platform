@@ -4,6 +4,7 @@ use crate::execution::validation::state_transition::transformer::StateTransition
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
+use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
 
 use dpp::state_transition::{StateTransition};
@@ -11,7 +12,6 @@ use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
-use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{ValidateStateTransitionIdentitySignature};
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::execution::validation::state_transition::processor::v0::{StateTransitionSignatureValidationV0, StateTransitionStructureValidationV0};
 
@@ -145,10 +145,11 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             }
         }
         CheckTxLevel::Recheck => {
-            if let Some(asset_lock) = state_transition.asset_lock() {
+            if let Some(asset_lock_proof) = state_transition.optional_asset_lock_proof() {
                 // we should check that the asset lock is still valid
                 let validation_result =
-                    asset_lock.verify_is_not_spent(platform, None, platform_version)?;
+                    asset_lock_proof.verify_is_not_spent(platform, None, platform_version)?;
+
                 if validation_result.is_valid() {
                     Ok(ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_data(None))
                 } else {
@@ -159,8 +160,11 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     )
                 }
             } else {
+                // TODO: We aren't calculating processing fees atm. We probably should reconsider this
+
                 let state_transition_action_result =
                     state_transition.transform_into_action(platform, true, None)?;
+
                 if !state_transition_action_result.is_valid_with_data() {
                     return Ok(
                         ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(

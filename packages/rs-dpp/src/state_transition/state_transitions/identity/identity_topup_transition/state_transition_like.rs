@@ -1,4 +1,3 @@
-use crate::prelude::AssetLockProof;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
@@ -45,12 +44,6 @@ impl StateTransitionLike for IdentityTopUpTransition {
     fn owner_id(&self) -> Identifier {
         match self {
             IdentityTopUpTransition::V0(transition) => transition.owner_id(),
-        }
-    }
-
-    fn asset_lock(&self) -> Option<&AssetLockProof> {
-        match self {
-            IdentityTopUpTransition::V0(transition) => transition.asset_lock(),
         }
     }
 }

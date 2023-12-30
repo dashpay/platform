@@ -36,6 +36,7 @@ use crate::consensus::ConsensusError;
 
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
+use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use crate::prelude::AssetLockProof;
 pub use state_transitions::*;
@@ -244,12 +245,13 @@ pub enum StateTransition {
     IdentityCreditTransfer(IdentityCreditTransferTransition),
 }
 
-impl StateTransition {
-    /// Uses asset locks for funding
-    pub fn asset_lock(&self) -> Option<&AssetLockProof> {
-        call_method!(self, asset_lock)
+impl OptionallyAssetLockProved for StateTransition {
+    fn optional_asset_lock_proof(&self) -> Option<&AssetLockProof> {
+        call_method!(self, optional_asset_lock_proof)
     }
+}
 
+impl StateTransition {
     pub fn is_identity_signed(&self) -> bool {
         !matches!(
             self,
