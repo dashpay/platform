@@ -42,10 +42,10 @@ pub fn start<C: CoreRPCLike>(
         .map_err(super::AbciError::from)?;
 
     while !cancel.is_cancelled() {
-        tracing::info!("waiting for new connection");
+        tracing::info!("waiting for new ABCI connection");
         match server.next_client() {
-            Err(e) => tracing::error!("tenderdash connection terminated: {:?}", e),
-            Ok(_) => tracing::info!("tenderdash connection closed"),
+            Err(e) => tracing::error!("ABCI connection terminated: {:?}", e),
+            Ok(_) => tracing::info!("ABCI connection closed"),
         }
     }
 

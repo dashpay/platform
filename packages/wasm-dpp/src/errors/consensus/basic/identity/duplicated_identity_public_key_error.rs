@@ -1,7 +1,6 @@
 use dpp::consensus::basic::identity::DuplicatedIdentityPublicKeyBasicError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
-
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DuplicatedIdentityPublicKeyError)]

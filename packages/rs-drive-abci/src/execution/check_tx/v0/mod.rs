@@ -10,9 +10,8 @@ use crate::rpc::core::CoreRPCLike;
 
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::BasicError;
-use dpp::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
-use dpp::consensus::fee::fee_error::FeeError;
 use dpp::consensus::ConsensusError;
+
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
@@ -88,16 +87,6 @@ where
                 ))
             }
         };
-
-        // TODO: Remove this when inflationary bug is fixed
-        if matches!(state_transition, StateTransition::IdentityCreditTransfer(_)) {
-            return Ok(ValidationResult::new_with_error(
-                SerializedObjectParsingError::new(String::from(
-                    "this transition type is temporary not supported",
-                ))
-                .into(),
-            ));
-        }
 
         let state_read_guard = self.state.read().unwrap();
 

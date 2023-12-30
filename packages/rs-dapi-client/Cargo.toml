@@ -1,6 +1,6 @@
 [package]
 name = "rs-dapi-client"
-version = "0.25.18"
+version = "0.25.20"
 edition = "2021"
 
 [features]
