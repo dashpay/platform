@@ -48,7 +48,7 @@ pub fn signature_verification_operations_from_state_transition(
                         key.key_type(),
                     ))
                 })
-                .collect();
+                .collect::<Vec<ValidationOperation>>();
 
             match state_transition.asset_lock_proof() {
                 AssetLockProof::Instant(_) => {
