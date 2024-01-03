@@ -1,10 +1,27 @@
-### [0.25.19](https://github.com/dashpay/platform/compare/v0.25.18...v0.25.19) (2023-12-18)
+### [0.25.20](https://github.com/dashpay/platform/compare/v0.25.19...v0.25.20) (2023-12-21)
+
+
+### Features
+
+* **dashmate:** more config options for envoy and tenderdash ([#1643](https://github.com/dashpay/platform/issues/1643))
+
+
+### Bug Fixes
+
+* **drive-abci:** rare process proposal when we prepared tx change ([#1645](https://github.com/dashpay/platform/issues/1645))
+
+### [0.25.19](https://github.com/dashpay/platform/compare/v0.25.18...v0.25.19) (2023-12-19)
 
 
 ### Features
 
 * **dashmate:** add config render command ([#1637](https://github.com/dashpay/platform/issues/1637))
 
+
+### Bug Fixes
+
+* **drive**: filtering of failed and exceeding limit transactions ([#1639](https://github.com/dashpay/platform/issues/1639))
+* runtime error: index out of range 28 with length 28
 
 ### Reverts
 
