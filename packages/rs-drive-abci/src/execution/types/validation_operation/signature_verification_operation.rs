@@ -2,7 +2,9 @@ use crate::error::Error;
 use crate::execution::types::validation_operation::{OperationLike, ValidationOperation};
 use dpp::fee::Credits;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::state_transition::AssetLockProved;
 use dpp::identity::{KeyType, PartialIdentity};
+use dpp::prelude::AssetLockProof;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
@@ -37,15 +39,28 @@ pub fn signature_verification_operations_from_state_transition(
     identity: Option<&PartialIdentity>,
 ) -> Vec<ValidationOperation> {
     match state_transition {
-        StateTransition::IdentityCreate(state_transition) => state_transition
-            .public_keys()
-            .iter()
-            .map(|key| {
-                ValidationOperation::SignatureVerification(SignatureVerificationOperation::new(
-                    key.key_type(),
-                ))
-            })
-            .collect(),
+        StateTransition::IdentityCreate(state_transition) => {
+            let mut operations = state_transition
+                .public_keys()
+                .iter()
+                .map(|key| {
+                    ValidationOperation::SignatureVerification(SignatureVerificationOperation::new(
+                        key.key_type(),
+                    ))
+                })
+                .collect();
+
+            match state_transition.asset_lock_proof() {
+                AssetLockProof::Instant(_) => {
+                    operations.push(ValidationOperation::SignatureVerification(
+                        SignatureVerificationOperation::new(KeyType::ECDSA_HASH160),
+                    ))
+                }
+                _ => {}
+            }
+
+            operations
+        }
         StateTransition::IdentityUpdate(state_transition) => {
             let mut operations = vec![];
 
@@ -66,7 +81,16 @@ pub fn signature_verification_operations_from_state_transition(
 
             operations
         }
-        StateTransition::IdentityTopUp(_) => vec![],
+        StateTransition::IdentityTopUp(state_transition) => {
+            return match state_transition.asset_lock_proof() {
+                AssetLockProof::Instant(_) => {
+                    vec![ValidationOperation::SignatureVerification(
+                        SignatureVerificationOperation::new(KeyType::ECDSA_HASH160),
+                    )]
+                }
+                _ => vec![],
+            };
+        }
         state_transition => {
             let mut operations = vec![];
 
