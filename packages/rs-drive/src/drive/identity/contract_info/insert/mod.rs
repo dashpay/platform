@@ -99,7 +99,10 @@ impl DataContractApplyInfo {
                 document_type_keys: Default::default(),
                 contract_keys: vec![(key_id, purpose)],
             }),
-            ContractBounds::SingleContractDocumentType { document_type_name: document_type, .. } => {
+            ContractBounds::SingleContractDocumentType {
+                document_type_name: document_type,
+                ..
+            } => {
                 let document_type = contract
                     .document_type_for_name(document_type)
                     .map_err(Error::Protocol)?;
@@ -111,11 +114,10 @@ impl DataContractApplyInfo {
                     )]),
                     contract_keys: vec![],
                 })
-            }
-            // ContractBounds::MultipleContractsOfSameOwner { .. } => Ok(ContractFamilyBased {
-            //     contracts_owner_id: contract.owner_id(),
-            //     family_keys: vec![key_id],
-            // }),
+            } // ContractBounds::MultipleContractsOfSameOwner { .. } => Ok(ContractFamilyBased {
+              //     contracts_owner_id: contract.owner_id(),
+              //     family_keys: vec![key_id],
+              // }),
         }
     }
 }
