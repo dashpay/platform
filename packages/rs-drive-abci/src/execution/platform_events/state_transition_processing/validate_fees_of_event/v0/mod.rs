@@ -1,18 +1,18 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::execution_operation::{ExecutionOperation, OperationLike};
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::fee::Credits;
 use dpp::fee::fee_result::FeeResult;
+use dpp::fee::Credits;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::ProtocolError;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use drive::grovedb::TransactionArg;
-use crate::execution::types::execution_operation::{ExecutionOperation, OperationLike};
 
 impl<C> Platform<C>
 where
@@ -64,7 +64,12 @@ where
                     )
                     .map_err(Error::Drive)?;
 
-                ExecutionOperation::add_many_to_fee_result(execution_operations, &mut estimated_fee_result, &block_info.epoch, platform_version)?;
+                ExecutionOperation::add_many_to_fee_result(
+                    execution_operations,
+                    &mut estimated_fee_result,
+                    &block_info.epoch,
+                    platform_version,
+                )?;
 
                 // TODO: Should take into account refunds as well
                 let total_fee = estimated_fee_result.total_base_fee();
@@ -105,8 +110,12 @@ where
                     )
                     .map_err(Error::Drive)?;
 
-                ExecutionOperation::add_many_to_fee_result(execution_operations, &mut estimated_fee_result, &block_info.epoch, platform_version)?;
-
+                ExecutionOperation::add_many_to_fee_result(
+                    execution_operations,
+                    &mut estimated_fee_result,
+                    &block_info.epoch,
+                    platform_version,
+                )?;
 
                 // TODO: Should take into account refunds as well
                 let required_balance = estimated_fee_result.total_base_fee();

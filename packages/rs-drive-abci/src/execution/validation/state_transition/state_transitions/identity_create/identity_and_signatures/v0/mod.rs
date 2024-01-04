@@ -5,15 +5,17 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::identity::state_transition::AssetLockProved;
 
+use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
+use crate::execution::types::execution_operation::ExecutionOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::PlatformMessageSignable;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::validation::SimpleConsensusValidationResult;
-use crate::execution::types::execution_operation::ExecutionOperation;
-use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
-use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 
 pub(crate) trait IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 {
     fn validate_identity_create_state_transition_signatures_v0(
@@ -36,7 +38,9 @@ impl IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 for Identity
                 key.data().as_slice(),
                 key.signature().as_slice(),
             )?;
-            execution_context.add_operation(ExecutionOperation::SignatureVerification(SignatureVerificationOperation::new(key.key_type())));
+            execution_context.add_operation(ExecutionOperation::SignatureVerification(
+                SignatureVerificationOperation::new(key.key_type()),
+            ));
             if !result.is_valid() {
                 validation_result.add_errors(result.errors);
             }

@@ -71,7 +71,6 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
             ));
         }
 
-
         // Validate asset lock proof state
         //todo: add costs for state validation
         validation_result.merge(self.asset_lock_proof().validate_state(
@@ -139,7 +138,9 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
             })?;
 
         execution_context.add_operation(ExecutionOperation::DoubleSha256);
-        execution_context.add_operation(ExecutionOperation::SignatureVerification(SignatureVerificationOperation::new(KeyType::ECDSA_HASH160)));
+        execution_context.add_operation(ExecutionOperation::SignatureVerification(
+            SignatureVerificationOperation::new(KeyType::ECDSA_HASH160),
+        ));
 
         if let Err(e) = signer::verify_hash_signature(
             &double_sha(signable_bytes),

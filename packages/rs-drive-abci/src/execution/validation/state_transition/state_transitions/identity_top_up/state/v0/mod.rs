@@ -5,8 +5,8 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 use dpp::dashcore::signer;
 use dpp::dashcore::signer::double_sha;
-use dpp::identity::KeyType;
 use dpp::identity::state_transition::AssetLockProved;
+use dpp::identity::KeyType;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
@@ -102,7 +102,9 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
             })?;
 
         execution_context.add_operation(ExecutionOperation::DoubleSha256);
-        execution_context.add_operation(ExecutionOperation::SignatureVerification(SignatureVerificationOperation::new(KeyType::ECDSA_HASH160)));
+        execution_context.add_operation(ExecutionOperation::SignatureVerification(
+            SignatureVerificationOperation::new(KeyType::ECDSA_HASH160),
+        ));
 
         if let Err(e) = signer::verify_hash_signature(
             &double_sha(signable_bytes),

@@ -29,7 +29,6 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use drive_abci::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use platform_version::DefaultForPlatformVersion;
 
-
 pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     abci_app: &AbciApplication<MockCoreRPCLike>,
     expected_root_hash: &[u8; 32],
@@ -58,19 +57,25 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 // dbg!(batch.transitions().len(), hex::encode(first.base().id()), state.height(), first.to_string());
             }
 
-            let mut execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version).expect("expected to get an execution context");
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected to get an execution context");
 
-            let consensus_validation_result =
-                match state_transition.transform_into_action(&platform, false, &mut execution_context, None) {
-                    Ok(consensus_validation_result) => consensus_validation_result,
-                    Err(e) => {
-                        if expected_validation_errors.contains(&result.code) {
-                            return (state_transition.clone(), None, false);
-                        } else {
-                            panic!("{}", e)
-                        }
+            let consensus_validation_result = match state_transition.transform_into_action(
+                &platform,
+                false,
+                &mut execution_context,
+                None,
+            ) {
+                Ok(consensus_validation_result) => consensus_validation_result,
+                Err(e) => {
+                    if expected_validation_errors.contains(&result.code) {
+                        return (state_transition.clone(), None, false);
+                    } else {
+                        panic!("{}", e)
                     }
-                };
+                }
+            };
 
             if !consensus_validation_result.is_valid() {
                 panic!(

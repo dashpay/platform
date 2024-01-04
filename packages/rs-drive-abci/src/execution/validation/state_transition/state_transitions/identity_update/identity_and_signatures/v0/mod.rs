@@ -6,14 +6,16 @@ use dpp::consensus::state::state_error::StateError;
 
 use dpp::identity::PartialIdentity;
 
+use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
+use crate::execution::types::execution_operation::ExecutionOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use dpp::serialization::PlatformMessageSignable;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::validation::SimpleConsensusValidationResult;
-use crate::execution::types::execution_operation::ExecutionOperation;
-use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
-use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 
 pub(in crate::execution::validation::state_transition) trait IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0
 {
@@ -40,7 +42,9 @@ impl IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0 for Identity
                 key.data().as_slice(),
                 key.signature().as_slice(),
             )?;
-            execution_context.add_operation(ExecutionOperation::SignatureVerification(SignatureVerificationOperation::new(key.key_type())));
+            execution_context.add_operation(ExecutionOperation::SignatureVerification(
+                SignatureVerificationOperation::new(key.key_type()),
+            ));
             if !validation_result.is_valid() {
                 result.add_errors(validation_result.errors);
             }

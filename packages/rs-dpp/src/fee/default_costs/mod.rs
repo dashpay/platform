@@ -89,34 +89,13 @@ lazy_static! {
                 KnownCostItem::FetchSingleIdentityKeyProcessingCost,
                 10000u64
             ),
-            (
-                KnownCostItem::DoubleSHA256,
-                800u64
-            ),
-            (
-                KnownCostItem::SingleSHA256,
-                500u64
-            ),
-            (
-                KnownCostItem::VerifySignatureEcdsaSecp256k1,
-                3000u64
-            ),
-            (
-                KnownCostItem::VerifySignatureBLS12_381,
-                6000u64
-            ),
-            (
-                KnownCostItem::VerifySignatureEcdsaHash160,
-                4000u64
-            ),
-                        (
-                KnownCostItem::VerifySignatureBip13ScriptHash,
-                6000u64
-            ),
-            (
-                KnownCostItem::VerifySignatureEddsa25519Hash160,
-                3000u64
-            ),
+            (KnownCostItem::DoubleSHA256, 800u64),
+            (KnownCostItem::SingleSHA256, 500u64),
+            (KnownCostItem::VerifySignatureEcdsaSecp256k1, 3000u64),
+            (KnownCostItem::VerifySignatureBLS12_381, 6000u64),
+            (KnownCostItem::VerifySignatureEcdsaHash160, 4000u64),
+            (KnownCostItem::VerifySignatureBip13ScriptHash, 6000u64),
+            (KnownCostItem::VerifySignatureEddsa25519Hash160, 3000u64),
         ])
     )]);
 }

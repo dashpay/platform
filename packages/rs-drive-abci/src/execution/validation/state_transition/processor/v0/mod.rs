@@ -33,8 +33,12 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
     let action = if state_transition.requires_state_to_validate_structure() {
-        let state_transition_action_result =
-            state_transition.transform_into_action(platform, true, &mut state_transition_execution_context, transaction)?;
+        let state_transition_action_result = state_transition.transform_into_action(
+            platform,
+            true,
+            &mut state_transition_execution_context,
+            transaction,
+        )?;
         if !state_transition_action_result.is_valid_with_data() {
             return Ok(
                 ConsensusValidationResult::<ExecutionEvent>::new_with_errors(
@@ -61,8 +65,12 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         if let Some(action) = action {
             Some(action)
         } else {
-            let state_transition_action_result =
-                state_transition.transform_into_action(platform, true, &mut state_transition_execution_context,  transaction)?;
+            let state_transition_action_result = state_transition.transform_into_action(
+                platform,
+                true,
+                &mut state_transition_execution_context,
+                transaction,
+            )?;
             if !state_transition_action_result.is_valid_with_data() {
                 return Ok(
                     ConsensusValidationResult::<ExecutionEvent>::new_with_errors(
@@ -91,7 +99,12 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let maybe_identity = result.into_data()?;
 
     // Validating state
-    let result = state_transition.validate_state(action, platform, &mut state_transition_execution_context,transaction)?;
+    let result = state_transition.validate_state(
+        action,
+        platform,
+        &mut state_transition_execution_context,
+        transaction,
+    )?;
 
     result.map_result(|action| {
         ExecutionEvent::create_from_state_transition_action(
@@ -368,16 +381,30 @@ impl StateTransitionStateValidationV0 for StateTransition {
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
-            StateTransition::DataContractCreate(st) => st.validate_state(action, platform, execution_context,  tx),
-            StateTransition::DataContractUpdate(st) => st.validate_state(action, platform, execution_context,tx),
-            StateTransition::IdentityCreate(st) => st.validate_state(action, platform, execution_context,tx),
-            StateTransition::IdentityUpdate(st) => st.validate_state(action, platform, execution_context,tx),
-            StateTransition::IdentityTopUp(st) => st.validate_state(action, platform, execution_context,tx),
+            StateTransition::DataContractCreate(st) => {
+                st.validate_state(action, platform, execution_context, tx)
+            }
+            StateTransition::DataContractUpdate(st) => {
+                st.validate_state(action, platform, execution_context, tx)
+            }
+            StateTransition::IdentityCreate(st) => {
+                st.validate_state(action, platform, execution_context, tx)
+            }
+            StateTransition::IdentityUpdate(st) => {
+                st.validate_state(action, platform, execution_context, tx)
+            }
+            StateTransition::IdentityTopUp(st) => {
+                st.validate_state(action, platform, execution_context, tx)
+            }
             StateTransition::IdentityCreditWithdrawal(st) => {
                 st.validate_state(action, platform, execution_context, tx)
             }
-            StateTransition::DocumentsBatch(st) => st.validate_state(action, platform, execution_context, tx),
-            StateTransition::IdentityCreditTransfer(st) => st.validate_state(action, platform, execution_context, tx),
+            StateTransition::DocumentsBatch(st) => {
+                st.validate_state(action, platform, execution_context, tx)
+            }
+            StateTransition::IdentityCreditTransfer(st) => {
+                st.validate_state(action, platform, execution_context, tx)
+            }
         }
     }
 }

@@ -1,5 +1,7 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::execution_operation::{ExecutionOperation, OperationLike};
 use crate::platform_types::platform::Platform;
 use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult;
 use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult::{
@@ -11,8 +13,6 @@ use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0Methods;
 use drive::grovedb::Transaction;
-use crate::error::execution::ExecutionError;
-use crate::execution::types::execution_operation::{ExecutionOperation, OperationLike};
 
 impl<C> Platform<C>
 where
@@ -77,7 +77,12 @@ where
                         )
                         .map_err(Error::Drive)?;
 
-                    ExecutionOperation::add_many_to_fee_result(&execution_operations, &mut individual_fee_result, &block_info.epoch, platform_version)?;
+                    ExecutionOperation::add_many_to_fee_result(
+                        &execution_operations,
+                        &mut individual_fee_result,
+                        &block_info.epoch,
+                        platform_version,
+                    )?;
 
                     let balance_change = individual_fee_result.into_balance_change(identity.id);
 
