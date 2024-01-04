@@ -274,9 +274,6 @@ mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
 
     use dpp::version::PlatformVersion;
-    use tempfile::TempDir;
-
-    use crate::drive::Drive;
 
     #[test]
     fn test_insert_and_fetch_identity_v0() {

@@ -1,11 +1,10 @@
 use crate::{
-    buffer::Buffer,
-    errors::consensus::consensus_error::from_consensus_error_ref,
-    utils::{consensus_errors_from_buffers, WithJsError},
+    buffer::Buffer, errors::consensus::consensus_error::from_consensus_error_ref,
+    utils::consensus_errors_from_buffers,
 };
-use dpp::serialization::PlatformDeserializable;
+
 use dpp::{consensus::ConsensusError, validation::ConsensusValidationResult};
-use js_sys::{JsString, Uint8Array};
+use js_sys::JsString;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=ValidationResult)]

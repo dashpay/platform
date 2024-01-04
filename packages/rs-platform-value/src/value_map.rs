@@ -345,9 +345,9 @@ impl Value {
     /// The index map is in the order sorted by the sort key
     /// The type T is the type of the value of the sort key
     /// Returns `Err(Error::Structure("reason"))` otherwise.
-    pub fn map_ref_into_indexed_string_map<'a, 'b, T>(
+    pub fn map_ref_into_indexed_string_map<'a, T>(
         map: &'a ValueMap,
-        sort_key: &'b str,
+        sort_key: &str,
     ) -> Result<IndexMap<String, &'a Value>, Error>
     where
         T: TryFrom<i128>

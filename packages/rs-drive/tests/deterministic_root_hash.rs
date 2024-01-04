@@ -51,11 +51,7 @@ use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 #[cfg(feature = "full")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "full")]
-use tempfile::TempDir;
 
-#[cfg(feature = "full")]
-use drive::drive::config::DriveConfig;
 #[cfg(feature = "full")]
 use drive::drive::flags::StorageFlags;
 

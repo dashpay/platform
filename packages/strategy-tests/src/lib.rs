@@ -1,13 +1,10 @@
 use crate::frequency::Frequency;
 use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
 use crate::operations::{
-    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation,
-    OperationInSerializationFormat, OperationType,
+    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
 };
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::created_data_contract::{
-    CreatedDataContract, CreatedDataContractInSerializationFormat,
-};
+use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
 
@@ -46,7 +43,7 @@ use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+
 use simple_signer::signer::SimpleSigner;
 
 pub mod frequency;

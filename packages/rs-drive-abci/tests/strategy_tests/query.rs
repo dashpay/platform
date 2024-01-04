@@ -326,17 +326,9 @@ impl QueryStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
-    use crate::query::QueryStrategy;
-    use crate::strategy::{FailureStrategy, MasternodeListChangesStrategy, NetworkStrategy};
-    use dashcore_rpc::dashcore::hashes::Hash;
-    use dashcore_rpc::dashcore::BlockHash;
-    use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
-    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-    use strategy_tests::operations::DocumentAction::DocumentActionReplace;
-    use strategy_tests::operations::{
-        DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
-    };
+    use crate::execution::run_chain_for_strategy;
+
+    use crate::strategy::NetworkStrategy;
 
     use dapi_grpc::platform::v0::get_epochs_info_request::{GetEpochsInfoRequestV0, Version};
     use dapi_grpc::platform::v0::{
@@ -344,24 +336,19 @@ mod tests {
     };
     use dpp::block::epoch::EpochIndex;
     use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
-    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-    use dpp::data_contract::document_type::random_document::{
-        DocumentFieldFillSize, DocumentFieldFillType,
-    };
-    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    use dpp::serialization::PlatformDeserializable;
-    use dpp::tests::json_document::json_document_to_created_contract;
-    use dpp::util::hash::hash_to_hex_string;
+
     use dpp::version::PlatformVersion;
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
-    use drive_abci::logging::LogLevel;
+
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use drive_abci::rpc::core::QuorumListExtendedInfo;
+
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
-    use itertools::Itertools;
+
     use strategy_tests::Strategy;
-    use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
+
     use tenderdash_abci::proto::types::CoreChainLock;
     use tenderdash_abci::Application;
 

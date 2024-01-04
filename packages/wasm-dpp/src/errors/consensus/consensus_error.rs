@@ -137,7 +137,7 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
 }
 
 pub fn from_state_error(state_error: &StateError) -> JsValue {
-    match state_error.deref() {
+    match state_error {
         StateError::DuplicatedIdentityPublicKeyIdStateError(e) => {
             DuplicatedIdentityPublicKeyIdStateErrorWasm::from(e).into()
         }
@@ -223,7 +223,7 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
 
 // TODO: Move as From/TryInto trait implementation to wasm error modules
 fn from_basic_error(basic_error: &BasicError) -> JsValue {
-    match basic_error.deref() {
+    match basic_error {
         BasicError::ValueError(value_error) => ValueErrorWasm::from(value_error).into(),
         BasicError::DataContractNotPresentError(err) => {
             DataContractNotPresentErrorWasm::from(err).into()
@@ -391,7 +391,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
 }
 
 fn from_signature_error(signature_error: &SignatureError) -> JsValue {
-    match signature_error.deref() {
+    match signature_error {
         SignatureError::MissingPublicKeyError(err) => MissingPublicKeyErrorWasm::from(err).into(),
         SignatureError::InvalidIdentityPublicKeyTypeError(err) => {
             InvalidIdentityPublicKeyTypeErrorWasm::from(err).into()

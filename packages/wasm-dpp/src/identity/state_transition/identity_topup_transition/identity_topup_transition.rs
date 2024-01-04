@@ -8,9 +8,9 @@ use dpp::identity::state_transition::AssetLockProved;
 use dpp::identity::KeyType;
 use dpp::platform_value::BinaryData;
 use dpp::serialization::ValueConvertible;
-use dpp::state_transition::identity_topup_transition::fields::IDENTIFIER_FIELDS;
+
 use dpp::version::PlatformVersion;
-use serde_json::Value as JsonValue;
+
 use wasm_bindgen::prelude::*;
 
 use crate::identifier::IdentifierWrapper;
@@ -20,12 +20,12 @@ use crate::{
     identity::state_transition::asset_lock_proof::{
         ChainAssetLockProofWasm, InstantAssetLockProofWasm,
     },
-    utils, with_js_error,
+    with_js_error,
 };
 
 use crate::identity::state_transition::create_asset_lock_proof_from_wasm_instance;
+use dpp::platform_value::string_encoding;
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::platform_value::{string_encoding, ReplacementType, Value};
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
@@ -58,7 +58,7 @@ impl IdentityTopUpTransitionWasm {
         let platform_version =
             &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        IdentityTopUpTransition::default_versioned(&platform_version)
+        IdentityTopUpTransition::default_versioned(platform_version)
             .map(Into::into)
             .map_err(from_dpp_err)
     }
@@ -303,6 +303,6 @@ impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(js_name=setSignature)]
     pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
         self.0
-            .set_signature(BinaryData::new(signature.unwrap_or(vec![])))
+            .set_signature(BinaryData::new(signature.unwrap_or_default()))
     }
 }
