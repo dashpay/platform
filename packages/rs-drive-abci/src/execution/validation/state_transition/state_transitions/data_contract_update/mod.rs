@@ -11,6 +11,7 @@ use crate::error::Error;
 
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
 use crate::execution::validation::state_transition::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::data_contract_update::structure::v0::DataContractUpdateStateTransitionStructureValidationV0;
@@ -27,6 +28,7 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
         &self,
         platform: &PlatformRef<C>,
         _validate: bool,
+        _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
@@ -78,6 +80,7 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
         &self,
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
+        _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =

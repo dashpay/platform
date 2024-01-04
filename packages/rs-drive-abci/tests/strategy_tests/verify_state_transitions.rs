@@ -26,6 +26,9 @@ use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatch
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransition;
 use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransition;
+use drive_abci::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use platform_version::DefaultForPlatformVersion;
+
 
 pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     abci_app: &AbciApplication<MockCoreRPCLike>,
@@ -55,8 +58,10 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 // dbg!(batch.transitions().len(), hex::encode(first.base().id()), state.height(), first.to_string());
             }
 
+            let mut execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version).expect("expected to get an execution context");
+
             let consensus_validation_result =
-                match state_transition.transform_into_action(&platform, false, None) {
+                match state_transition.transform_into_action(&platform, false, &mut execution_context, None) {
                     Ok(consensus_validation_result) => consensus_validation_result,
                     Err(e) => {
                         if expected_validation_errors.contains(&result.code) {

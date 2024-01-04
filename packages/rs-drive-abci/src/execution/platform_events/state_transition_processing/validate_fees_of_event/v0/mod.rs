@@ -6,10 +6,13 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::fee::Credits;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::ProtocolError;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
+use crate::execution::types::execution_operation::{ExecutionOperation, OperationLike};
 
 impl<C> Platform<C>
 where
@@ -44,12 +47,13 @@ where
                 identity,
                 added_balance,
                 operations,
+                execution_operations,
             } => {
                 let previous_balance = identity.balance.ok_or(Error::Execution(
                     ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
                 ))?;
                 let previous_balance_with_top_up = previous_balance + added_balance;
-                let estimated_fee_result = self
+                let mut estimated_fee_result = self
                     .drive
                     .apply_drive_operations(
                         operations.clone(),
@@ -59,6 +63,8 @@ where
                         platform_version,
                     )
                     .map_err(Error::Drive)?;
+
+                ExecutionOperation::add_many_to_fee_result(execution_operations, &mut estimated_fee_result, &block_info.epoch, platform_version)?;
 
                 // TODO: Should take into account refunds as well
                 let total_fee = estimated_fee_result.total_base_fee();
@@ -83,11 +89,12 @@ where
             ExecutionEvent::PaidDriveEvent {
                 identity,
                 operations,
+                execution_operations,
             } => {
                 let balance = identity.balance.ok_or(Error::Execution(
                     ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
                 ))?;
-                let estimated_fee_result = self
+                let mut estimated_fee_result = self
                     .drive
                     .apply_drive_operations(
                         operations.clone(),
@@ -97,6 +104,9 @@ where
                         platform_version,
                     )
                     .map_err(Error::Drive)?;
+
+                ExecutionOperation::add_many_to_fee_result(execution_operations, &mut estimated_fee_result, &block_info.epoch, platform_version)?;
+
 
                 // TODO: Should take into account refunds as well
                 let required_balance = estimated_fee_result.total_base_fee();

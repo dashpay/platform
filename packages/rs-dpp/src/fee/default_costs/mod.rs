@@ -29,7 +29,7 @@
 
 //! Fee costs
 //!
-//! Fee costs for Drive (GroveDB) operations
+//! Fee costs for Known Platform operations
 //!
 
 use crate::block::epoch::Epoch;
@@ -57,6 +57,20 @@ pub enum KnownCostItem {
     FetchIdentityBalanceProcessingCost,
     /// The cost for fetching an identity key
     FetchSingleIdentityKeyProcessingCost,
+    /// The cost for a Double SHA256 operation
+    DoubleSHA256,
+    /// The cost for a Single SHA256 operation
+    SingleSHA256,
+    /// The cost for a EcdsaSecp256k1 signature verification
+    VerifySignatureEcdsaSecp256k1,
+    /// The cost for a BLS12_381 signature verification
+    VerifySignatureBLS12_381,
+    /// The cost for a EcdsaHash160 signature verification
+    VerifySignatureEcdsaHash160,
+    /// The cost for a Bip13ScriptHash signature verification
+    VerifySignatureBip13ScriptHash,
+    /// The cost for a Eddsa25519Hash160 signature verification
+    VerifySignatureEddsa25519Hash160,
 }
 
 const EPOCH_COST_UPDATE_VERSIONS: [u16; 1] = [0];
@@ -74,6 +88,34 @@ lazy_static! {
             (
                 KnownCostItem::FetchSingleIdentityKeyProcessingCost,
                 10000u64
+            ),
+            (
+                KnownCostItem::DoubleSHA256,
+                800u64
+            ),
+            (
+                KnownCostItem::SingleSHA256,
+                500u64
+            ),
+            (
+                KnownCostItem::VerifySignatureEcdsaSecp256k1,
+                3000u64
+            ),
+            (
+                KnownCostItem::VerifySignatureBLS12_381,
+                6000u64
+            ),
+            (
+                KnownCostItem::VerifySignatureEcdsaHash160,
+                4000u64
+            ),
+                        (
+                KnownCostItem::VerifySignatureBip13ScriptHash,
+                6000u64
+            ),
+            (
+                KnownCostItem::VerifySignatureEddsa25519Hash160,
+                3000u64
             ),
         ])
     )]);

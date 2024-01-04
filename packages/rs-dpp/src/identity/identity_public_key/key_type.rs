@@ -18,6 +18,9 @@ use rand::Rng;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use crate::block::epoch::Epoch;
+use crate::fee::default_costs::EpochCosts;
+use crate::fee::default_costs::KnownCostItem::{VerifySignatureBip13ScriptHash, VerifySignatureBLS12_381, VerifySignatureEcdsaHash160, VerifySignatureEcdsaSecp256k1, VerifySignatureEddsa25519Hash160};
 
 #[allow(non_camel_case_types)]
 #[repr(u8)]
@@ -83,14 +86,15 @@ impl KeyType {
     pub fn signature_verify_cost(
         &self,
         platform_version: &PlatformVersion,
+        epoch: &Epoch,
     ) -> Result<Credits, ProtocolError> {
         match platform_version.dpp.costs.signature_verify {
             0 => Ok(match self {
-                KeyType::ECDSA_SECP256K1 => 3000,
-                KeyType::BLS12_381 => 6000,
-                KeyType::ECDSA_HASH160 => 4000,
-                KeyType::BIP13_SCRIPT_HASH => 6000,
-                KeyType::EDDSA_25519_HASH160 => 3000,
+                KeyType::ECDSA_SECP256K1 => epoch.cost_for_known_cost_item(VerifySignatureEcdsaSecp256k1),
+                KeyType::BLS12_381 => epoch.cost_for_known_cost_item(VerifySignatureBLS12_381),
+                KeyType::ECDSA_HASH160 => epoch.cost_for_known_cost_item(VerifySignatureEcdsaHash160),
+                KeyType::BIP13_SCRIPT_HASH => epoch.cost_for_known_cost_item(VerifySignatureBip13ScriptHash),
+                KeyType::EDDSA_25519_HASH160 => epoch.cost_for_known_cost_item(VerifySignatureEddsa25519Hash160),
             }),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "KeyType::signature_verify_cost".to_string(),
