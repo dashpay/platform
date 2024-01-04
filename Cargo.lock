@@ -1188,7 +1188,6 @@ dependencies = [
  "derive_more",
  "dpp",
  "ed25519-dalek",
- "enum-map",
  "env_logger 0.9.3",
  "getrandom",
  "hex",
