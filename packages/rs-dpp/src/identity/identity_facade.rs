@@ -1,6 +1,5 @@
 use dashcore::{InstantLock, Transaction};
-use platform_value::Value;
-use platform_version::version::PlatformVersion;
+
 use std::collections::BTreeMap;
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
@@ -20,7 +19,7 @@ use crate::state_transition::identity_update_transition::IdentityUpdateTransitio
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 
-use crate::{DashPlatformProtocolInitError, ProtocolError};
+use crate::ProtocolError;
 
 #[derive(Clone)]
 pub struct IdentityFacade {

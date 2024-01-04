@@ -4,13 +4,13 @@ use crate::BlockHeight;
 use dashcore_rpc::dashcore;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::created_data_contract::CreatedDataContract;
+
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
-    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
+    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, OperationType,
 };
 
 use dpp::document::DocumentV0Getters;
@@ -50,7 +50,7 @@ use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+
 use simple_signer::signer::SimpleSigner;
 
 #[derive(Clone, Debug, Default)]
@@ -167,6 +167,29 @@ pub struct NetworkStrategy {
     pub failure_testing: Option<FailureStrategy>,
     pub query_testing: Option<QueryStrategy>,
     pub verify_state_transition_results: bool,
+    pub max_tx_bytes_per_block: i64,
+}
+
+impl Default for NetworkStrategy {
+    fn default() -> Self {
+        NetworkStrategy {
+            strategy: Default::default(),
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+            max_tx_bytes_per_block: 44800,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

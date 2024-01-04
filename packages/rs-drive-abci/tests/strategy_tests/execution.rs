@@ -18,7 +18,6 @@ use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
-use strategy_tests::Strategy;
 
 use dashcore_rpc::json::{ExtendedQuorumListResult, SoftforkInfo};
 use drive_abci::abci::AbciApplication;
@@ -321,7 +320,7 @@ pub(crate) fn run_chain_for_strategy(
 
     let initial_all_masternodes: Vec<_> = initial_masternodes_with_updates
         .into_iter()
-        .chain(initial_hpmns_with_updates.clone().into_iter())
+        .chain(initial_hpmns_with_updates.clone())
         .collect();
 
     platform
@@ -748,6 +747,7 @@ pub(crate) fn continue_chain_for_strategy(
                         expected_validation_errors.as_slice(),
                         false,
                         state_transitions.clone(),
+                        strategy.max_tx_bytes_per_block,
                         MimicExecuteBlockOptions {
                             dont_finalize_block: strategy.dont_finalize_block(),
                             rounds_before_finalization: strategy.failure_testing.as_ref().and_then(

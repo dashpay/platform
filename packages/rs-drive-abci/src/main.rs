@@ -126,8 +126,8 @@ fn main() -> Result<(), ExitCode> {
     // Start tokio runtime and thread listening for signals.
     // The runtime will be reused by Prometheus and rs-tenderdash-abci.
 
-    // 8 MB stack threads as some recursions in GroveDB can be pretty deep
-    // We could remove such a stack stack size once deletion of a node doesn't recurse in grovedb
+    // TODO: 8 MB stack threads as some recursions in GroveDB can be pretty deep
+    //  We could remove such a stack stack size once deletion of a node doesn't recurse in grovedb
 
     let runtime = Builder::new_multi_thread()
         .enable_all()
@@ -153,7 +153,7 @@ fn main() -> Result<(), ExitCode> {
 
     drop(rt_guard);
     runtime.shutdown_timeout(Duration::from_millis(SHUTDOWN_TIMEOUT_MILIS));
-    tracing::info!("drive-abci server is down");
+    tracing::info!("drive-abci server is stopped");
 
     Err(status)
 }
@@ -409,14 +409,13 @@ mod test {
         db_opts.create_missing_column_families(false);
         db_opts.create_if_missing(false);
 
-        let db = rocksdb::DB::open_cf(&db_opts, &db_path, vec!["roots", "meta", "aux"]).unwrap();
+        let db = rocksdb::DB::open_cf(&db_opts, db_path, vec!["roots", "meta", "aux"]).unwrap();
 
         let cf_handle = db.cf_handle(cf).unwrap();
         let iter = db.iterator_cf(cf_handle, IteratorMode::Start);
 
         // let iter = db.iterator(IteratorMode::Start);
-        let mut i = 0;
-        for item in iter {
+        for (i, item) in iter.enumerate() {
             let (key, mut value) = item.unwrap();
             // println!("{} = {}", hex::encode(&key), hex::encode(value));
             tracing::trace!(cf, key=?hex::encode(&key), value=hex::encode(&value),"found item in rocksdb");
@@ -428,7 +427,6 @@ mod test {
                 tracing::debug!(cf, key=?hex::encode(&key), value=hex::encode(&value), "corrupt_rocksdb_item: corrupting item");
                 return;
             }
-            i += 1;
         }
         panic!(
             "cannot corrupt db: cannot find {}-th item in rocksdb column family {}",

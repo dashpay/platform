@@ -78,7 +78,7 @@ impl ErrorWithCode for BasicError {
             Self::MissingDocumentTypeError { .. } => 1028,
             Self::MissingPositionsInDocumentTypePropertiesError { .. } => 1067,
             Self::MaxDocumentsTransitionsExceededError { .. } => 1065,
-            Self::DocumentTransitionsAreAbsentError { .. } => 1066,
+            Self::DocumentTransitionsAreAbsentError { .. } => 1068,
 
             // Identity
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 1029,
@@ -108,6 +108,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidIdentityCreditWithdrawalTransitionAmountError(_) => 1062,
             Self::InvalidIdentityUpdateTransitionEmptyError(_) => 1063,
             Self::InvalidIdentityUpdateTransitionDisableKeysError(_) => 1064,
+            Self::IdentityCreditTransferToSelfError(_) => 1070,
 
             // State Transition
             Self::InvalidStateTransitionTypeError { .. } => 1043,

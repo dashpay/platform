@@ -15,6 +15,7 @@ use dpp::serialization::PlatformSerializable;
 use dpp::serialization::ValueConvertible;
 use dpp::version::PlatformVersion;
 use serde::Serialize;
+
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
@@ -46,7 +47,7 @@ impl IdentityWasm {
         let platform_version =
             &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        Identity::default_versioned(&platform_version)
+        Identity::default_versioned(platform_version)
             .map(Into::into)
             .map_err(from_dpp_err)
     }
@@ -69,7 +70,6 @@ impl IdentityWasm {
 
         let public_keys = public_keys
             .iter()
-            .into_iter()
             .map(|key| {
                 key.to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")
                     .map(|key| {
@@ -248,7 +248,6 @@ impl IdentityWasm {
 
         let public_keys: Vec<IdentityPublicKey> = public_keys
             .iter()
-            .into_iter()
             .map(|key| {
                 key.to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")
                     .map(|key| key.to_owned().into())

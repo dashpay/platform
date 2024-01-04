@@ -1,6 +1,6 @@
 [package]
 name = "dpp"
-version = "0.25.17"
+version = "0.25.21"
 edition = "2021"
 rust-version = "1.73"
 authors = [
@@ -31,7 +31,6 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
     "serde",
 ], default-features = false, branch = "master" }
 env_logger = { version = "0.9" }
-enum-map = { version = "2.5.0" }
 getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
 integer-encoding = { version = "4.0.0" }
