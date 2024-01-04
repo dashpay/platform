@@ -55,6 +55,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
 
         let quorum_size = 100;
@@ -160,6 +161,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
 
         let quorum_size = 100;
@@ -254,6 +256,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
 
         let quorum_size = 100;

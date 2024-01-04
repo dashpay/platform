@@ -72,7 +72,7 @@ export default function startGroupNodesTaskFactory(
                 port: config.get('core.rpc.port'),
                 user: config.get('core.rpc.user'),
                 pass: config.get('core.rpc.password'),
-                host: await getConnectionHost(config, 'core'),
+                host: await getConnectionHost(config, 'core', 'core.rpc.host'),
               });
 
               await waitForCorePeersConnected(rpcClient);
