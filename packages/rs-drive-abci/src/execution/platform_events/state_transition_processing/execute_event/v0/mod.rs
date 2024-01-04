@@ -1,10 +1,10 @@
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
-use crate::platform_types::platform::Platform;
-use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult;
-use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult::{
+use crate::platform_types::event_execution_result::EventExecutionResult;
+use crate::platform_types::event_execution_result::EventExecutionResult::{
     ConsensusExecutionError, SuccessfulFreeExecution, SuccessfulPaidExecution,
 };
+use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -44,10 +44,10 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-    ) -> Result<StateTransitionExecutionResult, Error> {
+    ) -> Result<EventExecutionResult, Error> {
         //todo: we need to split out errors
         //  between failed execution and internal errors
-        let validation_result =
+        let fee_validation_result =
             self.validate_fees_of_event(&event, block_info, Some(transaction), platform_version)?;
 
         match event {
@@ -60,7 +60,7 @@ where
                 identity,
                 operations,
             } => {
-                if validation_result.is_valid_with_data() {
+                if fee_validation_result.is_valid_with_data() {
                     //todo: make this into an atomic event with partial batches
                     let individual_fee_result = self
                         .drive
@@ -82,12 +82,14 @@ where
                     )?;
 
                     Ok(SuccessfulPaidExecution(
-                        validation_result.into_data()?,
+                        fee_validation_result.into_data()?,
                         outcome.actual_fee_paid_owned(),
                     ))
                 } else {
                     Ok(ConsensusExecutionError(
-                        SimpleConsensusValidationResult::new_with_errors(validation_result.errors),
+                        SimpleConsensusValidationResult::new_with_errors(
+                            fee_validation_result.errors,
+                        ),
                     ))
                 }
             }

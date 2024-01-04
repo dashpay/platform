@@ -67,6 +67,7 @@ use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal::v0::BlockProposal;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::platform_types::withdrawal::withdrawal_txs;
 use dpp::dashcore::hashes::Hash;
 use dpp::fee::SignedCredits;
@@ -254,7 +255,7 @@ where
 
         let block_execution_outcome::v0::BlockExecutionOutcome {
             app_hash,
-            state_transition_results,
+            state_transitions_result,
             validator_set_update,
             protocol_version,
         } = run_result.into_data().map_err(Error::Protocol)?;
@@ -263,30 +264,38 @@ where
             .expect("must be set in run block proposal from existing protocol version");
 
         // We need to let Tenderdash know about the transactions we should remove from execution
+        let valid_tx_count = state_transitions_result.valid_count();
+        let invalid_tx_count = state_transitions_result.invalid_count();
+        let failed_tx_count = state_transitions_result.failed_count();
+        let delayed_tx_count = transactions_exceeding_max_block_size.len();
+
         let mut tx_results = Vec::new();
         let mut tx_records = Vec::new();
-        let mut valid_txs_count = 0;
-        let mut invalid_tx_count = 0;
 
-        for (tx, state_transition_execution_result) in state_transition_results {
+        for (state_transition_execution_result, raw_state_transition) in state_transitions_result
+            .into_execution_results()
+            .into_iter()
+            .zip(request.txs)
+        {
+            let tx_action = match &state_transition_execution_result {
+                StateTransitionExecutionResult::SuccessfulExecution(_, _) => TxAction::Unmodified,
+                StateTransitionExecutionResult::PaidConsensusError(_) => TxAction::Unmodified,
+                StateTransitionExecutionResult::UnpaidConsensusError(_) => TxAction::Removed,
+                StateTransitionExecutionResult::DriveAbciError(_) => TxAction::Removed,
+            };
+
             let tx_result: ExecTxResult =
                 state_transition_execution_result.try_into_platform_versioned(platform_version)?;
 
-            let action = if tx_result.code > 0 {
-                invalid_tx_count += 1;
-                TxAction::Removed
-            } else {
-                valid_txs_count += 1;
-                TxAction::Unmodified
-            } as i32;
-
-            if action != TxAction::Removed as i32 {
+            if tx_action != TxAction::Removed {
                 tx_results.push(tx_result);
             }
-            tx_records.push(TxRecord { action, tx });
-        }
 
-        let delayed_tx_count = transactions_exceeding_max_block_size.len();
+            tx_records.push(TxRecord {
+                action: tx_action.into(),
+                tx: raw_state_transition,
+            });
+        }
 
         // Add up exceeding transactions to the response
         tx_records.extend(
@@ -298,14 +307,14 @@ where
                 }),
         );
 
-        // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponsePrepareProposal {
             tx_results,
             app_hash: app_hash.to_vec(),
             tx_records,
             core_chain_lock_update,
             validator_set_update,
-            ..Default::default()
+            // TODO: implement consensus param updates
+            consensus_param_updates: None,
         };
 
         let mut block_execution_context_guard =
@@ -318,10 +327,11 @@ where
 
         tracing::info!(
             invalid_tx_count,
-            valid_txs_count,
+            valid_tx_count,
             delayed_tx_count,
+            failed_tx_count,
             "Prepared proposal with {} transitions for height: {}, round: {}",
-            valid_txs_count,
+            valid_tx_count,
             request.height,
             request.round,
         );
@@ -507,7 +517,7 @@ where
         } else {
             let block_execution_outcome::v0::BlockExecutionOutcome {
                 app_hash,
-                state_transition_results,
+                state_transitions_result: state_transition_results,
                 validator_set_update,
                 protocol_version,
             } = run_result.into_data().map_err(Error::Protocol)?;
@@ -515,24 +525,16 @@ where
             let platform_version = PlatformVersion::get(protocol_version)
                 .expect("must be set in run block proposer from existing platform version");
 
-            let mut invalid_tx_count = 0;
-            let mut valid_tx_count = 0;
+            let invalid_tx_count = state_transition_results.invalid_count();
+            let valid_tx_count = state_transition_results.valid_count();
 
             let tx_results = state_transition_results
+                .into_execution_results()
                 .into_iter()
-                .map(|(_, execution_result)| {
-                    let tx_result: ExecTxResult =
-                        execution_result.try_into_platform_versioned(platform_version)?;
-
-                    if tx_result.code == 0 {
-                        valid_tx_count += 1;
-                    } else {
-                        invalid_tx_count += 1;
-                    }
-
-                    Ok(tx_result)
+                .map(|execution_result| {
+                    execution_result.try_into_platform_versioned(platform_version)
                 })
-                .collect::<Result<Vec<ExecTxResult>, Error>>()?;
+                .collect::<Result<_, _>>()?;
 
             // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
             let response = ResponseProcessProposal {
