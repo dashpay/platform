@@ -315,6 +315,8 @@ impl Default for ExecutionConfig {
     }
 }
 
+
+#[allow(missing_docs)]
 impl PlatformConfig {
     pub fn default_testnet() -> Self {
         Self {
