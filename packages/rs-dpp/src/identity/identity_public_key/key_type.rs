@@ -35,6 +35,7 @@ use std::convert::TryFrom;
     Encode,
     Decode,
     Default,
+    strum::EnumIter,
 )]
 pub enum KeyType {
     #[default]

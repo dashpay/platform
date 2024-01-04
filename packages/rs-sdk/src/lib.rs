@@ -68,7 +68,7 @@ pub mod platform;
 pub mod sdk;
 
 pub use error::Error;
-pub use sdk::{Sdk, SdkBuilder};
+pub use sdk::{Sdk, SdkBuilder, RequestSettings};
 
 /// Version of the SDK
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

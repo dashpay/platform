@@ -26,8 +26,9 @@ use rs_dapi_client::mock::MockDapiClient;
 pub use rs_dapi_client::AddressList;
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
-    DapiClient, DapiClientError, DapiRequestExecutor, RequestSettings,
+    DapiClient, DapiClientError, DapiRequestExecutor
 };
+pub use rs_dapi_client::RequestSettings;
 use tokio::sync::Mutex;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 
