@@ -1,3 +1,10 @@
+### [0.25.21](https://github.com/dashpay/platform/compare/v0.25.20...v0.25.21) (2023-12-28)
+
+
+### Bug Fixes
+
+* corrupted credits not balanced error ([#1650](https://github.com/dashpay/platform/issues/1650))
+
 ### [0.25.20](https://github.com/dashpay/platform/compare/v0.25.19...v0.25.20) (2023-12-21)
 
 
