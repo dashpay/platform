@@ -19,13 +19,15 @@ use dpp::version::PlatformVersion;
 use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 
-use drive::grovedb::TransactionArg;
-use dpp::version::DefaultForPlatformVersion;
 use crate::error::execution::ExecutionError;
-use crate::execution::types::execution_operation::ExecutionOperation;
 use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
-use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
+use crate::execution::types::execution_operation::ExecutionOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
+use dpp::version::DefaultForPlatformVersion;
+use drive::grovedb::TransactionArg;
 
 use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_in_state;

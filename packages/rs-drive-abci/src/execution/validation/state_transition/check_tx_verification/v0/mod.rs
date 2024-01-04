@@ -48,8 +48,12 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     )?;
 
                 let action = if state_transition.requires_state_to_validate_structure() {
-                    let state_transition_action_result =
-                        state_transition.transform_into_action(platform, true, None)?;
+                    let state_transition_action_result = state_transition.transform_into_action(
+                        platform,
+                        true,
+                        &mut state_transition_execution_context,
+                        None,
+                    )?;
                     if !state_transition_action_result.is_valid_with_data() {
                         return Ok(
                             ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
@@ -82,8 +86,13 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     if let Some(action) = action {
                         Some(action)
                     } else {
-                        let state_transition_action_result =
-                            state_transition.transform_into_action(platform, true, None)?;
+                        let state_transition_action_result = state_transition
+                            .transform_into_action(
+                                platform,
+                                true,
+                                &mut state_transition_execution_context,
+                                None,
+                            )?;
                         if !state_transition_action_result.is_valid_with_data() {
                             return Ok(
                                     ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
@@ -118,8 +127,12 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 let action = if let Some(action) = action {
                     action
                 } else {
-                    let state_transition_action_result =
-                        state_transition.transform_into_action(platform, true, None)?;
+                    let state_transition_action_result = state_transition.transform_into_action(
+                        platform,
+                        true,
+                        &mut state_transition_execution_context,
+                        None,
+                    )?;
                     if !state_transition_action_result.is_valid_with_data() {
                         return Ok(
                             ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
@@ -134,6 +147,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     action,
                     maybe_identity,
                     platform.state.epoch_ref(),
+                    state_transition_execution_context,
                     platform_version,
                 )?;
 
@@ -162,8 +176,17 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             } else {
                 // TODO: We aren't calculating processing fees atm. We probably should reconsider this
 
-                let state_transition_action_result =
-                    state_transition.transform_into_action(platform, true, None)?;
+                let mut state_transition_execution_context =
+                    StateTransitionExecutionContext::default_for_platform_version(
+                        platform_version,
+                    )?;
+
+                let state_transition_action_result = state_transition.transform_into_action(
+                    platform,
+                    true,
+                    &mut state_transition_execution_context,
+                    None,
+                )?;
 
                 if !state_transition_action_result.is_valid_with_data() {
                     return Ok(
@@ -184,6 +207,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     action,
                     maybe_identity,
                     platform.state.epoch_ref(),
+                    state_transition_execution_context,
                     platform_version,
                 )?;
 
