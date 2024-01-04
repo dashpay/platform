@@ -418,22 +418,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         platform.state.last_committed_block_info()
                     );
                     if *was_executed {
-                        assert_eq!(
-                            identity
-                                .expect("expected an identity")
-                                .into_partial_identity_info_no_balance(),
-                            PartialIdentity {
-                                id: identity_create_transition.identity_id(),
-                                loaded_public_keys: identity_create_transition
-                                    .public_keys()
-                                    .iter()
-                                    .map(|key| (key.id(), key.clone()))
-                                    .collect(),
-                                balance: None,
-                                revision: Some(0),
-                                not_found_public_keys: Default::default(),
-                            }
-                        )
+                        // other state transitions might have happened in the same block the identity
+                        // was created
+                        let proved_identity = identity
+                            .expect("expected an identity")
+                            .into_partial_identity_info_no_balance();
+                        assert_eq!(proved_identity.id, identity_create_transition.identity_id());
                     } else {
                         //there is the possibility that the state transition was not executed because it already existed,
                         // we can discount that for now in tests
