@@ -21,7 +21,7 @@ use dpp::prelude::Identity;
 use serde::Deserialize;
 use std::convert::TryInto;
 
-use crate::utils::WithJsError;
+use crate::utils::{Inner, WithJsError};
 use dpp::identity::identity_factory::IdentityFactory;
 
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -183,13 +183,13 @@ impl IdentityFactoryWasm {
     #[wasm_bindgen(js_name=createIdentityCreditTransferTransition)]
     pub fn create_identity_credit_transfer_transition(
         &self,
-        identity_id: &IdentifierWrapper,
+        identity: &IdentityWasm,
         recipient_id: &IdentifierWrapper,
         amount: u64,
     ) -> Result<IdentityCreditTransferTransitionWasm, JsValue> {
         self.0
             .create_identity_credit_transfer_transition(
-                identity_id.to_owned().into(),
+                identity.inner(),
                 recipient_id.to_owned().into(),
                 amount,
             )
