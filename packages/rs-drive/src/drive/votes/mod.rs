@@ -1,3 +1,4 @@
+use dpp::consensus::basic::data_contract::DuplicateIndexError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -91,7 +92,7 @@ pub trait TreePath {
 }
 
 
-impl TreePath for  ContestedDocumentResourceVoteType {
+impl TreePath for ContestedDocumentResourceVoteType {
     fn tree_path(&self, contract: &DataContract) -> Result<Vec<&[u8]>, ProtocolError> {
         if contract.id() != self.vote_poll.contract_id {
             return Err(ProtocolError::VoteError(format!("contract id of vote {} does not match supplied contract {}", self.vote_poll.contract_id, contract.id())));
@@ -105,35 +106,18 @@ impl TreePath for  ContestedDocumentResourceVoteType {
         let Some(contested_index) = &index.contested_index else {
             return Err(ProtocolError::VoteError("we expect the index in a contested document resource vote type to be contested".to_string()));
         };
-            let mut properties_iter = index.properties.iter().peekable();
 
-            while let Some(index_part) = properties_iter.next() {
-                let level_name = if contested_index.contested_field_name == index_part.name {
-                    &contested_index.contested_field_temp_replacement_name
-                } else {
-                    &index_part.name
-                };
+        let mut properties_iter = index.properties.iter();
 
-                // The last property
-                if properties_iter.peek().is_none() {
-                    // This level already has been initialized.
-                    // It means there are two indices with the same combination of properties.
+        while let Some(index_part) = properties_iter.next() {
+            let level_name = if contested_index.contested_field_name == index_part.name {
+                &contested_index.contested_field_temp_replacement_name
+            } else {
+                &index_part.name
+            };
 
-                    // We might need to take into account the sorting order when we have it
-                    if current_level.has_index_with_type.is_some() {
-                        // an index already exists return error
-                        return Err(ConsensusError::BasicError(
-                            BasicError::DuplicateIndexError(DuplicateIndexError::new(
-                                document_type_name.to_owned(),
-                                level_name.clone(),
-                            )),
-                        )
-                            .into());
-                    }
-
-                    current_level.has_index_with_type = Some(ContestedResourceIndex);
-                }
-            }
+            path.push(level_name.as_bytes());
         }
+        Ok(path)
     }
 }

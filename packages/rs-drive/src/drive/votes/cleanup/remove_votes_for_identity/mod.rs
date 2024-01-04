@@ -23,7 +23,7 @@ impl Drive {
     ) -> Result<(), Error> {
         match platform_version.drive.methods.vote.cleanup.remove_votes_for_identity {
             0 => self.remove_votes_for_identity_v0(
-                identity_id
+                identity_id,
                 transaction,
                 platform_version,
             ),
