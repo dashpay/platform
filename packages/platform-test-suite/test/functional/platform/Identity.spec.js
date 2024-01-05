@@ -25,7 +25,7 @@ const {
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     BasicECDSAError,
     IdentityPublicKeyWithWitness,
-    IdentityInsufficientBalanceError,
+    BalanceIsNotEnoughError,
   },
 } = Dash;
 
@@ -349,7 +349,7 @@ describe('Platform', () => {
         expect(broadcastError).to.exist();
         expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
         expect(broadcastError.getCause()).to.be.an.instanceOf(
-          IdentityInsufficientBalanceError,
+          BalanceIsNotEnoughError,
         );
       });
 
@@ -556,7 +556,7 @@ describe('Platform', () => {
 
           expect(transferError).to.exist();
           expect(transferError).to.be.an.instanceOf(StateTransitionBroadcastError);
-          expect(transferError.getCause()).to.be.an.instanceOf(IdentityInsufficientBalanceError);
+          expect(transferError.getCause()).to.be.an.instanceOf(BalanceIsNotEnoughError);
           expect(transferError.getCause().getIdentityId()).to.deep.equal(identity.getId());
         });
       });
