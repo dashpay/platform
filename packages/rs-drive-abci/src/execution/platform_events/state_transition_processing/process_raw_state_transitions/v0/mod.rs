@@ -96,7 +96,7 @@ where
 
     fn process_raw_state_transition(
         &self,
-        raw_state_transition: &Vec<u8>,
+        raw_state_transition: &[u8],
         block_info: &BlockInfo,
         platform_ref: &PlatformRef<C>,
         transaction: &Transaction,
@@ -149,7 +149,7 @@ where
                     }
                     _ => Err(StateTransitionAwareError {
                         error: error.into(),
-                        raw_state_transition: raw_state_transition.clone(),
+                        raw_state_transition: raw_state_transition.into(),
                     }),
                 };
             }
@@ -157,13 +157,15 @@ where
 
         tracing::trace!(?state_transition, "Processing state transition");
 
+        // Validate state transition and produce an execution event
         let mut st_validation_result =
-            process_state_transition(&platform_ref, state_transition.clone(), Some(transaction))
+            process_state_transition(platform_ref, state_transition.clone(), Some(transaction))
                 .map_err(|error| StateTransitionAwareError {
                     error,
-                    raw_state_transition: raw_state_transition.clone(),
+                    raw_state_transition: raw_state_transition.into(),
                 })?;
 
+        // State Transition is invalid
         if !st_validation_result.is_valid() {
             // TODO: We should get processing fees for invalid state transitions as well
             let first_consensus_error = st_validation_result
@@ -183,6 +185,8 @@ where
             // Funding goes from payment blockchain with asset lock transactions and
             // they can't be partially spent. To prevent spam we should mark such state transitions
             // as unpaid and do not include them into block.
+            // TODO: We need to check that error happened after identity validation and the identitiy balance
+            //  is enough to cover processing fees. Otherwise we should return unpaid consensus error.
             // TODO: Replace with state_transition.optional_asset_lock_proof().is_some() in check tx PR
             let state_transition_execution_result = if matches!(
                 state_transition,
@@ -201,14 +205,14 @@ where
                 .into_data()
                 .map_err(|error| StateTransitionAwareError {
                     error: error.into(),
-                    raw_state_transition: raw_state_transition.clone(),
+                    raw_state_transition: raw_state_transition.into(),
                 })?;
 
         let event_execution_result = self
             .execute_event(execution_event, block_info, transaction, platform_version)
             .map_err(|error| StateTransitionAwareError {
                 error,
-                raw_state_transition: raw_state_transition.clone(),
+                raw_state_transition: raw_state_transition.into(),
             })?;
 
         let state_transition_execution_result = match event_execution_result {

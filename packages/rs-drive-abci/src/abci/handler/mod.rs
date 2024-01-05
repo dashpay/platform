@@ -284,13 +284,11 @@ where
                 // We don't have any associated identity to pay for the state transition,
                 // so we remove it from the block to prevent spam attacks.
                 // Such state transitions must be invalidated by check tx, but they might
-                // still be added to mempool in case of inconsistency between check tx and tx processing,
-                // i.e. balance calculation
+                // still be added to mempool due to inconsistency between check tx and tx processing
+                // (fees calculation) or malicious proposer.
                 StateTransitionExecutionResult::UnpaidConsensusError(_) => TxAction::Removed,
                 // We shouldn't include in the block any state transitions that produced internval error
                 // during execution
-                // TODO: Or we should to make this error visible for the whole netowrk? Should it be
-                //  network depending setting?
                 StateTransitionExecutionResult::DriveAbciError(_) => TxAction::Removed,
             };
 

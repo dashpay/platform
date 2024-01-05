@@ -84,7 +84,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         None
     };
 
-    //
+    // Validating signatures
     let result = state_transition.validate_identity_and_signatures(
         platform.drive,
         action.as_ref(),
@@ -92,10 +92,11 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         &mut state_transition_execution_context,
         platform_version,
     )?;
-    // Validating signatures
+
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
     }
+
     let maybe_identity = result.into_data()?;
 
     // Validating state
