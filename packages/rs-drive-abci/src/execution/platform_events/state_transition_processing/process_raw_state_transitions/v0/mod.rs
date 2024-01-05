@@ -7,6 +7,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::dashcore::hashes::Hash;
 use dpp::fee::fee_result::FeeResult;
+use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
 use dpp::{dashcore, ProtocolError};
@@ -158,10 +159,7 @@ where
         tracing::trace!(?state_transition, "Processing state transition");
 
         let state_transition_name = state_transition.name();
-        let is_st_asset_lock_funded = matches!(
-            state_transition,
-            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_),
-        );
+        let is_st_asset_lock_funded = state_transition.optional_asset_lock_proof().is_some();
 
         // Validate state transition and produce an execution event
         let mut st_validation_result =
@@ -195,7 +193,6 @@ where
             //    enough to cover processing fees
             // TODO: process_state_transition should return fees for invalid state transitions as well so we can
             //  deduct the fees from balance if identity is valid
-            // TODO: Replace with state_transition.optional_asset_lock_proof().is_some() in check tx PR
             let state_transition_execution_result = if is_st_asset_lock_funded {
                 StateTransitionExecutionResult::UnpaidConsensusError(first_consensus_error)
             } else {
