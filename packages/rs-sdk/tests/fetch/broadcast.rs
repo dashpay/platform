@@ -16,7 +16,7 @@ mod online {
     async fn test_wait_timeout() {
         setup_logs();
 
-        const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+        const TIMEOUT: std::time::Duration = std::time::Duration::from_millis(400);
 
         let cfg = Config::new();
         let sdk = cfg.setup_api().await;
@@ -38,7 +38,8 @@ mod online {
             TIMEOUT + Duration::from_millis(100),
             request.execute(sdk_ref, settings),
         )
-        .await;
+        .await
+        .expect("expected request timeout, got tokio timeout");
 
         assert!(response.is_err(), "expected timeout, got {:?}", response);
         tracing::info!(response = ?response, "received timeout");
