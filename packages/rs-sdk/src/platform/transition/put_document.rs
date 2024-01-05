@@ -1,106 +1,135 @@
-//! Save documents to the platform
-// TODO: move to ../types/
+use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+use std::sync::Arc;
 
 use crate::{Error, Sdk};
 
+use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::identity::signer::Signer;
+use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-
-use super::broadcast::BroadcastStateTransition;
+use dpp::state_transition::StateTransition;
+use drive::drive::Drive;
+use rs_dapi_client::{DapiRequest, RequestSettings};
 
 #[async_trait::async_trait]
 /// A trait for putting an identity to platform
-pub trait PutDocument {
+pub trait PutDocument<S: Signer> {
     /// Puts an identity on platform
     async fn put_to_platform(
         &self,
         sdk: &Sdk,
         document_type: DocumentType,
         document_state_transition_entropy: [u8; 32],
-    ) -> Result<(), Error>;
+        identity_public_key: IdentityPublicKey,
+        signer: &S,
+    ) -> Result<StateTransition, Error>;
+
+    /// Waits for the response of a state transition after it has been broadcast
+    async fn wait_for_response(
+        &self,
+        sdk: &Sdk,
+        state_transition: StateTransition,
+        data_contract: Arc<DataContract>,
+    ) -> Result<Document, Error>;
+
     /// Puts an identity on platform and waits for the confirmation proof
-    ///
-    /// ## Requirements
-    ///
-    /// Data contract must be available inside the `ContextProvider` configured inside the `Sdk`.
     async fn put_to_platform_and_wait_for_response(
         &self,
         sdk: &Sdk,
         document_type: DocumentType,
-        document_state_transition_entropy: [u8; 32], // TODO: ask why we need this as input; maybe rng should be provided via sdk / context provider?
+        document_state_transition_entropy: [u8; 32],
+        identity_public_key: IdentityPublicKey,
+        data_contract: Arc<DataContract>,
+        signer: &S,
     ) -> Result<Document, Error>;
+
+    async fn put_to_platform_with_settings(
+        &self,
+        sdk: &Sdk,
+        document_type: DocumentType,
+        document_state_transition_entropy: [u8; 32],
+        identity_public_key: IdentityPublicKey,
+        signer: &S,
+        settings: RequestSettings,
+    ) -> Result<StateTransition, Error>;
 }
 
 #[async_trait::async_trait]
-impl PutDocument for Document {
+impl<S: Signer> PutDocument<S> for Document {
     async fn put_to_platform(
         &self,
         sdk: &Sdk,
         document_type: DocumentType,
         document_state_transition_entropy: [u8; 32],
-    ) -> Result<(), Error> {
-        let mut lock = sdk.wallet.lock().await;
-        let wallet = lock
-            .as_mut()
-            .ok_or(Error::Config("wallet not configured in sdk".to_string()))?;
+        identity_public_key: IdentityPublicKey,
+        signer: &S,
+    ) -> Result<StateTransition, Error> {
+        self.put_to_platform_with_settings(
+            sdk,
+            document_type,
+            document_state_transition_entropy,
+            identity_public_key,
+            signer,
+            RequestSettings::default(),
+        )
+        .await
+    }
 
-        let identity_public_key = wallet
-            .identity_public_key(&dpp::identity::Purpose::AUTHENTICATION)
-            .await
-            .ok_or(Error::Config(
-                "cannot retrieve identity public key from wallet".to_string(),
-            ))?;
-
+    async fn put_to_platform_with_settings(
+        &self,
+        sdk: &Sdk,
+        document_type: DocumentType,
+        document_state_transition_entropy: [u8; 32],
+        identity_public_key: IdentityPublicKey,
+        signer: &S,
+        settings: RequestSettings,
+    ) -> Result<StateTransition, Error> {
         let transition = DocumentsBatchTransition::new_document_creation_transition_from_document(
             self.clone(),
             document_type.as_ref(),
             document_state_transition_entropy,
             &identity_public_key,
-            wallet,
+            signer,
             sdk.version(),
             None,
             None,
             None,
         )?;
 
-        transition.broadcast(sdk).await
+        let request = transition.broadcast_request_for_state_transition()?;
+
+        request.clone().execute(sdk, settings).await?;
+
+        // response is empty for a broadcast, result comes from the stream wait for state transition result
+
+        Ok(transition)
     }
 
-    async fn put_to_platform_and_wait_for_response(
+    async fn wait_for_response(
         &self,
         sdk: &Sdk,
-        document_type: DocumentType,
-        document_state_transition_entropy: [u8; 32],
+        state_transition: StateTransition,
+        data_contract: Arc<DataContract>,
     ) -> Result<Document, Error> {
-        let mut lock = sdk.wallet.lock().await;
-        let wallet = lock
-            .as_mut()
-            .ok_or(Error::Config("wallet not configured in sdk".to_string()))?;
+        let request = state_transition.wait_for_state_transition_result_request()?;
 
-        let identity_public_key = wallet
-            .identity_public_key(&dpp::identity::Purpose::AUTHENTICATION)
-            .await
-            .ok_or(Error::Config(
-                "cannot retrieve identity public key from wallet".to_string(),
-            ))?;
+        let response = request.execute(sdk, RequestSettings::default()).await?;
 
-        let state_transition =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
-                self.clone(),
-                document_type.as_ref(),
-                document_state_transition_entropy,
-                &identity_public_key,
-                wallet,
-                sdk.version(),
-                None,
-                None,
-                None,
-            )?;
+        let proof = response.proof_owned()?;
 
-        let result = state_transition.broadcast_and_wait(sdk, None).await?;
+        let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
+            &state_transition,
+            proof.grovedb_proof.as_slice(),
+            &|_| Ok(Some(data_contract.clone())),
+            sdk.version(),
+        )?;
+
+        //todo verify
 
         match result {
             StateTransitionProofResult::VerifiedDocuments(mut documents) => {
@@ -116,5 +145,32 @@ impl PutDocument for Document {
             }
             _ => Err(Error::DapiClientError("proved a non document".to_string())),
         }
+    }
+
+    async fn put_to_platform_and_wait_for_response(
+        &self,
+        sdk: &Sdk,
+        document_type: DocumentType,
+        document_state_transition_entropy: [u8; 32],
+        identity_public_key: IdentityPublicKey,
+        data_contract: Arc<DataContract>,
+        signer: &S,
+    ) -> Result<Document, Error> {
+        let state_transition = self
+            .put_to_platform(
+                sdk,
+                document_type,
+                document_state_transition_entropy,
+                identity_public_key,
+                signer,
+            )
+            .await?;
+
+        // TODO: Why do we need full type annotation?
+        let document =
+            <Self as PutDocument<S>>::wait_for_response(self, sdk, state_transition, data_contract)
+                .await?;
+
+        Ok(document)
     }
 }

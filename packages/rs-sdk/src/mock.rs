@@ -21,8 +21,6 @@
 
 #[cfg(not(feature = "mocks"))]
 mod noop;
-#[cfg(not(feature = "mocks"))]
-mod noop;
 #[cfg(feature = "mocks")]
 pub mod provider;
 #[cfg(feature = "mocks")]

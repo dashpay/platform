@@ -13,7 +13,7 @@
 
 use crate::{
     transport::{TransportClient, TransportRequest},
-    Dapi, DapiClientError, RequestSettings,
+    DapiClientError, DapiRequestExecutor, RequestSettings,
 };
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
@@ -27,7 +27,7 @@ use std::{
 
 /// Mock DAPI client.
 ///
-/// This is a mock implmeneation of [Dapi] that can be used for testing.
+/// This is a mock implmeneation of [DapiRequestExecutor] that can be used for testing.
 ///
 /// See `tests/mock_dapi_client.rs` for an example.
 #[derive(Default, Debug)]
@@ -90,7 +90,7 @@ impl MockDapiClient {
 }
 
 #[async_trait]
-impl Dapi for MockDapiClient {
+impl DapiRequestExecutor for MockDapiClient {
     async fn execute<R: TransportRequest>(
         &self,
         request: R,

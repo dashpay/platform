@@ -14,7 +14,7 @@ use dash_platform_sdk::{
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
-use rs_dapi_client::{Dapi, RequestSettings};
+use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 
 /// Get current epoch index from DAPI response metadata
 async fn get_current_epoch(sdk: &Sdk, cfg: &Config) -> EpochIndex {

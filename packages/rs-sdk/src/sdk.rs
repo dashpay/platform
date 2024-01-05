@@ -1,19 +1,13 @@
 //! [Sdk] entrypoint to Dash Platform.
 
-use std::{fmt::Debug, num::NonZeroUsize, ops::DerefMut};
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
-
-#[cfg(feature = "mocks")]
-use crate::mock::MockDashPlatformSdk;
-
+use crate::error::Error;
 use crate::error::Error;
 use crate::mock::provider::GrpcContextProvider;
+use crate::mock::provider::GrpcContextProvider;
+#[cfg(feature = "mocks")]
+use crate::mock::MockDashPlatformSdk;
 use crate::mock::MockResponse;
 use crate::wallet::Wallet;
-
 use dapi_grpc::mock::Mockable;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -26,13 +20,20 @@ use hex::ToHex;
 pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
-pub use rs_dapi_client::AddressList;
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
-    Dapi, DapiClient, DapiClientError, RequestSettings,
+    DapiClient, DapiClientError, DapiRequestExecutor,
+};
+use std::{fmt::Debug, num::NonZeroUsize, ops::DerefMut};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
 };
 use tokio::sync::Mutex;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
+
+pub use rs_dapi_client::AddressList;
+pub use rs_dapi_client::RequestSettings;
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
@@ -344,7 +345,7 @@ impl ContextProvider for Sdk {
 }
 
 #[async_trait::async_trait]
-impl Dapi for Sdk {
+impl DapiRequestExecutor for Sdk {
     async fn execute<R: TransportRequest>(
         &self,
         request: R,
@@ -358,6 +359,17 @@ impl Dapi for Sdk {
                 dapi_guard.execute(request, settings).await
             }
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl DapiRequestExecutor for &Sdk {
+    async fn execute<R: TransportRequest>(
+        &self,
+        request: R,
+        settings: RequestSettings,
+    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
+        DapiRequestExecutor::execute(self, request, settings).await
     }
 }
 
@@ -547,6 +559,10 @@ impl SdkBuilder {
     pub fn with_dump_dir(mut self, dump_dir: &Path) -> Self {
         self.dump_dir = Some(dump_dir.to_path_buf());
         self
+    }
+
+    fn is_mock(&self) -> bool {
+        self.addresses.is_none()
     }
 
     /// Build the Sdk instance.

@@ -1,4 +1,4 @@
-//! Subsystem to manage peers.
+//! Subsystem to manage DAPI nodes.
 
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
@@ -9,9 +9,9 @@ use std::time::Duration;
 use http::Uri;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
 
-const DEFAULT_BASE_BAN_PERIOD: Duration = Duration::from_secs(2 * 60);
+const DEFAULT_BASE_BAN_PERIOD: Duration = Duration::from_secs(60);
 
-/// Peer's address.
+/// DAPI address.
 #[derive(Debug, Clone, Eq)]
 pub struct Address {
     ban_count: usize,
@@ -68,7 +68,7 @@ impl Address {
         self.banned_until = None;
     }
 
-    /// Get [Uri] of a peer.
+    /// Get [Uri] of a node.
     pub fn uri(&self) -> &Uri {
         &self.uri
     }
@@ -81,7 +81,7 @@ pub enum AddressListError {
     AddressNotFound(Uri),
 }
 
-/// A structure to manage peer's addresses to select from
+/// A structure to manage DAPI addresses to select from
 /// for [DapiRequest](crate::DapiRequest) execution.
 #[derive(Debug)]
 pub struct AddressList {

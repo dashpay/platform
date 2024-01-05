@@ -20,7 +20,7 @@ export default function getPlatformScopeFactory(
       port: config.get('core.rpc.port'),
       user: config.get('core.rpc.user'),
       pass: config.get('core.rpc.password'),
-      host: await getConnectionHost(config, 'core'),
+      host: await getConnectionHost(config, 'core', 'core.rpc.host'),
     });
 
     const {
@@ -86,11 +86,17 @@ export default function getPlatformScopeFactory(
       info.p2pPortState = p2pPortState;
 
       try {
-        const tenderdashHost = await getConnectionHost(config, 'drive_tenderdash');
+        const tenderdashHost = await getConnectionHost(
+          config,
+          'drive_tenderdash',
+          'platform.drive.tenderdash.rpc.host',
+        );
+
+        const port = config.get('platform.drive.tenderdash.rpc.port');
 
         const [tenderdashStatusResponse, tenderdashNetInfoResponse] = await Promise.all([
-          fetch(`http://${tenderdashHost}:${config.get('platform.drive.tenderdash.rpc.port')}/status`),
-          fetch(`http://${tenderdashHost}:${config.get('platform.drive.tenderdash.rpc.port')}/net_info`),
+          fetch(`http://${tenderdashHost}:${port}/status`),
+          fetch(`http://${tenderdashHost}:${port}/net_info`),
         ]);
 
         const [tenderdashStatus, tenderdashNetInfo] = await Promise.all([
@@ -179,8 +185,9 @@ export default function getPlatformScopeFactory(
     const httpService = config.get('externalIp') ? `${config.get('externalIp')}:${httpPort}` : null;
     const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
     const p2pService = config.get('externalIp') ? `${config.get('externalIp')}:${p2pPort}` : null;
+    const rpcHost = config.get('platform.drive.tenderdash.rpc.host');
     const rpcPort = config.get('platform.drive.tenderdash.rpc.port');
-    const rpcService = rpcPort ? `127.0.0.1:${rpcPort}` : rpcPort;
+    const rpcService = `${rpcHost}:${rpcPort}`;
 
     const scope = {
       coreIsSynced: null,

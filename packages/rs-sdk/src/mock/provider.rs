@@ -1,16 +1,16 @@
 //! Example ContextProvider that uses the Core gRPC API to fetch data from the platform.
 
-use std::num::NonZeroUsize;
-use std::sync::Arc;
-
-use dpp::prelude::{DataContract, Identifier};
-use drive_proof_verifier::error::ContextProviderError;
-use drive_proof_verifier::ContextProvider;
-
 use crate::common::cache::Cache;
+use crate::core_client::CoreClient;
 use crate::mock::wallet::core_grpc_wallet::CoreClient;
 use crate::platform::Fetch;
 use crate::{Error, Sdk};
+use dpp::prelude::{DataContract, Identifier};
+use drive_proof_verifier::error::ContextProviderError;
+use drive_proof_verifier::ContextProvider;
+use std::hash::Hash;
+use std::num::NonZeroUsize;
+use std::sync::Arc;
 
 /// Context provider that uses the Core gRPC API to fetch data from the platform.
 ///

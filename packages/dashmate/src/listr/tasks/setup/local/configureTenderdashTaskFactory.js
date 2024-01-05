@@ -1,5 +1,4 @@
 import { Listr } from 'listr2';
-import { getLatestProtocolVersion } from '@dashevo/wasm-dpp';
 
 /**
  * @return {configureTenderdashTask}
@@ -52,11 +51,6 @@ export default function configureTenderdashTaskFactory() {
                 config.set(
                   'platform.drive.tenderdash.genesis.validator_quorum_type',
                   config.get('platform.drive.abci.validatorSet.llmqType'),
-                );
-
-                config.set(
-                  'platform.drive.tenderdash.genesis.consensus_params.version.app_version',
-                  getLatestProtocolVersion().toString(),
                 );
               });
             },
