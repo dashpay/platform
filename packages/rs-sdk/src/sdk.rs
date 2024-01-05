@@ -24,11 +24,11 @@ pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
 pub use rs_dapi_client::AddressList;
+pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
-    DapiClient, DapiClientError, DapiRequestExecutor
+    DapiClient, DapiClientError, DapiRequestExecutor,
 };
-pub use rs_dapi_client::RequestSettings;
 use tokio::sync::Mutex;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 
