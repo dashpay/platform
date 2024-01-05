@@ -3,7 +3,7 @@ use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
 use crate::identity::IdentityPublicKeyWasm;
 use crate::metadata::MetadataWasm;
-use crate::utils::{IntoWasm, WithJsError};
+use crate::utils::{Inner, IntoWasm, WithJsError};
 use crate::with_js_error;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -269,5 +269,21 @@ impl IdentityWasm {
         let identity: Identity =
             PlatformDeserializable::deserialize_from_bytes(buffer.as_slice()).with_js_error()?;
         Ok(identity.into())
+    }
+}
+
+impl Inner for IdentityWasm {
+    type InnerItem = Identity;
+
+    fn into_inner(self) -> Self::InnerItem {
+        self.inner
+    }
+
+    fn inner(&self) -> &Self::InnerItem {
+        &self.inner
+    }
+
+    fn inner_mut(&mut self) -> &mut Self::InnerItem {
+        &mut self.inner
     }
 }

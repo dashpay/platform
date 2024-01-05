@@ -13,6 +13,10 @@ use dpp::identity::PartialIdentity;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
 
+use crate::execution::types::execution_operation::ExecutionOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use drive::drive::batch::transitions::DriveHighLevelOperationConverter;
 use drive::drive::batch::DriveOperation;
 
@@ -25,6 +29,8 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         identity: PartialIdentity,
         /// the operations that the identity is requesting to perform
         operations: Vec<DriveOperation<'a>>,
+        /// the execution operations that we must also pay for
+        execution_operations: Vec<ExecutionOperation>,
     },
     /// A drive event that is paid from an asset lock
     PaidFromAssetLockDriveEvent {
@@ -34,6 +40,8 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         added_balance: Credits,
         /// the operations that should be performed
         operations: Vec<DriveOperation<'a>>,
+        /// the execution operations that we must also pay for
+        execution_operations: Vec<ExecutionOperation>,
     },
     /// A drive event that is free
     FreeDriveEvent {
@@ -43,43 +51,11 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
 }
 
 impl<'a> ExecutionEvent<'a> {
-    /// Creates a new identity Insertion Event
-    pub fn new_document_operation(
-        identity: PartialIdentity,
-        operation: DriveOperation<'a>,
-    ) -> Self {
-        Self::PaidDriveEvent {
-            identity,
-            operations: vec![operation],
-        }
-    }
-    /// Creates a new identity Insertion Event
-    pub fn new_contract_operation(
-        identity: PartialIdentity,
-        operation: DriveOperation<'a>,
-    ) -> Self {
-        Self::PaidDriveEvent {
-            identity,
-            operations: vec![operation],
-        }
-    }
-    /// Creates a new identity Insertion Event
-    pub fn new_identity_insertion(
-        identity: PartialIdentity,
-        operations: Vec<DriveOperation<'a>>,
-    ) -> Self {
-        Self::PaidDriveEvent {
-            identity,
-            operations,
-        }
-    }
-}
-
-impl<'a> ExecutionEvent<'a> {
     pub(crate) fn create_from_state_transition_action(
         action: StateTransitionAction,
         identity: Option<PartialIdentity>,
         epoch: &Epoch,
+        execution_context: StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         match &action {
@@ -91,6 +67,7 @@ impl<'a> ExecutionEvent<'a> {
                     identity,
                     added_balance: 0,
                     operations,
+                    execution_operations: execution_context.operations_consume(),
                 })
             }
             StateTransitionAction::IdentityTopUpAction(identity_top_up_action) => {
@@ -102,6 +79,7 @@ impl<'a> ExecutionEvent<'a> {
                         identity,
                         added_balance,
                         operations,
+                        execution_operations: execution_context.operations_consume(),
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -116,6 +94,7 @@ impl<'a> ExecutionEvent<'a> {
                     Ok(PaidDriveEvent {
                         identity,
                         operations,
+                        execution_operations: execution_context.operations_consume(),
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(

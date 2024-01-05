@@ -528,6 +528,7 @@ pub fn create_identity_credit_transfer_transition(
         identity_id: identity.id(),
         recipient_id: recipient.id(),
         amount,
+        revision: identity.revision() + 1,
         signature_public_key_id: 0,
         signature: Default::default(),
     }
