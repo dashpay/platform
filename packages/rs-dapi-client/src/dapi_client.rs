@@ -59,7 +59,7 @@ pub trait DapiRequestExecutor {
 }
 
 #[async_trait]
-impl<D: Dapi> Dapi for Arc<D>
+impl<D: DapiRequestExecutor> DapiRequestExecutor for Arc<D>
 where
     Self: Sync + Send,
 {

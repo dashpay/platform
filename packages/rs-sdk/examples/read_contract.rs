@@ -1,18 +1,11 @@
 use std::{num::NonZeroUsize, str::FromStr, sync::Arc};
 
 use clap::Parser;
+use dash_platform_sdk::mock::wallet::MockWallet;
 use dash_platform_sdk::{mock::provider::GrpcContextProvider, platform::Fetch, Sdk, SdkBuilder};
-use dash_platform_sdk::{
-    mock::{provider::GrpcContextProvider, wallet::MockWallet},
-    platform::Fetch,
-    Sdk, SdkBuilder,
-};
 use dashcore_rpc::dashcore::Network;
 use dpp::prelude::{DataContract, Identifier};
-use dpp::{
-    prelude::{DataContract, Identifier},
-    version::PlatformVersion,
-};
+use dpp::version::PlatformVersion;
 use rs_dapi_client::AddressList;
 use tokio_util::sync::CancellationToken;
 

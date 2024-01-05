@@ -73,18 +73,6 @@ pub enum Error {
     // TODO: Use domain specific errors instead of generic ones
     #[error("SDK error: {0}")]
     Generic(String),
-
-    /// Cryptographic error
-    #[error("Cryptographic error: {0}")]
-    CryptoError(#[from] BlsError),
-
-    /// Context provider error
-    #[error("Context provider error: {0}")]
-    ContextProviderError(#[from] ContextProviderError),
-
-    /// Operation cancelled - cancel token was triggered, timeout, etc.
-    #[error("Operation cancelled: {0}")]
-    Cancelled(String),
 }
 
 impl<T: Debug> From<DapiClientError<T>> for Error {

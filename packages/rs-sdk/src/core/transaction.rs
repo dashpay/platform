@@ -12,7 +12,7 @@ use dpp::dashcore::{Address, InstantLock, MerkleBlock, OutPoint, Transaction, Tx
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
-use rs_dapi_client::{Dapi, DapiRequestExecutor, RequestSettings};
+use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
 

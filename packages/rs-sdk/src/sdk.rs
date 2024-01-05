@@ -1,8 +1,6 @@
 //! [Sdk] entrypoint to Dash Platform.
 
 use crate::error::Error;
-use crate::error::Error;
-use crate::mock::provider::GrpcContextProvider;
 use crate::mock::provider::GrpcContextProvider;
 #[cfg(feature = "mocks")]
 use crate::mock::MockDashPlatformSdk;

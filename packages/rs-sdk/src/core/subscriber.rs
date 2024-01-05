@@ -26,7 +26,7 @@ use dashcore_rpc::dashcore::{consensus::Decodable, Address, InstantLock, MerkleB
 use futures::{Future, FutureExt};
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
-    Dapi, DapiClient, DapiClientError, RequestSettings,
+    DapiClient, DapiClientError, DapiRequestExecutor, RequestSettings,
 };
 use std::{
     collections::BTreeMap,
@@ -337,7 +337,7 @@ where
     /// ## Cancelation
     ///
     /// The worker will stop when the given cancelation token `cancel` is cancelled.
-    fn worker<D: Dapi + Send + Sync>(
+    fn worker<D: DapiRequestExecutor + Send + Sync>(
         &self,
         dapi: D,
         output: Sender<SubscriptionMessage>,
