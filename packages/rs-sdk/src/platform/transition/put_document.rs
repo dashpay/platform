@@ -42,9 +42,9 @@ impl PutDocument for Document {
         document_type: DocumentType,
         document_state_transition_entropy: [u8; 32],
     ) -> Result<(), Error> {
-        let lock = sdk.wallet.lock().await;
+        let mut lock = sdk.wallet.lock().await;
         let wallet = lock
-            .as_ref()
+            .as_mut()
             .ok_or(Error::Config("wallet not configured in sdk".to_string()))?;
 
         let identity_public_key = wallet
@@ -75,9 +75,9 @@ impl PutDocument for Document {
         document_type: DocumentType,
         document_state_transition_entropy: [u8; 32],
     ) -> Result<Document, Error> {
-        let lock = sdk.wallet.lock().await;
+        let mut lock = sdk.wallet.lock().await;
         let wallet = lock
-            .as_ref()
+            .as_mut()
             .ok_or(Error::Config("wallet not configured in sdk".to_string()))?;
 
         let identity_public_key = wallet

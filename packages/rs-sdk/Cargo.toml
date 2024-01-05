@@ -2,6 +2,7 @@
 name = "dash-platform-sdk"
 version = "0.25.16-rc.5"
 edition = "2021"
+rust-version = "1.75"
 
 [dependencies]
 dpp = { path = "../rs-dpp", features = [
@@ -39,6 +40,7 @@ lru = { version = "0.12.0" }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = "master" }
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
 rand = { version = "0.8.5" }
+
 [dev-dependencies]
 rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks"] }
 base64 = { version = "0.21.0" }
@@ -51,6 +53,7 @@ dpp = { path = "../rs-dpp", features = [
 data-contracts = { path = "../data-contracts" }
 tokio-test = { version = "0.4.3" }
 clap = { version = "4.4.10", features = ["derive"] }
+
 [features]
 default = ["mocks", "network-testing"]
 mocks = [

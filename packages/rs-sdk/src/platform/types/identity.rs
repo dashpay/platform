@@ -114,6 +114,11 @@ pub trait IdentityEx {
 #[async_trait]
 impl IdentityEx for Identity {
     async fn register(sdk: &Sdk, amount: u64) -> Result<Identity, Error> {
+        let mut wg = sdk.wallet().await;
+        let wallet = wg.as_mut().ok_or(Error::WalletNotInitialized)?;
+
+        let asset_lock = wallet.lock_assets(1).await?;
+
         todo!("implement me")
         // let mut identity = Identity::new();
         // identity.set_balance(amount);

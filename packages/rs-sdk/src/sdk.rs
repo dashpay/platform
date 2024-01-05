@@ -285,6 +285,7 @@ impl Sdk {
     //     TransitionContext::new(self)
     // }
 
+    /// Return a wallet lock guard that allows access to the wallet.
     pub async fn wallet(&self) -> tokio::sync::MutexGuard<Option<Box<dyn Wallet>>> {
         self.wallet.lock().await
     }
@@ -546,10 +547,6 @@ impl SdkBuilder {
     pub fn with_dump_dir(mut self, dump_dir: &Path) -> Self {
         self.dump_dir = Some(dump_dir.to_path_buf());
         self
-    }
-
-    fn is_mock(&self) -> bool {
-        self.addresses.is_none()
     }
 
     /// Build the Sdk instance.

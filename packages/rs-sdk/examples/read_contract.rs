@@ -7,7 +7,10 @@ use dash_platform_sdk::{
     Sdk, SdkBuilder,
 };
 use dashcore_rpc::dashcore::Network;
-use dpp::prelude::{DataContract, Identifier};
+use dpp::{
+    prelude::{DataContract, Identifier},
+    version::PlatformVersion,
+};
 use rs_dapi_client::AddressList;
 use tokio_util::sync::CancellationToken;
 
@@ -83,6 +86,7 @@ fn setup_sdk(config: &Config) -> Arc<Sdk> {
         &config.core_user,
         &config.core_password,
         cancel.child_token(),
+        PlatformVersion::latest(),
     )
     .expect("mock wallet creation");
 

@@ -5,7 +5,7 @@
 
 use dash_platform_sdk::mock::{provider::GrpcContextProvider, wallet::MockWallet};
 use dashcore_rpc::dashcore::Network;
-use dpp::prelude::Identifier;
+use dpp::{prelude::Identifier, version::PlatformVersion};
 use rs_dapi_client::AddressList;
 use serde::Deserialize;
 use std::{num::NonZeroUsize, path::PathBuf, str::FromStr, sync::Arc};
@@ -75,7 +75,7 @@ pub struct Config {
 
 impl Config {
     /// Prefix of configuration options in the environment variables and `.env` file.
-    pub const CONFIG_PREFIX: &str = "RS_SDK_";
+    pub const CONFIG_PREFIX: &'static str = "RS_SDK_";
     /// Load configuration from operating system environment variables and `.env` file.
     ///
     /// Create new [Config] with data from environment variables and `${CARGO_MANIFEST_DIR}/tests/.env` file.
@@ -188,6 +188,7 @@ impl Config {
             &self.core_user,
             &self.core_password,
             cancel,
+            PlatformVersion::latest(),
         )
         .expect("mock wallet creation");
 

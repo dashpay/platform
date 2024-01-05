@@ -23,13 +23,11 @@ use dpp::document::Document;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
-use drive_proof_verifier::types::{
-    MasternodeProtocolVote, RetrievedObjects,
-};
+use dpp::version::ProtocolVersionVoteCount;
+use drive_proof_verifier::types::{MasternodeProtocolVote, RetrievedObjects};
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
-use dpp::version::ProtocolVersionVoteCount;
 
 use super::LimitQuery;
 

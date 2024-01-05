@@ -205,7 +205,8 @@ impl Query<GetEpochsInfoRequest> for EpochIndex {
         LimitQuery {
             query: self,
             limit: Some(1),
-        }.query(prove)
+        }
+        .query(prove)
     }
 }
 

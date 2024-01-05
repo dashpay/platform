@@ -9,6 +9,8 @@ use rs_dapi_client::DapiClientError;
 
 pub use drive_proof_verifier::error::ContextProviderError;
 
+use crate::mock::wallet::WalletError;
+
 /// Error type for the SDK
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -60,6 +62,15 @@ pub enum Error {
     /// SDK operation timeout reached error
     #[error("SDK operation timeout {} secs reached: {1}", .0.as_secs())]
     TimeoutReached(Duration, String),
+
+    /// Wallet not initialized
+    #[error("Wallet not initialized")]
+    WalletNotInitialized,
+
+    /// Wallet error
+    #[error("Wallet error: {0}")]
+    WalletError(#[from] WalletError),
+
     /// Generic error
     // TODO: Use domain specific errors instead of generic ones
     #[error("SDK error: {0}")]

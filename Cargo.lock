@@ -848,7 +848,7 @@ dependencies = [
  "clap 2.34.0",
  "criterion-plot",
  "csv",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "num-traits",
  "oorandom",
@@ -870,7 +870,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2673cc8207403546f45f5fd319a974b1e6983ad1a3ee7e6041650013be041876"
 dependencies = [
  "cast",
- "itertools 0.10.5",
+ "itertools",
 ]
 
 [[package]]
@@ -1265,7 +1265,7 @@ dependencies = [
  "hex",
  "indexmap 2.1.0",
  "integer-encoding 4.0.0",
- "itertools 0.10.5",
+ "itertools",
  "json-patch",
  "jsonptr",
  "jsonschema",
@@ -1314,7 +1314,7 @@ dependencies = [
  "indexmap 1.9.3",
  "integer-encoding 4.0.0",
  "intmap",
- "itertools 0.10.5",
+ "itertools",
  "moka",
  "nohash-hasher",
  "platform-version",
@@ -1351,7 +1351,7 @@ dependencies = [
  "hex",
  "indexmap 1.9.3",
  "integer-encoding 4.0.0",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "metrics",
  "metrics-exporter-prometheus",
@@ -1835,7 +1835,7 @@ dependencies = [
  "indexmap 1.9.3",
  "integer-encoding 3.0.4",
  "intmap",
- "itertools 0.10.5",
+ "itertools",
  "nohash-hasher",
  "serde",
  "tempfile",
@@ -1906,7 +1906,7 @@ version = "1.0.0-rc.2"
 source = "git+https://github.com/dashpay/grovedb?rev=b40dd1a35f852c81caeda2d3c2910c40fae3a67f#b40dd1a35f852c81caeda2d3c2910c40fae3a67f"
 dependencies = [
  "hex",
- "itertools 0.10.5",
+ "itertools",
 ]
 
 [[package]]
@@ -2221,15 +2221,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2314,7 +2305,7 @@ source = "git+https://github.com/fominok/jsonschema-rs?branch=feat-unevaluated-p
 dependencies = [
  "ahash 0.7.7",
  "anyhow",
- "base64 0.21.5",
+ "base64 0.13.1",
  "bytecount",
  "fancy-regex",
  "fraction",
@@ -3073,7 +3064,7 @@ checksum = "59230a63c37f3e18569bdb90e4a89cbf5bf8b06fea0b84e65ea10cc4df47addd"
 dependencies = [
  "difflib",
  "float-cmp",
- "itertools 0.10.5",
+ "itertools",
  "normalize-line-endings",
  "predicates-core",
  "regex",
@@ -3185,7 +3176,7 @@ checksum = "8bdf592881d821b83d471f8af290226c8d51402259e9bb5be7f9f8bdebbb11ac"
 dependencies = [
  "bytes",
  "heck",
- "itertools 0.11.0",
+ "itertools",
  "log",
  "multimap",
  "once_cell",
@@ -3206,7 +3197,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "265baba7fabd416cf5078179f7d2cbeca4ce7a9041111900675ea7c4cb8a4c32"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 2.0.39",
@@ -4114,8 +4105,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "0.13.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#f413119a5c7f4b519ba3eec5746cd013a73e45db"
+version = "0.14.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#b4df6543efb0457a477db30153131495da1b8bbb"
 dependencies = [
  "bytes",
  "futures",
@@ -4135,8 +4126,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "0.13.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#f413119a5c7f4b519ba3eec5746cd013a73e45db"
+version = "0.14.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#b4df6543efb0457a477db30153131495da1b8bbb"
 dependencies = [
  "bytes",
  "chrono",
@@ -4153,8 +4144,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto-compiler"
-version = "0.1.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#f413119a5c7f4b519ba3eec5746cd013a73e45db"
+version = "0.14.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#b4df6543efb0457a477db30153131495da1b8bbb"
 dependencies = [
  "fs_extra",
  "prost-build",
@@ -4836,7 +4827,7 @@ dependencies = [
  "async-trait",
  "dpp",
  "hex",
- "itertools 0.10.5",
+ "itertools",
  "js-sys",
  "log",
  "num_enum",

@@ -3,8 +3,7 @@
 use backon::{ExponentialBuilder, Retryable};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
-use std::sync::RwLock;
-use std::time;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tracing::Instrument;
 
@@ -57,6 +56,25 @@ pub trait Dapi {
     where
         R: TransportRequest + Mockable,
         R::Response: Mockable;
+}
+
+#[async_trait]
+impl<D: Dapi> Dapi for Arc<D>
+where
+    Self: Sync + Send,
+{
+    async fn execute<R>(
+        &self,
+        request: R,
+        settings: RequestSettings,
+    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
+    where
+        R: TransportRequest + Mockable,
+        R::Response: Mockable,
+    {
+        let inner: &D = self.as_ref();
+        inner.execute(request, settings).await
+    }
 }
 
 /// Access point to DAPI.

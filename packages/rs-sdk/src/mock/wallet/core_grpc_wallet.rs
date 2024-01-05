@@ -3,14 +3,13 @@
 //! TODO: This is a temporary implementation, effective until we integrate SPV
 //! into dash-platform-sdk.
 
+use super::WalletError;
 use dashcore_rpc::{
     dashcore::{address::NetworkUnchecked, hashes::Hash, Amount, QuorumHash},
     dashcore_rpc_json as json, Auth, Client, RawTx, RpcApi,
 };
 use drive_proof_verifier::error::ContextProviderError;
 use std::{fmt::Debug, sync::Mutex};
-
-use crate::error::Error;
 
 /// Core RPC client that can be used to retrieve quorum keys from core.
 ///
@@ -48,13 +47,12 @@ impl CoreClient {
         core_port: u16,
         core_user: &str,
         core_password: &str,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, WalletError> {
         let addr = format!("http://{}:{}", server_address, core_port);
         let core = Client::new(
             &addr,
             Auth::UserPass(core_user.to_string(), core_password.to_string()),
-        )
-        .map_err(Error::CoreClientError)?;
+        )?;
 
         Ok(Self {
             core: Mutex::new(core),
@@ -79,7 +77,7 @@ impl CoreClient {
     pub fn list_unspent(
         &self,
         minimum_sum_satoshi: Option<u64>,
-    ) -> Result<Vec<dashcore_rpc::json::ListUnspentResultEntry>, Error> {
+    ) -> Result<Vec<dashcore_rpc::json::ListUnspentResultEntry>, WalletError> {
         let options = json::ListUnspentQueryOptions {
             minimum_sum_amount: minimum_sum_satoshi.map(Amount::from_sat),
             ..Default::default()
@@ -89,7 +87,7 @@ impl CoreClient {
             .lock()
             .expect("Core lock poisoned")
             .list_unspent(None, None, None, None, Some(options))
-            .map_err(Error::CoreClientError)
+            .map_err(|e| e.into())
     }
 
     /// Sign raw transaction with wallet
@@ -100,40 +98,45 @@ impl CoreClient {
         tx: R,
         utxos: Option<&[json::SignRawTransactionInput]>,
         sighash_type: Option<json::SigHashType>,
-    ) -> Result<json::SignRawTransactionResult, Error> {
+    ) -> Result<json::SignRawTransactionResult, WalletError> {
         self.core
             .lock()
             .expect("Core lock poisoned")
             .sign_raw_transaction_with_wallet(tx, utxos, sighash_type)
-            .map_err(Error::CoreClientError)
+            .map_err(|e| e.into())
     }
 
+    /// Send raw transaction to the network.
+    ///
+    /// # See also
+    ///
+    /// <https://docs.dash.org/projects/core/en/stable/docs/api/remote-procedure-calls-raw-transactions.html#sendrawtransaction>
     pub fn send_raw_transaction<R: RawTx>(
         &self,
         tx: R,
-    ) -> Result<dashcore_rpc::dashcore::Txid, Error> {
+    ) -> Result<dashcore_rpc::dashcore::Txid, WalletError> {
         self.core
             .lock()
             .expect("Core lock poisoned")
             .send_raw_transaction(tx)
-            .map_err(Error::CoreClientError)
+            .map_err(|e| e.into())
     }
     /// Return address to which change of transaction can be sent.
-    pub fn change_address(&self) -> Result<dpp::dashcore::Address<NetworkUnchecked>, Error> {
+    pub fn change_address(&self) -> Result<dpp::dashcore::Address<NetworkUnchecked>, WalletError> {
         self.core
             .lock()
             .expect("Core lock poisoned")
             .get_raw_change_address()
-            .map_err(Error::CoreClientError)
+            .map_err(|e| e.into())
     }
 
     /// Return address to which change of transaction can be sent.
-    pub fn get_balance(&self) -> Result<Amount, Error> {
+    pub fn get_balance(&self) -> Result<Amount, WalletError> {
         self.core
             .lock()
             .expect("Core lock poisoned")
             .get_balance(None, None)
-            .map_err(Error::CoreClientError)
+            .map_err(|e| e.into())
     }
 
     /// Retrieve quorum public key from core.
