@@ -1,11 +1,11 @@
 use crate::error::Error;
 use crate::execution::validation::state_transition::processor::process_state_transition;
+#[cfg(test)]
+use crate::platform_types::event_execution_result::EventExecutionResult;
+#[cfg(test)]
+use crate::platform_types::event_execution_result::EventExecutionResult::ConsensusExecutionError;
 use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-#[cfg(test)]
-use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult;
-#[cfg(test)]
-use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult::ConsensusExecutionError;
 use crate::rpc::core::CoreRPCLike;
 
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
@@ -31,7 +31,7 @@ where
         raw_tx: Vec<u8>,
         block_info: &dpp::block::block_info::BlockInfo,
         transaction: &Transaction,
-    ) -> Result<StateTransitionExecutionResult, Error> {
+    ) -> Result<EventExecutionResult, Error> {
         let state_transition =
             StateTransition::deserialize_from_bytes(raw_tx.as_slice()).map_err(Error::Protocol)?;
         let state_read_guard = self.state.read().unwrap();
@@ -115,8 +115,8 @@ where
 #[cfg(test)]
 mod tests {
     use crate::config::PlatformConfig;
+    use crate::platform_types::event_execution_result::EventExecutionResult::SuccessfulPaidExecution;
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult::SuccessfulPaidExecution;
     use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;

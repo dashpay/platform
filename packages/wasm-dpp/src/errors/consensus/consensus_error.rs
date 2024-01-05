@@ -119,7 +119,6 @@ use crate::errors::consensus::basic::{
 };
 use crate::errors::consensus::fee::BalanceIsNotEnoughErrorWasm;
 
-// use crate::errors::consensus::state::data_contract::data_trigger::DataTriggerInvalidResultErrorWasm;
 use crate::errors::consensus::value_error::ValueErrorWasm;
 
 use super::state::document::DocumentTimestampsAreEqualErrorWasm;
