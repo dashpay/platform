@@ -101,12 +101,12 @@ impl IdentityFacade {
     #[cfg(feature = "state-transitions")]
     pub fn create_identity_credit_transfer_transition(
         &self,
-        identity_id: Identifier,
+        identity: &Identity,
         recipient_id: Identifier,
         amount: u64,
     ) -> Result<IdentityCreditTransferTransition, ProtocolError> {
         self.factory
-            .create_identity_credit_transfer_transition(identity_id, recipient_id, amount)
+            .create_identity_credit_transfer_transition(identity, recipient_id, amount)
     }
 
     #[cfg(feature = "state-transitions")]

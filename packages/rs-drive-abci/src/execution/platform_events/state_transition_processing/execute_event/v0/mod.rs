@@ -1,5 +1,7 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::execution_operation::{ExecutionOperation, OperationLike};
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::event_execution_result::EventExecutionResult::{
     ConsensusExecutionError, SuccessfulFreeExecution, SuccessfulPaidExecution,
@@ -54,15 +56,17 @@ where
             ExecutionEvent::PaidFromAssetLockDriveEvent {
                 identity,
                 operations,
+                execution_operations,
                 ..
             }
             | ExecutionEvent::PaidDriveEvent {
                 identity,
                 operations,
+                execution_operations,
             } => {
                 if fee_validation_result.is_valid_with_data() {
                     //todo: make this into an atomic event with partial batches
-                    let individual_fee_result = self
+                    let mut individual_fee_result = self
                         .drive
                         .apply_drive_operations(
                             operations,
@@ -72,6 +76,13 @@ where
                             platform_version,
                         )
                         .map_err(Error::Drive)?;
+
+                    ExecutionOperation::add_many_to_fee_result(
+                        &execution_operations,
+                        &mut individual_fee_result,
+                        &block_info.epoch,
+                        platform_version,
+                    )?;
 
                     let balance_change = individual_fee_result.into_balance_change(identity.id);
 

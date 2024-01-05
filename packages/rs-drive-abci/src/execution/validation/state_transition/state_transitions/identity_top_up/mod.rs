@@ -11,6 +11,7 @@ use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
 use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::rpc::core::CoreRPCLike;
@@ -29,6 +30,7 @@ impl StateTransitionActionTransformerV0 for IdentityTopUpTransition {
         &self,
         platform: &PlatformRef<C>,
         _validate: bool,
+        execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
@@ -40,7 +42,7 @@ impl StateTransitionActionTransformerV0 for IdentityTopUpTransition {
             .identity_top_up_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(platform, platform_version),
+            0 => self.transform_into_action_v0(platform, execution_context, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity top up transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -80,6 +82,7 @@ impl StateTransitionStateValidationV0 for IdentityTopUpTransition {
         &self,
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
@@ -91,7 +94,7 @@ impl StateTransitionStateValidationV0 for IdentityTopUpTransition {
             .identity_top_up_state_transition
             .state
         {
-            0 => self.validate_state_v0(platform, tx, platform_version),
+            0 => self.validate_state_v0(platform, execution_context, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity top up transition: validate_state".to_string(),
                 known_versions: vec![0],
