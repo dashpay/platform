@@ -143,6 +143,11 @@ pub(crate) trait StateTransitionSignatureValidationV0 {
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error>;
+
+    /// This means we should transform into the action before validation of the identity and signatures
+    fn requires_state_to_validate_identity_and_signatures(&self) -> bool {
+        false
+    }
 }
 
 /// A trait for validating state transitions within a blockchain.
@@ -163,6 +168,11 @@ pub(crate) trait StateTransitionStructureValidationV0 {
         action: Option<&StateTransitionAction>,
         protocol_version: u32,
     ) -> Result<SimpleConsensusValidationResult, Error>;
+
+    /// This means we should transform into the action before validation of the structure
+    fn requires_state_to_validate_structure(&self) -> bool {
+        false
+    }
 }
 
 /// A trait for validating state transitions within a blockchain.
@@ -225,6 +235,11 @@ impl StateTransitionStructureValidationV0 for StateTransition {
                 st.validate_structure(platform, action, protocol_version)
             }
         }
+    }
+
+    /// This means we should transform into the action before validation of the structure
+    fn requires_state_to_validate_structure(&self) -> bool {
+        matches!(self, StateTransition::DocumentsBatch(_))
     }
 }
 
@@ -370,6 +385,11 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                 }
             }
         }
+    }
+
+    /// This means we should transform into the action before validation of the identity and signatures
+    fn requires_state_to_validate_identity_and_signatures(&self) -> bool {
+        matches!(self, StateTransition::DocumentsBatch(_))
     }
 }
 

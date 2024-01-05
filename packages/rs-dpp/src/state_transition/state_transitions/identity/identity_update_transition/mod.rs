@@ -17,6 +17,7 @@ use crate::state_transition::identity_update_transition::v0::IdentityUpdateTrans
 use crate::state_transition::StateTransitionFieldTypes;
 use fields::*;
 
+use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
@@ -69,6 +70,8 @@ impl IdentityUpdateTransition {
         }
     }
 }
+
+impl OptionallyAssetLockProved for IdentityUpdateTransition {}
 
 impl StateTransitionFieldTypes for IdentityUpdateTransition {
     fn binary_property_paths() -> Vec<&'static str> {

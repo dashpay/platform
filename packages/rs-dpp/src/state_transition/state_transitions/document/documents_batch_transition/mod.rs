@@ -41,6 +41,7 @@ use crate::state_transition::data_contract_update_transition::{
 
 use crate::state_transition::documents_batch_transition::fields::property_names;
 
+use crate::identity::state_transition::OptionallyAssetLockProved;
 pub use v0::*;
 
 #[derive(
@@ -593,3 +594,4 @@ pub fn get_security_level_requirement(v: &Value, default: SecurityLevel) -> Secu
 //         assert_eq!(hex::encode(expected_bytes), hex::encode(bytes));
 //     }
 // }
+impl OptionallyAssetLockProved for DocumentsBatchTransition {}
