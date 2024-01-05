@@ -18,20 +18,19 @@ use hex::ToHex;
 pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
+pub use rs_dapi_client::AddressList;
+pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
     DapiClient, DapiClientError, DapiRequestExecutor,
 };
-use std::{fmt::Debug, num::NonZeroUsize, ops::DerefMut};
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::fmt::Debug;
+use std::num::NonZeroUsize;
+use std::ops::DerefMut;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
-
-pub use rs_dapi_client::AddressList;
-pub use rs_dapi_client::RequestSettings;
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
