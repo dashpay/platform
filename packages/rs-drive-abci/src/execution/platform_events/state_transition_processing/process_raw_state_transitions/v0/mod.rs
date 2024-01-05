@@ -157,13 +157,20 @@ where
 
         tracing::trace!(?state_transition, "Processing state transition");
 
+        let state_transition_name = state_transition.name();
+        let is_st_asset_lock_funded = matches!(
+            state_transition,
+            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_),
+        );
+
         // Validate state transition and produce an execution event
         let mut st_validation_result =
-            process_state_transition(platform_ref, state_transition.clone(), Some(transaction))
-                .map_err(|error| StateTransitionAwareError {
+            process_state_transition(platform_ref, state_transition, Some(transaction)).map_err(
+                |error| StateTransitionAwareError {
                     error,
                     raw_state_transition: raw_state_transition.into(),
-                })?;
+                },
+            )?;
 
         // State Transition is invalid
         if !st_validation_result.is_valid() {
@@ -175,7 +182,7 @@ where
             tracing::debug!(
                 errors = ?st_validation_result.errors,
                 "Invalid {} state transition ({}): {}",
-                state_transition.name(),
+                state_transition_name,
                 st_hash,
                 &first_consensus_error
             );
@@ -189,10 +196,7 @@ where
             // TODO: process_state_transition should return fees for invalid state transitions as well so we can
             //  deduct the fees from balance if identity is valid
             // TODO: Replace with state_transition.optional_asset_lock_proof().is_some() in check tx PR
-            let state_transition_execution_result = if matches!(
-                state_transition,
-                StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_),
-            ) {
+            let state_transition_execution_result = if is_st_asset_lock_funded {
                 StateTransitionExecutionResult::UnpaidConsensusError(first_consensus_error)
             } else {
                 StateTransitionExecutionResult::PaidConsensusError(first_consensus_error)
@@ -220,7 +224,7 @@ where
             EventExecutionResult::SuccessfulPaidExecution(estimated_fees, actual_fees) => {
                 tracing::debug!(
                     "{} state transition ({}) successfully processed",
-                    state_transition.name(),
+                    state_transition_name,
                     st_hash,
                 );
 
@@ -229,7 +233,7 @@ where
             EventExecutionResult::SuccessfulFreeExecution => {
                 tracing::debug!(
                     "Free {} state transition ({}) successfully processed",
-                    state_transition.name(),
+                    state_transition_name,
                     st_hash,
                 );
 
@@ -251,7 +255,7 @@ where
                 tracing::debug!(
                     error = ?first_consensus_error,
                     "Insufficient identity balance to process {} state transition ({})",
-                    state_transition.name(),
+                    state_transition_name,
                     st_hash,
                 );
 
