@@ -287,7 +287,7 @@ where
                 // still be added to mempool due to inconsistency between check tx and tx processing
                 // (fees calculation) or malicious proposer.
                 StateTransitionExecutionResult::UnpaidConsensusError(_) => TxAction::Removed,
-                // We shouldn't include in the block any state transitions that produced internval error
+                // We shouldn't include in the block any state transitions that produced an internal error
                 // during execution
                 StateTransitionExecutionResult::DriveAbciError(_) => TxAction::Removed,
             };
@@ -539,18 +539,26 @@ where
             let tx_results = state_transition_results
                 .into_execution_results()
                 .into_iter()
+                // To prevent spam attacks we add to the block state transitions covered with fees only
+                .filter(|execution_result| {
+                    matches!(
+                        execution_result,
+                        StateTransitionExecutionResult::SuccessfulExecution(_, _)
+                            | StateTransitionExecutionResult::PaidConsensusError(_)
+                    )
+                })
                 .map(|execution_result| {
                     execution_result.try_into_platform_versioned(platform_version)
                 })
                 .collect::<Result<_, _>>()?;
 
-            // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
             let response = ResponseProcessProposal {
                 app_hash: app_hash.to_vec(),
                 tx_results,
                 status: proto::response_process_proposal::ProposalStatus::Accept.into(),
                 validator_set_update,
-                ..Default::default()
+                // TODO: Implement consensus param updates
+                consensus_param_updates: None,
             };
 
             tracing::info!(

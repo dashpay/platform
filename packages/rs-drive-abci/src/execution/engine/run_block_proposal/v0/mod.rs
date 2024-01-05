@@ -126,7 +126,7 @@ where
         self.update_core_info(
             Some(&state),
             &mut block_platform_state,
-            core_chain_locked_height.to_owned(),
+            core_chain_locked_height,
             false,
             &block_info,
             transaction,
@@ -137,8 +137,8 @@ where
         // Update the validator proposed app version
         self.drive
             .update_validator_proposed_app_version(
-                proposer_pro_tx_hash.to_owned(),
-                proposed_app_version.to_owned() as u32,
+                proposer_pro_tx_hash,
+                proposed_app_version as u32,
                 Some(transaction),
                 &platform_version.drive,
             )
@@ -251,7 +251,7 @@ where
         // This takes withdrawals from the transaction queue
         let unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(
-                validator_set_quorum_hash.to_owned(),
+                validator_set_quorum_hash,
                 &block_execution_context,
                 transaction,
                 platform_version,

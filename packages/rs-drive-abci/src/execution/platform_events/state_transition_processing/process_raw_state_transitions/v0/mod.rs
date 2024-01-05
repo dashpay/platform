@@ -167,7 +167,6 @@ where
 
         // State Transition is invalid
         if !st_validation_result.is_valid() {
-            // TODO: We should get processing fees for invalid state transitions as well
             let first_consensus_error = st_validation_result
                 .errors
                 // the first error must be present for an invalid result
@@ -181,12 +180,14 @@ where
                 &first_consensus_error
             );
 
-            // It's impossible to deduct fees for Asset Lock funded state transitions.
-            // Funding goes from payment blockchain with asset lock transactions and
-            // they can't be partially spent. To prevent spam we should mark such state transitions
-            // as unpaid and do not include them into block.
-            // TODO: We need to check that error happened after identity validation and the identitiy balance
-            //  is enough to cover processing fees. Otherwise we should return unpaid consensus error.
+            // To prevent spam we should deduct fees for invalid state transitions as well.
+            // There are two cases when the user can't pay fees:
+            // 1. The state transition is funded by an asset lock transactions. This transactions are
+            //    placed on the payment blockchain and they can't be partially spent.
+            // 2. We can't prove that the state transition is assosiated with identity or identity balance is not
+            //    enough to cover processing fees
+            // TODO: process_state_transition should return fees for invalid state transitions as well so we can
+            //  deduct the fees from balance if identity is valid
             // TODO: Replace with state_transition.optional_asset_lock_proof().is_some() in check tx PR
             let state_transition_execution_result = if matches!(
                 state_transition,
