@@ -279,8 +279,18 @@ where
         {
             let tx_action = match &state_transition_execution_result {
                 StateTransitionExecutionResult::SuccessfulExecution(_, _) => TxAction::Unmodified,
+                // We have identity to pay for the state transition, so we keep it in the block
                 StateTransitionExecutionResult::PaidConsensusError(_) => TxAction::Unmodified,
+                // We don't have any associated identity to pay for the state transition,
+                // so we remove it from the block to prevent spam attacks.
+                // Such state transitions must be invalidated by check tx, but they might
+                // still be added to mempool in case of inconsistency between check tx and tx processing,
+                // i.e. balance calculation
                 StateTransitionExecutionResult::UnpaidConsensusError(_) => TxAction::Removed,
+                // We shouldn't include in the block any state transitions that produced internval error
+                // during execution
+                // TODO: Or we should to make this error visible for the whole netowrk? Should it be
+                //  network depending setting?
                 StateTransitionExecutionResult::DriveAbciError(_) => TxAction::Removed,
             };
 
