@@ -5,10 +5,8 @@ use crate::execution::types::execution_operation::{ExecutionOperation, Operation
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::ConsensusError::FeeError;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use dpp::prelude::ConsensusValidationResult;
@@ -54,7 +52,7 @@ where
                 let previous_balance = identity.balance.ok_or(Error::Execution(
                     ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
                 ))?;
-                let balance_with_topup = previous_balance + added_balance;
+                let previous_balance_with_top_up = previous_balance + added_balance;
                 let mut estimated_fee_result = self
                     .drive
                     .apply_drive_operations(
@@ -75,14 +73,21 @@ where
 
                 // TODO: Should take into account refunds as well
                 let total_fee = estimated_fee_result.total_base_fee();
-                if balance_with_topup >= total_fee {
+                if previous_balance_with_top_up >= total_fee {
                     Ok(ConsensusValidationResult::new_with_data(
                         estimated_fee_result,
                     ))
                 } else {
                     Ok(ConsensusValidationResult::new_with_data_and_errors(
                         estimated_fee_result,
-                        vec![BalanceIsNotEnoughError::new(balance_with_topup, total_fee).into()],
+                        vec![StateError::IdentityInsufficientBalanceError(
+                            IdentityInsufficientBalanceError::new(
+                                identity.id,
+                                previous_balance_with_top_up,
+                                total_fee,
+                            ),
+                        )
+                        .into()],
                     ))
                 }
             }
@@ -113,15 +118,22 @@ where
                 )?;
 
                 // TODO: Should take into account refunds as well
-                let total_fee = estimated_fee_result.total_base_fee();
-                if balance >= total_fee {
+                let required_balance = estimated_fee_result.total_base_fee();
+                if balance >= required_balance {
                     Ok(ConsensusValidationResult::new_with_data(
                         estimated_fee_result,
                     ))
                 } else {
                     Ok(ConsensusValidationResult::new_with_data_and_errors(
                         estimated_fee_result,
-                        vec![BalanceIsNotEnoughError::new(balance, total_fee).into()],
+                        vec![StateError::IdentityInsufficientBalanceError(
+                            IdentityInsufficientBalanceError::new(
+                                identity.id,
+                                balance,
+                                required_balance,
+                            ),
+                        )
+                        .into()],
                     ))
                 }
             }
