@@ -36,7 +36,9 @@ use crate::consensus::ConsensusError;
 
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
+use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use crate::prelude::AssetLockProof;
 pub use state_transitions::*;
 
 use crate::serialization::Signable;
@@ -243,16 +245,13 @@ pub enum StateTransition {
     IdentityCreditTransfer(IdentityCreditTransferTransition),
 }
 
-impl StateTransition {
-    /// This means we should transform into the action before validation of the structure
-    pub fn requires_state_to_validate_structure(&self) -> bool {
-        matches!(self, StateTransition::DocumentsBatch(_))
+impl OptionallyAssetLockProved for StateTransition {
+    fn optional_asset_lock_proof(&self) -> Option<&AssetLockProof> {
+        call_method!(self, optional_asset_lock_proof)
     }
-    /// This means we should transform into the action before validation of the identity and signatures
-    pub fn requires_state_to_validate_identity_and_signatures(&self) -> bool {
-        matches!(self, StateTransition::DocumentsBatch(_))
-    }
+}
 
+impl StateTransition {
     pub fn is_identity_signed(&self) -> bool {
         !matches!(
             self,

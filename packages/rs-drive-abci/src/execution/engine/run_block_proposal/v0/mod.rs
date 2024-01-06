@@ -294,7 +294,7 @@ where
                 .collect(),
         );
 
-        let (block_fees, state_transition_results) = self.process_raw_state_transitions(
+        let state_transitions_result = self.process_raw_state_transitions(
             raw_state_transitions,
             block_execution_context.block_platform_state(),
             &block_info,
@@ -312,7 +312,7 @@ where
 
         // while we have the state transitions executed, we now need to process the block fees
 
-        let block_fees_v0: BlockFeesV0 = block_fees.into();
+        let block_fees_v0: BlockFeesV0 = state_transitions_result.aggregated_fees().clone().into();
 
         // Process fees
         let processed_block_fees = self.process_block_fees(
@@ -358,7 +358,7 @@ where
         Ok(ValidationResult::new_with_data(
             block_execution_outcome::v0::BlockExecutionOutcome {
                 app_hash: root_hash,
-                state_transition_results,
+                state_transitions_result,
                 validator_set_update,
                 protocol_version: platform_version.protocol_version,
             },

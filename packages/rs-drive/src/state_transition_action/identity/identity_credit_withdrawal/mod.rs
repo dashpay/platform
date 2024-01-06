@@ -18,7 +18,7 @@ pub enum IdentityCreditWithdrawalTransitionAction {
 }
 
 impl IdentityCreditWithdrawalTransitionAction {
-    /// Withdrawal amount
+    /// Revision
     pub fn revision(&self) -> Revision {
         match self {
             IdentityCreditWithdrawalTransitionAction::V0(transition) => transition.revision,

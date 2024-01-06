@@ -14,6 +14,7 @@ use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
 use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::rpc::core::CoreRPCLike;
@@ -32,6 +33,7 @@ impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
         &self,
         platform: &PlatformRef<C>,
         validate: bool,
+        _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
@@ -93,6 +95,10 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
             })),
         }
     }
+
+    fn requires_state_to_validate_structure(&self) -> bool {
+        true
+    }
 }
 
 impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
@@ -100,6 +106,7 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
         &self,
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
+        _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
