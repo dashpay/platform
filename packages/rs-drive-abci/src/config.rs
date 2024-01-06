@@ -317,7 +317,7 @@ impl Default for ExecutionConfig {
 
 impl Default for PlatformConfig {
     fn default() -> Self {
-        Self::default_testnet()
+        Self::default_mainnet()
     }
 }
 

@@ -147,6 +147,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -203,6 +205,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -259,6 +263,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -401,6 +407,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -538,6 +546,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -607,6 +617,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -664,6 +676,8 @@ mod tests {
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 100,
@@ -728,6 +742,8 @@ mod tests {
         let three_mins_in_ms = 1000 * 60 * 3;
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 100,
@@ -794,6 +810,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 10,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -884,6 +902,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 10,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -959,6 +979,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 10,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -1029,6 +1051,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 10,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -1129,6 +1153,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -1187,6 +1213,8 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 100,
@@ -1271,6 +1299,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -1383,6 +1413,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -1490,6 +1522,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -1574,6 +1608,8 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 100,
@@ -1685,6 +1721,8 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 100,
@@ -1796,6 +1834,8 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 100,
@@ -1923,6 +1963,8 @@ mod tests {
 
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 100,
@@ -2054,6 +2096,8 @@ mod tests {
 
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 100,
@@ -2127,6 +2171,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -2211,6 +2257,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -2300,6 +2348,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -2396,6 +2446,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -2456,6 +2508,8 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             quorum_size: 3,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 1,
@@ -2613,6 +2667,8 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             quorum_size: 3,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 1,
@@ -2741,6 +2797,8 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             quorum_size: 3,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 1,
@@ -2869,6 +2927,8 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             quorum_size: 3,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 1,
@@ -3011,6 +3071,8 @@ mod tests {
 
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -3069,6 +3131,8 @@ mod tests {
         };
         let config = PlatformConfig {
             quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,

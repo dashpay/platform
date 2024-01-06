@@ -320,20 +320,10 @@ where
             tx_results,
             app_hash: app_hash.to_vec(),
             tx_records,
-            core_chain_lock_update: Some(CoreChainLock {
-                core_block_hash: core_chain_lock_update
-                    .as_ref()
-                    .unwrap()
-                    .block_hash
-                    .to_byte_array()
-                    .to_vec(),
-                core_block_height: core_chain_lock_update.as_ref().unwrap().block_height,
-                signature: core_chain_lock_update
-                    .as_ref()
-                    .unwrap()
-                    .signature
-                    .to_bytes()
-                    .to_vec(),
+            core_chain_lock_update: core_chain_lock_update.map(|chain_lock| CoreChainLock {
+                core_block_hash: chain_lock.block_hash.to_byte_array().to_vec(),
+                core_block_height: chain_lock.block_height,
+                signature: chain_lock.signature.to_bytes().to_vec(),
             }),
             validator_set_update,
             // TODO: implement consensus param updates

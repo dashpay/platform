@@ -64,6 +64,8 @@ mod tests {
 
         let config = PlatformConfig {
             quorum_size,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -170,6 +172,8 @@ mod tests {
 
         let config = PlatformConfig {
             quorum_size,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
@@ -265,6 +269,8 @@ mod tests {
 
         let config = PlatformConfig {
             quorum_size,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,
