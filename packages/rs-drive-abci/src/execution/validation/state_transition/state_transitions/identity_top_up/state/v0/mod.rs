@@ -17,12 +17,13 @@ use dpp::version::PlatformVersion;
 use drive::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 
-use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
+use drive::grovedb::TransactionArg;
+
 use crate::execution::types::execution_operation::ExecutionOperation;
 use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
-use crate::execution::validation::state_transition::common::asset_lock::proof::AssetLockProofStateValidation;
+use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
 use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_top_up) trait IdentityTopUpStateTransitionStateValidationV0
@@ -53,7 +54,7 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
-        validation_result.merge(self.asset_lock_proof().validate_state(
+        validation_result.merge(self.asset_lock_proof().validate(
             platform,
             tx,
             platform_version,

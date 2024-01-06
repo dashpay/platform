@@ -27,6 +27,7 @@ use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 
 use crate::data_contract::DataContract;
 
+use crate::identity::state_transition::OptionallyAssetLockProved;
 pub use v0::*;
 
 pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
@@ -98,6 +99,8 @@ impl StateTransitionFieldTypes for DataContractUpdateTransition {
         vec![SIGNATURE]
     }
 }
+
+impl OptionallyAssetLockProved for DataContractUpdateTransition {}
 
 #[cfg(test)]
 mod test {
