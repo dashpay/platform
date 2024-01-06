@@ -1,9 +1,13 @@
 use std::{num::NonZeroUsize, str::FromStr, sync::Arc};
 
 use clap::Parser;
+use dash_platform_sdk::mock::wallet::MockWallet;
 use dash_platform_sdk::{mock::provider::GrpcContextProvider, platform::Fetch, Sdk, SdkBuilder};
+use dashcore_rpc::dashcore::Network;
 use dpp::prelude::{DataContract, Identifier};
+use dpp::version::PlatformVersion;
 use rs_dapi_client::AddressList;
+use tokio_util::sync::CancellationToken;
 
 #[derive(clap::Parser, Debug)]
 #[command(version)]
@@ -59,7 +63,29 @@ async fn main() {
 
 /// Setup Rust SDK
 fn setup_sdk(config: &Config) -> Arc<Sdk> {
-    // We need to implement a ContextProvider.
+    // When the CancellationToken is cancelled, we will gracefully stop the Sdk.
+    let cancel = CancellationToken::new();
+
+    // We need to implement a Wallet. In our case, we'll just use GRPC wallet
+    // implementation from the SDK mocking module, which in turn uses separate Platform and
+    // Core wallet.
+    //
+    // Note that this logic is executed automatically when you [build](SdkBuilder::build()) SDK without providing a
+    // wallet nor context provider. We do it manually here to show how it works, and how
+    // you should use it with your own implementation of wallet and context provider.
+    // Now, let's create the wallet
+    let wallet = MockWallet::new_mock(
+        Network::Devnet,
+        &config.server_address,
+        config.core_port,
+        &config.core_user,
+        &config.core_password,
+        cancel.child_token(),
+        PlatformVersion::latest(),
+    )
+    .expect("mock wallet creation");
+
+    // We also need to implement a ContextProvider.
     // Here, we will just use a mock implementation.
     // Tricky thing here is that this implementation requires SDK, so we have a
     // circular dependency between SDK and ContextProvider.
@@ -88,7 +114,9 @@ fn setup_sdk(config: &Config) -> Arc<Sdk> {
 
     // Now, we create the Sdk with the wallet and context provider.
     let sdk = SdkBuilder::new(AddressList::from_iter([uri]))
+        .with_wallet(wallet)
         .with_context_provider(Arc::clone(&context_provider))
+        .with_cancellation_token(cancel)
         .build()
         .expect("cannot build sdk");
 

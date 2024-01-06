@@ -39,7 +39,7 @@ pub trait Put {
     /// Returns:
     /// - ID of transaction on success
     /// - [`Err(Error)`](Error) when an error occurs
-    async fn put(&self, sdk: &Sdk, context: &TransitionContext) -> Result<TxId, Error>;
+    async fn put(&self, sdk: &Sdk, context: Option<&TransitionContext>) -> Result<TxId, Error>;
 
     /// Put (create or update) object on the Platform, without waiting for confirmation.
     ///
@@ -49,5 +49,9 @@ pub trait Put {
     /// Unlike [Put::put()], it does not wait for the transaction to be confirmed.
     ///
     /// See [Put::put()](Put::put()) for more details.
-    async fn put_unconfirmed(&self, sdk: &Sdk, context: &TransitionContext) -> Result<TxId, Error>;
+    async fn put_and_wait(
+        &self,
+        sdk: &Sdk,
+        context: Option<&TransitionContext>,
+    ) -> Result<TxId, Error>;
 }

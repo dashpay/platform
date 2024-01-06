@@ -1,4 +1,4 @@
-use dash_platform_sdk::platform::types::identity::PublicKeyHash;
+use dash_platform_sdk::platform::types::identity::{IdentityEx, PublicKeyHash};
 use dash_platform_sdk::platform::{Fetch, FetchMany};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -116,4 +116,18 @@ async fn test_identity_public_keys_all_read() {
 
         assert_eq!(id, pubkey.id());
     }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_identity_register() {
+    setup_logs();
+
+    let cfg = Config::new();
+    let id: dpp::prelude::Identifier = cfg.existing_identity_id;
+
+    let sdk = cfg.setup_api().await;
+
+    let new_identity = Identity::register(&sdk, 1)
+        .await
+        .expect("register identity");
 }

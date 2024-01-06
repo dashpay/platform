@@ -3,10 +3,13 @@
 //! This module contains [Config] struct that can be used to configure dash-platform-sdk.
 //! It's mainly used for testing.
 
-use dpp::prelude::Identifier;
+use dash_platform_sdk::mock::{provider::GrpcContextProvider, wallet::MockWallet};
+use dashcore_rpc::dashcore::Network;
+use dpp::{prelude::Identifier, version::PlatformVersion};
 use rs_dapi_client::AddressList;
 use serde::Deserialize;
-use std::{path::PathBuf, str::FromStr, sync::Arc};
+use std::{num::NonZeroUsize, path::PathBuf, str::FromStr, sync::Arc};
+use tokio_util::sync::CancellationToken;
 
 /// Existing document ID
 ///
@@ -72,7 +75,7 @@ pub struct Config {
 
 impl Config {
     /// Prefix of configuration options in the environment variables and `.env` file.
-    pub const CONFIG_PREFIX: &str = "RS_SDK_";
+    pub const CONFIG_PREFIX: &'static str = "RS_SDK_";
     /// Load configuration from operating system environment variables and `.env` file.
     ///
     /// Create new [Config] with data from environment variables and `${CARGO_MANIFEST_DIR}/tests/.env` file.
@@ -141,13 +144,15 @@ impl Config {
         // offline testing takes precedence over network testing
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
+            let cancel = CancellationToken::new();
+            let wallet = self.create_wallet(cancel.child_token());
+            let context_provider = self.create_context_provider();
+
             // Dump all traffic to disk
-            let builder = dash_platform_sdk::SdkBuilder::new(self.address_list()).with_core(
-                &self.platform_host,
-                self.core_port,
-                &self.core_user,
-                &self.core_password,
-            );
+            let builder = dash_platform_sdk::SdkBuilder::new(self.address_list())
+                .with_cancellation_token(cancel)
+                .with_context_provider(context_provider)
+                .with_wallet(wallet);
 
             #[cfg(feature = "generate-test-vectors")]
             let builder = builder.with_dump_dir(&self.dump_dir);
@@ -173,6 +178,35 @@ impl Config {
         };
 
         sdk
+    }
+
+    fn create_wallet(&self, cancel: CancellationToken) -> Arc<MockWallet> {
+        let wallet = MockWallet::new_mock(
+            Network::Devnet,
+            &self.platform_host,
+            self.core_port,
+            &self.core_user,
+            &self.core_password,
+            cancel,
+            PlatformVersion::latest(),
+        )
+        .expect("mock wallet creation");
+
+        Arc::new(wallet)
+    }
+
+    fn create_context_provider(&self) -> Arc<std::sync::Mutex<GrpcContextProvider>> {
+        let context_provider = GrpcContextProvider::new(
+            None,
+            &self.platform_host,
+            self.core_port,
+            &self.core_user,
+            &self.core_password,
+            NonZeroUsize::new(100).expect("data contracts cache size"),
+            NonZeroUsize::new(100).expect("quorum public keys cache size"),
+        )
+        .expect("context provider");
+        Arc::new(std::sync::Mutex::new(context_provider))
     }
 
     fn default_identity_id() -> Identifier {

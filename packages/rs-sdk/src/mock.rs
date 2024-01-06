@@ -27,6 +27,8 @@ pub mod provider;
 mod requests;
 #[cfg(feature = "mocks")]
 pub mod sdk;
+#[cfg(feature = "mocks")]
+pub mod wallet;
 
 // Mockable reexport is needed even if mocks feature is disabled - it just does nothing.
 // Otherwise  dapi_grpc_macros::Mockable fails.

@@ -41,7 +41,7 @@ use crate::error::Error;
 /// use dpp::prelude::{AssetLockProof, PrivateKey};
 /// use dpp::version::PlatformVersion;
 ///
-/// let mut sdk = Sdk::new_mock();
+/// let sdk = Sdk::new_mock();
 /// let asset_lock_proof = AssetLockProof::new(/* parameters for the asset lock proof */);
 /// let private_key = PrivateKey::from(/* private key data */);
 /// let signer = /* implementation of Signer trait */;

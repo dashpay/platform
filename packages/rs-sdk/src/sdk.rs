@@ -1,16 +1,11 @@
 //! [Sdk] entrypoint to Dash Platform.
 
-use std::{fmt::Debug, num::NonZeroUsize, ops::DerefMut};
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
-
 use crate::error::Error;
 use crate::mock::provider::GrpcContextProvider;
 #[cfg(feature = "mocks")]
 use crate::mock::MockDashPlatformSdk;
 use crate::mock::MockResponse;
+use crate::wallet::Wallet;
 use dapi_grpc::mock::Mockable;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -29,6 +24,11 @@ use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
     DapiClient, DapiClientError, DapiRequestExecutor,
 };
+use std::fmt::Debug;
+use std::num::NonZeroUsize;
+use std::ops::DerefMut;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 
@@ -73,6 +73,15 @@ pub struct Sdk {
     ///
     /// Note that setting this to None can panic.
     context_provider: std::sync::Mutex<Option<Box<dyn ContextProvider>>>,
+
+    /// Default wallet to use when executing various operations.
+    ///
+    /// Wallet is used to manage keys and sign transactions.
+    /// It can be changed on runtime with set_wallet().
+    ///
+    /// If wallet is not provided, only read operations will be available.
+    // TODO: replace tokio::sync::Mutex with another one implementing Send+Sync but working in both sync and async context
+    pub(crate) wallet: tokio::sync::Mutex<Option<Box<dyn Wallet>>>,
 
     /// Cancellation token; once cancelled, all pending requests should be aborted.
     pub(crate) cancel_token: CancellationToken,
@@ -208,6 +217,17 @@ impl Sdk {
         self.proofs
     }
 
+    /// Set the wallet to use.
+    ///
+    /// Wallet is used to manage keys and addresses and sign transactions.
+    /// It can be changed on runtime with set_wallet().
+    ///
+    /// Note that this will overwrite any previous wallet.
+    pub async fn set_wallet<W: Wallet + 'static>(&self, wallet: W) {
+        let mut lock = self.wallet.lock().await;
+        lock.replace(Box::new(wallet));
+    }
+
     /// Set the [ContextProvider] to use.
     ///
     /// [ContextProvider] is used to access state information, like data contracts and quorum public keys.
@@ -253,6 +273,19 @@ impl Sdk {
         if let Err(e) = std::fs::write(file, encoded) {
             tracing::warn!("Unable to write dump file {:?}: {}", path, e);
         }
+    }
+
+    /// Create a new [`TransitionContext`] with default configuration.
+    ///
+    /// This method is used to create a new [`TransitionContext`] that stores various parameters
+    /// required to execute a state transition.
+    // pub fn create_transition_context(&self) -> TransitionContext {
+    //     TransitionContext::new(self)
+    // }
+
+    /// Return a wallet lock guard that allows access to the wallet.
+    pub async fn wallet(&self) -> tokio::sync::MutexGuard<Option<Box<dyn Wallet>>> {
+        self.wallet.lock().await
     }
 
     /// Returns a future that resolves when the Sdk is cancelled (eg. shutdown was requested).
@@ -371,6 +404,9 @@ pub struct SdkBuilder {
     data_contract_cache_size: NonZeroUsize,
     quorum_public_keys_cache_size: NonZeroUsize,
 
+    /// Wallet used by the SDK.
+    wallet: Option<Box<dyn Wallet>>,
+
     /// Context provider used by the SDK.
     context_provider: Option<Box<dyn ContextProvider>>,
 
@@ -401,6 +437,7 @@ impl Default for SdkBuilder {
                 .expect("quorum public keys cache size must be positive"),
 
             context_provider: None,
+            wallet: None,
 
             cancel_token: CancellationToken::new(),
 
@@ -468,6 +505,17 @@ impl SdkBuilder {
         self
     }
 
+    /// Configure wallet to use.
+    ///
+    /// Wallet is used to manage keys and addresses and sign transactions.
+    ///
+    /// See [Wallet] for more information and [MockWallet] for an example implementation.
+    pub fn with_wallet<W: Wallet + 'static>(mut self, wallet: W) -> Self {
+        self.wallet = Some(Box::new(wallet));
+
+        self
+    }
+
     /// Configure context provider to use.
     ///
     /// Context provider is used to retrieve data contracts and quorum public keys from application state.
@@ -488,22 +536,6 @@ impl SdkBuilder {
     /// Once that cancellation token is cancelled, all pending requests shall teriminate.
     pub fn with_cancellation_token(mut self, cancel_token: CancellationToken) -> Self {
         self.cancel_token = cancel_token;
-        self
-    }
-
-    /// Use Dash Core as a wallet and context provider.
-    ///
-    /// This is a conveniance method that configures the SDK to use Dash Core as a wallet and context provider.
-    ///
-    /// For more control over the configuration, use [SdkBuilder::with_wallet()] and [SdkBuilder::with_context_provider()].
-    ///
-    /// This is temporary implementation, intended for development purposes.
-    pub fn with_core(mut self, ip: &str, port: u16, user: &str, password: &str) -> Self {
-        self.core_ip = ip.to_string();
-        self.core_port = port;
-        self.core_user = user.to_string();
-        self.core_password = password.to_string();
-
         self
     }
 
@@ -540,6 +572,8 @@ impl SdkBuilder {
     pub fn build(self) -> Result<Arc<Sdk>, Error> {
         PlatformVersion::set_current(self.version);
 
+        let wallet = self.wallet;
+
         let  sdk=  match self.addresses {
             // non-mock mode
             Some(addresses) => {
@@ -551,6 +585,7 @@ impl SdkBuilder {
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
                     context_provider: std::sync:: Mutex::new(self.context_provider),
+                    wallet: tokio::sync::Mutex::new(wallet),
                     cancel_token: self.cancel_token,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
@@ -592,6 +627,7 @@ impl SdkBuilder {
                 dump_dir: self.dump_dir,
                 proofs:self.proofs,
                 context_provider:  std::sync:: Mutex::new( Some(context_provider)),
+                wallet: tokio::sync::Mutex::new(wallet),
                 cancel_token: self.cancel_token,
             };
             Arc::new(sdk)

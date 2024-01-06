@@ -23,7 +23,7 @@ WALLET_LIB_PATH="${PACKAGES_PATH}"/wallet-lib
 #   get_config core.rpc.port
 function get_config() {
     # We use `jq` because it's much faster than `yarn dashmate config get`
-    jq ".configs.${CONFIG}_1.$1" <"${HOME}"/.dashmate/config.json
+    jq ".configs.${CONFIG}_seed.$1" <"${HOME}"/.dashmate/config.json
 }
 
 touch "${LOGS_PATH}"/mint.log
