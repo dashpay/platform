@@ -9,14 +9,14 @@ use crate::platform_types::platform::Platform;
 
 use crate::rpc::core::CoreRPCLike;
 
+use crate::config::PlatformConfig;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::version::PlatformVersion;
-use crate::config::PlatformConfig;
 
 const CHAIN_LOCK_REQUEST_ID_PREFIX: &str = "clsig";
 
-const SIGN_OFFSET : u32 = 8;
+const SIGN_OFFSET: u32 = 8;
 
 impl<C> Platform<C>
 where

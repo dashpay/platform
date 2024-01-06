@@ -11,6 +11,8 @@ mod tests {
 
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
 
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
@@ -98,10 +100,10 @@ mod tests {
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
+                Ok(ChainLock {
+                    block_height: 10,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: [2; 96].into(),
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
@@ -186,15 +188,15 @@ mod tests {
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
-                let core_block_height = if core_block_heights.len() == 1 {
+                let block_height = if core_block_heights.len() == 1 {
                     *core_block_heights.first().unwrap()
                 } else {
                     core_block_heights.remove(0)
                 };
-                Ok(CoreChainLock {
-                    core_block_height,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
+                Ok(ChainLock {
+                    block_height,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: [2; 96].into(),
                 })
             });
         run_chain_for_strategy(&mut platform, 1, strategy.clone(), config.clone(), 15);
@@ -373,15 +375,15 @@ mod tests {
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
-                let core_block_height = if core_block_heights.len() == 1 {
+                let block_height = if core_block_heights.len() == 1 {
                     *core_block_heights.first().unwrap()
                 } else {
                     core_block_heights.remove(0)
                 };
-                Ok(CoreChainLock {
-                    core_block_height,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
+                Ok(ChainLock {
+                    block_height,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: [2; 96].into(),
                 })
             });
         // On the first block we only have identities and contracts

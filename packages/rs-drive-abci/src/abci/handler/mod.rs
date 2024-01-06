@@ -321,9 +321,19 @@ where
             app_hash: app_hash.to_vec(),
             tx_records,
             core_chain_lock_update: Some(CoreChainLock {
-                core_block_hash: core_chain_lock_update.as_ref().unwrap().block_hash.to_byte_array().to_vec(),
+                core_block_hash: core_chain_lock_update
+                    .as_ref()
+                    .unwrap()
+                    .block_hash
+                    .to_byte_array()
+                    .to_vec(),
                 core_block_height: core_chain_lock_update.as_ref().unwrap().block_height,
-                signature: core_chain_lock_update.as_ref().unwrap().signature.to_bytes().to_vec(),
+                signature: core_chain_lock_update
+                    .as_ref()
+                    .unwrap()
+                    .signature
+                    .to_bytes()
+                    .to_vec(),
             }),
             validator_set_update,
             // TODO: implement consensus param updates
@@ -503,9 +513,9 @@ where
         let transaction = transaction_guard.as_ref().unwrap();
 
         // Running the proposal executes all the state transitions for the block
-        let run_result = self
-            .platform
-            .run_block_proposal((&request).try_into()?, false, transaction)?;
+        let run_result =
+            self.platform
+                .run_block_proposal((&request).try_into()?, false, transaction)?;
 
         if !run_result.is_valid() {
             // This was an error running this proposal, tell tenderdash that the block isn't valid

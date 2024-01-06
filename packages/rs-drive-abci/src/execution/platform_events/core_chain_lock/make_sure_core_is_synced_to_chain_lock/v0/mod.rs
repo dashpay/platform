@@ -1,12 +1,12 @@
-use dashcore_rpc::dashcore::ChainLock;
-use dpp::version::PlatformVersion;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dashcore_rpc::dashcore::ChainLock;
+use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// The point of this call is to make sure core is synced.
     /// Before this call we had previously validated that the chain lock is valid.

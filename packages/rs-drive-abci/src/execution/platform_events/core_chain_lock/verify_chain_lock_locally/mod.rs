@@ -8,9 +8,9 @@ use crate::platform_types::platform::Platform;
 
 use crate::rpc::core::CoreRPCLike;
 
+use crate::config::PlatformConfig;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::version::PlatformVersion;
-use crate::config::PlatformConfig;
 
 impl<C> Platform<C>
 where

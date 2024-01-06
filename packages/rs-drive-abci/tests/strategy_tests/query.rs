@@ -349,6 +349,8 @@ mod tests {
 
     use strategy_tests::Strategy;
 
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::{BlockHash, ChainLock};
     use tenderdash_abci::proto::types::CoreChainLock;
     use tenderdash_abci::Application;
 
@@ -424,10 +426,10 @@ mod tests {
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
+                Ok(ChainLock {
+                    block_height: 10,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: [2; 96].into(),
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
@@ -535,10 +537,10 @@ mod tests {
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
+                Ok(ChainLock {
+                    block_height: 10,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: [2; 96].into(),
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
@@ -647,10 +649,10 @@ mod tests {
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
+                Ok(ChainLock {
+                    block_height: 10,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: [2; 96].into(),
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);

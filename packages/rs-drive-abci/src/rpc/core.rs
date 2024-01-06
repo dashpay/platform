@@ -112,10 +112,7 @@ pub trait CoreRPCLike {
     ) -> Result<bool, Error>;
 
     /// Verify a chain lock signature
-    fn verify_chain_lock(
-        &self,
-        chain_lock: &ChainLock,
-    ) -> Result<bool, Error>;
+    fn verify_chain_lock(&self, chain_lock: &ChainLock) -> Result<bool, Error>;
 
     /// Returns masternode sync status
     fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error>;
@@ -293,16 +290,15 @@ impl CoreRPCLike for DefaultCoreRPC {
     }
 
     /// Verify a chain lock signature
-    fn verify_chain_lock(
-        &self,
-        chain_lock: &ChainLock,
-    ) -> Result<bool, Error> {
+    fn verify_chain_lock(&self, chain_lock: &ChainLock) -> Result<bool, Error> {
         let block_hash = chain_lock.block_hash.to_string();
         let signature = hex::encode(chain_lock.signature);
 
-        retry!(self
-            .inner
-            .get_verifychainlock(block_hash.as_str(), &signature, Some(chain_lock.block_height)))
+        retry!(self.inner.get_verifychainlock(
+            block_hash.as_str(),
+            &signature,
+            Some(chain_lock.block_height)
+        ))
     }
 
     /// Returns masternode sync status

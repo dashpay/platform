@@ -140,7 +140,7 @@ where
                             "received a chain lock for height {} that is invalid {:?}",
                             block_info.height, core_chain_lock_update,
                         ))
-                            .into(),
+                        .into(),
                     ));
                 }
             }

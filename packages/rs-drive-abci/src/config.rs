@@ -315,6 +315,11 @@ impl Default for ExecutionConfig {
     }
 }
 
+impl Default for PlatformConfig {
+    fn default() -> Self {
+        Self::default_testnet()
+    }
+}
 
 #[allow(missing_docs)]
 impl PlatformConfig {
@@ -391,7 +396,7 @@ mod tests {
     #[test]
     fn test_config_from_env() {
         // ABCI log configs are parsed manually, so they deserve separate handling
-        // Notat that STDOUT is also defined in .env.example, but env var should overwrite it.
+        // Note that STDOUT is also defined in .env.example, but env var should overwrite it.
         let vectors = &[
             ("STDOUT", "pretty"),
             ("UPPERCASE", "json"),

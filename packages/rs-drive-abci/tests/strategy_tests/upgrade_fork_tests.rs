@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests {
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::version::PlatformVersion;
     use drive::drive::config::DriveConfig;
     use tenderdash_abci::proto::types::CoreChainLock;
@@ -85,10 +87,10 @@ mod tests {
                     .core_rpc
                     .expect_get_best_chain_lock()
                     .returning(move || {
-                        Ok(CoreChainLock {
-                            core_block_height: 10,
-                            core_block_hash: [1; 32].to_vec(),
-                            signature: [2; 96].to_vec(),
+                        Ok(ChainLock {
+                            block_height: 10,
+                            block_hash: BlockHash::from_byte_array([1; 32]),
+                            signature: [2; 96].into(),
                         })
                     });
                 let ChainExecutionOutcome {
@@ -351,10 +353,10 @@ mod tests {
                     .core_rpc
                     .expect_get_best_chain_lock()
                     .returning(move || {
-                        Ok(CoreChainLock {
-                            core_block_height: 10,
-                            core_block_hash: [1; 32].to_vec(),
-                            signature: [2; 96].to_vec(),
+                        Ok(ChainLock {
+                            block_height: 10,
+                            block_hash: BlockHash::from_byte_array([1; 32]),
+                            signature: [2; 96].into(),
                         })
                     });
                 let ChainExecutionOutcome {
@@ -616,10 +618,10 @@ mod tests {
                     .core_rpc
                     .expect_get_best_chain_lock()
                     .returning(move || {
-                        Ok(CoreChainLock {
-                            core_block_height: 10,
-                            core_block_hash: [1; 32].to_vec(),
-                            signature: [2; 96].to_vec(),
+                        Ok(ChainLock {
+                            block_height: 10,
+                            block_hash: BlockHash::from_byte_array([1; 32]),
+                            signature: [2; 96].into(),
                         })
                     });
 
@@ -877,10 +879,10 @@ mod tests {
                     .core_rpc
                     .expect_get_best_chain_lock()
                     .returning(move || {
-                        Ok(CoreChainLock {
-                            core_block_height: 10,
-                            core_block_hash: [1; 32].to_vec(),
-                            signature: [2; 96].to_vec(),
+                        Ok(ChainLock {
+                            block_height: 10,
+                            block_hash: BlockHash::from_byte_array([1; 32]),
+                            signature: [2; 96].into(),
                         })
                     });
                 let ChainExecutionOutcome {
@@ -1243,10 +1245,10 @@ mod tests {
                     .core_rpc
                     .expect_get_best_chain_lock()
                     .returning(move || {
-                        Ok(CoreChainLock {
-                            core_block_height: 10,
-                            core_block_hash: [1; 32].to_vec(),
-                            signature: [2; 96].to_vec(),
+                        Ok(ChainLock {
+                            block_height: 10,
+                            block_hash: BlockHash::from_byte_array([1; 32]),
+                            signature: [2; 96].into(),
                         })
                     });
                 let ChainExecutionOutcome {
