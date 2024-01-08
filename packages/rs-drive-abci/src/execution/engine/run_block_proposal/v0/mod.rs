@@ -31,6 +31,7 @@ use crate::platform_types::epoch_info::v0::{EpochInfoV0Getters, EpochInfoV0Metho
 use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::verify_chain_lock_result::v0::VerifyChainLockResult;
 use crate::rpc::core::CoreRPCLike;
 
 impl<C> Platform<C>
@@ -128,20 +129,78 @@ where
         // If there is a core chain lock update, we should start by verifying it
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
             if !known_from_us {
-                let valid = self.verify_chain_lock(
+                let verification_result = self.verify_chain_lock(
                     &block_platform_state,
                     core_chain_lock_update,
                     true, // if it's not known from us, then we should try submitting it
                     platform_version,
-                )?;
-                if !valid {
+                );
+
+                let VerifyChainLockResult {
+                    chain_lock_signature_is_deserializable,
+                    found_valid_locally,
+                    submitted,
+                    found_valid_by_core,
+                } = match verification_result {
+                    Ok(verification_result) => verification_result,
+                    Err(e) => {
+                        // This will happen if the signature is not
+                        return Ok(ValidationResult::new_with_error(
+                            AbciError::InvalidChainLock(e.to_string()).into(),
+                        ));
+                    }
+                };
+
+                if !chain_lock_signature_is_deserializable {
                     return Ok(ValidationResult::new_with_error(
                         AbciError::InvalidChainLock(format!(
-                            "received a chain lock for height {} that is invalid {:?}",
+                            "received a chain lock for height {} that has a signature that can not be deserialized {:?}",
                             block_info.height, core_chain_lock_update,
                         ))
-                        .into(),
+                            .into(),
                     ));
+                }
+
+                if let Some(found_valid_locally) = found_valid_locally {
+                    // This means we are able to check if the chain lock is valid
+                    if !found_valid_locally {
+                        // The signature was not valid
+                        return Ok(ValidationResult::new_with_error(
+                            AbciError::InvalidChainLock(format!(
+                                "received a chain lock for height {} that we figured out was invalid based on platform state {:?}",
+                                block_info.height, core_chain_lock_update,
+                            ))
+                                .into(),
+                        ));
+                    }
+                }
+
+                if let Some(submission_accepted_by_core) = submitted {
+                    // This means we are able to check if the chain lock is valid
+                    if !submission_accepted_by_core {
+                        // The submission was not accepted by core
+                        return Ok(ValidationResult::new_with_error(
+                            AbciError::ChainLockedBlockNotKnownByCore(format!(
+                                "received a chain lock for height {} that we figured out was invalid based on platform state {:?}",
+                                block_info.height, core_chain_lock_update,
+                            ))
+                                .into(),
+                        ));
+                    }
+                }
+
+                if let Some(found_valid_by_core) = found_valid_by_core {
+                    // This means we asked core if the chain lock was valid
+                    if !found_valid_by_core {
+                        // Core said it wasn't valid
+                        return Ok(ValidationResult::new_with_error(
+                            AbciError::InvalidChainLock(format!(
+                                "received a chain lock for height {} that is invalid based on a core request {:?}",
+                                block_info.height, core_chain_lock_update,
+                            ))
+                                .into(),
+                        ));
+                    }
                 }
             }
         }

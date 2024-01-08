@@ -9,6 +9,7 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::verify_chain_lock_result::v0::VerifyChainLockResult;
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
@@ -24,7 +25,7 @@ where
         chain_lock: &ChainLock,
         make_sure_core_is_synced: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<bool, Error> {
+    ) -> Result<VerifyChainLockResult, Error> {
         match platform_version
             .drive_abci
             .methods

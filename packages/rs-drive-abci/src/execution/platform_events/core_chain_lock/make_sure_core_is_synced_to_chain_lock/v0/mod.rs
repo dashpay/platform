@@ -13,11 +13,8 @@ where
     pub(super) fn make_sure_core_is_synced_to_chain_lock_v0(
         &self,
         chain_lock: &ChainLock,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         // We need to make sure core is synced to the core height we see as valid for the state transitions
-        self.core_rpc.submit_chain_lock(chain_lock)?;
-
-        // If successful, proceed with further logic (if any), or just return Ok(())
-        Ok(())
+        Ok(self.core_rpc.submit_chain_lock(chain_lock)?)
     }
 }

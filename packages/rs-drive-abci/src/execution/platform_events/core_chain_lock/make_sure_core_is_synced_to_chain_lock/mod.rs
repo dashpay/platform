@@ -26,7 +26,7 @@ where
         &self,
         chain_lock: &ChainLock,
         platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         match platform_version
             .drive_abci
             .methods

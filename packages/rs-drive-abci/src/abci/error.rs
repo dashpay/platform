@@ -49,6 +49,10 @@ pub enum AbciError {
     #[error("invalid chain lock: {0}")]
     InvalidChainLock(String),
 
+    /// The chain lock received was invalid
+    #[error("chain lock is for a block not known by core: {0}")]
+    ChainLockedBlockNotKnownByCore(String),
+
     /// Error returned by Tenderdash-abci library
     #[error("tenderdash: {0}")]
     Tenderdash(#[from] tenderdash_abci::Error),
