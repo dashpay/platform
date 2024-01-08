@@ -16,8 +16,13 @@ impl DriveHighLevelOperationConverter for IdentityCreditTransferTransitionAction
         let recipient_id = self.recipient_id();
         let identity_id = self.identity_id();
         let transfer_amount = self.transfer_amount();
+        let revision = self.revision();
 
         let drive_operations = vec![
+            IdentityOperation(IdentityOperationType::UpdateIdentityRevision {
+                identity_id: identity_id.into_buffer(),
+                revision,
+            }),
             IdentityOperation(IdentityOperationType::RemoveFromIdentityBalance {
                 identity_id: identity_id.to_buffer(),
                 balance_to_remove: transfer_amount,

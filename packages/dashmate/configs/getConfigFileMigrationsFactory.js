@@ -335,6 +335,77 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '0.25.16-rc.5': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (options.network === NETWORK_TESTNET && name !== base.getName()) {
+              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+              options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+              options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+            }
+          });
+
+        return configFile;
+      },
+      '0.25.16-rc.6': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.core.docker.image = base.get('core.docker.image');
+          });
+
+        return configFile;
+      },
+      '0.25.16-rc.7': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+
+            delete options.docker.network.bindIp;
+
+            options.core.p2p.host = base.get('core.p2p.host');
+            options.core.rpc.host = base.get('core.rpc.host');
+            options.platform.dapi.envoy.http.host = base.get('platform.dapi.envoy.http.host');
+            options.platform.drive.tenderdash.p2p.host = base.get('platform.drive.tenderdash.p2p.host');
+            options.platform.drive.tenderdash.rpc.host = base.get('platform.drive.tenderdash.rpc.host');
+            options.platform.drive.tenderdash.metrics.host = base.get('platform.drive.tenderdash.metrics.host');
+          });
+
+        return configFile;
+      },
+      '0.25.19': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+          });
+
+        return configFile;
+      },
+      '0.25.20': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            options.platform.dapi.envoy.http.connectTimeout = base.get('platform.dapi.envoy.http.connectTimeout');
+            options.platform.dapi.envoy.http.responseTimeout = base.get('platform.dapi.envoy.http.responseTimeout');
+
+            options.platform.drive.tenderdash.rpc.maxOpenConnections = base.get('platform.drive.tenderdash.rpc.maxOpenConnections');
+
+            let defaultConfigName = 'base';
+            if (options.group === 'local' || name === 'local') {
+              defaultConfigName = 'local';
+            }
+            const defaultConfig = defaultConfigs.get(defaultConfigName);
+
+            options.platform.drive.tenderdash.p2p.flushThrottleTimeout = defaultConfig.get('platform.drive.tenderdash.p2p.flushThrottleTimeout');
+            options.platform.drive.tenderdash.p2p.maxPacketMsgPayloadSize = defaultConfig.get('platform.drive.tenderdash.p2p.maxPacketMsgPayloadSize');
+            options.platform.drive.tenderdash.p2p.sendRate = defaultConfig.get('platform.drive.tenderdash.p2p.sendRate');
+            options.platform.drive.tenderdash.p2p.recvRate = defaultConfig.get('platform.drive.tenderdash.p2p.recvRate');
+
+            options.platform.drive.tenderdash.mempool = base.get('platform.drive.tenderdash.mempool');
+            options.platform.drive.tenderdash.consensus.peer = base.get('platform.drive.tenderdash.consensus.peer');
+            options.platform.drive.tenderdash.consensus.unsafeOverride = base.get('platform.drive.tenderdash.consensus.unsafeOverride');
+          });
+
+        return configFile;
+      },
     };
   }
 

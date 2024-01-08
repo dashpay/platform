@@ -200,14 +200,17 @@ impl IdentityFactory {
     #[cfg(all(feature = "state-transitions", feature = "client"))]
     pub fn create_identity_credit_transfer_transition(
         &self,
-        identity_id: Identifier,
+        identity: &Identity,
         recipient_id: Identifier,
         amount: u64,
     ) -> Result<IdentityCreditTransferTransition, ProtocolError> {
-        let mut identity_credit_transfer_transition = IdentityCreditTransferTransitionV0::default();
-        identity_credit_transfer_transition.identity_id = identity_id;
-        identity_credit_transfer_transition.recipient_id = recipient_id;
-        identity_credit_transfer_transition.amount = amount;
+        let identity_credit_transfer_transition = IdentityCreditTransferTransitionV0 {
+            identity_id: identity.id(),
+            recipient_id,
+            amount,
+            revision: identity.revision() + 1,
+            ..Default::default()
+        };
 
         Ok(IdentityCreditTransferTransition::from(
             identity_credit_transfer_transition,

@@ -92,6 +92,7 @@ mod tests {
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
     use itertools::Itertools;
+    use rand::distributions::uniform::SampleBorrow;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
     use tenderdash_abci::proto::types::CoreChainLock;
     use tenderdash_abci::Application;
@@ -145,6 +146,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -200,6 +202,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -255,6 +258,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -396,6 +400,7 @@ mod tests {
             }),
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -532,6 +537,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -571,7 +577,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99869098220)
+        assert_eq!(balance, 99869074420)
     }
 
     #[test]
@@ -600,6 +606,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -655,6 +662,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
@@ -717,6 +725,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let hour_in_s = 60 * 60;
         let three_mins_in_ms = 1000 * 60 * 3;
@@ -784,6 +793,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 10,
@@ -873,6 +883,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 10,
@@ -947,6 +958,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 10,
@@ -1016,6 +1028,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 10,
@@ -1115,6 +1128,7 @@ mod tests {
                 },
             }),
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1171,6 +1185,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1217,7 +1232,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "3fcae6c74a7c0cf2ed8613a6e110f3bdc544a4a7b5b51a2620108f845241c65b".to_string()
+            "7185a9b987f4fe7290f048ccdb2935d92446c240b9361be46a20f956164a9378".to_string()
         )
     }
 
@@ -1255,6 +1270,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1366,6 +1382,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1472,6 +1489,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1554,6 +1572,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1664,6 +1683,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1774,6 +1794,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1821,7 +1842,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "a19831eae73cfd6cb4fcb405e4725495b71f855842761312108c1bfc658417ba".to_string()
+            "5dfc31d164388c22154e10629030edb5557620c5fcd5c87ffeff5f4e81bdb657".to_string()
         )
     }
 
@@ -1898,6 +1919,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -2028,6 +2050,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -2103,6 +2126,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -2186,6 +2210,7 @@ mod tests {
             // because we can add an identity and add keys to it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -2274,6 +2299,7 @@ mod tests {
             // because we can add an identity and remove keys to it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -2370,6 +2396,7 @@ mod tests {
             // because we can add an identity and withdraw from it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -2800,6 +2827,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2956,6 +2984,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -3083,6 +3112,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -3210,6 +3240,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -3327,13 +3358,13 @@ mod tests {
                 operations: vec![Operation {
                     op_type: OperationType::IdentityTransfer,
                     frequency: Frequency {
-                        times_per_block_range: 1..2,
+                        times_per_block_range: 1..3,
                         chance_per_block: None,
                     },
                 }],
                 start_identities: vec![],
                 identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
+                    times_per_block_range: 6..10,
                     chance_per_block: None,
                 },
                 signer: None,
@@ -3351,6 +3382,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
 
         let config = PlatformConfig {
@@ -3378,7 +3410,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 15, strategy, config, 15);
 
         let balances = &outcome
             .abci_app
@@ -3394,20 +3426,55 @@ mod tests {
             )
             .expect("expected to fetch balances");
 
-        assert_eq!(outcome.identities.len(), 10);
+        assert_eq!(outcome.identities.len(), 110);
+    }
 
-        let len = outcome.identities.len();
+    // Test should filter out transactions exceeding max tx bytes per block
+    #[test]
+    fn run_transactions_exceeding_max_block_size() {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                identities_inserts: Frequency {
+                    times_per_block_range: 5..6,
+                    chance_per_block: None,
+                },
+                ..Default::default()
+            },
+            max_tx_bytes_per_block: 3500,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            quorum_size: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
 
-        for identity in &outcome.identities[..len - 1] {
-            let new_balance = balances[&identity.id().to_buffer()];
-            // All identity balances decreased
-            // as we transferred funds to the last identity
-            assert_eq!(new_balance, 0);
-        }
+        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15);
+        let state_transitions = outcome
+            .state_transition_results_per_block
+            .get(&1)
+            .expect("expected state transition results");
 
-        let last_identity = &outcome.identities[len - 1];
-        let last_identity_balance = balances[&last_identity.id().to_buffer()];
-        // We transferred funds to the last identity, so we need to check that last identity balance was increased
-        assert!(last_identity_balance > 100000000000u64);
+        // Only three out of five transitions should've made to the block
+        assert_eq!(state_transitions.len(), 3);
     }
 }

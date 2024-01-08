@@ -272,7 +272,13 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       blockHash.toString('hex'),
       ['height'],
     );
-    expect(call.write).to.not.have.been.called();
+
+    // Send empty response as a workaround for Rust tonic that expects at least one message
+    // to be sent to establish a stream connection
+    // https://github.com/hyperium/tonic/issues/515
+    expect(call.write).to.have.been.calledOnce();
+
+    // expect(call.write).to.not.have.been.called();
     expect(call.end).to.have.been.calledOnce();
     expect(getMemPoolTransactionsMock).to.have.been.calledOnce();
   });

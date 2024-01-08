@@ -71,6 +71,7 @@ use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal::v0::BlockProposal;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::platform_types::withdrawal::withdrawal_txs;
 use crate::platform_types::withdrawal::withdrawal_txs::v0::{
     get_withdrawal_request_id, get_withdrawal_sighash,
@@ -177,7 +178,7 @@ where
 
     fn prepare_proposal(
         &self,
-        request: RequestPrepareProposal,
+        mut request: RequestPrepareProposal,
     ) -> Result<ResponsePrepareProposal, proto::ResponseException> {
         let _timer = crate::metrics::abci_request_duration("prepare_proposal");
 
@@ -196,6 +197,26 @@ where
             }
             Err(_) => None,
         };
+
+        // Filter out transactions exceeding max_block_size
+        let mut transactions_exceeding_max_block_size = Vec::new();
+        {
+            let mut total_transactions_size = 0;
+            let mut index_to_remove_at = None;
+            for (i, raw_transaction) in request.txs.iter().enumerate() {
+                total_transactions_size += raw_transaction.len();
+
+                if total_transactions_size as i64 > request.max_tx_bytes {
+                    index_to_remove_at = Some(i);
+                    break;
+                }
+            }
+
+            if let Some(index_to_remove_at) = index_to_remove_at {
+                transactions_exceeding_max_block_size
+                    .extend(request.txs.drain(index_to_remove_at..));
+            }
+        }
 
         let mut block_proposal: BlockProposal = (&request).try_into()?;
 
@@ -241,7 +262,7 @@ where
 
         let block_execution_outcome::v0::BlockExecutionOutcome {
             app_hash,
-            state_transition_results,
+            state_transitions_result,
             validator_set_update,
             protocol_version,
         } = run_result.into_data().map_err(Error::Protocol)?;
@@ -250,35 +271,65 @@ where
             .expect("must be set in run block proposal from existing protocol version");
 
         // We need to let Tenderdash know about the transactions we should remove from execution
+        let valid_tx_count = state_transitions_result.valid_count();
+        let invalid_tx_count = state_transitions_result.invalid_count();
+        let failed_tx_count = state_transitions_result.failed_count();
+        let delayed_tx_count = transactions_exceeding_max_block_size.len();
+
         let mut tx_results = Vec::new();
         let mut tx_records = Vec::new();
-        let mut valid_txs_count = 0;
-        let mut invalid_tx_count = 0;
 
-        for (tx, state_transition_execution_result) in state_transition_results {
+        for (state_transition_execution_result, raw_state_transition) in state_transitions_result
+            .into_execution_results()
+            .into_iter()
+            .zip(request.txs)
+        {
+            let tx_action = match &state_transition_execution_result {
+                StateTransitionExecutionResult::SuccessfulExecution(_, _) => TxAction::Unmodified,
+                // We have identity to pay for the state transition, so we keep it in the block
+                StateTransitionExecutionResult::PaidConsensusError(_) => TxAction::Unmodified,
+                // We don't have any associated identity to pay for the state transition,
+                // so we remove it from the block to prevent spam attacks.
+                // Such state transitions must be invalidated by check tx, but they might
+                // still be added to mempool due to inconsistency between check tx and tx processing
+                // (fees calculation) or malicious proposer.
+                StateTransitionExecutionResult::UnpaidConsensusError(_) => TxAction::Removed,
+                // We shouldn't include in the block any state transitions that produced an internal error
+                // during execution
+                StateTransitionExecutionResult::DriveAbciError(_) => TxAction::Removed,
+            };
+
             let tx_result: ExecTxResult =
                 state_transition_execution_result.try_into_platform_versioned(platform_version)?;
 
-            let action = if tx_result.code > 0 {
-                invalid_tx_count += 1;
-                TxAction::Removed
-            } else {
-                valid_txs_count += 1;
-                TxAction::Unmodified
-            } as i32;
+            if tx_action != TxAction::Removed {
+                tx_results.push(tx_result);
+            }
 
-            tx_results.push(tx_result);
-            tx_records.push(TxRecord { action, tx });
+            tx_records.push(TxRecord {
+                action: tx_action.into(),
+                tx: raw_state_transition,
+            });
         }
 
-        // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
+        // Add up exceeding transactions to the response
+        tx_records.extend(
+            transactions_exceeding_max_block_size
+                .into_iter()
+                .map(|tx| TxRecord {
+                    action: TxAction::Delayed as i32,
+                    tx,
+                }),
+        );
+
         let response = ResponsePrepareProposal {
             tx_results,
             app_hash: app_hash.to_vec(),
             tx_records,
             core_chain_lock_update,
             validator_set_update,
-            ..Default::default()
+            // TODO: implement consensus param updates
+            consensus_param_updates: None,
         };
 
         let mut block_execution_context_guard =
@@ -291,9 +342,11 @@ where
 
         tracing::info!(
             invalid_tx_count,
-            valid_txs_count,
+            valid_tx_count,
+            delayed_tx_count,
+            failed_tx_count,
             "Prepared proposal with {} transitions for height: {}, round: {}",
-            valid_txs_count,
+            valid_tx_count,
             request.height,
             request.round,
         );
@@ -356,47 +409,75 @@ where
                     )))?;
                 }
             } else {
-                let (app_hash, tx_results, consensus_param_updates, validator_set_update) = {
-                    let Some(proposal_info) = block_execution_context.proposer_results() else {
-                        return Err(Error::Abci(AbciError::BadRequest(
-                            "received a process proposal request twice".to_string(),
-                        )))?;
+                let Some(proposal_info) = block_execution_context.proposer_results() else {
+                    return Err(Error::Abci(AbciError::BadRequest(
+                        "received a process proposal request twice".to_string(),
+                    )))?;
+                };
+
+                let expected_transactions = proposal_info
+                    .tx_records
+                    .iter()
+                    .filter_map(|record| {
+                        if record.action == TxAction::Removed as i32
+                            || record.action == TxAction::Delayed as i32
+                        {
+                            None
+                        } else {
+                            Some(&record.tx)
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                // While it is true that the length could be same, seeing how this is such a rare situation
+                // It does not seem worth to deal with situations where the length is the same but the transactions have changed
+                if expected_transactions.len() == request.txs.len()
+                    && proposal_info.core_chain_lock_update == request.core_chain_lock_update
+                {
+                    let (app_hash, tx_results, consensus_param_updates, validator_set_update) = {
+                        tracing::debug!(
+                            method = "process_proposal",
+                            "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}",
+                            proposal_info,
+                        );
+
+                        // Cloning all required properties from proposal_info and then dropping it
+                        let app_hash = proposal_info.app_hash.clone();
+                        let tx_results = proposal_info.tx_results.clone();
+                        let consensus_param_updates = proposal_info.consensus_param_updates.clone();
+                        let validator_set_update = proposal_info.validator_set_update.clone();
+                        (
+                            app_hash,
+                            tx_results,
+                            consensus_param_updates,
+                            validator_set_update,
+                        )
                     };
 
-                    tracing::debug!(
-                        method = "process_proposal",
-                        "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}",
-                        proposal_info,
-                    );
-
-                    // Cloning all required properties from proposal_info and then dropping it
-                    let app_hash = proposal_info.app_hash.clone();
-                    let tx_results = proposal_info.tx_results.clone();
-                    let consensus_param_updates = proposal_info.consensus_param_updates.clone();
-                    let validator_set_update = proposal_info.validator_set_update.clone();
-                    (
+                    // We need to set the block hash
+                    block_execution_context
+                        .block_state_info_mut()
+                        .set_block_hash(Some(request.hash.clone().try_into().map_err(|_| {
+                            Error::Abci(AbciError::BadRequestDataSize(
+                                "block hash is not 32 bytes in process proposal".to_string(),
+                            ))
+                        })?));
+                    return Ok(ResponseProcessProposal {
+                        status: proto::response_process_proposal::ProposalStatus::Accept.into(),
                         app_hash,
                         tx_results,
                         consensus_param_updates,
                         validator_set_update,
-                    )
-                };
+                    });
+                } else {
+                    tracing::warn!(
+                            method = "process_proposal",
+                            "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}, but we are requesting a different amount of transactions, dropping the cache",
+                            proposal_info,
+                        );
 
-                // We need to set the block hash
-                block_execution_context
-                    .block_state_info_mut()
-                    .set_block_hash(Some(request.hash.clone().try_into().map_err(|_| {
-                        Error::Abci(AbciError::BadRequestDataSize(
-                            "block hash is not 32 bytes in process proposal".to_string(),
-                        ))
-                    })?));
-                return Ok(ResponseProcessProposal {
-                    status: proto::response_process_proposal::ProposalStatus::Accept.into(),
-                    app_hash,
-                    tx_results,
-                    consensus_param_updates,
-                    validator_set_update,
-                });
+                    drop_block_execution_context = true;
+                };
             }
         }
 
@@ -440,7 +521,7 @@ where
                 ..Default::default()
             };
 
-            tracing::info!(
+            tracing::warn!(
                 errors = ?run_result.errors,
                 "Rejected invalid proposal for height: {}, round: {}",
                 request.height,
@@ -451,7 +532,7 @@ where
         } else {
             let block_execution_outcome::v0::BlockExecutionOutcome {
                 app_hash,
-                state_transition_results,
+                state_transitions_result: state_transition_results,
                 validator_set_update,
                 protocol_version,
             } = run_result.into_data().map_err(Error::Protocol)?;
@@ -459,32 +540,32 @@ where
             let platform_version = PlatformVersion::get(protocol_version)
                 .expect("must be set in run block proposer from existing platform version");
 
-            let mut invalid_tx_count = 0;
-            let mut valid_tx_count = 0;
+            let invalid_tx_count = state_transition_results.invalid_count();
+            let valid_tx_count = state_transition_results.valid_count();
 
             let tx_results = state_transition_results
+                .into_execution_results()
                 .into_iter()
-                .map(|(_, execution_result)| {
-                    let tx_result: ExecTxResult =
-                        execution_result.try_into_platform_versioned(platform_version)?;
-
-                    if tx_result.code == 0 {
-                        valid_tx_count += 1;
-                    } else {
-                        invalid_tx_count += 1;
-                    }
-
-                    Ok(tx_result)
+                // To prevent spam attacks we add to the block state transitions covered with fees only
+                .filter(|execution_result| {
+                    matches!(
+                        execution_result,
+                        StateTransitionExecutionResult::SuccessfulExecution(_, _)
+                            | StateTransitionExecutionResult::PaidConsensusError(_)
+                    )
                 })
-                .collect::<Result<Vec<ExecTxResult>, Error>>()?;
+                .map(|execution_result| {
+                    execution_result.try_into_platform_versioned(platform_version)
+                })
+                .collect::<Result<_, _>>()?;
 
-            // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
             let response = ResponseProcessProposal {
                 app_hash: app_hash.to_vec(),
                 tx_results,
                 status: proto::response_process_proposal::ProposalStatus::Accept.into(),
                 validator_set_update,
-                ..Default::default()
+                // TODO: Implement consensus param updates
+                consensus_param_updates: None,
             };
 
             tracing::info!(
@@ -704,8 +785,8 @@ where
     ) -> Result<ResponseCheckTx, proto::ResponseException> {
         let _timer = crate::metrics::abci_request_duration("check_tx");
 
-        let RequestCheckTx { tx, .. } = request;
-        match self.platform.check_tx(tx.as_slice()) {
+        let RequestCheckTx { tx, r#type } = request;
+        match self.platform.check_tx(tx.as_slice(), r#type.try_into()?) {
             Ok(validation_result) => {
                 let platform_state = self.platform.state.read().unwrap();
                 let platform_version = platform_state.current_platform_version()?;
@@ -725,7 +806,11 @@ where
 
                 let gas_wanted = validation_result
                     .data
-                    .map(|fee_result| fee_result.total_base_fee())
+                    .map(|fee_result| {
+                        fee_result
+                            .map(|fee_result| fee_result.total_base_fee())
+                            .unwrap_or_default()
+                    })
                     .unwrap_or_default();
 
                 Ok(ResponseCheckTx {

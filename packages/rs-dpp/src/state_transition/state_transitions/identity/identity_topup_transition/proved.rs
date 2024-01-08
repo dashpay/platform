@@ -1,7 +1,13 @@
-use crate::identity::state_transition::AssetLockProved;
+use crate::identity::state_transition::{AssetLockProved, OptionallyAssetLockProved};
 use crate::prelude::AssetLockProof;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::ProtocolError;
+
+impl OptionallyAssetLockProved for IdentityTopUpTransition {
+    fn optional_asset_lock_proof(&self) -> Option<&AssetLockProof> {
+        Some(self.asset_lock_proof())
+    }
+}
 
 impl AssetLockProved for IdentityTopUpTransition {
     fn set_asset_lock_proof(

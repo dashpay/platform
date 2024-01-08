@@ -16,6 +16,8 @@ use crate::identity::state_transition::{
     IdentityUpdateTransitionWasm, InstantAssetLockProofWasm,
 };
 
+use crate::utils::Inner;
+
 use crate::utils::WithJsError;
 use crate::with_js_error;
 use dpp::dashcore::{consensus, InstantLock, Transaction};
@@ -230,13 +232,13 @@ impl IdentityFacadeWasm {
     #[wasm_bindgen(js_name=createIdentityCreditTransferTransition)]
     pub fn create_identity_credit_transfer_transition(
         &self,
-        identity_id: &IdentifierWrapper,
+        identity: &IdentityWasm,
         recipient_id: &IdentifierWrapper,
         amount: u64,
     ) -> Result<IdentityCreditTransferTransitionWasm, JsValue> {
         self.0
             .create_identity_credit_transfer_transition(
-                identity_id.to_owned().into(),
+                identity.inner(),
                 recipient_id.to_owned().into(),
                 amount,
             )

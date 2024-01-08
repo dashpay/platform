@@ -18,7 +18,7 @@ export async function creditTransfer(
 
   const identityCreditTransferTransition = dpp.identity
     .createIdentityCreditTransferTransition(
-      identity.getId(),
+      identity,
       recipientId,
       BigInt(amount),
     );
