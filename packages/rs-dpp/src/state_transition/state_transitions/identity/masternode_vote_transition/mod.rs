@@ -10,11 +10,15 @@ pub mod v0;
 mod value_conversion;
 mod version;
 
-use crate::state_transition::masternode_vote_transition::fields::property_names::{PRO_TX_HASH, RECIPIENT_ID};
+use crate::state_transition::masternode_vote_transition::fields::property_names::{
+    PRO_TX_HASH, RECIPIENT_ID,
+};
 use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
 use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 
+use crate::identity::state_transition::OptionallyAssetLockProved;
+use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
@@ -23,8 +27,6 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, Plat
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
 use serde::{Deserialize, Serialize};
-use crate::identity::state_transition::OptionallyAssetLockProved;
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
 pub type MasternodeVoteTransitionLatest = MasternodeVoteTransitionV0;
 

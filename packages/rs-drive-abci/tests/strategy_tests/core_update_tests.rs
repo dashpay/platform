@@ -31,7 +31,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-
             },
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Default::default(),
@@ -40,7 +39,6 @@ mod tests {
                 banned_hpmns: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: Some(0.1),
-
                 },
                 unbanned_hpmns: Default::default(),
                 changed_ip_hpmns: Default::default(),
@@ -139,14 +137,12 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-
             },
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Default::default(),
                 removed_hpmns: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: Some(0.1),
-
                 },
                 updated_hpmns: Default::default(),
                 banned_hpmns: Default::default(),
@@ -233,7 +229,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-
             },
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Default::default(),
@@ -242,12 +237,12 @@ mod tests {
                 banned_hpmns: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: Some(0.1),
-     //lower chance of banning
+                    //lower chance of banning
                 },
                 unbanned_hpmns: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: Some(0.3),
-     //higher chance of unbanning
+                    //higher chance of unbanning
                 },
                 changed_ip_hpmns: Default::default(),
                 changed_p2p_port_hpmns: Default::default(),

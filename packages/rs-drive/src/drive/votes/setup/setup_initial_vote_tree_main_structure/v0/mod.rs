@@ -1,10 +1,14 @@
-use grovedb::operations::insert::InsertOptions;
+use crate::drive::votes::{
+    vote_contested_resource_end_date_queries_tree_path,
+    vote_contested_resource_identity_votes_tree_path, vote_root_path, CONTESTED_RESOURCE_TREE_KEY,
+    VOTE_DECISIONS_TREE_KEY,
+};
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
+use grovedb::operations::insert::InsertOptions;
 use grovedb::TransactionArg;
 use grovedb_path::SubtreePath;
 use platform_version::version::PlatformVersion;
-use crate::drive::votes::{CONTESTED_RESOURCE_TREE_KEY, vote_contested_resource_end_date_queries_tree_path, vote_contested_resource_identity_votes_tree_path, VOTE_DECISIONS_TREE_KEY, vote_root_path};
 
 impl Drive {
     pub fn setup_initial_vote_tree_main_structure_v0(
@@ -41,7 +45,6 @@ impl Drive {
             &mut drive_operations,
             drive_version,
         )?;
-
 
         self.grove_insert_empty_tree(
             SubtreePath::from(vote_contested_resource_end_date_queries_tree_path()),

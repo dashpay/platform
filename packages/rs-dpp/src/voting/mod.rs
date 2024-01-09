@@ -1,22 +1,22 @@
-use crate::voting::resource_vote::ResourceVote;
-use crate::voting::Vote::ContestedDocumentResourceVote;
-use bincode::{Decode, Encode};
-use platform_value::{Identifier, Value};
-use serde::{Deserialize, Serialize};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::prelude::DataContract;
+use crate::voting::resource_vote::ResourceVote;
+use crate::voting::Vote::ContestedDocumentResourceVote;
 use crate::ProtocolError;
+use bincode::{Decode, Encode};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_value::{Identifier, Value};
+use serde::{Deserialize, Serialize};
 
 pub mod common_vote;
 pub mod resource_vote;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq)]
 #[cfg_attr(
-feature = "state-transition-serde-conversion",
-derive(Serialize, Deserialize),
-serde(rename_all = "camelCase")
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
 )]
 pub struct ContestedDocumentResourceVotePoll {
     pub contract_id: Identifier,
@@ -38,9 +38,9 @@ impl Default for ContestedDocumentResourceVotePoll {
 
 #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
 #[cfg_attr(
-feature = "state-transition-serde-conversion",
-derive(Serialize, Deserialize),
-serde(rename_all = "camelCase")
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
 )]
 #[platform_serialize(unversioned)]
 pub struct ContestedDocumentResourceVoteType {
@@ -64,15 +64,11 @@ impl Default for ContestedDocumentResourceVoteType {
     serde(rename_all = "camelCase")
 )]
 pub enum Vote {
-    ContestedDocumentResourceVote(
-        ContestedDocumentResourceVoteType,
-    ),
+    ContestedDocumentResourceVote(ContestedDocumentResourceVoteType),
 }
 
 impl Default for Vote {
     fn default() -> Self {
-        ContestedDocumentResourceVote(
-            ContestedDocumentResourceVoteType::default()
-        )
+        ContestedDocumentResourceVote(ContestedDocumentResourceVoteType::default())
     }
 }

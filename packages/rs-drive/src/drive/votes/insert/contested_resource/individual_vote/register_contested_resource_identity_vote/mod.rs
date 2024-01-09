@@ -7,10 +7,10 @@ use crate::error::Error;
 
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::version::PlatformVersion;
-use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
+use dpp::version::PlatformVersion;
 use dpp::voting::{ContestedDocumentResourceVoteType, Vote};
+use grovedb::TransactionArg;
 
 impl Drive {
     pub fn register_contested_resource_identity_vote(
@@ -21,7 +21,13 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match platform_version.drive.methods.vote.contested_resource_insert.register_identity_vote {
+        match platform_version
+            .drive
+            .methods
+            .vote
+            .contested_resource_insert
+            .register_identity_vote
+        {
             0 => self.register_contested_resource_identity_vote_v0(
                 vote,
                 block_info,

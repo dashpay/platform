@@ -52,7 +52,6 @@ mod tests {
                     core_height_increase: Frequency {
                         times_per_block_range: Default::default(),
                         chance_per_block: None,
-
                     },
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
@@ -584,7 +583,6 @@ mod tests {
                     core_height_increase: Frequency {
                         times_per_block_range: Default::default(),
                         chance_per_block: None,
-
                     },
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
@@ -846,7 +844,6 @@ mod tests {
                     core_height_increase: Frequency {
                         times_per_block_range: Default::default(),
                         chance_per_block: None,
-
                     },
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
@@ -1028,7 +1025,6 @@ mod tests {
                     core_height_increase: Frequency {
                         times_per_block_range: Default::default(),
                         chance_per_block: None,
-
                     },
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
@@ -1214,7 +1210,6 @@ mod tests {
                     core_height_increase: Frequency {
                         times_per_block_range: Default::default(),
                         chance_per_block: None,
-
                     },
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
@@ -1327,7 +1322,6 @@ mod tests {
                     core_height_increase: Frequency {
                         times_per_block_range: Default::default(),
                         chance_per_block: None,
-
                     },
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,

@@ -1,12 +1,12 @@
-use grovedb::TransactionArg;
-use dpp::block::block_info::BlockInfo;
-use dpp::fee::fee_result::FeeResult;
-use dpp::voting::{ContestedDocumentResourceVoteType, Vote};
-use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
+use dpp::voting::{ContestedDocumentResourceVoteType, Vote};
+use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     pub fn register_contested_resource_identity_vote_v0(

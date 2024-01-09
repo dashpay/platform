@@ -1,25 +1,25 @@
-
-
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-    use rand::prelude::StdRng;
-    use rand::SeedableRng;
     use crate::execution::run_chain_for_strategy;
     use crate::strategy::{NetworkStrategy, Strategy};
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
-    use drive_abci::test::helpers::setup::TestPlatformBuilder;
-    use tenderdash_abci::proto::types::CoreChainLock;
-    use dpp::data_contract::document_type::random_document::{DocumentFieldFillSize, DocumentFieldFillType};
+    use dpp::data_contract::document_type::random_document::{
+        DocumentFieldFillSize, DocumentFieldFillType,
+    };
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
     use dpp::platform_value::Value;
+    use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
+    use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::PlatformVersion;
+    use rand::prelude::StdRng;
+    use rand::SeedableRng;
     use simple_signer::signer::SimpleSigner;
+    use std::collections::BTreeMap;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use strategy_tests::transitions::create_state_transitions_for_identities;
+    use tenderdash_abci::proto::types::CoreChainLock;
 
     #[test]
     fn run_chain_block_two_state_transitions_conflicting_unique_index() {
@@ -54,7 +54,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-                .unwrap();
+            .unwrap();
 
         simple_signer.add_keys(keys);
 
@@ -64,7 +64,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-                .unwrap();
+            .unwrap();
 
         simple_signer.add_keys(keys);
 
@@ -88,7 +88,7 @@ mod tests {
                             "dashUniqueIdentityId",
                             Value::from(start_identities.first().unwrap().0.id()),
                         )])
-                            .into(),
+                        .into(),
                     ),
                 ]),
                 Some(start_identities.first().unwrap().0.id()),
@@ -117,7 +117,7 @@ mod tests {
                             "dashUniqueIdentityId",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
-                            .into(),
+                        .into(),
                     ),
                 ]),
                 Some(start_identities.last().unwrap().0.id()),
@@ -142,7 +142,6 @@ mod tests {
                         frequency: Frequency {
                             times_per_block_range: 1..2,
                             chance_per_block: None,
-
                         },
                     },
                     Operation {
@@ -174,7 +173,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-
         };
 
         let mut core_block_heights = vec![10, 11];

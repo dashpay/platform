@@ -30,9 +30,7 @@ impl From<StateTransitionType> for StateTransitionTypeWasm {
             StateTransitionType::IdentityCreditTransfer => {
                 StateTransitionTypeWasm::IdentityCreditTransfer
             }
-            StateTransitionType::MasternodeVote => {
-                StateTransitionTypeWasm::MasternodeVote
-            }
+            StateTransitionType::MasternodeVote => StateTransitionTypeWasm::MasternodeVote,
         }
     }
 }

@@ -38,8 +38,8 @@ use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGetter
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
 use crate::prelude::AssetLockProof;
+use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
 pub use state_transitions::*;
 
 use crate::serialization::Signable;

@@ -26,7 +26,40 @@ use crate::version::drive_abci_versions::{
     DriveAbciValidationDataTriggerAndBindingVersions, DriveAbciValidationDataTriggerVersions,
     DriveAbciValidationVersions, DriveAbciVersion, DriveAbciWithdrawalsMethodVersions,
 };
-use crate::version::drive_versions::{DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion, DriveContractApplyMethodVersions, DriveContractCostsMethodVersions, DriveContractGetMethodVersions, DriveContractInsertMethodVersions, DriveContractMethodVersions, DriveContractProveMethodVersions, DriveContractUpdateMethodVersions, DriveCreditPoolEpochsMethodVersions, DriveCreditPoolMethodVersions, DriveCreditPoolPendingEpochRefundsMethodVersions, DriveCreditPoolStorageFeeDistributionPoolMethodVersions, DriveDataContractOperationMethodVersions, DriveDocumentDeleteMethodVersions, DriveDocumentEstimationCostsMethodVersions, DriveDocumentIndexUniquenessMethodVersions, DriveDocumentInsertMethodVersions, DriveDocumentMethodVersions, DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions, DriveEstimatedCostsMethodVersions, DriveFeesMethodVersions, DriveGroveApplyMethodVersions, DriveGroveBasicMethodVersions, DriveGroveBatchMethodVersions, DriveGroveCostMethodVersions, DriveGroveMethodVersions, DriveIdentityContractInfoMethodVersions, DriveIdentityCostEstimationMethodVersions, DriveIdentityFetchAttributesMethodVersions, DriveIdentityFetchFullIdentityMethodVersions, DriveIdentityFetchMethodVersions, DriveIdentityFetchPartialIdentityMethodVersions, DriveIdentityFetchPublicKeyHashesMethodVersions, DriveIdentityInsertMethodVersions, DriveIdentityKeyHashesToIdentityInsertMethodVersions, DriveIdentityKeysFetchMethodVersions, DriveIdentityKeysInsertMethodVersions, DriveIdentityKeysMethodVersions, DriveIdentityKeysProveMethodVersions, DriveIdentityMethodVersions, DriveIdentityProveMethodVersions, DriveIdentityUpdateMethodVersions, DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion, DrivePlatformSystemMethodVersions, DriveProtocolUpgradeVersions, DriveProveMethodVersions, DriveStateTransitionMethodVersions, DriveStateTransitionOperationMethodVersions, DriveStructureVersion, DriveSystemEstimationCostsMethodVersions, DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions, DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions, DriveVerifySystemMethodVersions, DriveVersion, DriveVoteCleanupMethodVersions, DriveVoteContestedResourceInsertMethodVersions, DriveVoteInsertMethodVersions, DriveVoteMethodVersions, DriveVoteSetupMethodVersions};
+use crate::version::drive_versions::{
+    DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
+    DriveContractApplyMethodVersions, DriveContractCostsMethodVersions,
+    DriveContractGetMethodVersions, DriveContractInsertMethodVersions, DriveContractMethodVersions,
+    DriveContractProveMethodVersions, DriveContractUpdateMethodVersions,
+    DriveCreditPoolEpochsMethodVersions, DriveCreditPoolMethodVersions,
+    DriveCreditPoolPendingEpochRefundsMethodVersions,
+    DriveCreditPoolStorageFeeDistributionPoolMethodVersions,
+    DriveDataContractOperationMethodVersions, DriveDocumentDeleteMethodVersions,
+    DriveDocumentEstimationCostsMethodVersions, DriveDocumentIndexUniquenessMethodVersions,
+    DriveDocumentInsertMethodVersions, DriveDocumentMethodVersions,
+    DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
+    DriveEstimatedCostsMethodVersions, DriveFeesMethodVersions, DriveGroveApplyMethodVersions,
+    DriveGroveBasicMethodVersions, DriveGroveBatchMethodVersions, DriveGroveCostMethodVersions,
+    DriveGroveMethodVersions, DriveIdentityContractInfoMethodVersions,
+    DriveIdentityCostEstimationMethodVersions, DriveIdentityFetchAttributesMethodVersions,
+    DriveIdentityFetchFullIdentityMethodVersions, DriveIdentityFetchMethodVersions,
+    DriveIdentityFetchPartialIdentityMethodVersions,
+    DriveIdentityFetchPublicKeyHashesMethodVersions, DriveIdentityInsertMethodVersions,
+    DriveIdentityKeyHashesToIdentityInsertMethodVersions, DriveIdentityKeysFetchMethodVersions,
+    DriveIdentityKeysInsertMethodVersions, DriveIdentityKeysMethodVersions,
+    DriveIdentityKeysProveMethodVersions, DriveIdentityMethodVersions,
+    DriveIdentityProveMethodVersions, DriveIdentityUpdateMethodVersions,
+    DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
+    DrivePlatformSystemMethodVersions, DriveProtocolUpgradeVersions, DriveProveMethodVersions,
+    DriveStateTransitionMethodVersions, DriveStateTransitionOperationMethodVersions,
+    DriveStructureVersion, DriveSystemEstimationCostsMethodVersions,
+    DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
+    DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
+    DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions,
+    DriveVerifySystemMethodVersions, DriveVersion, DriveVoteCleanupMethodVersions,
+    DriveVoteContestedResourceInsertMethodVersions, DriveVoteInsertMethodVersions,
+    DriveVoteMethodVersions, DriveVoteSetupMethodVersions,
+};
 use crate::version::mocks::TEST_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
@@ -160,7 +193,9 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 },
             },
             vote: DriveVoteMethodVersions {
-                insert: DriveVoteInsertMethodVersions { register_identity_vote: 0 },
+                insert: DriveVoteInsertMethodVersions {
+                    register_identity_vote: 0,
+                },
                 contested_resource_insert: DriveVoteContestedResourceInsertMethodVersions {
                     register_contested_resource_identity_vote: 0,
                     register_identity_vote_for_identity_queries: 0,

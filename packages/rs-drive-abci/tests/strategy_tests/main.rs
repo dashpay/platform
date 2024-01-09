@@ -137,7 +137,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -194,7 +193,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -251,7 +249,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -531,7 +528,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -657,7 +653,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.5),
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -789,7 +784,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: 5..6,
                 chance_per_block: Some(0.5),
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: true,
@@ -874,13 +868,11 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: Some(0.2),
-
             },
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Frequency {
                     times_per_block_range: 1..3,
                     chance_per_block: Some(0.5),
-
                 },
                 ..Default::default()
             },
@@ -947,18 +939,15 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: Some(0.2),
-
             },
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Frequency {
                     times_per_block_range: 1..3,
                     chance_per_block: Some(0.5),
-
                 },
                 removed_hpmns: Frequency {
                     times_per_block_range: 1..3,
                     chance_per_block: Some(0.5),
-
                 },
                 ..Default::default()
             },
@@ -1024,13 +1013,11 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: Some(0.2),
-
             },
             proposer_strategy: MasternodeListChangesStrategy {
                 updated_hpmns: Frequency {
                     times_per_block_range: 1..3,
                     chance_per_block: Some(0.5),
-
                 },
                 ..Default::default()
             },
@@ -1127,7 +1114,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -1136,7 +1122,6 @@ mod tests {
                 query_identities_by_public_key_hashes: Frequency {
                     times_per_block_range: 1..5,
                     chance_per_block: None,
-
                 },
             }),
             verify_state_transition_results: true,
@@ -1191,7 +1176,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -1277,7 +1261,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -1390,7 +1373,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -1488,7 +1470,6 @@ mod tests {
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
-
                 },
                 signer: None,
             },
@@ -1499,7 +1480,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -1573,7 +1553,6 @@ mod tests {
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
-
                 },
                 signer: None,
             },
@@ -1584,7 +1563,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -1696,7 +1674,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -1808,7 +1785,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -1934,7 +1910,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -2066,7 +2041,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -2133,7 +2107,6 @@ mod tests {
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
-
                 },
                 signer: None,
             },
@@ -2144,7 +2117,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -2217,7 +2189,6 @@ mod tests {
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
-
                 },
                 signer: None,
             },
@@ -2228,7 +2199,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -2308,7 +2278,6 @@ mod tests {
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
-
                 },
                 signer: None,
             },
@@ -2319,7 +2288,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -2385,23 +2353,23 @@ mod tests {
     fn run_chain_top_up_and_withdraw_from_identities() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![
-                Operation {
-                    op_type: OperationType::IdentityTopUp,
-                    frequency: Frequency {
-                        times_per_block_range: 1..4,
-                        chance_per_block: None,
-
+                contracts_with_updates: vec![],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::IdentityTopUp,
+                        frequency: Frequency {
+                            times_per_block_range: 1..4,
+                            chance_per_block: None,
+                        },
                     },
-                },
-                Operation {
-                    op_type: OperationType::IdentityWithdrawal,
-                    frequency: Frequency {
-                        times_per_block_range: 1..4,
-                        chance_per_block: None,
+                    Operation {
+                        op_type: OperationType::IdentityWithdrawal,
+                        frequency: Frequency {
+                            times_per_block_range: 1..4,
+                            chance_per_block: None,
+                        },
                     },
-                }],
+                ],
                 start_identities: vec![],
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
@@ -2416,7 +2384,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -2478,7 +2445,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: true,
@@ -2636,7 +2602,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: true,
@@ -2765,7 +2730,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: true,
@@ -2894,7 +2858,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
@@ -3027,7 +2990,6 @@ mod tests {
                 identities_inserts: Frequency {
                     times_per_block_range: 6..10,
                     chance_per_block: None,
-
                 },
                 signer: None,
             },
@@ -3038,7 +3000,6 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,

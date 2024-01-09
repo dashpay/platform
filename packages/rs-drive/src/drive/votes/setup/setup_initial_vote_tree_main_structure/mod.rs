@@ -14,7 +14,12 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive.methods.vote.setup_initial_vote_tree_main_structure {
+        match platform_version
+            .drive
+            .methods
+            .vote
+            .setup_initial_vote_tree_main_structure
+        {
             0 => self.setup_initial_vote_tree_main_structure_v0(transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "setup_initial_vote_tree_main_structure".to_string(),
