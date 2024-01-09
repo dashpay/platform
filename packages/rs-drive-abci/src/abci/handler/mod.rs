@@ -341,7 +341,7 @@ where
             delayed_tx_count,
             failed_tx_count,
             "Prepared proposal with {} transitions for height: {}, round: {} in {} ms",
-            valid_txs_count,
+            valid_tx_count,
             request.height,
             request.round,
             elapsed_time_ms,
