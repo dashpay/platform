@@ -1,4 +1,4 @@
-use crate::identity::SecurityLevel::CRITICAL;
+use crate::identity::SecurityLevel::{CRITICAL, HIGH};
 use crate::identity::{KeyID, SecurityLevel};
 use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
 use crate::state_transition::StateTransitionIdentitySigned;
@@ -13,6 +13,6 @@ impl StateTransitionIdentitySigned for MasternodeVoteTransitionV0 {
     }
 
     fn security_level_requirement(&self) -> Vec<SecurityLevel> {
-        vec![CRITICAL]
+        vec![CRITICAL, HIGH]
     }
 }

@@ -10,7 +10,7 @@ pub mod v0;
 mod value_conversion;
 mod version;
 
-use crate::state_transition::masternode_vote_transition::fields::property_names::RECIPIENT_ID;
+use crate::state_transition::masternode_vote_transition::fields::property_names::{PRO_TX_HASH, RECIPIENT_ID};
 use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
 use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
@@ -23,6 +23,8 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, Plat
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
 use serde::{Deserialize, Serialize};
+use crate::identity::state_transition::OptionallyAssetLockProved;
+use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
 pub type MasternodeVoteTransitionLatest = MasternodeVoteTransitionV0;
 
@@ -71,13 +73,15 @@ impl MasternodeVoteTransition {
     }
 }
 
+impl OptionallyAssetLockProved for MasternodeVoteTransition {}
+
 impl StateTransitionFieldTypes for MasternodeVoteTransition {
     fn signature_property_paths() -> Vec<&'static str> {
         vec![SIGNATURE]
     }
 
     fn identifiers_property_paths() -> Vec<&'static str> {
-        vec![IDENTITY_ID, RECIPIENT_ID]
+        vec![PRO_TX_HASH]
     }
 
     fn binary_property_paths() -> Vec<&'static str> {

@@ -53,7 +53,7 @@ mod test {
 
     use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
     use crate::voting::resource_vote::ResourceVote;
-    use crate::voting::Vote;
+    use crate::voting::{ContestedDocumentResourceVotePoll, ContestedDocumentResourceVoteType, Vote};
     use platform_value::Identifier;
     use rand::Rng;
     use std::fmt::Debug;
@@ -77,11 +77,15 @@ mod test {
         let transition = MasternodeVoteTransitionV0 {
             pro_tx_hash: Identifier::random(),
             vote: Vote::ContestedDocumentResourceVote(
-                Identifier::random(),
-                "hello".to_string(),
-                "index_1".to_string(),
-                vec![],
-                ResourceVote::TowardsIdentity(Identifier::random()),
+                ContestedDocumentResourceVoteType {
+                    vote_poll: ContestedDocumentResourceVotePoll {
+                        contract_id: Default::default(),
+                        document_type_name: "hello".to_string(),
+                        index_name: "index_1".to_string(),
+                        index_values: vec![],
+                    },
+                    resource_vote: ResourceVote::TowardsIdentity(Identifier::random()),
+                }
             ),
             signature_public_key_id: rng.gen(),
             signature: [0; 65].to_vec().into(),

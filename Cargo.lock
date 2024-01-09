@@ -4130,8 +4130,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2#6ebfaa31052f7ad538d6589323e5daf7e5e55999"
+version = "0.14.0-dev.5"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.5#556f3a9b6724bdbe44acf8045cd87144a997bccb"
 dependencies = [
  "bytes",
  "futures",
@@ -4151,8 +4151,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2#6ebfaa31052f7ad538d6589323e5daf7e5e55999"
+version = "0.14.0-dev.5"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.5#556f3a9b6724bdbe44acf8045cd87144a997bccb"
 dependencies = [
  "bytes",
  "chrono",
@@ -4169,8 +4169,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto-compiler"
-version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2#6ebfaa31052f7ad538d6589323e5daf7e5e55999"
+version = "0.14.0-dev.5"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.5#556f3a9b6724bdbe44acf8045cd87144a997bccb"
 dependencies = [
  "fs_extra",
  "prost-build 0.12.3",
