@@ -8,17 +8,17 @@ use rs_dapi_client::{DapiRequest, RequestSettings};
 
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {
-    async fn broadcast(&self, sdk: &mut Sdk) -> Result<(), Error>;
+    async fn broadcast(&self, sdk: &Sdk) -> Result<(), Error>;
     async fn broadcast_and_wait(
         &self,
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         time_out_ms: Option<u64>,
     ) -> Result<StateTransitionProofResult, Error>;
 }
 
 #[async_trait::async_trait]
 impl BroadcastStateTransition for StateTransition {
-    async fn broadcast(&self, sdk: &mut Sdk) -> Result<(), Error> {
+    async fn broadcast(&self, sdk: &Sdk) -> Result<(), Error> {
         let request = self.broadcast_request_for_state_transition()?;
 
         request.execute(sdk, RequestSettings::default()).await?;
@@ -30,7 +30,7 @@ impl BroadcastStateTransition for StateTransition {
 
     async fn broadcast_and_wait(
         &self,
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         _time_out_ms: Option<u64>,
     ) -> Result<StateTransitionProofResult, Error> {
         let request = self.broadcast_request_for_state_transition()?;
