@@ -396,14 +396,17 @@ mod tests {
 
         let first_document_insert_result = &state_transitions_block_2
             .first()
-            .as_ref()
             .expect("expected a document insert")
             .1;
+
         assert_eq!(first_document_insert_result.code, 0);
 
-        let second_document_insert_result = &state_transitions_block_2.get(1);
+        let second_document_insert_result = &state_transitions_block_2
+            .get(1)
+            .expect("expected an invalid state transition")
+            .1;
 
-        // Second document should not be present
-        assert!(second_document_insert_result.is_none());
+        // Second document should fail with DuplicateUniqueIndexError
+        assert_eq!(second_document_insert_result.code, 4009);
     }
 }

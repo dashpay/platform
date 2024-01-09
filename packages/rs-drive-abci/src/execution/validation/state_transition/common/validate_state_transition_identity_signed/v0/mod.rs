@@ -166,10 +166,6 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
         let operation = SignatureVerificationOperation::new(public_key.key_type());
         execution_context.add_operation(ExecutionOperation::SignatureVerification(operation));
 
-        // if execution_context.is_dry_run() {
-        //     return Ok(validation_result);
-        // }
-
         let signature_is_valid = self.verify_signature(public_key, &NativeBlsModule);
 
         if let Err(err) = signature_is_valid {

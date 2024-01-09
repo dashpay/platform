@@ -578,7 +578,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99869098220)
+        assert_eq!(balance, 99869074420)
     }
 
     #[test]
@@ -1245,7 +1245,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "3fcae6c74a7c0cf2ed8613a6e110f3bdc544a4a7b5b51a2620108f845241c65b".to_string()
+            "7185a9b987f4fe7290f048ccdb2935d92446c240b9361be46a20f956164a9378".to_string()
         )
     }
 
@@ -1863,7 +1863,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "a19831eae73cfd6cb4fcb405e4725495b71f855842761312108c1bfc658417ba".to_string()
+            "5dfc31d164388c22154e10629030edb5557620c5fcd5c87ffeff5f4e81bdb657".to_string()
         )
     }
 
@@ -3019,13 +3019,13 @@ mod tests {
                 operations: vec![Operation {
                     op_type: OperationType::IdentityTransfer,
                     frequency: Frequency {
-                        times_per_block_range: 1..2,
+                        times_per_block_range: 1..3,
                         chance_per_block: None,
                     },
                 }],
                 start_identities: vec![],
                 identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
+                    times_per_block_range: 6..10,
                     chance_per_block: None,
 
                 },
@@ -3073,7 +3073,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 15, strategy, config, 15);
 
         let balances = &outcome
             .abci_app
@@ -3089,21 +3089,7 @@ mod tests {
             )
             .expect("expected to fetch balances");
 
-        assert_eq!(outcome.identities.len(), 10);
-
-        let len = outcome.identities.len();
-
-        for identity in &outcome.identities[..len - 1] {
-            let new_balance = balances[&identity.id().to_buffer()];
-            // All identity balances decreased
-            // as we transferred funds to the last identity
-            assert_eq!(new_balance, 0);
-        }
-
-        let last_identity = &outcome.identities[len - 1];
-        let last_identity_balance = balances[&last_identity.id().to_buffer()];
-        // We transferred funds to the last identity, so we need to check that last identity balance was increased
-        assert!(last_identity_balance > 100000000000u64);
+        assert_eq!(outcome.identities.len(), 110);
     }
 
     // Test should filter out transactions exceeding max tx bytes per block

@@ -7,6 +7,7 @@ use crate::state_transition_action::identity::identity_credit_transfer::v0::Iden
 use derive_more::From;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
+use dpp::prelude::Revision;
 
 /// action
 #[derive(Debug, Clone, From)]
@@ -16,6 +17,13 @@ pub enum IdentityCreditTransferTransitionAction {
 }
 
 impl IdentityCreditTransferTransitionAction {
+    /// Revision
+    pub fn revision(&self) -> Revision {
+        match self {
+            IdentityCreditTransferTransitionAction::V0(transition) => transition.revision,
+        }
+    }
+
     /// Transfer amount
     pub fn transfer_amount(&self) -> Credits {
         match self {
