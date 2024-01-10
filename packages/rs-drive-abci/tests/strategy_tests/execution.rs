@@ -46,7 +46,7 @@ pub(crate) fn run_chain_for_strategy(
     seed: u64,
 ) -> ChainExecutionOutcome {
     let quorum_count = strategy.quorum_count; // We assume 24 quorums
-    let quorum_size = config.quorum_size;
+    let quorum_size = config.validator_set_quorum_size;
 
     let mut rng = StdRng::seed_from_u64(seed);
 
@@ -613,7 +613,7 @@ pub(crate) fn continue_chain_for_strategy(
         StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
         StrategyRandomness::RNGEntropy(rng) => rng,
     };
-    let quorum_size = config.quorum_size;
+    let quorum_size = config.validator_set_quorum_size;
     let first_block_time = start_time_ms;
     let mut current_identities = vec![];
     let mut signer = strategy.strategy.signer.clone().unwrap_or_default();

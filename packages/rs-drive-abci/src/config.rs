@@ -76,41 +76,12 @@ impl Default for CoreRpcConfig {
 }
 
 /// Configuration for Dash Core related things
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct CoreConfig {
     /// Core RPC config
     #[serde(flatten)]
     pub rpc: CoreRpcConfig,
-
-    /// DKG interval
-    pub dkg_interval: String, // String due to https://github.com/softprops/envy/issues/26
-    /// Minimum number of valid members to use the quorum
-    pub min_quorum_valid_members: String, // String due to https://github.com/softprops/envy/issues/26
-}
-
-impl CoreConfig {
-    /// return dkg_interval
-    pub fn dkg_interval(&self) -> u32 {
-        self.dkg_interval
-            .parse::<u32>()
-            .expect("DKG_INTERVAL is not an int")
-    }
-    /// Returns minimal number of quorum members
-    pub fn min_quorum_valid_members(&self) -> u32 {
-        self.min_quorum_valid_members
-            .parse::<u32>()
-            .expect("MIN_QUORUM_VALID_MEMBERS is not an int")
-    }
-}
-impl Default for CoreConfig {
-    fn default() -> Self {
-        Self {
-            dkg_interval: String::from("24"),
-            min_quorum_valid_members: String::from("3"),
-            rpc: Default::default(),
-        }
-    }
 }
 
 /// Configuration of the execution part of Dash Platform.
@@ -128,10 +99,10 @@ pub struct ExecutionConfig {
 
     /// How often should quorums change?
     #[serde(
-        default = "ExecutionConfig::default_validator_set_quorum_rotation_block_count",
+        default = "ExecutionConfig::default_validator_set_rotation_block_count",
         deserialize_with = "from_str_or_number"
     )]
-    pub validator_set_quorum_rotation_block_count: u32,
+    pub validator_set_rotation_block_count: u32,
 
     /// How long in seconds should an epoch last
     /// It might last a lot longer if the chain is halted
@@ -195,15 +166,16 @@ pub struct PlatformConfig {
     /// The quorum type used for verifying chain locks
     pub chain_lock_quorum_type: String,
 
+    // TODO: It's a test-only param
     /// The default quorum size
-    pub quorum_size: u16,
+    pub validator_set_quorum_size: u16,
 
     /// The window for chain locks
     /// On Mainnet Chain Locks are signed using 400_60: One quorum in every 288 blocks and activeQuorumCount is 4.
     /// On Testnet Chain Locks are signed using 50_60: One quorum in every 24 blocks and activeQuorumCount is 24.
     pub chain_lock_quorum_window: u32,
 
-    // todo: this should probably be coming from Tenderdash config
+    // todo: this should probably be coming from Tenderdash config. It's a test only param
     /// Approximately how often are blocks produced
     pub block_spacing_ms: u64,
 
@@ -229,7 +201,7 @@ impl ExecutionConfig {
         true
     }
 
-    fn default_validator_set_quorum_rotation_block_count() -> u32 {
+    fn default_validator_set_rotation_block_count() -> u32 {
         15
     }
 
@@ -308,8 +280,8 @@ impl Default for ExecutionConfig {
         Self {
             use_document_triggers: ExecutionConfig::default_use_document_triggers(),
             verify_sum_trees: ExecutionConfig::default_verify_sum_trees(),
-            validator_set_quorum_rotation_block_count:
-                ExecutionConfig::default_validator_set_quorum_rotation_block_count(),
+            validator_set_rotation_block_count:
+                ExecutionConfig::default_validator_set_rotation_block_count(),
             epoch_time_length_s: ExecutionConfig::default_epoch_time_length_s(),
         }
     }
@@ -323,11 +295,28 @@ impl Default for PlatformConfig {
 
 #[allow(missing_docs)]
 impl PlatformConfig {
+    pub fn default_local() -> Self {
+        Self {
+            validator_set_quorum_type: "llmq_test_platform".to_string(),
+            chain_lock_quorum_type: "llmq_test".to_string(),
+            validator_set_quorum_size: 3,
+            chain_lock_quorum_window: 24,
+            block_spacing_ms: 5000,
+            drive: Default::default(),
+            abci: Default::default(),
+            core: Default::default(),
+            execution: Default::default(),
+            db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            testing_configs: PlatformTestConfig::default(),
+            initial_protocol_version: 1,
+        }
+    }
+
     pub fn default_testnet() -> Self {
         Self {
             validator_set_quorum_type: "llmq_25_67".to_string(),
             chain_lock_quorum_type: "llmq_50_60".to_string(),
-            quorum_size: 25,
+            validator_set_quorum_size: 25,
             chain_lock_quorum_window: 24,
             block_spacing_ms: 5000,
             drive: Default::default(),
@@ -344,7 +333,7 @@ impl PlatformConfig {
         Self {
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_400_60".to_string(),
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             chain_lock_quorum_window: 288,
             block_spacing_ms: 5000,
             drive: Default::default(),
@@ -409,10 +398,10 @@ mod tests {
             env::set_var(format!("ABCI_LOG_{}_FORMAT", vector.0), vector.1);
         }
 
-        let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.example");
+        let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.local");
 
         dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
-        assert_eq!("5", env::var("QUORUM_SIZE").unwrap());
+        assert_eq!("/tmp/db", env::var("DB_PATH").unwrap());
 
         let config = super::PlatformConfig::from_env().expect("expected config from env");
         assert!(config.execution.verify_sum_trees);
