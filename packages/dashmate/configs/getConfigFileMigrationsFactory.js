@@ -409,7 +409,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.0.0-dev.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
-
             let baseConfigName = name;
             if (options.group !== null && defaultConfigs.has(options.group)) {
               baseConfigName = options.group;
