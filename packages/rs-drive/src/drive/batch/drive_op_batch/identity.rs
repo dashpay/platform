@@ -80,7 +80,7 @@ pub enum IdentityOperationType {
     /// Updates an identities revision.
     MasternodeContestedResourceCastVote {
         /// The pro tx hash of the masternode doing the voting
-        pro_tx_hash: [u8; 32],
+        voter_pro_tx_hash: [u8; 32],
         /// Contested Vote type
         contested_vote_type: ContestedDocumentResourceVoteType,
     },
@@ -177,9 +177,9 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 platform_version,
             )?]),
             IdentityOperationType::MasternodeContestedResourceCastVote {
-                pro_tx_hash,
+                voter_pro_tx_hash,
                 contested_vote_type,
-            } => drive.register_contested_resource_identity_vote(contested_vote_type, block_info, estimated_costs_only_with_layer_info.is_some(), transaction, platform_version)
+            } => drive.register_contested_resource_identity_vote_operations(voter_pro_tx_hash, contested_vote_type, block_info, estimated_costs_only_with_layer_info, transaction, platform_version)
         }
     }
 }

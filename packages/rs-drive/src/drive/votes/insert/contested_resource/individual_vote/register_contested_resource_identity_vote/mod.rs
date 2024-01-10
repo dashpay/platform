@@ -1,5 +1,7 @@
 mod v0;
 
+use std::collections::HashMap;
+use grovedb::batch::KeyInfoPath;
 use crate::drive::Drive;
 
 use crate::error::drive::DriveError;
@@ -10,7 +12,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use dpp::voting::ContestedDocumentResourceVoteType;
-use grovedb::TransactionArg;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
 use dpp::identifier::Identifier;
 use crate::fee::op::LowLevelDriveOperation;
 
@@ -49,10 +51,12 @@ impl Drive {
 
     pub fn register_contested_resource_identity_vote_operations(
         &self,
-        voter_pro_tx_hash: Identifier,
+        voter_pro_tx_hash: [u8; 32],
         vote: ContestedDocumentResourceVoteType,
         block_info: &BlockInfo,
-        apply: bool,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<LowLevelDriveOperation, Error> {
@@ -63,11 +67,11 @@ impl Drive {
             .contested_resource_insert
             .register_contested_resource_identity_vote
         {
-            0 => self.register_contested_resource_identity_vote_v0(
+            0 => self.register_contested_resource_identity_vote_operations_v0(
                 voter_pro_tx_hash,
                 vote,
                 block_info,
-                apply,
+                estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
             ),
