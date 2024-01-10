@@ -8,6 +8,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use dpp::data_contract::document_type::IndexType;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
+use dpp::data_contract::document_type::IndexType::{ContestedResourceIndex, NonUniqueIndex};
 
 use crate::drive::defaults::{CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8};
 use crate::drive::document::document_reference_size;
@@ -45,7 +46,7 @@ impl Drive {
 
         // unique indexes will be stored under key "0"
         // non unique indices should have a tree at key "0" that has all elements based off of primary key
-        if !unique || any_fields_null {
+        if index_type == NonUniqueIndex || index_type == ContestedResourceIndex || any_fields_null {
             key_info_path.push(KnownKey(vec![0]));
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info

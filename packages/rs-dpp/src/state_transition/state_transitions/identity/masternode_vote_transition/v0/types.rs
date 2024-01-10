@@ -9,7 +9,7 @@ impl StateTransitionFieldTypes for MasternodeVoteTransitionV0 {
     }
 
     fn identifiers_property_paths() -> Vec<&'static str> {
-        vec![IDENTITY_ID, RECIPIENT_ID]
+        vec![IDENTITY_ID]
     }
 
     fn binary_property_paths() -> Vec<&'static str> {

@@ -9,7 +9,7 @@ use crate::drive::object_size_info::DocumentInfo::{
 };
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
-use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
+use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo, PathKeyInfo};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -65,9 +65,13 @@ impl Drive {
                 }
             };
 
-            // here we are inserting an empty tree that will have a subtree of all other index properties
+            // Here we are inserting an empty tree that will have a subtree of all other index properties
+            // It is basically the 0
+            // Underneath we will have all elements if non unique index, or all identity contenders if
+            // a contested resource index
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
+                false,
                 *storage_flags,
                 apply_type,
                 transaction,
@@ -154,6 +158,7 @@ impl Drive {
                 //         0 (ref)   1 (sum tree)    0 (ref)   1 (sum tree)
                 //
 
+                // Here we are getting the document id and the reference
                 let (document_id, ref_key_element_info) =
                     match &document_and_contract_info.owned_document_info.document_info {
                         DocumentRefAndSerialization((document, _, storage_flags))
@@ -192,17 +197,24 @@ impl Drive {
                         }
                     };
 
-                let document_key_path_info = KeyRef(document_id.as_slice());
+                // Let's start by inserting the document id tree
+
+                // here we are the tree that will contain the ref
+                // We are inserting this at item name contested / Goblet of Fire / 0 with the key of
+                //    document_key_path_info
+                self.batch_insert_empty_tree(
+                    index_path_info,
+                    KeyRef(document_id.as_slice()),
+                    *storage_flags,
+                    batch_operations,
+                    drive_version,
+                )?;
 
                 let mut document_path_info = index_path_info.clone();
 
-                document_path_info.push(document_key_path_info)?;
-
-                let ref_key_path_info = KeyRef(&[0]);
+                document_path_info.push(KeyRef(document_id.as_slice()))?;
 
                 let votes_key_path_info = KeyRef(&[1]);
-
-                let ref_path_key_info = ref_key_path_info.add_path_info(document_path_info.clone());
 
                 let votes_path_key_info =
                     votes_key_path_info.add_path_info(document_path_info.clone());
@@ -239,28 +251,48 @@ impl Drive {
                     );
                 }
 
-                let path_key_element_info = PathKeyElementInfo::from_path_info_and_key_element(
-                    index_path_info,
-                    key_element_info,
+                let reference_path_key_element_info = PathKeyElementInfo::from_path_info_and_key_element(
+                    document_path_info.clone(),
+                    ref_key_element_info,
                 )?;
 
-                // here we are the tree that will contain the ref and the voting tree
-                self.batch_insert_empty_tree(
-                    document_path_info,
-                    *storage_flags,
-                    previous_batch_operations,
+                // here we are inserting the ref
+                self.batch_insert(
+                    reference_path_key_element_info,
                     batch_operations,
                     drive_version,
                 )?;
 
-                // here we are the tree that will contain the ref and the voting tree
-                self.batch_insert_empty_tree(
-                    document_path_info,
+                let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                    BatchInsertTreeApplyType::StatefulBatchInsertTree
+                } else {
+                    BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                        in_tree_using_sums: false,
+                        is_sum_tree: true,
+                        flags_len: storage_flags
+                            .map(|s| s.serialized_size())
+                            .unwrap_or_default(),
+                    }
+                };
+
+
+                // here we are the tree that will contain the voting tree
+                let inserted = self.batch_insert_empty_tree_if_not_exists(
+                    votes_path_key_info,
+                    true,
                     *storage_flags,
-                    previous_batch_operations,
+                    apply_type,
+                    transaction,
+                    &mut None,
                     batch_operations,
                     drive_version,
                 )?;
+
+                if !inserted {
+                    return Err(Error::Drive(DriveError::CorruptedContractIndexes(
+                        "contested vote tree already exists",
+                    )));
+                }
             }
         } else {
             let key_element_info =

@@ -11,7 +11,7 @@ mod value_conversion;
 mod version;
 
 use crate::state_transition::masternode_vote_transition::fields::property_names::{
-    PRO_TX_HASH, RECIPIENT_ID,
+    PRO_TX_HASH,
 };
 use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
 use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0Signable;
