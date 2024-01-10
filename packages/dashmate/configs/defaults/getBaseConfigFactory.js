@@ -165,6 +165,10 @@ export default function getBaseConfigFactory(homeDir) {
             validatorSet: {
               llmqType: 4,
             },
+            chainLock: {
+              llmqType: 2,
+              dkgInterval: 288,
+            },
             epochTime: 788400,
           },
           tenderdash: {

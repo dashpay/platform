@@ -406,6 +406,22 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '1.0.0-dev.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+
+            let baseConfigName = name;
+            if (options.group !== null && defaultConfigs.has(options.group)) {
+              baseConfigName = options.group;
+            } else if (!defaultConfigs.has(baseConfigName)) {
+              baseConfigName = 'testnet';
+            }
+
+            options.platform.drive.abci.chainLock = defaultConfigs.get(baseConfigName).get('platform.drive.abci.chainLock');
+          });
+
+        return configFile;
+      },
     };
   }
 
