@@ -6,11 +6,13 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::voting::{ContestedDocumentResourceVoteType, Vote};
 use grovedb::TransactionArg;
+use dpp::prelude::Identifier;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
     pub fn register_contested_resource_identity_vote_v0(
         &self,
+        voter_pro_tx_hash: Identifier,
         vote: ContestedDocumentResourceVoteType,
         block_info: &BlockInfo,
         apply: bool,

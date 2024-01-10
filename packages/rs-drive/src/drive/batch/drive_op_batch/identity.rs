@@ -7,10 +7,10 @@ use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::Revision;
 
 use dpp::version::PlatformVersion;
-use dpp::voting::resource_vote::ResourceVote;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use dpp::voting::ContestedDocumentResourceVoteType;
 
 /// Operations on Identities
 #[derive(Clone, Debug)]
@@ -78,11 +78,11 @@ pub enum IdentityOperationType {
     },
 
     /// Updates an identities revision.
-    MasternodeResourceVote {
-        /// The pro tx hash of the masternode
+    MasternodeContestedResourceCastVote {
+        /// The pro tx hash of the masternode doing the voting
         pro_tx_hash: [u8; 32],
-        /// The resource vote
-        resource_vote: ResourceVote,
+        /// Contested Vote type
+        contested_vote_type: ContestedDocumentResourceVoteType,
     },
 }
 
@@ -176,10 +176,10 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 estimated_costs_only_with_layer_info,
                 platform_version,
             )?]),
-            IdentityOperationType::MasternodeResourceVote {
-                identity_id,
-                resource_vote,
-            } => {}
+            IdentityOperationType::MasternodeContestedResourceCastVote {
+                pro_tx_hash,
+                contested_vote_type,
+            } => drive.register_contested_resource_identity_vote(contested_vote_type, block_info, estimated_costs_only_with_layer_info.is_some(), transaction, platform_version)
         }
     }
 }
