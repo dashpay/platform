@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.25.21",
+  "version": "1.0.0-dev.1",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -87,7 +87,8 @@
     "tsconfig-paths": "4.2.0",
     "ansi-regex": "5.0.1",
     "cacache": "18.0.0",
-    "node-gyp": "10.0.1"
+    "node-gyp": "10.0.1",
+    "follow-redirects": "^1.15.4"
   },
   "dependencies": {
     "node-gyp": "^10.0.1"
