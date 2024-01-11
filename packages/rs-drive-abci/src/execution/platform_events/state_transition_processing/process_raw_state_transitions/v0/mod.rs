@@ -79,10 +79,19 @@ where
                     platform_version,
                 )
                 .unwrap_or_else(|st_error| {
+                    let mut st_hash = String::new();
+                    if tracing::enabled!(tracing::Level::ERROR) {
+                        st_hash = hex::encode(
+                            dashcore::hashes::sha256::Hash::hash(raw_state_transition)
+                                .to_byte_array(),
+                        );
+                    }
+
                     tracing::error!(
                         error = ?st_error.error,
                         raw_state_transition = ?st_error.raw_state_transition,
-                        "Error processing state transition: {}",
+                        "Error processing state transition ({}) : {}",
+                        st_hash,
                         st_error.error,
                     );
 
@@ -105,7 +114,7 @@ where
     ) -> Result<StateTransitionExecutionResult, StateTransitionAwareError> {
         // Tenderdash hex-encoded ST hash
         let mut st_hash = String::new();
-        if tracing::enabled!(tracing::Level::TRACE) {
+        if tracing::enabled!(tracing::Level::DEBUG) {
             st_hash = hex::encode(
                 dashcore::hashes::sha256::Hash::hash(raw_state_transition).to_byte_array(),
             );
