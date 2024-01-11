@@ -1,7 +1,7 @@
 [package]
 name = "dapi-grpc"
 description = "GRPC client for Dash Platform"
-version = "0.25.21"
+version = "1.0.0-dev.1"
 authors = [
     "Samuel Westrich <sam@dash.org>",
     "Igor Markin <igor.markin@dash.org>",
