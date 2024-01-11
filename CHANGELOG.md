@@ -5,7 +5,7 @@
 
 * invalid state transitions now included into blocks that makes previous chain data invalid. (#1657)
 * credit transfer state transition requires revision. (#1634)
-* fee calculated amounts are changed (#1656)
+* calculated fee amounts are changed (#1656)
 
 ### Features
 
