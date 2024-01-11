@@ -173,7 +173,7 @@ where
         &self,
         mut request: RequestPrepareProposal,
     ) -> Result<ResponsePrepareProposal, proto::ResponseException> {
-        let _timer = crate::metrics::abci_request_duration("prepare_proposal");
+        let timer = crate::metrics::abci_request_duration("prepare_proposal");
 
         // We should get the latest CoreChainLock from core
         // It is possible that we will not get a chain lock from core, in this case, just don't
@@ -333,15 +333,18 @@ where
             .expect("expected that a block execution context was set");
         block_execution_context.set_proposer_results(Some(response.clone()));
 
+        let elapsed_time_ms = timer.elapsed().as_millis();
+
         tracing::info!(
             invalid_tx_count,
             valid_tx_count,
             delayed_tx_count,
             failed_tx_count,
-            "Prepared proposal with {} transitions for height: {}, round: {}",
+            "Prepared proposal with {} transitions for height: {}, round: {} in {} ms",
             valid_tx_count,
             request.height,
             request.round,
+            elapsed_time_ms,
         );
 
         Ok(response)
@@ -351,7 +354,7 @@ where
         &self,
         mut request: RequestProcessProposal,
     ) -> Result<ResponseProcessProposal, proto::ResponseException> {
-        let _timer = crate::metrics::abci_request_duration("process_proposal");
+        let timer = crate::metrics::abci_request_duration("process_proposal");
 
         let mut block_execution_context_guard =
             self.platform.block_execution_context.write().unwrap();
@@ -561,13 +564,17 @@ where
                 consensus_param_updates: None,
             };
 
+            let elapsed_time_ms = timer.elapsed().as_millis();
+
             tracing::info!(
                 invalid_tx_count,
                 valid_tx_count,
-                "Processed proposal with {} transactions for height: {}, round: {}",
+                elapsed_time_ms,
+                "Processed proposal with {} transactions for height: {}, round: {} in {} ms",
                 valid_tx_count,
                 request.height,
                 request.round,
+                elapsed_time_ms,
             );
 
             Ok(response)
