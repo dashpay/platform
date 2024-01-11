@@ -637,6 +637,9 @@ where
             ..
         } = request;
 
+        let height: u64 = height as u64;
+        let round: u32 = round as u32;
+
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
         let Some(block_execution_context) = guarded_block_execution_context.as_ref() else {
             tracing::warn!(
@@ -683,7 +686,24 @@ where
         //     });
         // };
 
-        // TODO: Verify hash, height and round to make sure we have vote extension for this specific proposal
+        let block_state_info = block_execution_context.block_state_info();
+
+        //// Verification that vote extension is for our current executed block
+        // When receiving the vote extension, we need to make sure that info matches our current block
+
+        if block_state_info.height() != height || block_state_info.round() != round {
+            tracing::warn!(
+                "vote extension for height: {}, round: {} is ignored because we are at height: {} round {}",
+                height,
+                round,
+                block_state_info.height(),
+                block_state_info.round()
+            );
+
+            return Ok(proto::ResponseVerifyVoteExtension {
+                status: VerifyStatus::Reject.into(),
+            });
+        }
 
         let validation_result = self.platform.check_withdrawals(
             &got,
