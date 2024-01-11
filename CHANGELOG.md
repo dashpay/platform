@@ -1,12 +1,11 @@
-## [0.26.0-dev.1](https://github.com/dashpay/platform/compare/v0.25.21...v0.26.0-dev.1) (2024-01-11)
+## [1.0.0-dev.1](https://github.com/dashpay/platform/compare/v0.25.21...v1.0.0-dev.1) (2024-01-11)
 
 
 ### ⚠ BREAKING CHANGES
 
-* **drive-abci:** remove unnecessary validation from check tx and re-check (#1647)
-* **drive-abci:** include invalid state transitions into block (#1657)
-* **platform:** credit transfer replay attack (#1634)
-* **drive-abci:** processing fees for signature verification (#1656)
+* invalid state transitions now included into blocks that makes previous chain data invalid. (#1657)
+* credit transfer state transition requires revision. (#1634)
+* fee calculated amounts are changed (#1656)
 
 ### Features
 
@@ -19,12 +18,12 @@
 ### Bug Fixes
 
 * **platform:** credit transfer replay attack ([#1634](https://github.com/dashpay/platform/issues/1634))
+* **dapi**: internal error when mempool is full ([#1661](https://github.com/dashpay/platform/issues/1661))
 
 
 ### Miscellaneous Chores
 
-* automatic clippy fixes ([#1528](https://github.com/dashpay/platform/issues/1528))
-* cargo clippy fixes, continued ([#1602](https://github.com/dashpay/platform/issues/1602))
+* automatic clippy fixes ([#1528](https://github.com/dashpay/platform/issues/1528), [#1602](https://github.com/dashpay/platform/issues/1602))
 
 ### [0.25.21](https://github.com/dashpay/platform/compare/v0.25.20...v0.25.21) (2023-12-28)
 
