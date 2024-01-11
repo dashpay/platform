@@ -638,12 +638,17 @@ where
         } = request;
 
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
-        let block_execution_context =
-            guarded_block_execution_context
-                .as_ref()
-                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "block execution context must be set in block begin handler for verify vote extension",
-                )))?;
+        let Some(block_execution_context) = guarded_block_execution_context.as_ref() else {
+            tracing::warn!(
+                "vote extension for height: {}, round: {} is ignored because block already committed",
+                height,
+                round,
+            );
+
+            return Ok(proto::ResponseVerifyVoteExtension {
+                status: VerifyStatus::Reject.into(),
+            });
+        };
 
         let platform_version = block_execution_context
             .block_platform_state()
@@ -678,6 +683,8 @@ where
         //     });
         // };
 
+        // TODO: Verify hash, height and round to make sure we have vote extension for this specific proposal
+
         let validation_result = self.platform.check_withdrawals(
             &got,
             &expected,
@@ -689,6 +696,12 @@ where
         )?;
 
         if validation_result.is_valid() {
+            tracing::debug!(
+                "vote extension for height: {}, round: {} is successfully verified",
+                height,
+                round,
+            );
+
             Ok(proto::ResponseVerifyVoteExtension {
                 status: VerifyStatus::Accept.into(),
             })
@@ -697,8 +710,10 @@ where
                 ?got,
                 ?expected,
                 ?validation_result.errors,
-                "vote extension mismatch"
+                "vote extension for height: {}, round: {} mismatch",
+                height, round
             );
+
             Ok(proto::ResponseVerifyVoteExtension {
                 status: VerifyStatus::Reject.into(),
             })
