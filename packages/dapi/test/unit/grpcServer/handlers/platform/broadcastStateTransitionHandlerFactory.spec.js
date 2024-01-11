@@ -144,7 +144,7 @@ describe('broadcastStateTransitionHandlerFactory', () => {
       expect.fail('should throw AlreadyExistsGrpcError');
     } catch (e) {
       expect(e).to.be.an.instanceOf(AlreadyExistsGrpcError);
-      expect(e.getMessage()).to.equal('State transition already in chain');
+      expect(e.getMessage()).to.equal('state transition already in chain');
     }
   });
 
