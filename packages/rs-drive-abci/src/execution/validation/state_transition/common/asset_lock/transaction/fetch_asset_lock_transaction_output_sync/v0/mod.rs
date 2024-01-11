@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::identity::{
     IdentityAssetLockTransactionIsNotFoundError, IdentityAssetLockTransactionOutputNotFoundError,
-    InvalidAssetLockProofTransactionHeightError,
+    InvalidAssetLockProofTransactionHeightError, InvalidAssetLockProofValueError,
 };
 use dpp::dashcore::secp256k1::ThirtyTwoByteHash;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
@@ -12,6 +12,8 @@ use dpp::identity::state_transition::asset_lock_proof::validate_asset_lock_trans
 use dpp::prelude::{AssetLockProof, ConsensusValidationResult};
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+
+const MINIMAL_ASSET_LOCK_VALUE: u64 = 120000;
 
 /// This fetches the asset lock transaction output from core
 pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
@@ -22,6 +24,16 @@ pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
     match asset_lock_proof {
         AssetLockProof::Instant(proof) => {
             if let Some(output) = proof.output() {
+                if output.value < MINIMAL_ASSET_LOCK_VALUE {
+                    return Ok(ConsensusValidationResult::new_with_error(
+                        InvalidAssetLockProofValueError::new(
+                            output.value,
+                            MINIMAL_ASSET_LOCK_VALUE,
+                        )
+                        .into(),
+                    ));
+                }
+
                 Ok(ValidationResult::new_with_data(output.clone()))
             } else {
                 Ok(ValidationResult::new_with_error(
@@ -114,6 +126,16 @@ pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
                 // We are dealing with old Rust edition so we can't use optional remove
                 if payload.credit_outputs.get(output_index as usize).is_some() {
                     let output = payload.credit_outputs.remove(output_index as usize);
+
+                    if output.value < MINIMAL_ASSET_LOCK_VALUE {
+                        return Ok(ConsensusValidationResult::new_with_error(
+                            InvalidAssetLockProofValueError::new(
+                                output.value,
+                                MINIMAL_ASSET_LOCK_VALUE,
+                            )
+                            .into(),
+                        ));
+                    }
 
                     return Ok(ValidationResult::new_with_data(output));
                 }
