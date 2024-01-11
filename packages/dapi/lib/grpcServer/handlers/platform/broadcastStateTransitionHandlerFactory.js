@@ -13,7 +13,6 @@ const {
     BroadcastStateTransitionResponse,
   },
 } = require('@dashevo/dapi-grpc');
-const { RESOURCE_EXHAUSTED } = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 /**
  * @param {jaysonClient} rpcClient
