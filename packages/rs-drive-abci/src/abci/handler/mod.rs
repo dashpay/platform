@@ -643,7 +643,7 @@ where
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
         let Some(block_execution_context) = guarded_block_execution_context.as_ref() else {
             tracing::warn!(
-                "vote extension for height: {}, round: {} is ignored because block already committed",
+                "vote extension for height: {}, round: {} is rejected because we are not in a block execution phase",
                 height,
                 round,
             );
@@ -693,7 +693,7 @@ where
 
         if block_state_info.height() != height || block_state_info.round() != round {
             tracing::warn!(
-                "vote extension for height: {}, round: {} is ignored because we are at height: {} round {}",
+                "vote extension for height: {}, round: {} is rejected because we are at height: {} round {}",
                 height,
                 round,
                 block_state_info.height(),
