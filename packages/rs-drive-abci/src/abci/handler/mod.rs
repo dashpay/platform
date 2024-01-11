@@ -109,15 +109,14 @@ where
             last_block_app_hash: state_app_hash.clone(),
         };
 
-        tracing::info!(
+        tracing::debug!(
             protocol_version = latest_platform_version.protocol_version,
             software_version = env!("CARGO_PKG_VERSION"),
             block_version = request.block_version,
             p2p_version = request.p2p_version,
             app_hash = hex::encode(state_app_hash),
             height = state_guard.last_block_height(),
-            "Consensus engine is started from block {}",
-            state_guard.last_block_height(),
+            "Handshake with consensus engine",
         );
 
         if tracing::enabled!(tracing::Level::TRACE) {
