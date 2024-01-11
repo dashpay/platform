@@ -3,6 +3,7 @@ const {
     error: {
       InvalidArgumentGrpcError,
       AlreadyExistsGrpcError,
+      ResourceExhaustedGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -40,8 +41,19 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
     const { result, error: jsonRpcError } = await rpcClient.request('broadcast_tx_sync', { tx });
 
     if (jsonRpcError) {
-      if (jsonRpcError.data === 'tx already exists in cache') {
-        throw new AlreadyExistsGrpcError('State transition already in chain');
+      if (typeof jsonRpcError.data === 'string') {
+        if (jsonRpcError.data === 'tx already exists in cache') {
+          throw new AlreadyExistsGrpcError('state transition already in chain');
+        }
+
+        if (jsonRpcError.data.startsWith('Tx too large.')) {
+          const message = jsonRpcError.data.replace('Tx too large. ', '');
+          throw new InvalidArgumentGrpcError(`state transition is too large. ${message}`);
+        }
+
+        if (jsonRpcError.data.startsWith('mempool is full')) {
+          throw new ResourceExhaustedGrpcError(jsonRpcError.data);
+        }
       }
 
       const error = new Error();
