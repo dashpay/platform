@@ -43,6 +43,11 @@ class WsClient extends EventEmitter {
 
         this.emit(event.type, event);
 
+        this.ws.removeAllListeners();
+        this.ws.terminate();
+        this.ws = null;
+        this.isConnected = false;
+
         setTimeout(this.open.bind(this), this.autoReconnectInterval);
       } else {
         const event = {
@@ -82,12 +87,6 @@ class WsClient extends EventEmitter {
 
       this.emit(event.type, event);
 
-      if (e.code === 1000) { // close normal
-        this.disconnect();
-
-        return;
-      }
-
       reconnect();
     };
 
@@ -100,16 +99,7 @@ class WsClient extends EventEmitter {
 
       this.emit(event.type, event);
 
-      switch (e.code) {
-        case 'ENOTFOUND':
-        case 'EAI_AGAIN':
-        case 'ECONNREFUSED':
-          reconnect();
-          break;
-        default:
-          this.disconnect();
-          break;
-      }
+      reconnect();
     };
 
     const onMessageListener = (rawData) => {
