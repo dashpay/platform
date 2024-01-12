@@ -137,6 +137,9 @@ export default function getBaseConfigFactory(homeDir) {
           api: {
             docker: {
               image: `dashpay/dapi:${dockerImageVersion}`,
+              deploy: {
+                replicas: 1,
+              },
               build: {
                 enabled: false,
                 context: path.join(PACKAGE_ROOT_DIR, '..', '..'),

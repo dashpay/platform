@@ -102,6 +102,9 @@ services:
     labels:
       org.dashmate.service.title: "DAPI API"
     restart: unless-stopped
+    deploy:
+      mode: replicated
+      replicas: ${PLATFORM_DAPI_API_DOCKER_DEPLOY_REPLICAS:-1}
     depends_on:
       - drive_tenderdash
     environment:
@@ -120,16 +123,22 @@ services:
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}
       - NODE_ENV=${ENVIRONMENT:?err}
-    command: --only api
+    command: yarn run api
     stop_grace_period: 10s
     profiles:
       - platform
+    expose:
+      - 3004
+      - 3005
 
   dapi_tx_filter_stream:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "DAPI Transactions Filter Stream"
     restart: unless-stopped
+    deploy:
+      mode: replicated
+      replicas: ${PLATFORM_DAPI_API_DOCKER_DEPLOY_REPLICAS:-1}
     environment:
       - TX_FILTER_STREAM_GRPC_PORT=3006
       - DASHCORE_RPC_HOST=core
@@ -144,10 +153,12 @@ services:
       - NETWORK=devnet
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=26657
-    command: --only core-streams
+    command: yarn run core-streams
     stop_grace_period: 10s
     profiles:
       - platform
+    expose:
+      - 3006
 
   dapi_envoy:
     image: ${PLATFORM_DAPI_ENVOY_DOCKER_IMAGE:?err}

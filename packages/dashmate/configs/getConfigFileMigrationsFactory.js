@@ -406,6 +406,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '0.25.22': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.dapi.api.docker.deploy = base.get('platform.dapi.api.docker.deploy');
+          });
+
+        return configFile;
+      },
     };
   }
 

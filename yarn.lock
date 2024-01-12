@@ -6557,6 +6557,7 @@ __metadata:
     "@babel/core": "npm:^7.23.3"
     "@babel/eslint-parser": "npm:^7.23.3"
     "@dashevo/bls": "npm:~1.2.9"
+    "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": "npm:~0.21.0"
     "@dashevo/dashd-rpc": "npm:^18.2.0"
     "@dashevo/dashpay-contract": "workspace:*"

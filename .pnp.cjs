@@ -8702,6 +8702,7 @@ const RAW_RUNTIME_STATE =
           ["@babel/core", "npm:7.23.3"],\
           ["@babel/eslint-parser", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:7.23.3"],\
           ["@dashevo/bls", "npm:1.2.9"],\
+          ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dashcore-lib", "npm:0.21.0"],\
           ["@dashevo/dashd-rpc", "npm:18.2.0"],\
           ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
