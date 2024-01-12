@@ -117,7 +117,7 @@ describe('DAPIClient', () => {
       });
 
       expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(ListDAPIAddressProvider);
-      expect(dapiClient.blockHeadersProvider).to.be.an.insπtanceOf(
+      expect(dapiClient.blockHeadersProvider).to.be.an.instanceOf(
         BlockHeadersProvider,
       );
       expect(dapiClient.core).to.be.an.instanceOf(CoreMethodsFacade);
