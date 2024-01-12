@@ -26,6 +26,7 @@ describe('DAPIClient', () => {
         blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
         loggerOptions: {
           identifier: '',
+          level: undefined,
         },
       });
 
@@ -51,6 +52,7 @@ describe('DAPIClient', () => {
         blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
         loggerOptions: {
           identifier: '',
+          level: undefined,
         },
       });
 
@@ -82,6 +84,7 @@ describe('DAPIClient', () => {
         blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
         loggerOptions: {
           identifier: '',
+          level: undefined,
         },
       });
 
@@ -109,11 +112,12 @@ describe('DAPIClient', () => {
         blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
         loggerOptions: {
           identifier: '',
+          level: undefined,
         },
       });
 
       expect(dapiClient.dapiAddressProvider).to.be.an.instanceOf(ListDAPIAddressProvider);
-      expect(dapiClient.blockHeadersProvider).to.be.an.instanceOf(
+      expect(dapiClient.blockHeadersProvider).to.be.an.insπtanceOf(
         BlockHeadersProvider,
       );
       expect(dapiClient.core).to.be.an.instanceOf(CoreMethodsFacade);
