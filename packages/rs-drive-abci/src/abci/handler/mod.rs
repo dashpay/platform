@@ -655,13 +655,21 @@ where
             ..
         } = request;
 
+        let height: u64 = height as u64;
+        let round: u32 = round as u32;
+
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
-        let block_execution_context =
-            guarded_block_execution_context
-                .as_ref()
-                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "block execution context must be set in block begin handler for verify vote extension",
-                )))?;
+        let Some(block_execution_context) = guarded_block_execution_context.as_ref() else {
+            tracing::warn!(
+                "vote extension for height: {}, round: {} is rejected because we are not in a block execution phase",
+                height,
+                round,
+            );
+
+            return Ok(proto::ResponseVerifyVoteExtension {
+                status: VerifyStatus::Reject.into(),
+            });
+        };
 
         let platform_version = block_execution_context
             .block_platform_state()
@@ -696,6 +704,25 @@ where
         //     });
         // };
 
+        let block_state_info = block_execution_context.block_state_info();
+
+        //// Verification that vote extension is for our current executed block
+        // When receiving the vote extension, we need to make sure that info matches our current block
+
+        if block_state_info.height() != height || block_state_info.round() != round {
+            tracing::warn!(
+                "vote extension for height: {}, round: {} is rejected because we are at height: {} round {}",
+                height,
+                round,
+                block_state_info.height(),
+                block_state_info.round()
+            );
+
+            return Ok(proto::ResponseVerifyVoteExtension {
+                status: VerifyStatus::Reject.into(),
+            });
+        }
+
         let validation_result = self.platform.check_withdrawals(
             &got,
             &expected,
@@ -707,6 +734,12 @@ where
         )?;
 
         if validation_result.is_valid() {
+            tracing::debug!(
+                "vote extension for height: {}, round: {} is successfully verified",
+                height,
+                round,
+            );
+
             Ok(proto::ResponseVerifyVoteExtension {
                 status: VerifyStatus::Accept.into(),
             })
@@ -715,8 +748,10 @@ where
                 ?got,
                 ?expected,
                 ?validation_result.errors,
-                "vote extension mismatch"
+                "vote extension for height: {}, round: {} mismatch",
+                height, round
             );
+
             Ok(proto::ResponseVerifyVoteExtension {
                 status: VerifyStatus::Reject.into(),
             })
