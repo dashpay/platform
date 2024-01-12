@@ -1,3 +1,24 @@
+## [1.0.0-dev.2](https://github.com/dashpay/platform/compare/v1.0.0-dev.1...v1.0.0-dev.2) (2024-01-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** adjust consensus params and enable re-check (#1669)
+* **drive-abci:** internal error if vote extension block is already committed (#1663)
+
+### Bug Fixes
+
+* broadcasting already invalidated transitions ([#1668](https://github.com/dashpay/platform/issues/1668))
+* **dashmate:** dapi kills host machine on container stop ([#1670](https://github.com/dashpay/platform/issues/1670))
+* **drive-abci:** internal error if vote extension block is already committed ([#1663](https://github.com/dashpay/platform/issues/1663))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** adjust consensus params and enable re-check ([#1669](https://github.com/dashpay/platform/issues/1669))
+* **drive-abci:** fix state transition logging ([#1664](https://github.com/dashpay/platform/issues/1664))
+* various logging improvements ([#1666](https://github.com/dashpay/platform/issues/1666))
+
 ## [1.0.0-dev.1](https://github.com/dashpay/platform/compare/v0.25.21...v1.0.0-dev.1) (2024-01-11)
 
 
