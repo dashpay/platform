@@ -1,9 +1,9 @@
 import fs from 'fs';
 import path from 'path';
-import HomeDir from '../../../../../src/config/HomeDir.js';
-import { PACKAGE_ROOT_DIR } from '../../../../../src/constants.js';
-import createDIContainer from '../../../../../src/createDIContainer.js';
-import getConfigFileDataV0250 from '../../../../../src/test/fixtures/getConfigFileDataV0250.js';
+import HomeDir from '../../../../src/config/HomeDir.js';
+import { PACKAGE_ROOT_DIR } from '../../../../src/constants.js';
+import createDIContainer from '../../../../src/createDIContainer.js';
+import getConfigFileDataV0250 from '../../../../src/test/fixtures/getConfigFileDataV0250.js';
 
 describe('migrateConfigFileFactory', () => {
   let mockConfigFileData;
