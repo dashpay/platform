@@ -230,16 +230,33 @@ export default function getBaseConfigFactory(homeDir) {
             genesis: {
               consensus_params: {
                 block: {
-                  max_bytes: '22020096', max_gas: '-1', time_iota_ms: '5000',
+                  max_bytes: '2097152', max_gas: '57631392000', time_iota_ms: '5000',
                 },
                 evidence: {
-                  max_age: '100000', max_age_num_blocks: '100000', max_age_duration: '172800000000000',
+                  max_age: '100000',
+                  max_age_num_blocks: '100000',
+                  max_age_duration: '172800000000000',
                 },
                 validator: {
                   pub_key_types: ['bls12381'],
                 },
                 version: {
                   app_version: '1',
+                },
+                timeout: {
+                  propose: '30000000000',
+                  propose_delta: '1000000000',
+                  vote: '2000000000',
+                  vote_delta: '500000000',
+                  commit: '1000000000',
+                  bypass_commit_timeout: false,
+                },
+                synchrony: {
+                  message_delay: '32000000000',
+                  precision: '500000000',
+                },
+                abci: {
+                  recheck_tx: true,
                 },
               },
             },
