@@ -82,35 +82,6 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
             genesis: {
               genesis_time: '2023-11-02T10:18:00.000Z',
               chain_id: 'dash-testnet-37',
-              initial_core_chain_locked_height: 918609,
-              consensus_params: {
-                timeout: {
-                  propose: '50000000000',
-                  propose_delta: '10000000000',
-                  vote: '500000000',
-                  vote_delta: '100000000',
-                  commit: '1000000000',
-                  bypass_commit_timeout: false,
-                },
-                block: {
-                  max_bytes: '22020096',
-                  max_gas: '-1',
-                  time_iota_ms: '5000',
-                },
-                evidence: {
-                  max_age: '100000',
-                  max_age_num_blocks: '100000',
-                  max_age_duration: '172800000000000',
-                },
-                validator: {
-                  pub_key_types: [
-                    'bls12381',
-                  ],
-                },
-                version: {
-                  app_version: '1',
-                },
-              },
               validator_quorum_type: 6,
             },
           },
