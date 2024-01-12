@@ -44,7 +44,7 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
     try {
       response = await rpcClient.request('broadcast_tx_sync', { tx });
     } catch (e) {
-      logger.error(e, 'Failed broadcasting broadcasting state transition');
+      logger.error(e, 'Failed broadcasting state transition');
 
       throw e;
     }
