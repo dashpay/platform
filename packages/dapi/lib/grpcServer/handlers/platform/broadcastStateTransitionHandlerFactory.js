@@ -13,6 +13,7 @@ const {
     BroadcastStateTransitionResponse,
   },
 } = require('@dashevo/dapi-grpc');
+const logger = require('../../../logger');
 
 /**
  * @param {jaysonClient} rpcClient
@@ -38,7 +39,17 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
 
     const tx = Buffer.from(stByteArray).toString('base64');
 
-    const { result, error: jsonRpcError } = await rpcClient.request('broadcast_tx_sync', { tx });
+    let response;
+
+    try {
+      response = await rpcClient.request('broadcast_tx_sync', { tx });
+    } catch (e) {
+      logger.error(e, 'Failed broadcasting state transition');
+
+      throw e;
+    }
+
+    const { result, error: jsonRpcError } = response;
 
     if (jsonRpcError) {
       if (typeof jsonRpcError.data === 'string') {
@@ -58,6 +69,8 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
 
       const error = new Error();
       Object.assign(error, jsonRpcError);
+
+      logger.error(error, 'Unexpected JSON RPC error during broadcasting state transition');
 
       throw error;
     }
