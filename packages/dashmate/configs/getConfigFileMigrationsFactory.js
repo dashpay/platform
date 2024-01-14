@@ -406,6 +406,17 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '1.0.0-dev.2': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (defaultConfigs.has(name)) {
+              options.platform.drive.tenderdash.genesis = defaultConfigs.get(name).get('platform.drive.tenderdash.genesis');
+            }
+            options.platform.dapi.api.docker.deploy = base.get('platform.dapi.api.docker.deploy');
+          });
+
+        return configFile;
+      },
     };
   }
 
