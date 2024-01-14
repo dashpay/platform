@@ -85,10 +85,10 @@ where
                 if !retain {
                     tracing::trace!(
                         ?quorum_hash,
-                        quorum_type = ?self.config.quorum_type(),
+                        quorum_type = ?self.config.validator_set_quorum_type(),
                         "removed validator set {} with quorum type {}",
                         quorum_hash,
-                        self.config.quorum_type()
+                        self.config.validator_set_quorum_type()
                     )
                 }
 
@@ -183,9 +183,7 @@ where
                     .collect();
                 let previous_quorums = block_platform_state
                     .replace_chain_lock_validating_quorums(chain_lock_validating_quorums);
-                tracing::trace!(
-                    "updated chain lock validating quorums to current validator set",
-                );
+                tracing::trace!("updated chain lock validating quorums to current validator set",);
                 block_platform_state.set_previous_chain_lock_validating_quorums(
                     block_platform_state.last_committed_core_height(),
                     previous_quorums,

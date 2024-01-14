@@ -28,7 +28,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
@@ -63,7 +64,7 @@ mod tests {
         let quorum_size = 100;
 
         let config = PlatformConfig {
-            quorum_size,
+            validator_set_quorum_size: quorum_size,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -79,16 +80,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 1,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
         let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
 
         // we expect to see quorums with banned members
@@ -136,7 +127,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
@@ -171,7 +163,7 @@ mod tests {
         let quorum_size = 100;
 
         let config = PlatformConfig {
-            quorum_size,
+            validator_set_quorum_size: quorum_size,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -187,16 +179,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 1,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
         let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
 
         // we expect to see quorums with banned members
@@ -230,7 +212,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
@@ -268,7 +251,7 @@ mod tests {
         let quorum_size = 100;
 
         let config = PlatformConfig {
-            quorum_size,
+            validator_set_quorum_size: quorum_size,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -284,16 +267,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 1,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
         let outcome = run_chain_for_strategy(&mut platform, 26, strategy, config, 13);
 
         // We should also see validator sets with less than the quorum size

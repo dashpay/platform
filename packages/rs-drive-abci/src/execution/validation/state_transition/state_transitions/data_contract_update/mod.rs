@@ -147,7 +147,7 @@ mod tests {
             .data_contract_owned();
 
         let config = PlatformConfig {
-            quorum_size: 10,
+            validator_set_quorum_size: 10,
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,

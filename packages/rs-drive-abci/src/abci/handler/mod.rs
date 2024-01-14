@@ -180,9 +180,11 @@ where
         // propose one
         // This is done before all else
 
+        let state = self.platform.state.read().unwrap();
+
         let core_chain_lock_update = match self.platform.core_rpc.get_best_chain_lock() {
             Ok(latest_chain_lock) => {
-                if request.core_chain_locked_height < latest_chain_lock.block_height {
+                if latest_chain_lock.block_height > state.last_committed_core_height() {
                     Some(latest_chain_lock)
                 } else {
                     None
@@ -190,6 +192,8 @@ where
             }
             Err(_) => None,
         };
+
+        drop(state);
 
         // Filter out transactions exceeding max_block_size
         let mut transactions_exceeding_max_block_size = Vec::new();

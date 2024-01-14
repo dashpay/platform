@@ -20,6 +20,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 
 use dashcore_rpc::json::{ExtendedQuorumListResult, SoftforkInfo};
+use dpp::dashcore::ChainLock;
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
@@ -45,8 +46,10 @@ pub(crate) fn run_chain_for_strategy(
     config: PlatformConfig,
     seed: u64,
 ) -> ChainExecutionOutcome {
-    let quorum_count = strategy.quorum_count; // We assume 24 quorums
-    let quorum_size = config.quorum_size;
+    let validator_quorum_count = strategy.validator_quorum_count; // In most tests 24 quorums
+    let chain_lock_quorum_count = strategy.chain_lock_quorum_count; // In most tests 4 quorums when not the same as validator
+    let validator_set_quorum_size = config.validator_set_quorum_size;
+    let chain_lock_quorum_size = config.chain_lock_quorum_size;
 
     let mut rng = StdRng::seed_from_u64(seed);
 
@@ -189,28 +192,33 @@ pub(crate) fn run_chain_for_strategy(
         )
     };
 
+    let initial_all_masternodes: Vec<_> = initial_masternodes_with_updates
+        .into_iter()
+        .chain(initial_hpmns_with_updates.clone())
+        .collect();
+
     let all_hpmns_with_updates = with_extra_hpmns_with_updates
         .iter()
         .max_by_key(|(key, _)| *key)
         .map(|(_, v)| v.clone())
         .unwrap_or(initial_hpmns_with_updates.clone());
 
-    let total_quorums = if strategy.rotate_quorums {
-        quorum_count * 10
+    let total_validator_quorums = if strategy.rotate_quorums {
+        validator_quorum_count * 10
     } else {
-        quorum_count
+        validator_quorum_count
     };
 
-    let quorums = masternodes::generate_test_quorums(
-        total_quorums as usize,
+    let validator_quorums = masternodes::generate_test_quorums(
+        total_validator_quorums as usize,
         initial_hpmns_with_updates
             .iter()
             .map(|hpmn| &hpmn.masternode),
-        quorum_size as usize,
+        validator_set_quorum_size as usize,
         &mut rng,
     );
 
-    let mut quorums_details: Vec<(QuorumHash, ExtendedQuorumDetails)> = quorums
+    let mut quorums_details: Vec<(QuorumHash, ExtendedQuorumDetails)> = validator_quorums
         .keys()
         .map(|quorum_hash| {
             (
@@ -227,6 +235,47 @@ pub(crate) fn run_chain_for_strategy(
         .collect();
 
     quorums_details.shuffle(&mut rng);
+
+    let (chain_lock_quorums, chain_lock_quorums_details) =
+        if config.validator_set_quorum_type != config.chain_lock_quorum_type {
+            let total_chain_lock_quorums = if strategy.rotate_quorums {
+                chain_lock_quorum_count * 10
+            } else {
+                chain_lock_quorum_count
+            };
+
+            let chain_lock_quorums = masternodes::generate_test_quorums(
+                total_chain_lock_quorums as usize,
+                initial_all_masternodes
+                    .iter()
+                    .map(|masternode| &masternode.masternode),
+                chain_lock_quorum_size as usize,
+                &mut rng,
+            );
+
+            let mut chain_lock_quorums_details: Vec<(QuorumHash, ExtendedQuorumDetails)> =
+                chain_lock_quorums
+                    .keys()
+                    .map(|quorum_hash| {
+                        (
+                            *quorum_hash,
+                            ExtendedQuorumDetails {
+                                creation_height: 0,
+                                quorum_index: None,
+                                mined_block_hash: BlockHash::all_zeros(),
+                                num_valid_members: 0,
+                                health_ratio: 0.0,
+                            },
+                        )
+                    })
+                    .collect();
+
+            chain_lock_quorums_details.shuffle(&mut rng);
+
+            (chain_lock_quorums, chain_lock_quorums_details)
+        } else {
+            (BTreeMap::new(), vec![])
+        };
 
     let start_core_height = platform.config.abci.genesis_core_height;
 
@@ -266,15 +315,15 @@ pub(crate) fn run_chain_for_strategy(
         .core_rpc
         .expect_get_quorum_listextended()
         .returning(move |core_height: Option<u32>| {
-            let extended_info = if !strategy.rotate_quorums {
+            let validator_set_extended_info = if !strategy.rotate_quorums {
                 quorums_details.clone().into_iter().collect()
             } else {
                 let core_height = core_height.expect("expected a core height");
                 // if we rotate quorums we shouldn't give back the same ones every time
                 let start_range = core_height / 24;
-                let end_range = start_range + quorum_count as u32;
-                let start_range = start_range % total_quorums as u32;
-                let end_range = end_range % total_quorums as u32;
+                let end_range = start_range + validator_quorum_count as u32;
+                let start_range = start_range % total_validator_quorums as u32;
+                let end_range = end_range % total_validator_quorums as u32;
 
                 if end_range > start_range {
                     quorums_details
@@ -287,7 +336,7 @@ pub(crate) fn run_chain_for_strategy(
                     let first_range = quorums_details
                         .iter()
                         .skip(start_range as usize)
-                        .take((total_quorums as u32 - start_range) as usize);
+                        .take((total_validator_quorums as u32 - start_range) as usize);
                     let second_range = quorums_details.iter().take(end_range as usize);
                     first_range
                         .chain(second_range)
@@ -296,15 +345,24 @@ pub(crate) fn run_chain_for_strategy(
                 }
             };
 
-            let result = ExtendedQuorumListResult {
-                quorums_by_type: HashMap::from([(QuorumType::Llmq100_67, extended_info)]),
-            };
+            let mut quorums_by_type =
+                HashMap::from([(QuorumType::Llmq100_67, validator_set_extended_info)]);
+
+            if !chain_lock_quorums_details.is_empty() {
+                quorums_by_type.insert(
+                    QuorumType::Llmq400_60,
+                    chain_lock_quorums_details.clone().into_iter().collect(),
+                );
+            }
+
+            let result = ExtendedQuorumListResult { quorums_by_type };
 
             Ok(result)
         });
 
-    let quorums_info: HashMap<QuorumHash, QuorumInfoResult> = quorums
+    let all_quorums_info: HashMap<QuorumHash, QuorumInfoResult> = validator_quorums
         .iter()
+        .chain(chain_lock_quorums.iter())
         .map(|(quorum_hash, test_quorum_info)| (*quorum_hash, test_quorum_info.into()))
         .collect();
 
@@ -312,16 +370,11 @@ pub(crate) fn run_chain_for_strategy(
         .core_rpc
         .expect_get_quorum_info()
         .returning(move |_, quorum_hash: &QuorumHash, _| {
-            Ok(quorums_info
+            Ok(all_quorums_info
                 .get::<QuorumHash>(quorum_hash)
                 .unwrap_or_else(|| panic!("expected to get quorum {}", hex::encode(quorum_hash)))
                 .clone())
         });
-
-    let initial_all_masternodes: Vec<_> = initial_masternodes_with_updates
-        .into_iter()
-        .chain(initial_hpmns_with_updates.clone())
-        .collect();
 
     platform
         .core_rpc
@@ -467,11 +520,31 @@ pub(crate) fn run_chain_for_strategy(
             Ok(diff)
         });
 
+    let mut core_height = strategy.initial_core_height;
+
+    let core_height_increase = strategy.core_height_increase.clone();
+    let mut core_height_rng = rng.clone();
+
+    platform
+        .core_rpc
+        .expect_get_best_chain_lock()
+        .returning(move || {
+            let chain_lock = ChainLock {
+                block_height: core_height,
+                block_hash: BlockHash::from_byte_array([1; 32]),
+                signature: [2; 96].into(),
+            };
+
+            core_height += core_height_increase.events_if_hit(&mut core_height_rng) as u32;
+
+            Ok(chain_lock)
+        });
+
     create_chain_for_strategy(
         platform,
         block_count,
         all_hpmns_with_updates,
-        quorums,
+        validator_quorums,
         strategy,
         config,
         rng,
@@ -613,7 +686,7 @@ pub(crate) fn continue_chain_for_strategy(
         StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
         StrategyRandomness::RNGEntropy(rng) => rng,
     };
-    let quorum_size = config.quorum_size;
+    let quorum_size = config.validator_set_quorum_size;
     let first_block_time = start_time_ms;
     let mut current_identities = vec![];
     let mut signer = strategy.strategy.signer.clone().unwrap_or_default();

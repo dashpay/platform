@@ -393,7 +393,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..3,
@@ -408,7 +409,7 @@ mod tests {
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -424,16 +425,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -506,7 +498,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..3,
@@ -521,7 +514,7 @@ mod tests {
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -537,16 +530,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -620,7 +604,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..3,
@@ -635,7 +620,7 @@ mod tests {
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -651,16 +636,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome

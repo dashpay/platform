@@ -195,8 +195,11 @@ pub struct PlatformConfig {
     /// The quorum type used for verifying chain locks
     pub chain_lock_quorum_type: String,
 
-    /// The default quorum size
-    pub quorum_size: u16,
+    /// The validator set quorum size
+    pub validator_set_quorum_size: u16,
+
+    /// The chain lock quorum size
+    pub chain_lock_quorum_size: u16,
 
     /// The window for chain locks
     /// On Mainnet Chain Locks are signed using 400_60: One quorum in every 288 blocks and activeQuorumCount is 4.
@@ -327,7 +330,8 @@ impl PlatformConfig {
         Self {
             validator_set_quorum_type: "llmq_25_67".to_string(),
             chain_lock_quorum_type: "llmq_50_60".to_string(),
-            quorum_size: 25,
+            validator_set_quorum_size: 25,
+            chain_lock_quorum_size: 50,
             chain_lock_quorum_window: 24,
             block_spacing_ms: 5000,
             drive: Default::default(),
@@ -344,7 +348,8 @@ impl PlatformConfig {
         Self {
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_400_60".to_string(),
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            chain_lock_quorum_size: 400,
             chain_lock_quorum_window: 288,
             block_spacing_ms: 5000,
             drive: Default::default(),

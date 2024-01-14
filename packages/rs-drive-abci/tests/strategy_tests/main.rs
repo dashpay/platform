@@ -47,6 +47,7 @@ use strategy::{
 };
 use strategy_tests::Strategy;
 
+mod chain_lock_update;
 mod core_update_tests;
 mod execution;
 mod failures;
@@ -132,7 +133,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -146,7 +148,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -162,16 +164,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
         run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
     }
 
@@ -190,7 +182,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -204,7 +197,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -220,16 +213,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
         run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
     }
 
@@ -248,7 +231,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -262,7 +246,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -280,17 +264,6 @@ mod tests {
         } = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
 
         let ChainExecutionOutcome {
             abci_app,
@@ -386,7 +359,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -406,7 +380,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -424,17 +398,6 @@ mod tests {
         } = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
 
         let ChainExecutionOutcome {
             abci_app,
@@ -531,7 +494,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -545,7 +509,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -560,16 +524,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
 
         let balance = outcome
@@ -602,7 +557,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..3,
@@ -616,7 +572,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -632,16 +588,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
         run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
     }
 
@@ -660,7 +606,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..3,
@@ -675,7 +622,7 @@ mod tests {
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -691,16 +638,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -725,7 +663,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..3,
@@ -741,7 +680,7 @@ mod tests {
         let hour_in_s = 60 * 60;
         let three_mins_in_ms = 1000 * 60 * 3;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -758,16 +697,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -795,7 +725,8 @@ mod tests {
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 5..6,
@@ -809,7 +740,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 10,
+            validator_set_quorum_size: 10,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -825,16 +756,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
         let ChainExecutionOutcome { abci_app, .. } =
             run_chain_for_strategy(&mut platform, 2000, strategy, config, 40);
 
@@ -881,7 +802,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
@@ -901,7 +823,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 10,
+            validator_set_quorum_size: 10,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -917,16 +839,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
         let ChainExecutionOutcome { abci_app, .. } =
             run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
 
@@ -954,7 +866,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
@@ -978,7 +891,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 10,
+            validator_set_quorum_size: 10,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -994,16 +907,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
         let ChainExecutionOutcome { abci_app, .. } =
             run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
 
@@ -1030,7 +933,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
@@ -1050,7 +954,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 10,
+            validator_set_quorum_size: 10,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -1066,16 +970,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -1133,7 +1027,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1152,7 +1047,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -1167,16 +1062,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
 
         assert_eq!(outcome.identities.len(), 100);
@@ -1197,7 +1083,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1212,7 +1099,7 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -1228,16 +1115,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 150, strategy, config, 15);
         assert_eq!(outcome.identities.len(), 150);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
@@ -1284,7 +1162,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1298,7 +1177,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -1313,16 +1192,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15);
 
         outcome
@@ -1398,7 +1268,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1412,7 +1283,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -1427,16 +1298,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
         outcome
@@ -1507,7 +1369,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1521,7 +1384,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -1536,16 +1399,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
     }
 
@@ -1592,7 +1446,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1607,7 +1462,7 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -1623,16 +1478,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
@@ -1705,7 +1551,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1720,7 +1567,7 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -1736,16 +1583,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
@@ -1818,7 +1656,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1833,7 +1672,7 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -1850,16 +1689,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
@@ -1945,7 +1775,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1962,7 +1793,7 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
 
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -1979,16 +1810,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, 421);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
@@ -2078,7 +1900,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -2095,7 +1918,7 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
 
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -2112,16 +1935,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, 86);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
@@ -2156,7 +1970,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -2170,7 +1985,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -2185,16 +2000,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
         let max_initial_balance = 100000000000u64; // TODO: some centralized way for random test data (`arbitrary` maybe?)
@@ -2240,7 +2046,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -2256,7 +2063,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -2271,16 +2078,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
         let state = outcome.abci_app.platform.state.read().unwrap();
         let protocol_version = state.current_protocol_version_in_consensus();
@@ -2331,7 +2129,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -2347,7 +2146,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -2362,16 +2161,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
         let identities = outcome
@@ -2429,7 +2219,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -2445,7 +2236,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -2460,16 +2251,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
         assert_eq!(outcome.identities.len(), 10);
@@ -2492,7 +2274,7 @@ mod tests {
             },
             total_hpmns: 50,
             extra_normal_mns: 0,
-            quorum_count: 10,
+            validator_quorum_count: 10,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
@@ -2507,7 +2289,7 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 3,
+            validator_set_quorum_size: 3,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -2651,7 +2433,7 @@ mod tests {
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
-            quorum_count: 100,
+            validator_quorum_count: 100,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
@@ -2666,7 +2448,7 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 3,
+            validator_set_quorum_size: 3,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -2781,7 +2563,7 @@ mod tests {
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
-            quorum_count: 100,
+            validator_quorum_count: 100,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
@@ -2796,7 +2578,7 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 3,
+            validator_set_quorum_size: 3,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -2911,7 +2693,7 @@ mod tests {
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
-            quorum_count: 100,
+            validator_quorum_count: 100,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -2926,7 +2708,7 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 3,
+            validator_set_quorum_size: 3,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -2945,17 +2727,6 @@ mod tests {
         } = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
 
         let ChainExecutionOutcome {
             abci_app,
@@ -3055,7 +2826,8 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -3070,7 +2842,7 @@ mod tests {
         };
 
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -3086,16 +2858,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 15, strategy, config, 15);
 
         let balances = &outcome
@@ -3130,7 +2893,7 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
             validator_set_quorum_type: "llmq_100_67".to_string(),
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
@@ -3145,16 +2908,6 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(ChainLock {
-                    block_height: 10,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
 
         let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15);
         let state_transitions = outcome

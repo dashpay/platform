@@ -45,7 +45,8 @@ mod tests {
                     },
                     total_hpmns: 460,
                     extra_normal_mns: 0,
-                    quorum_count: 24,
+                    validator_quorum_count: 24,
+                    chain_lock_quorum_count: 24,
                     upgrading_info: Some(UpgradingInfo {
                         current_protocol_version: 1,
                         proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
@@ -64,7 +65,7 @@ mod tests {
                 };
                 let twenty_minutes_in_ms = 1000 * 60 * 20;
                 let mut config = PlatformConfig {
-                    quorum_size: 100,
+                    validator_set_quorum_size: 100,
                     validator_set_quorum_type: "llmq_100_67".to_string(),
                     chain_lock_quorum_type: "llmq_100_67".to_string(),
                     execution: ExecutionConfig {
@@ -316,7 +317,8 @@ mod tests {
                     },
                     total_hpmns: 50,
                     extra_normal_mns: 0,
-                    quorum_count: 24,
+                    validator_quorum_count: 24,
+                    chain_lock_quorum_count: 24,
                     upgrading_info: Some(UpgradingInfo {
                         current_protocol_version: 1,
                         proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
@@ -336,7 +338,7 @@ mod tests {
                 let one_hour_in_s = 60 * 60;
                 let thirty_seconds_in_ms = 1000 * 30;
                 let config = PlatformConfig {
-                    quorum_size: 30,
+                    validator_set_quorum_size: 30,
                     validator_set_quorum_type: "llmq_100_67".to_string(),
                     chain_lock_quorum_type: "llmq_100_67".to_string(),
                     execution: ExecutionConfig {
@@ -580,7 +582,7 @@ mod tests {
                     },
                     total_hpmns: 120,
                     extra_normal_mns: 0,
-                    quorum_count: 200,
+                    validator_quorum_count: 200,
                     upgrading_info: Some(UpgradingInfo {
                         current_protocol_version: 1,
                         proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
@@ -599,7 +601,7 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
-                    quorum_size: 40,
+                    validator_set_quorum_size: 40,
                     validator_set_quorum_type: "llmq_100_67".to_string(),
                     chain_lock_quorum_type: "llmq_100_67".to_string(),
                     execution: ExecutionConfig {
@@ -843,7 +845,7 @@ mod tests {
                     },
                     total_hpmns: 200,
                     extra_normal_mns: 0,
-                    quorum_count: 100,
+                    validator_quorum_count: 100,
                     upgrading_info: Some(UpgradingInfo {
                         current_protocol_version: 1,
                         proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
@@ -862,7 +864,7 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let mut config = PlatformConfig {
-                    quorum_size: 50,
+                    validator_set_quorum_size: 50,
                     validator_set_quorum_type: "llmq_100_67".to_string(),
                     chain_lock_quorum_type: "llmq_100_67".to_string(),
                     execution: ExecutionConfig {
@@ -1023,7 +1025,7 @@ mod tests {
                     },
                     total_hpmns: 200,
                     extra_normal_mns: 0,
-                    quorum_count: 100,
+                    validator_quorum_count: 100,
                     upgrading_info: Some(UpgradingInfo {
                         current_protocol_version: 2,
                         proposed_protocol_versions_with_weight: vec![
@@ -1207,7 +1209,7 @@ mod tests {
                     },
                     total_hpmns: 200,
                     extra_normal_mns: 0,
-                    quorum_count: 100,
+                    validator_quorum_count: 100,
                     upgrading_info: Some(UpgradingInfo {
                         current_protocol_version: 1,
                         proposed_protocol_versions_with_weight: vec![
@@ -1230,7 +1232,7 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
-                    quorum_size: 50,
+                    validator_set_quorum_size: 50,
                     validator_set_quorum_type: "llmq_100_67".to_string(),
                     chain_lock_quorum_type: "llmq_100_67".to_string(),
                     execution: ExecutionConfig {
@@ -1322,7 +1324,8 @@ mod tests {
                     },
                     total_hpmns: 200,
                     extra_normal_mns: 0,
-                    quorum_count: 24,
+                    validator_quorum_count: 24,
+                    chain_lock_quorum_count: 24,
                     upgrading_info: Some(UpgradingInfo {
                         current_protocol_version: 1,
                         proposed_protocol_versions_with_weight: vec![
