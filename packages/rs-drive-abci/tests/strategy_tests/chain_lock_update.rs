@@ -57,6 +57,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            independent_process_proposal_verification: true,
             ..Default::default()
         };
 

@@ -169,7 +169,8 @@ pub struct NetworkStrategy {
     pub failure_testing: Option<FailureStrategy>,
     pub query_testing: Option<QueryStrategy>,
     pub verify_state_transition_results: bool,
-    pub max_tx_bytes_per_block: i64,
+    pub max_tx_bytes_per_block: u64,
+    pub independent_process_proposal_verification: bool,
 }
 
 impl Default for NetworkStrategy {
@@ -192,6 +193,7 @@ impl Default for NetworkStrategy {
             query_testing: None,
             verify_state_transition_results: false,
             max_tx_bytes_per_block: 44800,
+            independent_process_proposal_verification: false,
         }
     }
 }
