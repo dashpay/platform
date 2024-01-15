@@ -228,6 +228,8 @@ impl Drive {
                         &identity_update_transition.identity_id().into_buffer(),
                         None,
                     ),
+                    true,
+                    true,
                     false,
                     platform_version,
                 )?;

@@ -4,6 +4,7 @@ use crate::identity::{Identity, PartialIdentity};
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 
+#[derive(Debug)]
 pub enum StateTransitionProofResult {
     VerifiedDataContract(DataContract),
     VerifiedIdentity(Identity),
