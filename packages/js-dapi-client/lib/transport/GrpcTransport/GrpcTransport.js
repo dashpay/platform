@@ -98,6 +98,8 @@ class GrpcTransport {
         throw responseError;
       }
 
+      // TODO: Shouldn't we call address.markAsBanned() here?
+
       if (options.retries === 0) {
         throw new MaxRetriesReachedError(responseError);
       }
