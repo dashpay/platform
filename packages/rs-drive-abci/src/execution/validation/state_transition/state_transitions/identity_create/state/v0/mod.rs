@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::consensus::basic::identity::InvalidAssetLockProofValueError;
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
@@ -31,6 +32,26 @@ use drive::grovedb::TransactionArg;
 
 use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_in_state;
+
+#[repr(u64)]
+enum MinimalAssetLockValue {
+    V1 = 120000,
+}
+
+fn minimal_asset_lock_value(platform_version: &PlatformVersion) -> Result<u64, Error> {
+    match platform_version
+        .drive_abci
+        .validation_and_processing
+        .process_state_transition
+    {
+        0 => Ok(MinimalAssetLockValue::V1 as u64),
+        version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+            method: "minimal_asset_lock_value".to_string(),
+            known_versions: vec![0],
+            received: version,
+        })),
+    }
+}
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_create) trait IdentityCreateStateTransitionStateValidationV0
 {
@@ -125,6 +146,12 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
         }
 
         let tx_out = tx_out_validation.into_data()?;
+        let min_value = minimal_asset_lock_value(platform_version)?;
+        if tx_out.value < min_value {
+            return Ok(ConsensusValidationResult::new_with_error(
+                InvalidAssetLockProofValueError::new(tx_out.value, min_value).into(),
+            ));
+        }
 
         // Verify one time signature
 
