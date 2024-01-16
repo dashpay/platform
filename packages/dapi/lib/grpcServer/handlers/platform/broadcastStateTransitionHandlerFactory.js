@@ -70,6 +70,10 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
         if (jsonRpcError.data.startsWith('mempool is full')) {
           throw new ResourceExhaustedGrpcError(jsonRpcError.data);
         }
+
+        if (jsonRpcError.data.startsWith('broadcast confirmation not received:')) {
+          throw new UnavailableGrpcError(jsonRpcError.data);
+        }
       }
 
       const error = new Error();
