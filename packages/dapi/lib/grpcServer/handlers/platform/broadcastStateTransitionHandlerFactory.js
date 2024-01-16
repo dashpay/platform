@@ -45,11 +45,11 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
     try {
       response = await rpcClient.request('broadcast_tx_sync', { tx });
     } catch (e) {
+      logger.error(`Failed broadcasting state transition: ${e}`);
+
       if (e.message === 'socket hang up') {
         throw new UnavailableGrpcError('Tenderdash is not available');
       }
-
-      logger.error(`Failed broadcasting state transition: ${e}`);
 
       throw e;
     }
@@ -72,6 +72,8 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
         }
 
         if (jsonRpcError.data.startsWith('broadcast confirmation not received:')) {
+          logger.error(`Failed broadcasting state transition: ${jsonRpcError.data}`);
+
           throw new UnavailableGrpcError(jsonRpcError.data);
         }
       }
@@ -79,7 +81,7 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
       const error = new Error();
       Object.assign(error, jsonRpcError);
 
-      logger.error(error, 'Unexpected JSON RPC error during broadcasting state transition');
+      logger.error(error, `Unexpected JSON RPC error during broadcasting state transition: ${JSON.stringify(jsonRpcError)}`);
 
       throw error;
     }
