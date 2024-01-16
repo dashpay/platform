@@ -3,6 +3,7 @@ const {
     error: {
       InvalidArgumentGrpcError,
       AlreadyExistsGrpcError,
+      UnavailableGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -113,6 +114,20 @@ describe('broadcastStateTransitionHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(BroadcastStateTransitionResponse);
     expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_sync', { tx });
+  });
+
+  it('should throw a unavailable error if tenderdash hands up', async () => {
+    const error = new Error('socket hang up');
+    rpcClientMock.request.throws(error);
+
+    try {
+      await broadcastStateTransitionHandler(call);
+
+      expect.fail('should throw UnavailableGrpcError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(UnavailableGrpcError);
+      expect(e.getMessage()).to.equal('Tenderdash is not available');
+    }
   });
 
   it('should throw an error if transaction broadcast returns error', async () => {
