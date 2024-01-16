@@ -4,6 +4,7 @@ const {
       InvalidArgumentGrpcError,
       AlreadyExistsGrpcError,
       ResourceExhaustedGrpcError,
+      UnavailableGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -44,7 +45,11 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
     try {
       response = await rpcClient.request('broadcast_tx_sync', { tx });
     } catch (e) {
-      logger.error(e, 'Failed broadcasting state transition');
+      if (e.message === 'socket hang up') {
+        throw new UnavailableGrpcError('Tenderdash is not available');
+      }
+
+      logger.error(`Failed broadcasting state transition: ${e}`);
 
       throw e;
     }
