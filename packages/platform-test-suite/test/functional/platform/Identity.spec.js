@@ -56,7 +56,6 @@ describe('Platform', () => {
       expect(identity).to.exist();
     });
 
-    // TODO: add test for chain asset lock proof as well
     it('should fail to create an identity if asset lock amount is less than minimal', async () => {
       let broadcastError;
 
