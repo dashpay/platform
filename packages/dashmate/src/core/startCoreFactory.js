@@ -1,4 +1,4 @@
-const CoreService = require('./CoreService');
+import CoreService from './CoreService.js';
 
 /**
  * @param {createRpcClient} createRpcClient
@@ -9,7 +9,7 @@ const CoreService = require('./CoreService');
  * @param {ensureFileMountExists} ensureFileMountExists
  * @return {startCore}
  */
-function startCoreFactory(
+export default function startCoreFactory(
   createRpcClient,
   waitForCoreStart,
   waitForCoreSync,
@@ -77,7 +77,7 @@ function startCoreFactory(
         port: config.get('core.rpc.port'),
         user: config.get('core.rpc.user'),
         pass: config.get('core.rpc.password'),
-        host: await getConnectionHost(config, 'core'),
+        host: await getConnectionHost(config, 'core', 'core.rpc.host'),
       },
     );
 
@@ -95,5 +95,3 @@ function startCoreFactory(
 
   return startCore;
 }
-
-module.exports = startCoreFactory;

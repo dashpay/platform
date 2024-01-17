@@ -1,18 +1,14 @@
-const fs = require('fs');
+import fs from 'fs';
+import Ajv from 'ajv';
+import path from 'path';
+import Config from '../Config.js';
+import { PACKAGE_ROOT_DIR } from '../../constants.js';
+import ConfigFileNotFoundError from '../errors/ConfigFileNotFoundError.js';
+import InvalidConfigFileFormatError from '../errors/InvalidConfigFileFormatError.js';
+import configFileJsonSchema from './configFileJsonSchema.js';
+import ConfigFile from './ConfigFile.js';
 
-const Ajv = require('ajv');
-
-const Config = require('../Config');
-
-const ConfigFile = require('./ConfigFile');
-
-const configFileJsonSchema = require('./configFileJsonSchema');
-const ConfigFileNotFoundError = require('../errors/ConfigFileNotFoundError');
-
-const InvalidConfigFileFormatError = require('../errors/InvalidConfigFileFormatError');
-const packageJson = require('../../../package.json');
-
-class ConfigFileJsonRepository {
+export default class ConfigFileJsonRepository {
   /**
    * @param {migrateConfigFile} migrateConfigFile
    * @param {HomeDir} homeDir
@@ -26,9 +22,9 @@ class ConfigFileJsonRepository {
   /**
    * Load configs from file
    *
-   * @returns {Promise<ConfigFile>}
+   * @returns {ConfigFile}
    */
-  async read() {
+  read() {
     if (!fs.existsSync(this.configFilePath)) {
       throw new ConfigFileNotFoundError(this.configFilePath);
     }
@@ -42,10 +38,14 @@ class ConfigFileJsonRepository {
       throw new InvalidConfigFileFormatError(this.configFilePath, e);
     }
 
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const originConfigVersion = configFileData.configFormatVersion;
+
     const migratedConfigFileData = this.migrateConfigFile(
       configFileData,
       configFileData.configFormatVersion,
-      packageJson.version,
+      version,
     );
 
     const isValid = this.ajv.validate(configFileJsonSchema, migratedConfigFileData);
@@ -64,13 +64,21 @@ class ConfigFileJsonRepository {
       throw new InvalidConfigFileFormatError(this.configFilePath, e);
     }
 
-    return new ConfigFile(
+    const configFile = new ConfigFile(
       configs,
-      packageJson.version,
+      migratedConfigFileData.configFormatVersion,
       migratedConfigFileData.projectId,
       migratedConfigFileData.defaultConfigName,
       migratedConfigFileData.defaultGroupName,
     );
+
+    // Mark configs as changed if they were migrated
+    if (migratedConfigFileData.configFormatVersion !== originConfigVersion) {
+      configFile.markAsChanged();
+      configFile.getAllConfigs().forEach((config) => config.markAsChanged());
+    }
+
+    return configFile;
   }
 
   /**
@@ -82,8 +90,8 @@ class ConfigFileJsonRepository {
   write(configFile) {
     const configFileJSON = JSON.stringify(configFile.toObject(), undefined, 2);
 
+    configFile.markAsSaved();
+
     fs.writeFileSync(this.configFilePath, `${configFileJSON}\n`, 'utf8');
   }
 }
-
-module.exports = ConfigFileJsonRepository;

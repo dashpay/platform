@@ -1,15 +1,20 @@
 /* eslint-disable no-param-reassign */
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
 
-const { NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_MAINNET } = require('../src/constants');
+import {
+  NETWORK_LOCAL,
+  NETWORK_TESTNET,
+  NETWORK_MAINNET,
+  SSL_PROVIDERS,
+} from '../src/constants.js';
 
 /**
  * @param {HomeDir} homeDir
  * @param {DefaultConfigs} defaultConfigs
  * @returns {getConfigFileMigrations}
  */
-function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
+export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
   /**
    * @typedef {function} getConfigFileMigrations
    * @returns {Object}
@@ -224,12 +229,12 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
       },
       '0.25.3': (configFile) => {
         Object.entries(configFile.configs)
-          .forEach(([, options]) => {
-            if (options.network === NETWORK_TESTNET) {
+          .forEach(([name, options]) => {
+            if (options.network === NETWORK_TESTNET && name !== 'base') {
               options.platform.drive.abci.epochTime = testnet.get('platform.drive.abci.epochTime');
             }
             options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
-            options.platform.dapi.api.docker.image = base.get('platform.drive.abci.docker.image');
+            options.platform.dapi.api.docker.image = base.get('platform.dapi.api.docker.image');
           });
 
         return configFile;
@@ -252,8 +257,14 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
               for (const filename of filenames) {
                 const oldFilePath = homeDir.joinPath('ssl', name, filename);
-                const newFilePath = homeDir.joinPath(name,
-                  'platform', 'dapi', 'envoy', 'ssl', filename);
+                const newFilePath = homeDir.joinPath(
+                  name,
+                  'platform',
+                  'dapi',
+                  'envoy',
+                  'ssl',
+                  filename,
+                );
 
                 if (fs.existsSync(oldFilePath)) {
                   fs.mkdirSync(path.dirname(newFilePath), { recursive: true });
@@ -270,16 +281,138 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
         return configFile;
       },
-      '1.0.0-dev.1': (configFile) => {
+      '0.25.11': (configFile) => {
+        if (configFile.configs.base) {
+          configFile.configs.base.core.docker.image = base.get('core.docker.image');
+        }
+        if (configFile.configs.local) {
+          configFile.configs.local.platform.dapi.envoy.ssl.provider = SSL_PROVIDERS.SELF_SIGNED;
+        }
+
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             options.platform.drive.tenderdash.log.level = 'info';
 
-            if (options.network !== NETWORK_MAINNET) {
+            if (options.network !== NETWORK_MAINNET && options.network !== NETWORK_TESTNET) {
               options.core.docker.image = base.get('core.docker.image');
             }
 
             options.core.docker.commandArgs = [];
+          });
+
+        return configFile;
+      },
+      '0.25.12': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+
+            if (options.network === NETWORK_TESTNET) {
+              options.core.docker.image = base.get('core.docker.image');
+
+              if (name !== base.getName()) {
+                options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+                options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+                options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+              }
+            }
+          });
+
+        return configFile;
+      },
+      '0.25.16-rc.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            options.core.insight = base.get('core.insight');
+            options.core.docker.image = base.get('core.docker.image');
+
+            if (options.network === NETWORK_TESTNET && name !== base.getName()) {
+              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+              options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+              options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+            }
+          });
+
+        return configFile;
+      },
+      '0.25.16-rc.5': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (options.network === NETWORK_TESTNET && name !== base.getName()) {
+              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+              options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+              options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+            }
+          });
+
+        return configFile;
+      },
+      '0.25.16-rc.6': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.core.docker.image = base.get('core.docker.image');
+          });
+
+        return configFile;
+      },
+      '0.25.16-rc.7': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+
+            delete options.docker.network.bindIp;
+
+            options.core.p2p.host = base.get('core.p2p.host');
+            options.core.rpc.host = base.get('core.rpc.host');
+            options.platform.dapi.envoy.http.host = base.get('platform.dapi.envoy.http.host');
+            options.platform.drive.tenderdash.p2p.host = base.get('platform.drive.tenderdash.p2p.host');
+            options.platform.drive.tenderdash.rpc.host = base.get('platform.drive.tenderdash.rpc.host');
+            options.platform.drive.tenderdash.metrics.host = base.get('platform.drive.tenderdash.metrics.host');
+          });
+
+        return configFile;
+      },
+      '0.25.19': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+          });
+
+        return configFile;
+      },
+      '0.25.20': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            options.platform.dapi.envoy.http.connectTimeout = base.get('platform.dapi.envoy.http.connectTimeout');
+            options.platform.dapi.envoy.http.responseTimeout = base.get('platform.dapi.envoy.http.responseTimeout');
+
+            options.platform.drive.tenderdash.rpc.maxOpenConnections = base.get('platform.drive.tenderdash.rpc.maxOpenConnections');
+
+            let defaultConfigName = 'base';
+            if (options.group === 'local' || name === 'local') {
+              defaultConfigName = 'local';
+            }
+            const defaultConfig = defaultConfigs.get(defaultConfigName);
+
+            options.platform.drive.tenderdash.p2p.flushThrottleTimeout = defaultConfig.get('platform.drive.tenderdash.p2p.flushThrottleTimeout');
+            options.platform.drive.tenderdash.p2p.maxPacketMsgPayloadSize = defaultConfig.get('platform.drive.tenderdash.p2p.maxPacketMsgPayloadSize');
+            options.platform.drive.tenderdash.p2p.sendRate = defaultConfig.get('platform.drive.tenderdash.p2p.sendRate');
+            options.platform.drive.tenderdash.p2p.recvRate = defaultConfig.get('platform.drive.tenderdash.p2p.recvRate');
+
+            options.platform.drive.tenderdash.mempool = base.get('platform.drive.tenderdash.mempool');
+            options.platform.drive.tenderdash.consensus.peer = base.get('platform.drive.tenderdash.consensus.peer');
+            options.platform.drive.tenderdash.consensus.unsafeOverride = base.get('platform.drive.tenderdash.consensus.unsafeOverride');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.2': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (defaultConfigs.has(name)) {
+              options.platform.drive.tenderdash.genesis = defaultConfigs.get(name).get('platform.drive.tenderdash.genesis');
+            }
+            options.platform.dapi.api.docker.deploy = base.get('platform.dapi.api.docker.deploy');
           });
 
         return configFile;
@@ -289,5 +422,3 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
   return getConfigFileMigrations;
 }
-
-module.exports = getConfigFileMigrationsFactory;

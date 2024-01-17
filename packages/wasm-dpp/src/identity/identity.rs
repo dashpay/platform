@@ -3,19 +3,19 @@ use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
 use crate::identity::IdentityPublicKeyWasm;
 use crate::metadata::MetadataWasm;
-use crate::utils::{IntoWasm, WithJsError};
-use crate::{utils, with_js_error};
+use crate::utils::{Inner, IntoWasm, WithJsError};
+use crate::with_js_error;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID};
 use dpp::metadata::Metadata;
-use dpp::platform_value::{ReplacementType, Value};
+use dpp::platform_value::ReplacementType;
 use dpp::serialization::PlatformDeserializable;
 use dpp::serialization::PlatformSerializable;
 use dpp::serialization::ValueConvertible;
 use dpp::version::PlatformVersion;
 use serde::Serialize;
-use serde_json::Value as JsonValue;
+
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
@@ -47,7 +47,7 @@ impl IdentityWasm {
         let platform_version =
             &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        Identity::default_versioned(&platform_version)
+        Identity::default_versioned(platform_version)
             .map(Into::into)
             .map_err(from_dpp_err)
     }
@@ -70,7 +70,6 @@ impl IdentityWasm {
 
         let public_keys = public_keys
             .iter()
-            .into_iter()
             .map(|key| {
                 key.to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")
                     .map(|key| {
@@ -249,7 +248,6 @@ impl IdentityWasm {
 
         let public_keys: Vec<IdentityPublicKey> = public_keys
             .iter()
-            .into_iter()
             .map(|key| {
                 key.to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")
                     .map(|key| key.to_owned().into())
@@ -271,5 +269,21 @@ impl IdentityWasm {
         let identity: Identity =
             PlatformDeserializable::deserialize_from_bytes(buffer.as_slice()).with_js_error()?;
         Ok(identity.into())
+    }
+}
+
+impl Inner for IdentityWasm {
+    type InnerItem = Identity;
+
+    fn into_inner(self) -> Self::InnerItem {
+        self.inner
+    }
+
+    fn inner(&self) -> &Self::InnerItem {
+        &self.inner
+    }
+
+    fn inner_mut(&mut self) -> &mut Self::InnerItem {
+        &mut self.inner
     }
 }

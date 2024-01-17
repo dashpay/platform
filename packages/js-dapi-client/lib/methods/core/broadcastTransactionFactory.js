@@ -12,7 +12,6 @@ const {
 function broadcastTransactionFactory(grpcTransport) {
   /**
    * Broadcast Transaction
-   *
    * @typedef {broadcastTransaction}
    * @param {Buffer} transaction
    * @param {DAPIClientOptions & BroadcastTransactionOptions} [options]

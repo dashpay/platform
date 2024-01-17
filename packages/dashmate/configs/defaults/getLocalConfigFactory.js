@@ -1,17 +1,16 @@
-const lodashMerge = require('lodash/merge');
+import lodash from 'lodash';
 
-const {
-  NETWORK_LOCAL,
-} = require('../../src/constants');
+import {
+  NETWORK_LOCAL, SSL_PROVIDERS,
+} from '../../src/constants.js';
+import Config from '../../src/config/Config.js';
 
-const Config = require('../../src/config/Config');
-const { SSL_PROVIDERS } = require('../../src/constants');
-
+const { merge: lodashMerge } = lodash;
 /**
  * @param {getBaseConfig} getBaseConfig
  * @returns {getLocalConfig}
  */
-function getLocalConfigFactory(getBaseConfig) {
+export default function getLocalConfigFactory(getBaseConfig) {
   /**
    * @typedef {function} getLocalConfig
    * @returns {Config}
@@ -50,6 +49,10 @@ function getLocalConfigFactory(getBaseConfig) {
           tenderdash: {
             p2p: {
               port: 46656,
+              flushThrottleTimeout: '10ms',
+              maxPacketMsgPayloadSize: 1024,
+              sendRate: 20000000,
+              recvRate: 20000000,
             },
             rpc: {
               port: 46657,
@@ -77,5 +80,3 @@ function getLocalConfigFactory(getBaseConfig) {
 
   return getLocalConfig;
 }
-
-module.exports = getLocalConfigFactory;

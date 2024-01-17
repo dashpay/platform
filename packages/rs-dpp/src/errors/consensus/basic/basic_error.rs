@@ -18,20 +18,22 @@ use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
 use crate::consensus::basic::document::{
-    DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError,
-    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError,
-    MissingDataContractIdBasicError, MissingDocumentTransitionActionError,
-    MissingDocumentTransitionTypeError, MissingDocumentTypeError,
+    DataContractNotPresentError, DocumentTransitionsAreAbsentError,
+    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
+    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
+    MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
+    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
+    MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError,
 };
 use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DuplicatedIdentityPublicKeyBasicError,
     DuplicatedIdentityPublicKeyIdBasicError, IdentityAssetLockProofLockedTransactionMismatchError,
     IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
-    IdentityAssetLockTransactionOutputNotFoundError, InvalidAssetLockProofCoreChainHeightError,
-    InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
+    IdentityAssetLockTransactionOutputNotFoundError, IdentityCreditTransferToSelfError,
+    InvalidAssetLockProofCoreChainHeightError, InvalidAssetLockProofTransactionHeightError,
+    InvalidAssetLockTransactionOutputReturnSizeError,
     InvalidIdentityAssetLockProofChainLockValidationError,
     InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
     InvalidIdentityCreditTransferAmountError, InvalidIdentityCreditWithdrawalTransitionAmountError,
@@ -175,6 +177,9 @@ pub enum BasicError {
     InvalidDocumentTypeError(InvalidDocumentTypeError),
 
     #[error(transparent)]
+    MissingPositionsInDocumentTypePropertiesError(MissingPositionsInDocumentTypePropertiesError),
+
+    #[error(transparent)]
     MissingDataContractIdBasicError(MissingDataContractIdBasicError),
 
     #[error(transparent)]
@@ -294,6 +299,12 @@ pub enum BasicError {
 
     #[error(transparent)]
     StateTransitionMaxSizeExceededError(StateTransitionMaxSizeExceededError),
+
+    #[error(transparent)]
+    DocumentTransitionsAreAbsentError(DocumentTransitionsAreAbsentError),
+
+    #[error(transparent)]
+    IdentityCreditTransferToSelfError(IdentityCreditTransferToSelfError),
 }
 
 impl From<BasicError> for ConsensusError {

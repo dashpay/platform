@@ -36,10 +36,12 @@ describe('e2e', () => {
               type: 'string',
               format: 'uri',
               maxLength: 255,
+              position: 0,
             },
             about: {
               type: 'string',
               maxLength: 255,
+              position: 1,
             },
           },
           required: ['avatarUrl', 'about'],
@@ -64,11 +66,13 @@ describe('e2e', () => {
               contentMediaType: Identifier.MEDIA_TYPE,
               minItems: 32,
               maxItems: 32,
+              position: 0,
             },
             publicKey: {
               type: 'array',
               byteArray: true,
               maxItems: 33,
+              position: 1,
             },
           },
           required: ['toUserId', 'publicKey'],
@@ -102,9 +106,8 @@ describe('e2e', () => {
 
       it('should publish "Contacts" data contract', async () => {
         // 1. Create and broadcast data contract
-        dataContract = await bobClient.platform.contracts.create(
-          dataContractDocumentSchemas, bobIdentity,
-        );
+        dataContract = await bobClient.platform
+          .contracts.create(dataContractDocumentSchemas, bobIdentity);
 
         await bobClient.platform.contracts.publish(dataContract, bobIdentity);
 
@@ -248,12 +251,10 @@ describe('e2e', () => {
     describe('Alice', () => {
       it('should be able to approve contact request', async () => {
         // 1. Create and broadcast contact approval document
-        aliceContactAcceptance = await aliceClient.platform.documents.create(
-          'contacts.contact', aliceIdentity, {
-            toUserId: bobIdentity.getId(),
-            publicKey: aliceIdentity.getPublicKeyById(0).getData(),
-          },
-        );
+        aliceContactAcceptance = await aliceClient.platform.documents.create('contacts.contact', aliceIdentity, {
+          toUserId: bobIdentity.getId(),
+          publicKey: aliceIdentity.getPublicKeyById(0).getData(),
+        });
 
         await aliceClient.platform.documents.broadcast({
           create: [aliceContactAcceptance],

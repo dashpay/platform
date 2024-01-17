@@ -71,24 +71,14 @@ where
         // Start by getting information from the state
         let state = self.state.read().unwrap();
 
-        if tracing::enabled!(tracing::Level::TRACE) {
-            let root_hash = self
-                .drive
-                .grove
-                .root_hash(Some(transaction))
-                .unwrap()
-                .map_err(|e| Error::Drive(GroveDB(e)))?;
-
-            tracing::trace!(
-                method = "run_block_proposal_v0",
-                ?block_proposal,
-                ?epoch_info,
-                platform_state_fingerprint = hex::encode(state.fingerprint()),
-                app_hash = hex::encode(root_hash),
-                "running a block proposal on epoch {}",
-                epoch_info.current_epoch_index()
-            );
-        }
+        tracing::trace!(
+            method = "run_block_proposal_v0",
+            ?block_proposal,
+            ?epoch_info,
+            "Running a block proposal for height: {}, round: {}",
+            block_proposal.height,
+            block_proposal.round,
+        );
 
         let last_block_time_ms = state.last_block_time_ms();
         let last_block_height =
@@ -280,7 +270,7 @@ where
                 .collect(),
         );
 
-        let (block_fees, state_transition_results) = self.process_raw_state_transitions(
+        let state_transitions_result = self.process_raw_state_transitions(
             raw_state_transitions,
             block_execution_context.block_platform_state(),
             &block_info,
@@ -298,7 +288,7 @@ where
 
         // while we have the state transitions executed, we now need to process the block fees
 
-        let block_fees_v0: BlockFeesV0 = block_fees.into();
+        let block_fees_v0: BlockFeesV0 = state_transitions_result.aggregated_fees().clone().into();
 
         // Process fees
         let processed_block_fees = self.process_block_fees(
@@ -330,9 +320,9 @@ where
             tracing::trace!(
                 method = "run_block_proposal_v0",
                 app_hash = hex::encode(root_hash),
-                block_platform_state_fingerprint =
+                platform_state_fingerprint =
                     hex::encode(block_execution_context.block_platform_state().fingerprint()),
-                "block proposal executed successfully",
+                "Block proposal executed successfully",
             );
         }
 
@@ -344,7 +334,7 @@ where
         Ok(ValidationResult::new_with_data(
             block_execution_outcome::v0::BlockExecutionOutcome {
                 app_hash: root_hash,
-                state_transition_results,
+                state_transitions_result,
                 validator_set_update,
                 protocol_version: platform_version.protocol_version,
             },

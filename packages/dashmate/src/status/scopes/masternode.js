@@ -1,7 +1,7 @@
-const calculatePaymentQueuePosition = require('../../core/calculatePaymentQueuePosition');
-const blocksToTime = require('../../util/blocksToTime');
-const MasternodeStateEnum = require('../enums/masternodeState');
-const MasternodeSyncAssetEnum = require('../enums/masternodeSyncAsset');
+import calculatePaymentQueuePosition from '../../core/calculatePaymentQueuePosition.js';
+import { MasternodeSyncAssetEnum } from '../enums/masternodeSyncAsset.js';
+import blocksToTime from '../../util/blocksToTime.js';
+import { MasternodeStateEnum } from '../enums/masternodeState.js';
 
 /**
  * @param {DockerCompose}dockerCompose
@@ -9,13 +9,17 @@ const MasternodeSyncAssetEnum = require('../enums/masternodeSyncAsset');
  * @param {getConnectionHost} getConnectionHost
  * @returns {getMasternodeScopeFactory}
  */
-function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnectionHost) {
+export default function getMasternodeScopeFactory(
+  dockerCompose,
+  createRpcClient,
+  getConnectionHost,
+) {
   async function getSyncAsset(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),
       user: config.get('core.rpc.user'),
       pass: config.get('core.rpc.password'),
-      host: await getConnectionHost(config, 'core'),
+      host: await getConnectionHost(config, 'core', 'core.rpc.host'),
     });
 
     const mnsyncStatus = await rpcClient.mnsync('status');
@@ -29,7 +33,7 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       port: config.get('core.rpc.port'),
       user: config.get('core.rpc.user'),
       pass: config.get('core.rpc.password'),
-      host: await getConnectionHost(config, 'core'),
+      host: await getConnectionHost(config, 'core', 'core.rpc.host'),
     });
 
     const info = {
@@ -77,8 +81,12 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
 
       const { PoSePenalty: poSePenalty, lastPaidHeight } = dmnState;
 
-      const paymentQueuePosition = calculatePaymentQueuePosition(dmnState,
-        info.masternodeEnabled, info.evonodeEnabled, coreBlocks);
+      const paymentQueuePosition = calculatePaymentQueuePosition(
+        dmnState,
+        info.masternodeEnabled,
+        info.evonodeEnabled,
+        coreBlocks,
+      );
       const lastPaidTime = lastPaidHeight ? blocksToTime(coreBlocks - lastPaidHeight) : null;
       const nextPaymentTime = `${blocksToTime(paymentQueuePosition)}`;
 
@@ -154,5 +162,3 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
 
   return getMasternodeScope;
 }
-
-module.exports = getMasternodeScopeFactory;

@@ -175,7 +175,12 @@ impl<C> Platform<C> {
         C: CoreRPCLike,
     {
         let config = config.unwrap_or_default();
-        let drive = Drive::open(path, Some(config.drive.clone())).map_err(Error::Drive)?;
+
+        // TODO: Replace with version from the disk if present or latest?
+        let platform_version = PlatformVersion::latest();
+
+        let drive = Drive::open(path, Some(config.drive.clone()), platform_version)
+            .map_err(Error::Drive)?;
 
         if let Some(protocol_version) = fetch_current_protocol_version(&drive)? {
             let platform_version = PlatformVersion::get(protocol_version)?;

@@ -9,6 +9,7 @@ use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
 
@@ -27,6 +28,7 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
         &self,
         platform: &PlatformRef<C>,
         _validate: bool,
+        _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
@@ -78,6 +80,7 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
         &self,
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
+        _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
@@ -184,9 +187,10 @@ mod tests {
         use dpp::platform_value::platform_value;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
+        use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
         use dpp::version::TryFromPlatformVersioned;
         use platform_version::version::LATEST_PLATFORM_VERSION;
-        use platform_version::TryIntoPlatformVersioned;
+        use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
 
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {
@@ -203,11 +207,13 @@ mod tests {
                 "type": "object",
                 "properties": {
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "position": 0
                     },
                     "newProp": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "position": 1
                     }
                 },
                 "required": [
@@ -239,8 +245,12 @@ mod tests {
                 block_info: &BlockInfo::default(),
             };
 
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected a platform version");
+
             let result = DataContractUpdateTransition::V0(state_transition)
-                .validate_state(None, &platform_ref, None)
+                .validate_state(None, &platform_ref, &mut execution_context, None)
                 .expect("state transition to be validated");
 
             assert!(!result.is_valid());
@@ -274,11 +284,13 @@ mod tests {
                 "type": "object",
                 "properties": {
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "position": 0
                     },
                     "newProp": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "position": 1
                     }
                 },
                 "required": [
@@ -311,8 +323,12 @@ mod tests {
                 block_info: &BlockInfo::default(),
             };
 
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected a platform version");
+
             let result = DataContractUpdateTransition::V0(state_transition)
-                .validate_state(None, &platform_ref, None)
+                .validate_state(None, &platform_ref, &mut execution_context, None)
                 .expect("state transition to be validated");
 
             assert!(result.is_valid());
@@ -394,6 +410,8 @@ mod tests {
                 platform,
             } = setup_test();
 
+            let platform_version = PlatformVersion::latest();
+
             data_contract.config_mut().set_keeps_history(true);
             data_contract.config_mut().set_readonly(false);
 
@@ -412,11 +430,13 @@ mod tests {
                 "type": "object",
                 "properties": {
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "position": 0,
                     },
                     "newProp": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "position": 1,
                     }
                 },
                 "required": [
@@ -452,8 +472,12 @@ mod tests {
                 block_info: &BlockInfo::default(),
             };
 
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected a platform version");
+
             let result = state_transition
-                .validate_state(None, &platform_ref, None)
+                .validate_state(None, &platform_ref, &mut execution_context, None)
                 .expect("state transition to be validated");
 
             assert!(!result.is_valid());

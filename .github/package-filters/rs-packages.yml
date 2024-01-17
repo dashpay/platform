@@ -1,0 +1,62 @@
+dashpay-contract: &dashpay-contract
+  - .github/workflows/tests*
+  - packages/dashpay-contract/**
+
+masternode-reward-shares-contract: &masternode-reward-shares-contract
+  - .github/workflows/tests*
+  - packages/masternode-reward-shares-contract/**
+
+withdrawals-contract: &withdrawals-contract
+  - .github/workflows/tests*
+  - packages/withdrawals-contract/**
+
+dpns-contract: &dpns-contract
+  - .github/workflows/tests*
+  - packages/dpns-contract/**
+
+dpp: &dpp
+  - .github/workflows/tests*
+  - packages/rs-dpp/**
+  - *dashpay-contract
+  - *masternode-reward-shares-contract
+  - *dpns-contract
+  - *withdrawals-contract
+  - packages/rs-platform-serialization/**
+  - packages/rs-platform-serialization-derive/**
+  - packages/rs-platform-value/**
+  - packages/rs-platform-value-convertible/**
+  - packages/rs-platform-version/**
+  - packages/rs-platform-versioning/**
+
+wasm-dpp:
+  - .github/workflows/tests*
+  - packages/wasm-dpp/**
+  - *dpp
+
+drive: &drive
+  - .github/workflows/tests*
+  - packages/rs-drive/**
+  - *dpp
+
+drive-abci:
+  - .github/workflows/tests*
+  - packages/rs-drive-abci/**
+  - *drive
+
+dapi-grpc: &dapi_grpc
+  - .github/workflows/tests*
+  - packages/rs-platform-version/**
+  - packages/rs-dapi-grpc-macros/**
+  - packages/dapi-grpc/**
+
+rs-dapi-client: &dapi_client
+  - .github/workflows/tests*
+  - packages/rs-dapi-client/**
+  - *dapi_grpc
+
+rs-sdk:
+  - .github/workflows/tests*
+  - packages/rs-drive-proof-verifier/**
+  - packages/rs-sdk/**
+  - *dapi_client
+  - *drive

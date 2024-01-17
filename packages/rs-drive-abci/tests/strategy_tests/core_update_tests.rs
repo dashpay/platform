@@ -55,6 +55,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
 
         let quorum_size = 100;
@@ -160,6 +161,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
 
         let quorum_size = 100;
@@ -254,12 +256,13 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            ..Default::default()
         };
 
         let quorum_size = 100;
 
         let config = PlatformConfig {
-            quorum_size: 100,
+            quorum_size,
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 25,

@@ -7,12 +7,10 @@ use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_epochs_info_request::GetEpochsInfoRequestV0;
 use dapi_grpc::platform::v0::get_epochs_info_response::get_epochs_info_response_v0::EpochInfos;
 use dapi_grpc::platform::v0::get_epochs_info_response::GetEpochsInfoResponseV0;
-use dapi_grpc::platform::v0::{
-    get_epochs_info_response, GetEpochsInfoRequest, GetEpochsInfoResponse, Proof,
-};
+use dapi_grpc::platform::v0::{get_epochs_info_response, GetEpochsInfoResponse, Proof};
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::check_validation_result_with_data;
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
+
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use prost::Message;

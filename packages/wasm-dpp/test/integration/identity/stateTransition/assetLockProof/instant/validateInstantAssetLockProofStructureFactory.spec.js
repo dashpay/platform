@@ -41,7 +41,7 @@ describe.skip('validateInstantAssetLockProofStructureFactory', () => {
 
     rawProof = assetLock.toObject();
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.verifyInstantLock.resolves(true);
     stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.resolves(false);
 

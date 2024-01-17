@@ -1,12 +1,27 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
 
-const { Flags } = require('@oclif/core');
+import { Flags } from '@oclif/core';
+import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
+import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 
-const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
+export default class ReindexCommand extends ConfigBaseCommand {
+  static description = 'Reindex Core data';
 
-const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
+  static flags = {
+    ...ConfigBaseCommand.flags,
+    verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
+    detach: Flags.boolean({
+      char: 'd',
+      description: 'run the reindex process in the background',
+      default: false,
+    }),
+    force: Flags.boolean({
+      char: 'f',
+      description: 'reindex already running node without confirmation',
+      default: false,
+    }),
+  };
 
-class ReindexCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -25,21 +40,23 @@ class ReindexCommand extends ConfigBaseCommand {
     config,
     reindexNodeTask,
   ) {
-    const tasks = new Listr([
+    const tasks = new Listr(
+      [
+        {
+          title: `Reindex ${config.getName()} node`,
+          task: () => reindexNodeTask(config),
+        },
+      ],
       {
-        title: `Reindex ${config.getName()} node`,
-        task: () => reindexNodeTask(config),
+        renderer: isVerbose ? 'verbose' : 'default',
+        rendererOptions: {
+          showTimer: isVerbose,
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
+        },
       },
-    ],
-    {
-      renderer: isVerbose ? 'verbose' : 'default',
-      rendererOptions: {
-        showTimer: isVerbose,
-        clearOutput: false,
-        collapse: false,
-        showSubtasks: true,
-      },
-    });
+    );
 
     try {
       await tasks.run({
@@ -51,22 +68,3 @@ class ReindexCommand extends ConfigBaseCommand {
     }
   }
 }
-
-ReindexCommand.description = 'Reindex Core data';
-
-ReindexCommand.flags = {
-  ...ConfigBaseCommand.flags,
-  verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
-  detach: Flags.boolean({
-    char: 'd',
-    description: 'run the reindex process in the background',
-    default: false,
-  }),
-  force: Flags.boolean({
-    char: 'f',
-    description: 'reindex already running node without confirmation',
-    default: false,
-  }),
-};
-
-module.exports = ReindexCommand;

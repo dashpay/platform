@@ -1,6 +1,6 @@
-const { NETWORKS } = require('../constants');
+import { NETWORKS } from '../constants.js';
 
-module.exports = {
+export default {
   $schema: 'http://json-schema.org/draft-07/schema#',
   type: 'object',
   definitions: {
@@ -72,9 +72,17 @@ module.exports = {
       required: ['id', 'host', 'port'],
       additionalProperties: false,
     },
-    tenderdashLogModule: {
+    duration: {
       type: 'string',
-      enum: ['debug', 'info', 'error'],
+      pattern: '^[0-9]+(\\.[0-9]+)?(ms|m|s|h)$',
+    },
+    optionalDuration: {
+      type: ['null', 'string'],
+      pattern: '^[0-9]+(\\.[0-9]+)?(ms|m|s|h)$',
+    },
+    durationInSeconds: {
+      type: 'string',
+      pattern: '^[0-9]+(\\.[0-9]+)?s$',
     },
   },
   properties: {
@@ -93,13 +101,9 @@ module.exports = {
             subnet: {
               type: 'string',
             },
-            bindIp: {
-              type: 'string',
-              format: 'ipv4',
-            },
           },
           additionalProperties: false,
-          required: ['subnet', 'bindIp'],
+          required: ['subnet'],
         },
         baseImage: {
           type: 'object',
@@ -118,6 +122,35 @@ module.exports = {
     core: {
       type: 'object',
       properties: {
+        insight: {
+          type: 'object',
+          properties: {
+            enabled: {
+              type: 'boolean',
+            },
+            ui: {
+              type: 'object',
+              properties: {
+                enabled: {
+                  type: 'boolean',
+                },
+                docker: {
+                  $ref: '#/definitions/docker',
+                },
+              },
+              required: ['enabled', 'docker'],
+              additionalProperties: false,
+            },
+            docker: {
+              $ref: '#/definitions/docker',
+            },
+            port: {
+              $ref: '#/definitions/port',
+            },
+          },
+          required: ['enabled', 'docker', 'port', 'ui'],
+          additionalProperties: false,
+        },
         docker: {
           type: 'object',
           properties: {
@@ -139,6 +172,11 @@ module.exports = {
         p2p: {
           type: 'object',
           properties: {
+            host: {
+              type: 'string',
+              minLength: 1,
+              format: 'ipv4',
+            },
             port: {
               $ref: '#/definitions/port',
             },
@@ -160,12 +198,17 @@ module.exports = {
               },
             },
           },
-          required: ['port', 'seeds'],
+          required: ['host', 'port', 'seeds'],
           additionalProperties: false,
         },
         rpc: {
           type: 'object',
           properties: {
+            host: {
+              type: 'string',
+              minLength: 1,
+              format: 'ipv4',
+            },
             port: {
               $ref: '#/definitions/port',
             },
@@ -184,7 +227,7 @@ module.exports = {
               },
             },
           },
-          required: ['port', 'user', 'password'],
+          required: ['host', 'port', 'user', 'password'],
           additionalProperties: false,
         },
         spork: {
@@ -227,8 +270,7 @@ module.exports = {
               type: 'boolean',
             },
             interval: {
-              type: 'string',
-              pattern: '^[0-9]+(.[0-9]+)?(m|s|h)$',
+              $ref: '#/definitions/duration',
             },
             mediantime: {
               type: ['integer', 'null'],
@@ -299,7 +341,7 @@ module.exports = {
         },
       },
       required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet', 'log',
-        'logIps', 'indexes'],
+        'logIps', 'indexes', 'insight'],
       additionalProperties: false,
     },
     platform: {
@@ -317,11 +359,22 @@ module.exports = {
                 http: {
                   type: 'object',
                   properties: {
+                    host: {
+                      type: 'string',
+                      minLength: 1,
+                      format: 'ipv4',
+                    },
                     port: {
                       $ref: '#/definitions/port',
                     },
+                    connectTimeout: {
+                      $ref: '#/definitions/durationInSeconds',
+                    },
+                    responseTimeout: {
+                      $ref: '#/definitions/durationInSeconds',
+                    },
                   },
-                  required: ['port'],
+                  required: ['host', 'port', 'connectTimeout', 'responseTimeout'],
                   additionalProperties: false,
                 },
                 rateLimiter: {
@@ -336,8 +389,7 @@ module.exports = {
                       minimum: 0,
                     },
                     fillInterval: {
-                      type: 'string',
-                      pattern: '^[0-9]+(ms|s|m|h)$',
+                      $ref: '#/definitions/duration',
                     },
                     enabled: {
                       type: 'boolean',
@@ -388,7 +440,29 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/dockerWithBuild',
+                  type: 'object',
+                  properties: {
+                    image: {
+                      type: 'string',
+                      minLength: 1,
+                    },
+                    deploy: {
+                      type: 'object',
+                      properties: {
+                        replicas: {
+                          type: 'integer',
+                          minimum: 0,
+                        },
+                      },
+                      additionalProperties: false,
+                      required: ['replicas'],
+                    },
+                    build: {
+                      $ref: '#/definitions/dockerBuild',
+                    },
+                  },
+                  required: ['image', 'build', 'deploy'],
+                  additionalProperties: false,
                 },
               },
               required: ['docker'],
@@ -472,6 +546,11 @@ module.exports = {
                 p2p: {
                   type: 'object',
                   properties: {
+                    host: {
+                      type: 'string',
+                      minLength: 1,
+                      format: 'ipv4',
+                    },
                     port: {
                       $ref: '#/definitions/port',
                     },
@@ -487,9 +566,39 @@ module.exports = {
                         $ref: '#/definitions/tenderdashNodeAddress',
                       },
                     },
+                    flushThrottleTimeout: {
+                      $ref: '#/definitions/duration',
+                    },
+                    maxPacketMsgPayloadSize: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    sendRate: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    recvRate: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
                   },
-                  required: ['port', 'persistentPeers', 'seeds'],
+                  required: ['host', 'port', 'persistentPeers', 'seeds', 'flushThrottleTimeout', 'maxPacketMsgPayloadSize', 'sendRate', 'recvRate'],
                   additionalProperties: false,
+                },
+                mempool: {
+                  type: 'object',
+                  properties: {
+                    size: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    maxTxsBytes: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['size', 'maxTxsBytes'],
                 },
                 consensus: {
                   type: 'object',
@@ -498,12 +607,70 @@ module.exports = {
                       type: 'boolean',
                     },
                     createEmptyBlocksInterval: {
-                      type: 'string',
-                      pattern: '^[0-9]+(.[0-9]+)?(m|s|h)$',
+                      $ref: '#/definitions/duration',
+                    },
+                    peer: {
+                      type: 'object',
+                      properties: {
+                        gossipSleepDuration: {
+                          $ref: '#/definitions/duration',
+                        },
+                        queryMaj23SleepDuration: {
+                          $ref: '#/definitions/duration',
+                        },
+                      },
+                      additionalProperties: false,
+                      required: ['gossipSleepDuration', 'queryMaj23SleepDuration'],
+                    },
+                    unsafeOverride: {
+                      type: 'object',
+                      properties: {
+                        propose: {
+                          type: 'object',
+                          properties: {
+                            timeout: {
+                              $ref: '#/definitions/optionalDuration',
+                            },
+                            delta: {
+                              $ref: '#/definitions/optionalDuration',
+                            },
+                          },
+                          additionalProperties: false,
+                          required: ['timeout', 'delta'],
+                        },
+                        vote: {
+                          type: 'object',
+                          properties: {
+                            timeout: {
+                              $ref: '#/definitions/optionalDuration',
+                            },
+                            delta: {
+                              $ref: '#/definitions/optionalDuration',
+                            },
+                          },
+                          additionalProperties: false,
+                          required: ['timeout', 'delta'],
+                        },
+                        commit: {
+                          type: 'object',
+                          properties: {
+                            timeout: {
+                              $ref: '#/definitions/optionalDuration',
+                            },
+                            bypass: {
+                              type: ['boolean', 'null'],
+                            },
+                          },
+                          additionalProperties: false,
+                          required: ['timeout', 'bypass'],
+                        },
+                      },
+                      additionalProperties: false,
+                      required: ['propose', 'vote', 'commit'],
                     },
                   },
                   additionalProperties: false,
-                  required: ['createEmptyBlocks', 'createEmptyBlocksInterval'],
+                  required: ['createEmptyBlocks', 'createEmptyBlocksInterval', 'peer', 'unsafeOverride'],
                 },
                 log: {
                   type: 'object',
@@ -527,11 +694,20 @@ module.exports = {
                 rpc: {
                   type: 'object',
                   properties: {
+                    host: {
+                      type: 'string',
+                      minLength: 1,
+                      format: 'ipv4',
+                    },
                     port: {
                       $ref: '#/definitions/port',
                     },
+                    maxOpenConnections: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
                   },
-                  required: ['port'],
+                  required: ['host', 'port', 'maxOpenConnections'],
                   additionalProperties: false,
                 },
                 pprof: {
@@ -554,11 +730,16 @@ module.exports = {
                     enabled: {
                       type: 'boolean',
                     },
+                    host: {
+                      type: 'string',
+                      minLength: 1,
+                      format: 'ipv4',
+                    },
                     port: {
                       $ref: '#/definitions/port',
                     },
                   },
-                  required: ['enabled', 'port'],
+                  required: ['enabled', 'host', 'port'],
                   additionalProperties: false,
                 },
                 node: {
@@ -580,7 +761,7 @@ module.exports = {
                   type: 'object',
                 },
               },
-              required: ['mode', 'docker', 'p2p', 'consensus', 'log', 'rpc', 'pprof', 'node', 'moniker', 'genesis', 'metrics'],
+              required: ['mode', 'docker', 'p2p', 'mempool', 'consensus', 'log', 'rpc', 'pprof', 'node', 'moniker', 'genesis', 'metrics'],
               additionalProperties: false,
             },
           },
@@ -779,7 +960,7 @@ module.exports = {
     },
     network: {
       type: 'string',
-      enum: NETWORKS,
+      enum: Object.values(NETWORKS),
     },
     environment: {
       type: 'string',

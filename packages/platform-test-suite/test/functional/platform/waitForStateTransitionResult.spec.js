@@ -5,7 +5,8 @@ const { MerkleProof } = require('js-merkle');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
 const parseStoreTreeProof = require('../../../lib/parseStoreTreeProof');
-const hashFunction = require('../../../lib/proofHashFunction');
+
+// TODO: Fix test to be running in Browser
 
 describe.skip('Platform', () => {
   describe('waitForStateTransitionResult', () => {
@@ -13,9 +14,6 @@ describe.skip('Platform', () => {
     let blake3;
 
     before(async () => {
-      await hashFunction.init();
-      blake3 = hashFunction.hashFunction;
-
       client = await createClientWithFundedWallet(20000);
       await client.platform.initialize();
     });
@@ -71,9 +69,7 @@ describe.skip('Platform', () => {
 
       const { rootHash: identityLeafRoot } = executeProof(identitiesProofBuffer);
 
-      const identityProof = MerkleProof.fromBuffer(
-        rootTreeProof, blake3,
-      );
+      const identityProof = MerkleProof.fromBuffer(rootTreeProof, blake3);
       Buffer
         .from(
           identityProof.calculateRoot([1], [identityLeafRoot], 6),

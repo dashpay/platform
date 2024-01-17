@@ -1,4 +1,5 @@
 const { Block } = require('@dashevo/dashcore-lib');
+const logger = require('../logger');
 
 /**
  * @param {BloomFilterEmitterCollection} bloomFilterEmitterCollection
@@ -12,6 +13,8 @@ function emitBlockEventToFilterCollectionFactory(bloomFilterEmitterCollection) {
    */
   function emitBlockEventToFilterCollection(rawBlock) {
     const block = new Block(rawBlock);
+
+    logger.debug(`block ${block.hash} received`);
 
     bloomFilterEmitterCollection.emit('block', block);
   }

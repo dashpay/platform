@@ -1,5 +1,5 @@
-const { CronJob } = require('cron');
-const { EXPIRATION_LIMIT_DAYS } = require('../ssl/zerossl/Certificate');
+import { CronJob } from 'cron';
+import Certificate from '../ssl/zerossl/Certificate.js';
 
 /**
  *
@@ -8,18 +8,16 @@ const { EXPIRATION_LIMIT_DAYS } = require('../ssl/zerossl/Certificate');
  * @param {DockerCompose} dockerCompose
  * @param {ConfigFileJsonRepository} configFileRepository
  * @param {ConfigFile} configFile
- * @param {renderServiceTemplates} renderServiceTemplates
- * @param {writeServiceConfigs} writeServiceConfigs
+ * @param {writeConfigTemplates} writeConfigTemplates
  * @return {scheduleRenewZeroSslCertificate}
  */
-function scheduleRenewZeroSslCertificateFactory(
+export default function scheduleRenewZeroSslCertificateFactory(
   getCertificate,
   obtainZeroSSLCertificateTask,
   dockerCompose,
   configFileRepository,
   configFile,
-  renderServiceTemplates,
-  writeServiceConfigs,
+  writeConfigTemplates,
 ) {
   /**
    * @typedef scheduleRenewZeroSslCertificate
@@ -37,49 +35,43 @@ function scheduleRenewZeroSslCertificateFactory(
     }
 
     let expiresAt;
-    if (certificate.isExpiredInDays(EXPIRATION_LIMIT_DAYS)) {
+    if (certificate.isExpiredInDays(Certificate.EXPIRATION_LIMIT_DAYS)) {
       // Obtain new certificate right away
       expiresAt = new Date(Date.now() + 3000);
 
       // eslint-disable-next-line no-console
-      console.log(`SSL certificate ${certificate.id} will expire in less than ${EXPIRATION_LIMIT_DAYS} days at ${certificate.expires}. Schedule to obtain it NOW.`);
+      console.log(`SSL certificate ${certificate.id} will expire in less than ${Certificate.EXPIRATION_LIMIT_DAYS} days at ${certificate.expires}. Schedule to obtain it NOW.`);
     } else {
       // Schedule a new check close to expiration period
       expiresAt = new Date(certificate.expires);
-      expiresAt.setDate(expiresAt.getDate() - EXPIRATION_LIMIT_DAYS);
+      expiresAt.setDate(expiresAt.getDate() - Certificate.EXPIRATION_LIMIT_DAYS);
 
       // eslint-disable-next-line no-console
       console.log(`SSL certificate ${certificate.id} will expire at ${certificate.expires}. Schedule to obtain at ${expiresAt}.`);
     }
 
-    const job = new CronJob(
-      expiresAt, async () => {
-        const tasks = await obtainZeroSSLCertificateTask(config);
+    const job = new CronJob(expiresAt, async () => {
+      const tasks = await obtainZeroSSLCertificateTask(config);
 
-        await tasks.run({
-          expirationDays: EXPIRATION_LIMIT_DAYS,
-        });
+      await tasks.run({
+        expirationDays: Certificate.EXPIRATION_LIMIT_DAYS,
+      });
 
-        // Write config files
-        configFileRepository.write(configFile);
+      // Write config files
+      configFileRepository.write(configFile);
+      writeConfigTemplates(config);
 
-        const serviceConfigs = renderServiceTemplates(config);
-        writeServiceConfigs(config.getName(), serviceConfigs);
+      // Restart Envoy to catch up new SSL certificates
+      await dockerCompose.execCommand(config, 'dapi_envoy', 'kill -SIGHUP 1');
 
-        // Restart Envoy to catch up new SSL certificates
-        await dockerCompose.execCommand(config, 'dapi_envoy', 'kill -SIGHUP 1');
-
-        return job.stop();
-      }, async () => {
-        // Schedule new cron task
-        process.nextTick(() => scheduleRenewZeroSslCertificate(config));
-      },
-    );
+      return job.stop();
+    }, async () => {
+      // Schedule new cron task
+      process.nextTick(() => scheduleRenewZeroSslCertificate(config));
+    });
 
     job.start();
   }
 
   return scheduleRenewZeroSslCertificate;
 }
-
-module.exports = scheduleRenewZeroSslCertificateFactory;

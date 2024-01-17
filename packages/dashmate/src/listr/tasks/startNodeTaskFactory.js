@@ -1,8 +1,7 @@
-const { Listr } = require('listr2');
-const { Observable } = require('rxjs');
-
-const { NETWORK_LOCAL } = require('../../constants');
-const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
+import { Listr } from 'listr2';
+import { Observable } from 'rxjs';
+import { NETWORK_LOCAL } from '../../constants.js';
+import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
 
 /**
  *
@@ -15,7 +14,7 @@ const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
  * @param {ensureFileMountExists} ensureFileMountExists
  * @return {startNodeTask}
  */
-function startNodeTaskFactory(
+export default function startNodeTaskFactory(
   dockerCompose,
   waitForCorePeersConnected,
   waitForMasternodesSync,
@@ -116,7 +115,7 @@ function startNodeTaskFactory(
             port: config.get('core.rpc.port'),
             user: config.get('core.rpc.user'),
             pass: config.get('core.rpc.password'),
-            host: await getConnectionHost(config, 'core'),
+            host: await getConnectionHost(config, 'core', 'core.rpc.host'),
           });
 
           return new Observable(async (observer) => {
@@ -138,5 +137,3 @@ function startNodeTaskFactory(
 
   return startNodeTask;
 }
-
-module.exports = startNodeTaskFactory;

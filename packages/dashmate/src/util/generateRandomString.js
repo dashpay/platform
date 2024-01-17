@@ -3,7 +3,7 @@
  * @param {number} length
  * @returns {string}
  */
-function generateRandomString(length) {
+export default function generateRandomString(length) {
   let result = '';
   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   const charactersLength = characters.length;
@@ -12,5 +12,3 @@ function generateRandomString(length) {
   }
   return result;
 }
-
-module.exports = generateRandomString;

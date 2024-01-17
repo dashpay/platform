@@ -1,3 +1,311 @@
+## [1.0.0-dev.3](https://github.com/dashpay/platform/compare/v1.0.0-dev.2...v1.0.0-dev.3) (2024-01-16)
+
+
+### Bug Fixes
+
+* **dapi:** internal errors if broadcasting failed ([#1673](https://github.com/dashpay/platform/issues/1673))
+
+## [1.0.0-dev.2](https://github.com/dashpay/platform/compare/v1.0.0-dev.1...v1.0.0-dev.2) (2024-01-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** adjust consensus params and enable re-check (#1669)
+* **drive-abci:** internal error if vote extension block is already committed (#1663)
+
+### Bug Fixes
+
+* broadcasting already invalidated transitions ([#1668](https://github.com/dashpay/platform/issues/1668))
+* **dashmate:** dapi kills host machine on container stop ([#1670](https://github.com/dashpay/platform/issues/1670))
+* **drive-abci:** internal error if vote extension block is already committed ([#1663](https://github.com/dashpay/platform/issues/1663))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** adjust consensus params and enable re-check ([#1669](https://github.com/dashpay/platform/issues/1669))
+* **drive-abci:** fix state transition logging ([#1664](https://github.com/dashpay/platform/issues/1664))
+* various logging improvements ([#1666](https://github.com/dashpay/platform/issues/1666))
+
+## [1.0.0-dev.1](https://github.com/dashpay/platform/compare/v0.25.21...v1.0.0-dev.1) (2024-01-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* invalid state transitions now included into blocks that makes previous chain data invalid. (#1657)
+* credit transfer state transition requires revision. (#1634)
+* calculated fee amounts are changed (#1656)
+
+### Features
+
+* **drive-abci:** include invalid state transitions into block ([#1657](https://github.com/dashpay/platform/issues/1657))
+* **drive-abci:** processing fees for signature verification ([#1656](https://github.com/dashpay/platform/issues/1656))
+* **drive-abci:** remove unnecessary validation from check tx and re-check ([#1647](https://github.com/dashpay/platform/issues/1647))
+* **sdk:** rs-sdk fetch current epoch ([#1604](https://github.com/dashpay/platform/issues/1604))
+
+
+### Bug Fixes
+
+* **platform:** credit transfer replay attack ([#1634](https://github.com/dashpay/platform/issues/1634))
+* **dapi**: internal error when mempool is full ([#1661](https://github.com/dashpay/platform/issues/1661))
+
+
+### Miscellaneous Chores
+
+* automatic clippy fixes ([#1528](https://github.com/dashpay/platform/issues/1528), [#1602](https://github.com/dashpay/platform/issues/1602))
+
+### [0.25.21](https://github.com/dashpay/platform/compare/v0.25.20...v0.25.21) (2023-12-28)
+
+
+### Bug Fixes
+
+* corrupted credits not balanced error ([#1650](https://github.com/dashpay/platform/issues/1650))
+
+### [0.25.20](https://github.com/dashpay/platform/compare/v0.25.19...v0.25.20) (2023-12-21)
+
+
+### Features
+
+* **dashmate:** more config options for envoy and tenderdash ([#1643](https://github.com/dashpay/platform/issues/1643))
+
+
+### Bug Fixes
+
+* **drive-abci:** rare process proposal when we prepared tx change ([#1645](https://github.com/dashpay/platform/issues/1645))
+
+### [0.25.19](https://github.com/dashpay/platform/compare/v0.25.18...v0.25.19) (2023-12-19)
+
+
+### Features
+
+* **dashmate:** add config render command ([#1637](https://github.com/dashpay/platform/issues/1637))
+
+
+### Bug Fixes
+
+* **drive**: filtering of failed and exceeding limit transactions ([#1639](https://github.com/dashpay/platform/issues/1639))
+* runtime error: index out of range 28 with length 28
+
+### Reverts
+
+* **drive:** temporary disable credit transfer transitions ([#1642](https://github.com/dashpay/platform/issues/1642))
+
+
+### [0.25.18](https://github.com/dashpay/platform/compare/v0.25.17...v0.25.18) (2023-12-12)
+
+
+### Bug Fixes
+
+* **drive:** temporary disable credit transfer transitions ([#1635](https://github.com/dashpay/platform/issues/1635))
+
+### [0.25.17](https://github.com/dashpay/platform/compare/v0.25.16...v0.25.17) (2023-12-11)
+
+Increment version to overcome already published Dash SDK 3.25.16
+
+### [0.25.16](https://github.com/dashpay/platform/compare/v0.25.15...v0.25.16) (2023-12-06)
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** removed `docker.network.bindIp`, please use specific host configuration option (#1630)
+* data contracts require position to be defined for object properties
+* previously created state is not compatible
+* upgrade to Node.JS v20 (#1562)
+
+
+### Features
+
+* **platform:** document serialization across versions ([#1594](https://github.com/dashpay/platform/issues/1594))
+* **dashmate:** configure service listening interfaces ([#1630](https://github.com/dashpay/platform/issues/1630))
+* **dashmate:** allow dashmate to update minor core versions ([#1619](https://github.com/dashpay/platform/issues/1619))
+* **dashmate:** insight, core block explorer ([#1581](https://github.com/dashpay/platform/issues/1581))
+* **dashmate:** update core version to 20.0.1 ([#1588](https://github.com/dashpay/platform/issues/1588))
+* **dashmate:** upgrade dashmate to ESM syntax ([#1562](https://github.com/dashpay/platform/issues/1562))
+* **package:** bump rust packages
+* **sdk:** rs-sdk support for ExtendedEpochInfo::fetch()/fetch_many() ([#1576](https://github.com/dashpay/platform/issues/1576))
+
+
+### Bug Fixes
+
+* **dashmate:** http API calls fail with `command not found error` ([#1600](https://github.com/dashpay/platform/issues/1600))
+* **dapi:** tonik streams hang until first message sent ([#1605](https://github.com/dashpay/platform/issues/1605))
+* **dashmate:** missing choices enumerator ([#1595](https://github.com/dashpay/platform/issues/1595))
+* **dashmate:** incorrect imports  ([#1591](https://github.com/dashpay/platform/issues/1591))
+* drive produces wrong app hash after restart ([#1586](https://github.com/dashpay/platform/issues/1586))
+* **dapi:** failure if bloom filter is not set ([#1572](https://github.com/dashpay/platform/issues/1572))
+* **dashmate:** incorrect block height color on null remote block height ([#1587](https://github.com/dashpay/platform/issues/1587))
+
+### Performance Improvements
+
+* **dapi:** run a cluster of processes ([#1627](https://github.com/dashpay/platform/issues/1627))
+
+
+### Build System
+
+* use two faucets for parallel test suite run ([#1615](https://github.com/dashpay/platform/issues/1615))
+
+
+### Miscellaneous Chores
+
+* **dapi:** logging of the wait for state transition result logic ([#1628](https://github.com/dashpay/platform/issues/1628))
+* **dashmate:** update tenderdash to 0.13.4 ([#1631](https://github.com/dashpay/platform/issues/1631))
+* remove unused dependencies of rust crates ([#1578](https://github.com/dashpay/platform/issues/1578))
+* upgrade to Yarn v4 ([#1562](https://github.com/dashpay/platform/issues/1562))
+* upgrade to Node.JS v20 ([#1562](https://github.com/dashpay/platform/issues/1562))
+* **dashmate:** remove `platform feature-flag` command ([#1616](https://github.com/dashpay/platform/issues/1616))
+* **dashmate:** remove unnecessary WASM DPP ([#1607](https://github.com/dashpay/platform/issues/1607))
+* **dashmate:** add platform testnet-37 support ([#1603](https://github.com/dashpay/platform/issues/1603))
+
+
+### Tests
+
+* **dashmate:** add `dashmate update` unit test ([#1609](https://github.com/dashpay/platform/issues/1609))
+
+
+### Continuous Integration
+
+* arch dependant yarn unplugged cache ([#1580](https://github.com/dashpay/platform/issues/1580))
+* rs-sdk, feature and unnecessary deps testing for rust packages ([#1575](https://github.com/dashpay/platform/issues/1575))
+
+
+### [0.25.16-rc.6](https://github.com/dashpay/platform/compare/v0.25.16-rc.5...v0.25.16-rc.6) (2023-12-06)
+
+
+### Features
+
+* **dashmate:** allow dashmate to update minor core versions ([#1619](https://github.com/dashpay/platform/issues/1619))
+
+### Bug Fixes
+
+* **dashmate:** http API calls fail with `command not found error` ([#1600](https://github.com/dashpay/platform/issues/1600))
+
+### Tests
+
+* **dashmate:** add `dashmate update` unit test ([#1609](https://github.com/dashpay/platform/issues/1609))
+
+### Miscellaneous Chores
+
+* **dashmate:** remove `platform feature-flag` command ([#1616](https://github.com/dashpay/platform/issues/1616))
+* **dashmate:** remove unnecessary WASM DPP ([#1607](https://github.com/dashpay/platform/issues/1607))
+
+### [0.25.16-rc.5](https://github.com/dashpay/platform/compare/v0.25.16-rc.4...v0.25.16-rc.5) (2023-11-29)
+
+
+### Bug Fixes
+
+* **dapi:** tonik streams hang until first message sent ([#1605](https://github.com/dashpay/platform/issues/1605))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** add platform testnet-37 support ([#1603](https://github.com/dashpay/platform/issues/1603))
+
+
+### [0.25.16-rc.4](https://github.com/dashpay/platform/compare/v0.25.16-rc.3...v0.25.16-rc.4) (2023-11-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* data contracts require position to be defined for object properties
+* previously created state is not compatible
+
+### Features
+
+* **platform:** document serialization across versions ([#1594](https://github.com/dashpay/platform/issues/1594))
+
+
+### Bug Fixes
+
+* drive produces wrong app hash after restart ([#1586](https://github.com/dashpay/platform/issues/1586))
+
+
+### [0.25.16-rc.3](https://github.com/dashpay/platform/compare/v0.25.16-rc.2...v0.25.16-rc.3) (2023-11-23)
+
+### Bug Fixes
+
+* **dashmate:** missing choices enumerator ([#1595](https://github.com/dashpay/platform/issues/1595))
+
+### [0.25.16-rc.2](https://github.com/dashpay/platform/compare/v0.25.16-rc.1...v0.25.16-rc.2) (2023-11-22)
+
+### Bug Fixes
+
+* **dashmate:** incorrect imports  ([#1591](https://github.com/dashpay/platform/issues/1591))
+
+### [0.25.16-rc.1](https://github.com/dashpay/platform/compare/v0.25.15...v0.25.16-rc.1) (2023-11-21)
+
+### ⚠ BREAKING CHANGES
+
+* upgrade to Node.JS v20 (#1562)
+
+### Features
+
+* **dashmate:** insight, core block explorer ([#1581](https://github.com/dashpay/platform/issues/1581))
+* **dashmate:** update core version to 20.0.1 ([#1588](https://github.com/dashpay/platform/issues/1588))
+* **dashmate:** upgrade dashmate to ESM syntax ([#1562](https://github.com/dashpay/platform/issues/1562))
+* **package:** bump rust packages
+* **sdk:** rs-sdk support for ExtendedEpochInfo::fetch()/fetch_many() ([#1576](https://github.com/dashpay/platform/issues/1576))
+
+### Bug Fixes
+
+* **dapi:** failure if bloom filter is not set ([#1572](https://github.com/dashpay/platform/issues/1572))
+* **dashmate:** incorrect block height color on null remote block height ([#1587](https://github.com/dashpay/platform/issues/1587))
+
+
+### Continuous Integration
+
+* arch dependant yarn unplugged cache ([#1580](https://github.com/dashpay/platform/issues/1580))
+* rs-sdk, feature and unnecessary deps testing for rust packages ([#1575](https://github.com/dashpay/platform/issues/1575))
+
+### Miscellaneous Chores
+
+* remove unused dependencies of rust crates ([#1578](https://github.com/dashpay/platform/issues/1578))
+* upgrade to Yarn v4 ([#1562](https://github.com/dashpay/platform/issues/1562))
+* upgrade to Node.JS v20 ([#1562](https://github.com/dashpay/platform/issues/1562))
+
+### [0.25.15](https://github.com/dashpay/platform/compare/v0.25.13...v0.25.15) (2023-11-05)
+
+### ⚠ BREAKING CHANGES
+
+* dpp: allow only one document transition ([#1555](https://github.com/dashpay/platform/issues/1555))
+
+### Continuous Integration
+* remove unused and vulnerable github-api package ([#1571](https://github.com/dashpay/platform/issues/1571))
+* bump rust packages versions in the release script by ([#1573](https://github.com/dashpay/platform/issues/1573))
+* speed up workflows and reduce costs ([#1545](https://github.com/dashpay/platform/issues/1545))
+
+### Features
+* rust software development kit for Dash Platform ([#1475](https://github.com/dashpay/platform/issues/1475))
+
+### [0.25.13](https://github.com/dashpay/platform/compare/v0.25.12...v0.25.13) (2023-11-05)
+
+
+### Bug Fixes
+
+* **dashmate:** config is not persisted after migration ([#1561](https://github.com/dashpay/platform/issues/1561))
+
+### [0.25.12](https://github.com/dashpay/platform/compare/v0.25.11...v0.25.12) (2023-11-03)
+
+
+### Code Refactoring
+
+* rename protocol version endpoints ([#1552](https://github.com/dashpay/platform/issues/1552))
+
+
+### Tests
+
+* **dashmate:** fix migrations test ([#1547](https://github.com/dashpay/platform/issues/1547))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** testnet-35 support ([#1559](https://github.com/dashpay/platform/issues/1559))
+* **dashmate:** update tenderdash to v0.13.3
+
+### [0.25.11](https://github.com/dashpay/platform/compare/v0.25.10...v0.25.11) (2023-11-02)
+
+
+### Bug Fixes
+
+* **dashmate:** config commands output ([#1556](https://github.com/dashpay/platform/issues/1556))
+
 ### [0.25.10](https://github.com/dashpay/platform/compare/v0.25.9...v0.25.10) (2023-11-02)
 
 ### Bug Fixes

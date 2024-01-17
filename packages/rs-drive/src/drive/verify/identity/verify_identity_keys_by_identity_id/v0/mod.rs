@@ -40,11 +40,11 @@ impl Drive {
     ///
     pub(super) fn verify_identity_keys_by_identity_id_v0(
         proof: &[u8],
+        key_request: IdentityKeysRequest,
         is_proof_subset: bool,
-        identity_id: [u8; 32],
         _platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<PartialIdentity>), Error> {
-        let key_request = IdentityKeysRequest::new_all_keys_query(&identity_id, None);
+        let identity_id = key_request.identity_id;
         let path_query = key_request.into_path_query();
         let (root_hash, proved_key_values) = if is_proof_subset {
             GroveDb::verify_subset_query(proof, &path_query)?
@@ -62,7 +62,7 @@ impl Drive {
                     keys.insert(key.id(), key);
                 } else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "we received an absence proof for a key but didn't request one",
+                        "we received an absence proof for a key but didn't request one".to_string(),
                     )));
                 }
             } else {

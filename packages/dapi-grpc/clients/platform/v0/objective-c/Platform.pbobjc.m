@@ -105,18 +105,18 @@ GPBObjCClassDeclaration(GetProofsRequest_GetProofsRequestV0_DocumentRequest);
 GPBObjCClassDeclaration(GetProofsRequest_GetProofsRequestV0_IdentityRequest);
 GPBObjCClassDeclaration(GetProofsResponse);
 GPBObjCClassDeclaration(GetProofsResponse_GetProofsResponseV0);
-GPBObjCClassDeclaration(GetVersionUpgradeStateRequest);
-GPBObjCClassDeclaration(GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0);
-GPBObjCClassDeclaration(GetVersionUpgradeStateResponse);
-GPBObjCClassDeclaration(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0);
-GPBObjCClassDeclaration(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry);
-GPBObjCClassDeclaration(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions);
-GPBObjCClassDeclaration(GetVersionUpgradeVoteStatusRequest);
-GPBObjCClassDeclaration(GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0);
-GPBObjCClassDeclaration(GetVersionUpgradeVoteStatusResponse);
-GPBObjCClassDeclaration(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0);
-GPBObjCClassDeclaration(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal);
-GPBObjCClassDeclaration(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals);
+GPBObjCClassDeclaration(GetProtocolVersionUpgradeStateRequest);
+GPBObjCClassDeclaration(GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0);
+GPBObjCClassDeclaration(GetProtocolVersionUpgradeStateResponse);
+GPBObjCClassDeclaration(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0);
+GPBObjCClassDeclaration(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry);
+GPBObjCClassDeclaration(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions);
+GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusRequest);
+GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0);
+GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusResponse);
+GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0);
+GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal);
+GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals);
 GPBObjCClassDeclaration(KeyRequestType);
 GPBObjCClassDeclaration(Proof);
 GPBObjCClassDeclaration(ResponseMetadata);
@@ -2729,11 +2729,12 @@ void GetProofsResponse_ClearVersionOneOfCase(GetProofsResponse *message) {
 
 @implementation GetProofsResponse_GetProofsResponseV0
 
-@dynamic hasProof, proof;
+@dynamic resultOneOfCase;
+@dynamic proof;
 @dynamic hasMetadata, metadata;
 
 typedef struct GetProofsResponse_GetProofsResponseV0__storage_ {
-  uint32_t _has_storage_[1];
+  uint32_t _has_storage_[2];
   Proof *proof;
   ResponseMetadata *metadata;
 } GetProofsResponse_GetProofsResponseV0__storage_;
@@ -2748,7 +2749,7 @@ typedef struct GetProofsResponse_GetProofsResponseV0__storage_ {
         .name = "proof",
         .dataTypeSpecific.clazz = GPBObjCClass(Proof),
         .number = GetProofsResponse_GetProofsResponseV0_FieldNumber_Proof,
-        .hasIndex = 0,
+        .hasIndex = -1,
         .offset = (uint32_t)offsetof(GetProofsResponse_GetProofsResponseV0__storage_, proof),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
@@ -2757,7 +2758,7 @@ typedef struct GetProofsResponse_GetProofsResponseV0__storage_ {
         .name = "metadata",
         .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
         .number = GetProofsResponse_GetProofsResponseV0_FieldNumber_Metadata,
-        .hasIndex = 1,
+        .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetProofsResponse_GetProofsResponseV0__storage_, metadata),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
@@ -2771,6 +2772,12 @@ typedef struct GetProofsResponse_GetProofsResponseV0__storage_ {
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetProofsResponse_GetProofsResponseV0__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProofsResponse)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
@@ -2782,6 +2789,11 @@ typedef struct GetProofsResponse_GetProofsResponseV0__storage_ {
 
 @end
 
+void GetProofsResponse_GetProofsResponseV0_ClearResultOneOfCase(GetProofsResponse_GetProofsResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetProofsResponse_GetProofsResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
 #pragma mark - GetDataContractRequest
 
 @implementation GetDataContractRequest
@@ -5361,17 +5373,17 @@ typedef struct GetConsensusParamsResponse_GetConsensusParamsResponseV0__storage_
 
 @end
 
-#pragma mark - GetVersionUpgradeStateRequest
+#pragma mark - GetProtocolVersionUpgradeStateRequest
 
-@implementation GetVersionUpgradeStateRequest
+@implementation GetProtocolVersionUpgradeStateRequest
 
 @dynamic versionOneOfCase;
 @dynamic v0;
 
-typedef struct GetVersionUpgradeStateRequest__storage_ {
+typedef struct GetProtocolVersionUpgradeStateRequest__storage_ {
   uint32_t _has_storage_[2];
-  GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0 *v0;
-} GetVersionUpgradeStateRequest__storage_;
+  GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0 *v0;
+} GetProtocolVersionUpgradeStateRequest__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -5381,21 +5393,21 @@ typedef struct GetVersionUpgradeStateRequest__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "v0",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0),
-        .number = GetVersionUpgradeStateRequest_FieldNumber_V0,
+        .dataTypeSpecific.clazz = GPBObjCClass(GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0),
+        .number = GetProtocolVersionUpgradeStateRequest_FieldNumber_V0,
         .hasIndex = -1,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeStateRequest__storage_, v0),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeStateRequest__storage_, v0),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeStateRequest class]
+        [GPBDescriptor allocDescriptorForClass:[GetProtocolVersionUpgradeStateRequest class]
                                      rootClass:[PlatformRoot class]
                                           file:PlatformRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetVersionUpgradeStateRequest__storage_)
+                                   storageSize:sizeof(GetProtocolVersionUpgradeStateRequest__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     static const char *oneofs[] = {
       "version",
@@ -5413,20 +5425,20 @@ typedef struct GetVersionUpgradeStateRequest__storage_ {
 
 @end
 
-void GetVersionUpgradeStateRequest_ClearVersionOneOfCase(GetVersionUpgradeStateRequest *message) {
-  GPBDescriptor *descriptor = [GetVersionUpgradeStateRequest descriptor];
+void GetProtocolVersionUpgradeStateRequest_ClearVersionOneOfCase(GetProtocolVersionUpgradeStateRequest *message) {
+  GPBDescriptor *descriptor = [GetProtocolVersionUpgradeStateRequest descriptor];
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
-#pragma mark - GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0
+#pragma mark - GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0
 
-@implementation GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0
+@implementation GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0
 
 @dynamic prove;
 
-typedef struct GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0__storage_ {
+typedef struct GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0__storage_ {
   uint32_t _has_storage_[1];
-} GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0__storage_;
+} GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -5437,7 +5449,7 @@ typedef struct GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0__st
       {
         .name = "prove",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0_FieldNumber_Prove,
+        .number = GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0_FieldNumber_Prove,
         .hasIndex = 0,
         .offset = 1,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
@@ -5445,14 +5457,14 @@ typedef struct GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0__st
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0 class]
+        [GPBDescriptor allocDescriptorForClass:[GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0 class]
                                      rootClass:[PlatformRoot class]
                                           file:PlatformRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0__storage_)
+                                   storageSize:sizeof(GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVersionUpgradeStateRequest)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProtocolVersionUpgradeStateRequest)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
@@ -5463,17 +5475,17 @@ typedef struct GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0__st
 
 @end
 
-#pragma mark - GetVersionUpgradeStateResponse
+#pragma mark - GetProtocolVersionUpgradeStateResponse
 
-@implementation GetVersionUpgradeStateResponse
+@implementation GetProtocolVersionUpgradeStateResponse
 
 @dynamic versionOneOfCase;
 @dynamic v0;
 
-typedef struct GetVersionUpgradeStateResponse__storage_ {
+typedef struct GetProtocolVersionUpgradeStateResponse__storage_ {
   uint32_t _has_storage_[2];
-  GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0 *v0;
-} GetVersionUpgradeStateResponse__storage_;
+  GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0 *v0;
+} GetProtocolVersionUpgradeStateResponse__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -5483,21 +5495,21 @@ typedef struct GetVersionUpgradeStateResponse__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "v0",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0),
-        .number = GetVersionUpgradeStateResponse_FieldNumber_V0,
+        .dataTypeSpecific.clazz = GPBObjCClass(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0),
+        .number = GetProtocolVersionUpgradeStateResponse_FieldNumber_V0,
         .hasIndex = -1,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeStateResponse__storage_, v0),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeStateResponse__storage_, v0),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeStateResponse class]
+        [GPBDescriptor allocDescriptorForClass:[GetProtocolVersionUpgradeStateResponse class]
                                      rootClass:[PlatformRoot class]
                                           file:PlatformRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetVersionUpgradeStateResponse__storage_)
+                                   storageSize:sizeof(GetProtocolVersionUpgradeStateResponse__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     static const char *oneofs[] = {
       "version",
@@ -5515,26 +5527,26 @@ typedef struct GetVersionUpgradeStateResponse__storage_ {
 
 @end
 
-void GetVersionUpgradeStateResponse_ClearVersionOneOfCase(GetVersionUpgradeStateResponse *message) {
-  GPBDescriptor *descriptor = [GetVersionUpgradeStateResponse descriptor];
+void GetProtocolVersionUpgradeStateResponse_ClearVersionOneOfCase(GetProtocolVersionUpgradeStateResponse *message) {
+  GPBDescriptor *descriptor = [GetProtocolVersionUpgradeStateResponse descriptor];
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
-#pragma mark - GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0
+#pragma mark - GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0
 
-@implementation GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0
+@implementation GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0
 
 @dynamic resultOneOfCase;
 @dynamic versions;
 @dynamic proof;
 @dynamic hasMetadata, metadata;
 
-typedef struct GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0__storage_ {
+typedef struct GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0__storage_ {
   uint32_t _has_storage_[2];
-  GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions *versions;
+  GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions *versions;
   Proof *proof;
   ResponseMetadata *metadata;
-} GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0__storage_;
+} GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -5544,39 +5556,39 @@ typedef struct GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0__
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "versions",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions),
-        .number = GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_FieldNumber_Versions,
+        .dataTypeSpecific.clazz = GPBObjCClass(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions),
+        .number = GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_FieldNumber_Versions,
         .hasIndex = -1,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0__storage_, versions),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0__storage_, versions),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
       {
         .name = "proof",
         .dataTypeSpecific.clazz = GPBObjCClass(Proof),
-        .number = GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_FieldNumber_Proof,
+        .number = GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_FieldNumber_Proof,
         .hasIndex = -1,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0__storage_, proof),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0__storage_, proof),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
       {
         .name = "metadata",
         .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
-        .number = GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_FieldNumber_Metadata,
+        .number = GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_FieldNumber_Metadata,
         .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0__storage_, metadata),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0__storage_, metadata),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0 class]
+        [GPBDescriptor allocDescriptorForClass:[GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0 class]
                                      rootClass:[PlatformRoot class]
                                           file:PlatformRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0__storage_)
+                                   storageSize:sizeof(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     static const char *oneofs[] = {
       "result",
@@ -5584,7 +5596,7 @@ typedef struct GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0__
     [localDescriptor setupOneofs:oneofs
                            count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
                    firstHasIndex:-1];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVersionUpgradeStateResponse)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProtocolVersionUpgradeStateResponse)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
@@ -5595,21 +5607,21 @@ typedef struct GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0__
 
 @end
 
-void GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_ClearResultOneOfCase(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0 *message) {
-  GPBDescriptor *descriptor = [GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0 descriptor];
+void GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_ClearResultOneOfCase(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0 descriptor];
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
-#pragma mark - GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions
+#pragma mark - GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions
 
-@implementation GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions
+@implementation GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions
 
 @dynamic versionsArray, versionsArray_Count;
 
-typedef struct GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions__storage_ {
+typedef struct GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions__storage_ {
   uint32_t _has_storage_[1];
   NSMutableArray *versionsArray;
-} GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions__storage_;
+} GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -5619,23 +5631,23 @@ typedef struct GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_V
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "versionsArray",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry),
-        .number = GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions_FieldNumber_VersionsArray,
+        .dataTypeSpecific.clazz = GPBObjCClass(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry),
+        .number = GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions_FieldNumber_VersionsArray,
         .hasIndex = GPBNoHasBit,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions__storage_, versionsArray),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions__storage_, versionsArray),
         .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions class]
+        [GPBDescriptor allocDescriptorForClass:[GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions class]
                                      rootClass:[PlatformRoot class]
                                           file:PlatformRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions__storage_)
+                                   storageSize:sizeof(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
@@ -5646,18 +5658,18 @@ typedef struct GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_V
 
 @end
 
-#pragma mark - GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry
+#pragma mark - GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry
 
-@implementation GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry
+@implementation GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry
 
 @dynamic versionNumber;
 @dynamic voteCount;
 
-typedef struct GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry__storage_ {
+typedef struct GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry__storage_ {
   uint32_t _has_storage_[1];
   uint32_t versionNumber;
   uint32_t voteCount;
-} GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry__storage_;
+} GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -5668,31 +5680,31 @@ typedef struct GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_V
       {
         .name = "versionNumber",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry_FieldNumber_VersionNumber,
+        .number = GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry_FieldNumber_VersionNumber,
         .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry__storage_, versionNumber),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry__storage_, versionNumber),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "voteCount",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry_FieldNumber_VoteCount,
+        .number = GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry_FieldNumber_VoteCount,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry__storage_, voteCount),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry__storage_, voteCount),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry class]
+        [GPBDescriptor allocDescriptorForClass:[GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry class]
                                      rootClass:[PlatformRoot class]
                                           file:PlatformRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry__storage_)
+                                   storageSize:sizeof(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
@@ -5703,17 +5715,17 @@ typedef struct GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_V
 
 @end
 
-#pragma mark - GetVersionUpgradeVoteStatusRequest
+#pragma mark - GetProtocolVersionUpgradeVoteStatusRequest
 
-@implementation GetVersionUpgradeVoteStatusRequest
+@implementation GetProtocolVersionUpgradeVoteStatusRequest
 
 @dynamic versionOneOfCase;
 @dynamic v0;
 
-typedef struct GetVersionUpgradeVoteStatusRequest__storage_ {
+typedef struct GetProtocolVersionUpgradeVoteStatusRequest__storage_ {
   uint32_t _has_storage_[2];
-  GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0 *v0;
-} GetVersionUpgradeVoteStatusRequest__storage_;
+  GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0 *v0;
+} GetProtocolVersionUpgradeVoteStatusRequest__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -5723,21 +5735,21 @@ typedef struct GetVersionUpgradeVoteStatusRequest__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "v0",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0),
-        .number = GetVersionUpgradeVoteStatusRequest_FieldNumber_V0,
+        .dataTypeSpecific.clazz = GPBObjCClass(GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0),
+        .number = GetProtocolVersionUpgradeVoteStatusRequest_FieldNumber_V0,
         .hasIndex = -1,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusRequest__storage_, v0),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeVoteStatusRequest__storage_, v0),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeVoteStatusRequest class]
+        [GPBDescriptor allocDescriptorForClass:[GetProtocolVersionUpgradeVoteStatusRequest class]
                                      rootClass:[PlatformRoot class]
                                           file:PlatformRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetVersionUpgradeVoteStatusRequest__storage_)
+                                   storageSize:sizeof(GetProtocolVersionUpgradeVoteStatusRequest__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     static const char *oneofs[] = {
       "version",
@@ -5755,24 +5767,24 @@ typedef struct GetVersionUpgradeVoteStatusRequest__storage_ {
 
 @end
 
-void GetVersionUpgradeVoteStatusRequest_ClearVersionOneOfCase(GetVersionUpgradeVoteStatusRequest *message) {
-  GPBDescriptor *descriptor = [GetVersionUpgradeVoteStatusRequest descriptor];
+void GetProtocolVersionUpgradeVoteStatusRequest_ClearVersionOneOfCase(GetProtocolVersionUpgradeVoteStatusRequest *message) {
+  GPBDescriptor *descriptor = [GetProtocolVersionUpgradeVoteStatusRequest descriptor];
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
-#pragma mark - GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0
+#pragma mark - GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0
 
-@implementation GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0
+@implementation GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0
 
 @dynamic startProTxHash;
 @dynamic count;
 @dynamic prove;
 
-typedef struct GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0__storage_ {
+typedef struct GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0__storage_ {
   uint32_t _has_storage_[1];
   uint32_t count;
   NSData *startProTxHash;
-} GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0__storage_;
+} GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -5783,25 +5795,25 @@ typedef struct GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusReq
       {
         .name = "startProTxHash",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0_FieldNumber_StartProTxHash,
+        .number = GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0_FieldNumber_StartProTxHash,
         .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0__storage_, startProTxHash),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0__storage_, startProTxHash),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
       {
         .name = "count",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0_FieldNumber_Count,
+        .number = GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0_FieldNumber_Count,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0__storage_, count),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0__storage_, count),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "prove",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0_FieldNumber_Prove,
+        .number = GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0_FieldNumber_Prove,
         .hasIndex = 2,
         .offset = 3,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
@@ -5809,14 +5821,14 @@ typedef struct GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusReq
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0 class]
+        [GPBDescriptor allocDescriptorForClass:[GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0 class]
                                      rootClass:[PlatformRoot class]
                                           file:PlatformRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0__storage_)
+                                   storageSize:sizeof(GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVersionUpgradeVoteStatusRequest)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProtocolVersionUpgradeVoteStatusRequest)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
@@ -5827,17 +5839,17 @@ typedef struct GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusReq
 
 @end
 
-#pragma mark - GetVersionUpgradeVoteStatusResponse
+#pragma mark - GetProtocolVersionUpgradeVoteStatusResponse
 
-@implementation GetVersionUpgradeVoteStatusResponse
+@implementation GetProtocolVersionUpgradeVoteStatusResponse
 
 @dynamic versionOneOfCase;
 @dynamic v0;
 
-typedef struct GetVersionUpgradeVoteStatusResponse__storage_ {
+typedef struct GetProtocolVersionUpgradeVoteStatusResponse__storage_ {
   uint32_t _has_storage_[2];
-  GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0 *v0;
-} GetVersionUpgradeVoteStatusResponse__storage_;
+  GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0 *v0;
+} GetProtocolVersionUpgradeVoteStatusResponse__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -5847,21 +5859,21 @@ typedef struct GetVersionUpgradeVoteStatusResponse__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "v0",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0),
-        .number = GetVersionUpgradeVoteStatusResponse_FieldNumber_V0,
+        .dataTypeSpecific.clazz = GPBObjCClass(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0),
+        .number = GetProtocolVersionUpgradeVoteStatusResponse_FieldNumber_V0,
         .hasIndex = -1,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusResponse__storage_, v0),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeVoteStatusResponse__storage_, v0),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeVoteStatusResponse class]
+        [GPBDescriptor allocDescriptorForClass:[GetProtocolVersionUpgradeVoteStatusResponse class]
                                      rootClass:[PlatformRoot class]
                                           file:PlatformRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetVersionUpgradeVoteStatusResponse__storage_)
+                                   storageSize:sizeof(GetProtocolVersionUpgradeVoteStatusResponse__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     static const char *oneofs[] = {
       "version",
@@ -5879,26 +5891,26 @@ typedef struct GetVersionUpgradeVoteStatusResponse__storage_ {
 
 @end
 
-void GetVersionUpgradeVoteStatusResponse_ClearVersionOneOfCase(GetVersionUpgradeVoteStatusResponse *message) {
-  GPBDescriptor *descriptor = [GetVersionUpgradeVoteStatusResponse descriptor];
+void GetProtocolVersionUpgradeVoteStatusResponse_ClearVersionOneOfCase(GetProtocolVersionUpgradeVoteStatusResponse *message) {
+  GPBDescriptor *descriptor = [GetProtocolVersionUpgradeVoteStatusResponse descriptor];
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
-#pragma mark - GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0
+#pragma mark - GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0
 
-@implementation GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0
+@implementation GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0
 
 @dynamic resultOneOfCase;
 @dynamic versions;
 @dynamic proof;
 @dynamic hasMetadata, metadata;
 
-typedef struct GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0__storage_ {
+typedef struct GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0__storage_ {
   uint32_t _has_storage_[2];
-  GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals *versions;
+  GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals *versions;
   Proof *proof;
   ResponseMetadata *metadata;
-} GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0__storage_;
+} GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -5908,39 +5920,39 @@ typedef struct GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusRe
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "versions",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals),
-        .number = GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_FieldNumber_Versions,
+        .dataTypeSpecific.clazz = GPBObjCClass(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals),
+        .number = GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_FieldNumber_Versions,
         .hasIndex = -1,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0__storage_, versions),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0__storage_, versions),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
       {
         .name = "proof",
         .dataTypeSpecific.clazz = GPBObjCClass(Proof),
-        .number = GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_FieldNumber_Proof,
+        .number = GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_FieldNumber_Proof,
         .hasIndex = -1,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0__storage_, proof),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0__storage_, proof),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
       {
         .name = "metadata",
         .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
-        .number = GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_FieldNumber_Metadata,
+        .number = GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_FieldNumber_Metadata,
         .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0__storage_, metadata),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0__storage_, metadata),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0 class]
+        [GPBDescriptor allocDescriptorForClass:[GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0 class]
                                      rootClass:[PlatformRoot class]
                                           file:PlatformRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0__storage_)
+                                   storageSize:sizeof(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     static const char *oneofs[] = {
       "result",
@@ -5948,7 +5960,7 @@ typedef struct GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusRe
     [localDescriptor setupOneofs:oneofs
                            count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
                    firstHasIndex:-1];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVersionUpgradeVoteStatusResponse)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProtocolVersionUpgradeVoteStatusResponse)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
@@ -5959,21 +5971,21 @@ typedef struct GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusRe
 
 @end
 
-void GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_ClearResultOneOfCase(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0 *message) {
-  GPBDescriptor *descriptor = [GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0 descriptor];
+void GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_ClearResultOneOfCase(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0 descriptor];
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
-#pragma mark - GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals
+#pragma mark - GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals
 
-@implementation GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals
+@implementation GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals
 
 @dynamic versionSignalsArray, versionSignalsArray_Count;
 
-typedef struct GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals__storage_ {
+typedef struct GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals__storage_ {
   uint32_t _has_storage_[1];
   NSMutableArray *versionSignalsArray;
-} GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals__storage_;
+} GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -5983,23 +5995,23 @@ typedef struct GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusRe
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "versionSignalsArray",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal),
-        .number = GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals_FieldNumber_VersionSignalsArray,
+        .dataTypeSpecific.clazz = GPBObjCClass(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal),
+        .number = GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals_FieldNumber_VersionSignalsArray,
         .hasIndex = GPBNoHasBit,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals__storage_, versionSignalsArray),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals__storage_, versionSignalsArray),
         .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals class]
+        [GPBDescriptor allocDescriptorForClass:[GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals class]
                                      rootClass:[PlatformRoot class]
                                           file:PlatformRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals__storage_)
+                                   storageSize:sizeof(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
@@ -6010,18 +6022,18 @@ typedef struct GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusRe
 
 @end
 
-#pragma mark - GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal
+#pragma mark - GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal
 
-@implementation GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal
+@implementation GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal
 
 @dynamic proTxHash;
 @dynamic version;
 
-typedef struct GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal__storage_ {
+typedef struct GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal__storage_ {
   uint32_t _has_storage_[1];
   uint32_t version;
   NSData *proTxHash;
-} GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal__storage_;
+} GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -6032,31 +6044,31 @@ typedef struct GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusRe
       {
         .name = "proTxHash",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal_FieldNumber_ProTxHash,
+        .number = GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal_FieldNumber_ProTxHash,
         .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal__storage_, proTxHash),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal__storage_, proTxHash),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
       {
         .name = "version",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal_FieldNumber_Version,
+        .number = GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal_FieldNumber_Version,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal__storage_, version),
+        .offset = (uint32_t)offsetof(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal__storage_, version),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal class]
+        [GPBDescriptor allocDescriptorForClass:[GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal class]
                                      rootClass:[PlatformRoot class]
                                           file:PlatformRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal__storage_)
+                                   storageSize:sizeof(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG

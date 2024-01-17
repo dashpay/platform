@@ -1,12 +1,10 @@
-const { Listr } = require('listr2');
-
-const {
+import { Listr } from 'listr2';
+import {
   PRESET_LOCAL,
-} = require('../../../constants');
-
-const generateTenderdashNodeKey = require('../../../tenderdash/generateTenderdashNodeKey');
-const deriveTenderdashNodeId = require('../../../tenderdash/deriveTenderdashNodeId');
-const generateRandomString = require('../../../util/generateRandomString');
+} from '../../../constants.js';
+import generateTenderdashNodeKey from '../../../tenderdash/generateTenderdashNodeKey.js';
+import deriveTenderdashNodeId from '../../../tenderdash/deriveTenderdashNodeId.js';
+import generateRandomString from '../../../util/generateRandomString.js';
 
 /**
  * @param {ConfigFile} configFile
@@ -14,23 +12,17 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {configureTenderdashTask} configureTenderdashTask
  * @param {obtainSelfSignedCertificateTask} obtainSelfSignedCertificateTask
  * @param {resolveDockerHostIp} resolveDockerHostIp
- * @param {configFileRepository} configFileRepository
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
  * @param {HomeDir} homeDir
- * @param {writeServiceConfigs} writeServiceConfigs
- * @param {renderServiceTemplates} renderServiceTemplates
  */
-function setupLocalPresetTaskFactory(
+export default function setupLocalPresetTaskFactory(
   configFile,
   configureCoreTask,
   obtainSelfSignedCertificateTask,
   configureTenderdashTask,
   resolveDockerHostIp,
-  configFileRepository,
   generateHDPrivateKeys,
   homeDir,
-  writeServiceConfigs,
-  renderServiceTemplates,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -87,7 +79,7 @@ function setupLocalPresetTaskFactory(
             message: 'Enter the interval between core blocks',
             initial: configFile.getConfig('base').get('core.miner.interval'),
             validate: (state) => {
-              if (state.match(/\d+(\.\d+)?(m|s)/)) {
+              if (state.match(/\d+(\.\d+)?([ms])/)) {
                 return true;
               }
 
@@ -109,6 +101,10 @@ function setupLocalPresetTaskFactory(
                 ? configFile.getConfig(configName)
                 : configFile.createConfig(configName, PRESET_LOCAL)
             ));
+
+          ctx.configGroup.forEach((config) => config.set('group', 'local'));
+
+          configFile.setDefaultGroupName(PRESET_LOCAL);
 
           const hostDockerInternalIp = await resolveDockerHostIp();
 
@@ -287,19 +283,6 @@ function setupLocalPresetTaskFactory(
         task: (ctx) => configureTenderdashTask(ctx.configGroup),
       },
       {
-        title: 'Persist configs',
-        task: (ctx) => {
-          configFile.setDefaultGroupName(PRESET_LOCAL);
-
-          for (const config of ctx.configGroup) {
-            const serviceConfigFiles = renderServiceTemplates(config);
-            writeServiceConfigs(config.getName(), serviceConfigFiles);
-          }
-
-          configFileRepository.write(configFile);
-        },
-      },
-      {
         title: 'Configure SSL certificates',
         task: (ctx) => {
           const platformConfigs = ctx.configGroup.filter((config) => config.get('platform.enable'));
@@ -318,5 +301,3 @@ function setupLocalPresetTaskFactory(
 
   return setupLocalPresetTask;
 }
-
-module.exports = setupLocalPresetTaskFactory;

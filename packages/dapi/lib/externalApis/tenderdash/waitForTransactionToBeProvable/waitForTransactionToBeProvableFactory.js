@@ -1,4 +1,5 @@
 const TransactionWaitPeriodExceededError = require('../../../errors/TransactionWaitPeriodExceededError');
+const logger = require('../../../logger');
 
 /**
  * @param {waitForTransactionResult} waitForTransactionResult
@@ -15,14 +16,19 @@ function waitForTransactionToBeProvableFactory(
    * @typedef {waitForTransactionToBeProvable}
    * @param {BlockchainListener} blockchainListener
    * @param {string} hashString - transaction hash to resolve data for
-   * @param {number} [timeout] - timeout to reject after
+   * @param {number} timeout - timeout to reject after
    * @return {Promise<TransactionOkResult|TransactionErrorResult>}
    */
-  function waitForTransactionToBeProvable(blockchainListener, hashString, timeout = 60000) {
+  function waitForTransactionToBeProvable(blockchainListener, hashString, timeout) {
+    const requestLogger = logger.child({
+      endpoint: 'waitForStateTransitionResult',
+      hash: hashString,
+    });
+
     const {
       promise: waitForTransactionResultPromise,
       detach: detachTransactionResult,
-    } = waitForTransactionResult(blockchainListener, hashString);
+    } = waitForTransactionResult(blockchainListener, hashString, requestLogger);
 
     const existingTransactionResultPromise = getExistingTransactionResult(hashString);
 
@@ -31,6 +37,8 @@ function waitForTransactionToBeProvableFactory(
       existingTransactionResultPromise.then((result) => {
         // Do not wait for upcoming result if existing is present
         detachTransactionResult();
+
+        requestLogger.debug('sent existing transition result');
 
         return result;
       }).catch((error) => {
@@ -46,15 +54,18 @@ function waitForTransactionToBeProvableFactory(
       waitForTransactionResultPromise,
     ]);
 
+    let timeoutId;
     return Promise.race([
       // Get transaction result
-      transactionResultPromise,
+      transactionResultPromise.finally(() => clearTimeout(timeoutId)),
 
       // Throw an error when wait period exceeded
       new Promise((resolve, reject) => {
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           // Detaching handlers
           detachTransactionResult();
+
+          requestLogger.debug(`request is timed out after ${timeout} ms`);
 
           reject(new TransactionWaitPeriodExceededError(hashString));
         }, timeout);

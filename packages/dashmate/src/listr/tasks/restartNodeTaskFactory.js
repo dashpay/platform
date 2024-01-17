@@ -1,5 +1,5 @@
-const { Listr } = require('listr2');
-const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
+import { Listr } from 'listr2';
+import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
 
 /**
  * @param {startNodeTask} startNodeTask
@@ -7,7 +7,7 @@ const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
  * @param {buildServicesTask} buildServicesTask
  * @return {restartNodeTask}
  */
-function restartNodeTaskFactory(startNodeTask, stopNodeTask, buildServicesTask) {
+export default function restartNodeTaskFactory(startNodeTask, stopNodeTask, buildServicesTask) {
   /**
    * Restart node
    * @typedef {restartNodeTask}
@@ -37,5 +37,3 @@ function restartNodeTaskFactory(startNodeTask, stopNodeTask, buildServicesTask) 
 
   return restartNodeTask;
 }
-
-module.exports = restartNodeTaskFactory;

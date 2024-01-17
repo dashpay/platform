@@ -46,7 +46,7 @@ pub trait CreateRandomDocument {
     fn random_documents_with_params(
         &self,
         count: u32,
-        identities: &Vec<Identity>,
+        identities: &[Identity],
         time_ms: u64,
         document_field_fill_type: DocumentFieldFillType,
         document_field_fill_size: DocumentFieldFillSize,
@@ -114,7 +114,7 @@ impl CreateRandomDocument for DocumentType {
     fn random_documents_with_params(
         &self,
         count: u32,
-        identities: &Vec<Identity>,
+        identities: &[Identity],
         time_ms: u64,
         document_field_fill_type: DocumentFieldFillType,
         document_field_fill_size: DocumentFieldFillSize,
@@ -224,7 +224,7 @@ impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
     fn random_documents_with_params(
         &self,
         count: u32,
-        identities: &Vec<Identity>,
+        identities: &[Identity],
         time_ms: u64,
         document_field_fill_type: DocumentFieldFillType,
         document_field_fill_size: DocumentFieldFillSize,

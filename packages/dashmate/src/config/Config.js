@@ -1,25 +1,26 @@
-const Ajv = require('ajv');
+import Ajv from 'ajv';
+import lodash from 'lodash';
 
-const lodashGet = require('lodash/get');
-const lodashSet = require('lodash/set');
-const lodashCloneDeep = require('lodash/cloneDeep');
-const lodashIsEqual = require('lodash/isEqual');
+import addFormats from 'ajv-formats';
+import configJsonSchema from './configJsonSchema.js';
 
-const addFormats = require('ajv-formats');
-const configJsonSchema = require('./configJsonSchema');
+import InvalidOptionPathError from './errors/InvalidOptionPathError.js';
+import OptionIsNotSetError from './errors/OptionIsNotSetError.js';
+import InvalidOptionError from './errors/InvalidOptionError.js';
+import InvalidOptionsError from './errors/InvalidOptionsError.js';
 
-const InvalidOptionPathError = require('./errors/InvalidOptionPathError');
-const InvalidOptionError = require('./errors/InvalidOptionError');
-const InvalidOptionsError = require('./errors/InvalidOptionsError');
-const OptionIsNotSetError = require('./errors/OptionIsNotSetError');
+const {
+  get: lodashGet, set: lodashSet, cloneDeep: lodashCloneDeep, isEqual: lodashIsEqual,
+} = lodash;
 
-class Config {
+export default class Config {
   /**
    * @param {string} name
    * @param {Object} options
    */
   constructor(name, options = {}) {
     this.name = name;
+    this.changed = false;
 
     this.setOptions(options);
   }
@@ -103,6 +104,8 @@ class Config {
 
     this.options = clonedOptions;
 
+    this.changed = true;
+
     return this;
   }
 
@@ -139,6 +142,8 @@ class Config {
 
     this.options = clonedOptions;
 
+    this.changed = true;
+
     return this;
   }
 
@@ -151,9 +156,30 @@ class Config {
   isEqual(config) {
     return lodashIsEqual(this.getOptions(), config.getOptions());
   }
+
+  /**
+   * Is config changed
+   *
+   * @return {boolean}
+   */
+  isChanged() {
+    return this.changed;
+  }
+
+  /**
+   * Mark config as changed
+   */
+  markAsChanged() {
+    this.changed = true;
+  }
+
+  /**
+   * Mark config as saved
+   */
+  markAsSaved() {
+    this.changed = false;
+  }
 }
 
 Config.ajv = new Ajv({ coerceTypes: true });
 addFormats(Config.ajv, { mode: 'fast', formats: ['ipv4'] });
-
-module.exports = Config;

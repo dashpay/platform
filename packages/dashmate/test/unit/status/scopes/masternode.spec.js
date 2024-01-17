@@ -1,7 +1,7 @@
-const MasternodeSyncAssetEnum = require('../../../../src/status/enums/masternodeSyncAsset');
-const getMasternodeScopeFactory = require('../../../../src/status/scopes/masternode');
-const MasternodeStateEnum = require('../../../../src/status/enums/masternodeState');
-const getConfigMock = require('../../../../src/test/mock/getConfigMock');
+import getConfigMock from '../../../../src/test/mock/getConfigMock.js';
+import getMasternodeScopeFactory from '../../../../src/status/scopes/masternode.js';
+import { MasternodeSyncAssetEnum } from '../../../../src/status/enums/masternodeSyncAsset.js';
+import { MasternodeStateEnum } from '../../../../src/status/enums/masternodeState.js';
 
 describe('getMasternodeScopeFactory', () => {
   describe('#getMasternodeScope', () => {

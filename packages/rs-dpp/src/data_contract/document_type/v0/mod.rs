@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, BTreeSet};
+use indexmap::IndexMap;
+use std::collections::BTreeSet;
 
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
@@ -41,9 +42,9 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) index_structure: IndexLevel,
     /// Flattened properties flatten all objects for quick lookups for indexes
     /// Document field should not contain sub objects.
-    pub(in crate::data_contract) flattened_properties: BTreeMap<String, DocumentProperty>,
+    pub(in crate::data_contract) flattened_properties: IndexMap<String, DocumentProperty>,
     /// Document field can contain sub objects.
-    pub(in crate::data_contract) properties: BTreeMap<String, DocumentProperty>,
+    pub(in crate::data_contract) properties: IndexMap<String, DocumentProperty>,
     pub(in crate::data_contract) identifier_paths: BTreeSet<String>,
     pub(in crate::data_contract) binary_paths: BTreeSet<String>,
     /// The required fields on the document type

@@ -4,13 +4,13 @@ use crate::BlockHeight;
 use dashcore_rpc::dashcore;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::created_data_contract::CreatedDataContract;
+
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
-    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
+    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, OperationType,
 };
 
 use dpp::document::DocumentV0Getters;
@@ -50,7 +50,7 @@ use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+
 use simple_signer::signer::SimpleSigner;
 
 #[derive(Clone, Debug, Default)]
@@ -139,7 +139,8 @@ pub enum StrategyMode {
 pub struct FailureStrategy {
     pub deterministic_start_seed: Option<u64>,
     pub dont_finalize_block: bool,
-    pub expect_errors_with_codes: Vec<u32>,
+    pub expect_every_block_errors_with_codes: Vec<u32>,
+    pub expect_specific_block_errors_with_codes: HashMap<u64, Vec<u32>>,
     // 1 here would be round 1 is successful
     pub rounds_before_successful_block: Option<u32>,
 }
@@ -166,6 +167,29 @@ pub struct NetworkStrategy {
     pub failure_testing: Option<FailureStrategy>,
     pub query_testing: Option<QueryStrategy>,
     pub verify_state_transition_results: bool,
+    pub max_tx_bytes_per_block: i64,
+}
+
+impl Default for NetworkStrategy {
+    fn default() -> Self {
+        NetworkStrategy {
+            strategy: Default::default(),
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+            max_tx_bytes_per_block: 44800,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -838,18 +862,9 @@ impl NetworkStrategy {
                         let owner = current_identities.get(indices[0]).unwrap();
                         let recipient = current_identities.get(indices[1]).unwrap();
 
-                        let fetched_owner_balance = platform
-                            .drive
-                            .fetch_identity_balance(owner.id().to_buffer(), None, platform_version)
-                            .expect("expected to be able to get identity")
-                            .expect("expected to get an identity");
-
                         let state_transition =
                             strategy_tests::transitions::create_identity_credit_transfer_transition(
-                                owner,
-                                recipient,
-                                signer,
-                                fetched_owner_balance - 100,
+                                owner, recipient, signer, 1000,
                             );
                         operations.push(state_transition);
                     }
@@ -885,9 +900,9 @@ impl NetworkStrategy {
             .expect("expected platform version");
         let identity_state_transitions =
             self.identity_state_transitions_for_block(block_info, signer, rng, platform_version);
-        let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
+        let (mut new_identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
-        current_identities.append(&mut identities);
+        current_identities.append(&mut new_identities);
 
         if block_info.height == 1 {
             // add contracts on block 1

@@ -2,7 +2,7 @@
 name = "platform-value"
 authors = ["Samuel Westrich <sam@dash.org>"]
 description = "A simple value module"
-version = "0.25.0"
+version = "1.0.0-dev.3"
 edition = "2021"
 rust-version = "1.73"
 license = "MIT"
@@ -21,9 +21,9 @@ rand = { version = "0.8.4", features = ["small_rng"] }
 treediff = "4.0.2"
 regex = "1.7.1"
 lazy_static = "1.4.0"
-serde_bytes = "0.11.9"
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-version = { path = "../rs-platform-version" }
+indexmap = "2.0.2"
 
 ### FEATURES #################################################################
 

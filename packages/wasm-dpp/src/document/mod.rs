@@ -1,5 +1,4 @@
-use dpp::prelude::{DataContract, Identifier};
-use dpp::util::json_schema::JsonSchemaExt;
+use dpp::prelude::Identifier;
 
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
@@ -10,10 +9,10 @@ use crate::buffer::Buffer;
 
 use crate::data_contract::DataContractWasm;
 use crate::identifier::IdentifierWrapper;
-use crate::lodash::lodash_set;
+
 use crate::utils::WithJsError;
 use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
-use crate::with_js_error;
+
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::DocumentV0Getters;
 pub mod errors;
@@ -28,13 +27,10 @@ pub mod state_transition;
 
 // pub use document_batch_transition::DocumentsBatchTransitionWasm;
 
-use dpp::document::{
-    Document, DocumentV0Setters, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS, IDENTIFIER_FIELDS,
-};
+use dpp::document::{Document, DocumentV0Setters, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS};
 
 pub use extended_document::ExtendedDocumentWasm;
 
-use dpp::document::extended_document::property_names;
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;

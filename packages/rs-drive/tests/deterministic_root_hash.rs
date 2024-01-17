@@ -51,11 +51,7 @@ use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 #[cfg(feature = "full")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "full")]
-use tempfile::TempDir;
 
-#[cfg(feature = "full")]
-use drive::drive::config::DriveConfig;
 #[cfg(feature = "full")]
 use drive::drive::flags::StorageFlags;
 
@@ -73,6 +69,7 @@ use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::version::PlatformVersion;
 
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
+use drive::tests::helpers::setup::setup_drive;
 
 #[cfg(feature = "full")]
 /// Contains the unique ID for a Dash identity.
@@ -450,7 +447,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
         .unwrap()
         .expect("should return app hash");
 
-    let expected_app_hash = "1fecc17a75bf6e3c149adf78086f54a85a240d0741fd356204f7817ccb72c32d";
+    let expected_app_hash = "6b8bbf1f069858abf57573f43a62e27d60e6139c4d23e1fe572fa3fe34057973";
 
     assert_eq!(hex::encode(app_hash), expected_app_hash);
 }
@@ -459,9 +456,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
 /// Runs `test_root_hash_with_batches` 10 times.
 #[test]
 fn test_deterministic_root_hash_with_batches() {
-    let tmp_dir = TempDir::new().unwrap();
-    let drive: Drive = Drive::open(tmp_dir, Some(DriveConfig::default()))
-        .expect("expected to open Drive successfully");
+    let drive = setup_drive(None);
 
     let db_transaction = drive.grove.start_transaction();
 

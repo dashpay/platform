@@ -51,7 +51,7 @@ this repository may be used on the following networks:
 
 - Clone the repo
 - Install prerequisites:
-  - [node.js](https://nodejs.org/) v18
+  - [node.js](https://nodejs.org/) v20
   - [docker](https://docs.docker.com/get-docker/) v20.10+
   - [rust](https://www.rust-lang.org/tools/install) v1.73+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
   - [wasm-bingen toolchain](https://rustwasm.github.io/wasm-bindgen/):

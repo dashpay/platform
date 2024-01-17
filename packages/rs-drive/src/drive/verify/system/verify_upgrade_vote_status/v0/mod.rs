@@ -1,6 +1,4 @@
-use crate::drive::protocol_upgrade::{
-    desired_version_for_validators_path_vec, versions_counter_path_vec,
-};
+use crate::drive::protocol_upgrade::desired_version_for_validators_path_vec;
 use crate::drive::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
@@ -54,17 +52,21 @@ impl Drive {
         let protocol_version_map = elements
             .into_iter()
             .map(|(_, key, element)| {
-                let pro_tx_hash: [u8; 32] = key
-                    .try_into()
-                    .map_err(|_| ProofError::CorruptedProof("protocol version not decodable"))?;
+                let pro_tx_hash: [u8; 32] = key.try_into().map_err(|_| {
+                    ProofError::CorruptedProof("protocol version not decodable".to_string())
+                })?;
                 let element = element.ok_or(ProofError::CorruptedProof(
-                    "expected a count for each version, got none",
+                    "expected a count for each version, got none".to_string(),
                 ))?;
                 let version_bytes = element.as_item_bytes().map_err(|_| {
-                    ProofError::CorruptedProof("expected an item for the element of a version")
+                    ProofError::CorruptedProof(
+                        "expected an item for the element of a version".to_string(),
+                    )
                 })?;
                 let version = u32::decode_var(version_bytes)
-                    .ok_or(ProofError::CorruptedProof("version count not decodable"))?
+                    .ok_or(ProofError::CorruptedProof(
+                        "version count not decodable".to_string(),
+                    ))?
                     .0;
                 Ok((pro_tx_hash, version))
             })
