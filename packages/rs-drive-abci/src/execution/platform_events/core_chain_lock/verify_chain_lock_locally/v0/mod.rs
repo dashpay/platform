@@ -44,7 +44,7 @@ where
             + window_width
             - 1;
 
-        let verification_height = chain_lock.block_height - SIGN_OFFSET;
+        let verification_height = chain_lock.block_height.saturating_sub(SIGN_OFFSET);
 
         if verification_height > last_block_in_window {
             return Ok(None); // the chain lock is too far in the future or the past to verify locally

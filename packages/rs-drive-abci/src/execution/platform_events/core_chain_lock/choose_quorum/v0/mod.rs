@@ -51,12 +51,12 @@ where
     /// Based on DIP8 deterministically chooses a pseudorandom quorum from the list of quorums
     pub(super) fn choose_quorum_thread_safe_v0<'a, const T: usize>(
         llmq_quorum_type: QuorumType,
-        quorums: &'a BTreeMap<QuorumHash, [u8;T]>,
+        quorums: &'a BTreeMap<QuorumHash, [u8; T]>,
         request_id: &[u8; 32],
         _platform_version: &PlatformVersion,
-    ) -> Option<(&'a QuorumHash, &'a [u8;T])> {
+    ) -> Option<(&'a QuorumHash, &'a [u8; T])> {
         // Scoring system logic
-        let mut scores: Vec<(&QuorumHash, &[u8;T], [u8; 32])> = Vec::new();
+        let mut scores: Vec<(&QuorumHash, &[u8; T], [u8; 32])> = Vec::new();
 
         for (quorum_hash, key) in quorums {
             let mut hasher = sha256d::Hash::engine();

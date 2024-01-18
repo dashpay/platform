@@ -88,22 +88,25 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         state_transitions: Vec<StateTransition>,
         options: MimicExecuteBlockOptions,
     ) -> Result<MimicExecuteBlockOutcome, Error> {
+        // This will be NONE, except on init chain
+        let original_block_execution_context = self
+            .platform
+            .block_execution_context
+            .read()
+            .unwrap()
+            .as_ref()
+            .cloned();
 
         let transaction_guard = self.transaction.read().unwrap();
 
-        let transaction = transaction_guard.as_ref().ok_or(Error::Execution(
-            ExecutionError::NotInTransaction(
-                "trying to finalize block without a current transaction",
-            ),
-        ))?;
-
-        let init_chain_root_hash = self
-            .platform
-            .drive
-            .grove
-            .root_hash(Some(transaction))
-            .unwrap()
-            .unwrap();
+        let init_chain_root_hash = transaction_guard.as_ref().map(|transaction| {
+            self.platform
+                .drive
+                .grove
+                .root_hash(Some(transaction))
+                .unwrap()
+                .unwrap()
+        });
 
         drop(transaction_guard);
 
@@ -241,8 +244,6 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             quorum_hash: current_quorum.quorum_hash.to_byte_array().to_vec(),
         };
 
-
-
         if !options.independent_process_proposal_verification {
             //we just check as if we were the proposer
             //we must call process proposal so the app hash is set
@@ -254,9 +255,6 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                     )
                 });
         } else {
-
-            let original_block_execution_context =  self.platform.block_execution_context.read().unwrap().as_ref().cloned();
-
             //we first call process proposal as the proposer
             //we must call process proposal so the app hash is set
             self.process_proposal(request_process_proposal.clone())
@@ -267,14 +265,21 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                     )
                 });
 
-            let mut block_execution_context =  self.platform.block_execution_context.write().unwrap();
+            let mut block_execution_context =
+                self.platform.block_execution_context.write().unwrap();
 
-            let application_hash = block_execution_context.as_ref().expect("expected a block execution context").block_state_info().app_hash().expect("expected an application hash after process proposal");
+            let application_hash = block_execution_context
+                .as_ref()
+                .expect("expected a block execution context")
+                .block_state_info()
+                .app_hash()
+                .expect("expected an application hash after process proposal");
 
             *block_execution_context = original_block_execution_context.clone();
             drop(block_execution_context);
 
-            if request_process_proposal.height == self.platform.config.abci.genesis_height as i64
+            if let Some(init_chain_root_hash) = init_chain_root_hash
+            //we are in init chain
             {
                 // special logic on init chain
                 let transaction = self.transaction.write().unwrap();
@@ -285,7 +290,9 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                     ),
                 ))?;
 
-                transaction.rollback_to_savepoint().expect("expected to rollback to savepoint");
+                transaction
+                    .rollback_to_savepoint()
+                    .expect("expected to rollback to savepoint");
 
                 let start_root_hash = self
                     .platform
@@ -309,9 +316,18 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
             let block_execution_context = self.platform.block_execution_context.read().unwrap();
 
-            let process_proposal_application_hash = block_execution_context.as_ref().expect("expected a block execution context").block_state_info().app_hash().expect("expected an application hash after process proposal");
+            let process_proposal_application_hash = block_execution_context
+                .as_ref()
+                .expect("expected a block execution context")
+                .block_state_info()
+                .app_hash()
+                .expect("expected an application hash after process proposal");
 
-            assert_eq!(application_hash, process_proposal_application_hash, "the application hashed are not valid for height {}", block_info.height);
+            assert_eq!(
+                application_hash, process_proposal_application_hash,
+                "the application hashed are not valid for height {}",
+                block_info.height
+            );
 
             let transaction_guard = self.transaction.read().unwrap();
 
@@ -328,7 +344,11 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 .root_hash(Some(transaction))
                 .unwrap()
                 .unwrap();
-            assert_eq!(application_hash, direct_root_hash, "the application hashed are not valid for height {}", block_info.height);
+            assert_eq!(
+                application_hash, direct_root_hash,
+                "the application hashed are not valid for height {}",
+                block_info.height
+            );
         }
 
         let request_extend_vote = RequestExtendVote {

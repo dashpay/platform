@@ -367,12 +367,6 @@ where
             elapsed_time_ms,
         );
 
-        let a = self.platform
-            .drive
-            .grove
-            .root_hash(Some(transaction))
-            .unwrap().expect("a"); //GroveDb errors are system errors
-
         Ok(response)
     }
 
@@ -387,7 +381,7 @@ where
 
         let mut drop_block_execution_context = false;
         if let Some(block_execution_context) = block_execution_context_guard.as_mut() {
-            // We are already in a block
+            // We are already in a block, or in init chain.
             // This only makes sense if we were the proposer unless we are at a future round
             if block_execution_context.block_state_info().round() != (request.round as u32) {
                 // We were not the proposer, and we should process something new

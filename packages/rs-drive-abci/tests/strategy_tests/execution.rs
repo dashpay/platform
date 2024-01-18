@@ -20,6 +20,9 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 
 use dashcore_rpc::json::{ExtendedQuorumListResult, SoftforkInfo};
+use dpp::bls_signatures::PrivateKey;
+use dpp::dashcore::consensus::Encodable;
+use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
@@ -30,6 +33,7 @@ use drive_abci::platform_types::platform::Platform;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::{CoreRPCLike, MockCoreRPCLike};
 use drive_abci::test::fixture::abci::static_init_chain_request;
+use platform_version::version::PlatformVersion;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::{Rng, SeedableRng};
 use std::collections::{BTreeMap, HashMap};
@@ -38,10 +42,6 @@ use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::serializers::timestamp::FromMilis;
 use tenderdash_abci::Application;
-use dpp::bls_signatures::PrivateKey;
-use dpp::dashcore::consensus::Encodable;
-use dpp::dashcore::hashes::{HashEngine, sha256d};
-use platform_version::version::PlatformVersion;
 
 pub(crate) fn run_chain_for_strategy(
     platform: &mut Platform<MockCoreRPCLike>,
@@ -60,7 +60,8 @@ pub(crate) fn run_chain_for_strategy(
     let any_changes_in_strategy = strategy.proposer_strategy.any_is_set();
     let updated_proposers_in_strategy = strategy.proposer_strategy.any_kind_of_update_is_set();
 
-    let max_core_height = strategy.initial_core_height + strategy.core_height_increase.max_event_count() as u32 * block_count as u32;
+    let max_core_height = strategy.initial_core_height
+        + strategy.core_height_increase.max_event_count() as u32 * block_count as u32;
 
     let chain_lock_quorum_type = config.chain_lock_quorum_type();
 
@@ -68,7 +69,7 @@ pub(crate) fn run_chain_for_strategy(
 
     let mut core_blocks = BTreeMap::new();
     for x in strategy.initial_core_height..max_core_height {
-        let block_hash : [u8;32] = rng.gen();
+        let block_hash: [u8; 32] = rng.gen();
         core_blocks.insert(x, block_hash);
     }
 
@@ -541,21 +542,27 @@ pub(crate) fn run_chain_for_strategy(
     let core_height_increase = strategy.core_height_increase.clone();
     let mut core_height_rng = rng.clone();
 
-    let chain_lock_quorums_private_keys: BTreeMap<QuorumHash, [u8; 32]> = chain_lock_quorums.iter().map(|(quorum_hash, info)| {
-        let bytes = info.private_key.to_bytes();
-        let fixed_bytes: [u8; 32] = bytes.as_slice().try_into().expect("Expected a byte array of length 32");
-        (quorum_hash.clone(), fixed_bytes)
-    }).collect();
+    let chain_lock_quorums_private_keys: BTreeMap<QuorumHash, [u8; 32]> = chain_lock_quorums
+        .iter()
+        .map(|(quorum_hash, info)| {
+            let bytes = info.private_key.to_bytes();
+            let fixed_bytes: [u8; 32] = bytes
+                .as_slice()
+                .try_into()
+                .expect("Expected a byte array of length 32");
+            (quorum_hash.clone(), fixed_bytes)
+        })
+        .collect();
 
     platform
         .core_rpc
         .expect_get_best_chain_lock()
         .returning(move || {
-
-            let block_hash = *core_blocks.get(&core_height).expect("expected a block hash to be known");
+            let block_hash = *core_blocks
+                .get(&core_height)
+                .expect("expected a block hash to be known");
 
             if sign_chain_locks {
-
                 // From DIP 8: https://github.com/dashpay/dips/blob/master/dip-0008.md#finalization-of-signed-blocks
                 // The request id is SHA256("clsig", blockHeight) and the message hash is the block hash of the previously successful attempt.
 
@@ -579,7 +586,8 @@ pub(crate) fn run_chain_for_strategy(
                     &chain_lock_quorums_private_keys,
                     request_id.as_ref(),
                     PlatformVersion::latest(), //it should be okay to use latest here
-                ).expect("expected a quorum");
+                )
+                .expect("expected a quorum");
 
                 let (quorum_hash, quorum_private_key) = quorum.expect("expected to find a quorum");
 
@@ -594,7 +602,9 @@ pub(crate) fn run_chain_for_strategy(
 
                 let message_digest = sha256d::Hash::from_engine(engine);
 
-                let quorum_private_key = PrivateKey::from_bytes(quorum_private_key.as_slice(), false).expect("expected to have a valid private key");
+                let quorum_private_key =
+                    PrivateKey::from_bytes(quorum_private_key.as_slice(), false)
+                        .expect("expected to have a valid private key");
                 let signature = quorum_private_key.sign(message_digest.as_byte_array());
                 let chain_lock = ChainLock {
                     block_height: core_height,
@@ -615,6 +625,11 @@ pub(crate) fn run_chain_for_strategy(
                 Ok(chain_lock)
             }
         });
+
+    platform
+        .core_rpc
+        .expect_submit_chain_lock()
+        .returning(move |chain_lock: &ChainLock| return Ok(true));
 
     create_chain_for_strategy(
         platform,
@@ -902,7 +917,8 @@ pub(crate) fn continue_chain_for_strategy(
                                 |failure_testing| failure_testing.rounds_before_successful_block,
                             ),
                             max_tx_bytes_per_block: strategy.max_tx_bytes_per_block,
-                            independent_process_proposal_verification: strategy.independent_process_proposal_verification,
+                            independent_process_proposal_verification: strategy
+                                .independent_process_proposal_verification,
                         },
                     )
                     .expect("expected to execute a block"),

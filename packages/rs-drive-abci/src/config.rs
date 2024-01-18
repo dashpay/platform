@@ -302,6 +302,7 @@ impl PlatformConfig {
             validator_set_quorum_type: "llmq_test_platform".to_string(),
             chain_lock_quorum_type: "llmq_test".to_string(),
             validator_set_quorum_size: 3,
+            chain_lock_quorum_size: 3,
             chain_lock_quorum_window: 24,
             block_spacing_ms: 5000,
             drive: Default::default(),
