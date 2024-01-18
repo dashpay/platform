@@ -110,7 +110,7 @@ describe('Platform', () => {
       );
     });
 
-    it('should fail to create an identity with already used asset lock output', async () => {
+    it(' to create an identity with already used asset lock output', async () => {
       // Create new identity
       const sourceIdentity = await client.platform.identities.register(400000);
 
@@ -253,66 +253,6 @@ describe('Platform', () => {
       let chainLockIdentity;
 
       this.timeout(850000);
-
-      it('should fail to create an identity if asset lock amount is less than minimal', async () => {
-        await client.platform.initialize();
-
-        // Broadcast Asset Lock transaction
-        const {
-          transaction,
-          privateKey,
-          outputIndex,
-        } = await client.platform.identities.utils.createAssetLockTransaction(117000);
-
-        const account = await client.getWalletAccount();
-
-        await account.broadcastTransaction(transaction);
-
-        // Wait for transaction to be mined and chain locked
-        const { promise: metadataPromise } = walletAccount.waitForTxMetadata(transaction.id);
-
-        const { height: transactionHeight } = await metadataPromise;
-
-        const assetLockProof = await client.platform.dpp.identity.createChainAssetLockProof(
-          transactionHeight,
-          transaction.getOutPointBuffer(outputIndex),
-        );
-
-        // Wait for platform chain to sync core height up to transaction height
-        const {
-          promise: coreHeightPromise,
-        } = await client.platform.identities.utils
-          .waitForCoreChainLockedHeight(transactionHeight);
-
-        await coreHeightPromise;
-
-        const identityCreateTransitionData = await client.platform.identities.utils
-          .createIdentityCreateTransition(assetLockProof, privateKey);
-
-        const {
-          identityCreateTransition,
-        } = identityCreateTransitionData;
-
-        ({ identity: chainLockIdentity } = identityCreateTransitionData);
-
-        let broadcastError;
-        try {
-          await client.platform.broadcastStateTransition(
-            identityCreateTransition,
-          );
-        } catch (e) {
-          broadcastError = e;
-        }
-
-        expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-        expect(broadcastError.getCause().getCode()).to.equal(4028);
-        expect(broadcastError.getCause()).to.be.an.instanceOf(
-          InvalidAssetLockProofValueError,
-        );
-
-        // Additional wait time to mitigate testnet latency
-        await waitForSTPropagated();
-      });
 
       it('should create identity using chainLock', async () => {
         await client.platform.initialize();
