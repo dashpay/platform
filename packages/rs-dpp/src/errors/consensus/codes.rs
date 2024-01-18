@@ -59,6 +59,7 @@ impl ErrorWithCode for BasicError {
             Self::DuplicateIndexNameError { .. } => 1048,
             Self::InvalidDataContractVersionError { .. } => 1050,
             Self::IncompatibleDataContractSchemaError { .. } => 1051,
+            Self::DataContractEmptySchemaError { .. } => 1069,
             Self::DataContractImmutablePropertiesUpdateError { .. } => 1052,
             Self::DataContractUniqueIndicesChangedError { .. } => 1053,
             Self::DataContractInvalidIndexDefinitionUpdateError { .. } => 1054,
