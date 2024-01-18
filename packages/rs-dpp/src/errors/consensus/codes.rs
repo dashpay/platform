@@ -89,7 +89,6 @@ impl ErrorWithCode for BasicError {
             Self::IdentityAssetLockTransactionOutputNotFoundError(_) => 1034,
             Self::InvalidAssetLockProofCoreChainHeightError(_) => 1035,
             Self::InvalidAssetLockProofTransactionHeightError(_) => 1036,
-            Self::InvalidAssetLockProofValueError(_) => 1049,
             Self::InvalidAssetLockTransactionOutputReturnSizeError(_) => 1037,
             Self::InvalidIdentityAssetLockTransactionError(_) => 1038,
             Self::InvalidIdentityAssetLockTransactionOutputError(_) => 1039,
@@ -178,6 +177,7 @@ impl ErrorWithCode for StateError {
             Self::MissingIdentityPublicKeyIdsError { .. } => 4024,
             Self::IdentityInsufficientBalanceError(_) => 4026,
             Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 4027,
+            Self::InvalidAssetLockProofValueError(_) => 4028,
         }
     }
 }

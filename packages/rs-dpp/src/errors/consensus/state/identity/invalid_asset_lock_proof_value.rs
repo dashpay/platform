@@ -1,10 +1,10 @@
-use crate::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
+use crate::consensus::state::state_error::StateError;
 use bincode::{Decode, Encode};
 
 #[derive(
@@ -38,6 +38,6 @@ impl InvalidAssetLockProofValueError {
 
 impl From<InvalidAssetLockProofValueError> for ConsensusError {
     fn from(err: InvalidAssetLockProofValueError) -> Self {
-        Self::BasicError(BasicError::InvalidAssetLockProofValueError(err))
+        Self::StateError(StateError::InvalidAssetLockProofValueError(err))
     }
 }

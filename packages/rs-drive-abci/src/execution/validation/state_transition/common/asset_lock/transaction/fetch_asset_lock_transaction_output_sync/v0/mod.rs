@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::identity::{
     IdentityAssetLockTransactionIsNotFoundError, IdentityAssetLockTransactionOutputNotFoundError,
-    InvalidAssetLockProofTransactionHeightError, InvalidAssetLockProofValueError,
+    InvalidAssetLockProofTransactionHeightError,
 };
 use dpp::dashcore::secp256k1::ThirtyTwoByteHash;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;

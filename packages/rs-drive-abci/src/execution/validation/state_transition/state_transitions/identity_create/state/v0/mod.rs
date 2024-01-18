@@ -1,9 +1,9 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use dpp::consensus::basic::identity::InvalidAssetLockProofValueError;
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 
+use dpp::consensus::state::identity::invalid_asset_lock_proof_value::InvalidAssetLockProofValueError;
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::dashcore::signer;
 use dpp::dashcore::signer::double_sha;
