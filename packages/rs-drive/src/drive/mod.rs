@@ -94,17 +94,12 @@ mod open;
 mod operations;
 #[cfg(feature = "full")]
 mod prove;
-#[cfg(feature = "full")]
-mod system_contracts_cache;
 /// Contains a set of useful grovedb proof verification functions
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod verify;
 
 #[cfg(feature = "full")]
 use crate::drive::cache::DriveCache;
-
-#[cfg(feature = "full")]
-use crate::drive::system_contracts_cache::SystemContracts;
 
 /// Drive struct
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -113,9 +108,6 @@ pub struct Drive {
     pub grove: GroveDb,
     /// Drive config
     pub config: DriveConfig,
-    /// Main contracts in the system
-    #[cfg(feature = "full")]
-    pub system_contracts: SystemContracts,
     /// Drive Cache
     #[cfg(feature = "full")]
     pub cache: RwLock<DriveCache>,

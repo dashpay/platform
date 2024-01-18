@@ -14,8 +14,9 @@ use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
 
-use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+use dpp::system_data_contracts::withdrawals_contract::v0::document_types::withdrawal;
 
+use dpp::data_contracts::SystemDataContract;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -247,13 +248,19 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
             DocumentOperationType::AddWithdrawalDocument {
                 owned_document_info,
             } => {
-                let contract = &drive.system_contracts.withdrawal_contract;
+                let cache = drive.cache.read().expect("should get cache lock");
+
+                let contract = cache
+                    .system_data_contracts
+                    .get_or_load(SystemDataContract::Withdrawals, platform_version)?;
+
+                drop(cache);
 
                 let document_type = contract.document_type_for_name(withdrawal::NAME)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,
-                    contract,
+                    contract: &contract,
                     document_type,
                 };
                 drive.add_document_for_contract_operations(

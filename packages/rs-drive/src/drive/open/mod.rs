@@ -1,6 +1,6 @@
+use crate::drive::cache::SystemDataContracts;
 use crate::drive::cache::{DataContractCache, DriveCache, ProtocolVersionsCache};
 use crate::drive::config::DriveConfig;
-use crate::drive::system_contracts_cache::SystemContracts;
 use crate::drive::Drive;
 use crate::error::Error;
 use grovedb::GroveDb;
@@ -39,9 +39,6 @@ impl Drive {
                 let drive = Drive {
                     grove,
                     config,
-                    system_contracts: SystemContracts::load_genesis_system_contracts(
-                        platform_version.protocol_version,
-                    )?,
                     cache: RwLock::new(DriveCache {
                         cached_contracts: DataContractCache::new(
                             data_contracts_global_cache_size,
@@ -49,6 +46,7 @@ impl Drive {
                         ),
                         genesis_time_ms,
                         protocol_versions_counter: ProtocolVersionsCache::new(),
+                        system_data_contracts: SystemDataContracts::new(),
                     }),
                 };
 

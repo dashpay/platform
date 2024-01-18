@@ -1,6 +1,6 @@
 use crate::state_transition_action::identity::identity_credit_withdrawal::v0::IdentityCreditWithdrawalTransitionActionV0;
 use dpp::data_contracts::withdrawals_contract;
-use dpp::data_contracts::withdrawals_contract::document_types::withdrawal;
+use dpp::data_contracts::withdrawals_contract::v0::document_types::withdrawal;
 use dpp::document::{Document, DocumentV0};
 use dpp::platform_value::platform_value;
 use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
@@ -24,7 +24,7 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
             withdrawal::properties::CORE_FEE_PER_BYTE: identity_credit_withdrawal.core_fee_per_byte,
             withdrawal::properties::POOLING: Pooling::Never,
             withdrawal::properties::OUTPUT_SCRIPT: identity_credit_withdrawal.output_script.as_bytes(),
-            withdrawal::properties::STATUS: withdrawals_contract::WithdrawalStatus::QUEUED,
+            withdrawal::properties::STATUS: withdrawals_contract::v0::WithdrawalStatus::QUEUED,
         });
 
         let withdrawal_document = DocumentV0 {

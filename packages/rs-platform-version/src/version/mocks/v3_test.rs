@@ -1,3 +1,4 @@
+use crate::version::contracts::SystemDataContractVersions;
 use crate::version::dpp_versions::{
     ContractVersions, CostVersions, DPPValidationVersions, DPPVersion, DataContractMethodVersions,
     DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions,
@@ -905,5 +906,12 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 random_public_and_private_key_data: 0,
             },
         },
+    },
+    system_data_contracts: SystemDataContractVersions {
+        withdrawals: 1,
+        dpns: 1,
+        dashpay: 1,
+        masternode_reward_shares: 1,
+        feature_flags: 1,
     },
 };

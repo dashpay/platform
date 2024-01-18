@@ -44,7 +44,7 @@ use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::IdentityV0;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
-use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+use drive::dpp::system_data_contracts::SystemDataContract;
 use drive::drive::batch::{
     DataContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
 };
@@ -81,8 +81,22 @@ impl<C> Platform<C> {
 
         // Create system identities and contracts
 
-        let dpns_contract =
-            load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)?;
+        let cache = self.drive.cache.read().unwrap();
+
+        let dpns_contract = cache
+            .system_data_contracts
+            .get_or_load(SystemDataContract::DPNS, platform_version)?;
+        let withdrawals_contract = cache
+            .system_data_contracts
+            .get_or_load(SystemDataContract::Withdrawals, platform_version)?;
+        let dashpay_contract = cache
+            .system_data_contracts
+            .get_or_load(SystemDataContract::Dashpay, platform_version)?;
+        let masternode_rewards_contract = cache
+            .system_data_contracts
+            .get_or_load(SystemDataContract::MasternodeRewards, platform_version)?;
+
+        drop(cache);
 
         let system_data_contract_types = BTreeMap::from_iter([
             (
@@ -95,10 +109,7 @@ impl<C> Platform<C> {
             (
                 SystemDataContract::Withdrawals,
                 (
-                    load_system_data_contract(
-                        SystemDataContract::Withdrawals,
-                        platform_version.protocol_version,
-                    )?,
+                    withdrawals_contract,
                     system_identity_public_keys.withdrawals_contract_owner(),
                 ),
             ),
@@ -116,20 +127,14 @@ impl<C> Platform<C> {
             (
                 SystemDataContract::Dashpay,
                 (
-                    load_system_data_contract(
-                        SystemDataContract::Dashpay,
-                        platform_version.protocol_version,
-                    )?,
+                    dashpay_contract,
                     system_identity_public_keys.dashpay_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::MasternodeRewards,
                 (
-                    load_system_data_contract(
-                        SystemDataContract::MasternodeRewards,
-                        platform_version.protocol_version,
-                    )?,
+                    masternode_rewards_contract,
                     system_identity_public_keys.masternode_reward_shares_contract_owner(),
                 ),
             ),

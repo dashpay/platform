@@ -1,12 +1,12 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contracts::withdrawals_contract::WithdrawalStatus;
+use dpp::data_contracts::withdrawals_contract::v0::WithdrawalStatus;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::system_data_contracts::withdrawals_contract;
-use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+use dpp::system_data_contracts::withdrawals_contract::v0::document_types::withdrawal;
 use dpp::version::PlatformVersion;
 use std::collections::BTreeMap;
 
@@ -61,7 +61,7 @@ where
         };
 
         let broadcasted_withdrawal_documents = self.drive.fetch_withdrawal_documents_by_status(
-            withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+            withdrawals_contract::v0::WithdrawalStatus::BROADCASTED.into(),
             Some(transaction),
             platform_version,
         )?;
@@ -220,7 +220,7 @@ mod tests {
     use dpp::document::DocumentV0Getters;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;
-    use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+    use dpp::system_data_contracts::withdrawals_contract::v0::document_types::withdrawal;
     use dpp::version::PlatformVersion;
     use dpp::withdrawal::Pooling;
     use dpp::{
@@ -356,11 +356,9 @@ mod tests {
             proposer_results: None,
         };
 
-        let data_contract = load_system_data_contract(
-            SystemDataContract::Withdrawals,
-            platform_version.protocol_version,
-        )
-        .expect("to load system data contract");
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, &platform_version)
+                .expect("to load system data contract");
 
         setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 
@@ -374,7 +372,7 @@ mod tests {
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never,
                     "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
-                    "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
+                    "status": withdrawals_contract::v0::WithdrawalStatus::BROADCASTED as u8,
                     "transactionIndex": 1u64,
                     "transactionSignHeight": 93u64,
                     "transactionId": Identifier::new([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
@@ -403,7 +401,7 @@ mod tests {
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
                     "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
-                    "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
+                    "status": withdrawals_contract::v0::WithdrawalStatus::BROADCASTED as u8,
                     "transactionIndex": 2u64,
                     "transactionSignHeight": 10u64,
                     "transactionId": Identifier::new([3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
@@ -432,7 +430,7 @@ mod tests {
         let documents = platform
             .drive
             .fetch_withdrawal_documents_by_status(
-                withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
+                withdrawals_contract::v0::WithdrawalStatus::EXPIRED.into(),
                 Some(&transaction),
                 platform_version,
             )
@@ -447,7 +445,7 @@ mod tests {
         let documents = platform
             .drive
             .fetch_withdrawal_documents_by_status(
-                withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
+                withdrawals_contract::v0::WithdrawalStatus::COMPLETE.into(),
                 Some(&transaction),
                 platform_version,
             )

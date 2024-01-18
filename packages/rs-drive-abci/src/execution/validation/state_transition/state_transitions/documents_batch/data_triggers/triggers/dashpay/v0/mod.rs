@@ -10,7 +10,8 @@ use dpp::ProtocolError;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
-use dpp::system_data_contracts::dashpay_contract::document_types::contact_request::properties::{CORE_HEIGHT_CREATED_AT, TO_USER_ID};
+use dpp::system_data_contracts::dashpay_contract::v0::document_types::contact_request::properties
+::{CORE_HEIGHT_CREATED_AT, TO_USER_ID};
 use dpp::version::PlatformVersion;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};

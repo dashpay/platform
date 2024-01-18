@@ -15,6 +15,7 @@ mod tests {
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
     };
+    use dpp::data_contracts::SystemDataContract;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::platform_value::Value;
     use dpp::prelude::Identity;
@@ -260,8 +261,27 @@ mod tests {
             platform_version,
         );
 
+        let cache = platform
+            .drive
+            .cache
+            .read()
+            .expect("expected to get a read lock on the cache");
+
+        let dpns_contract = cache
+            .system_data_contracts
+            .get_or_load(SystemDataContract::DPNS, &platform_version)
+            .expect("expected to get dpns contract");
+
+        drop(cache);
+
+        let dpns_contract_for_type = dpns_contract.clone();
+
+        let domain_document_type_ref = dpns_contract_for_type
+            .document_type_for_name("domain")
+            .expect("expected a profile document type");
+
         let document_op_1 = DocumentOp {
-            contract: platform.drive.system_contracts.dpns_contract.clone(),
+            contract: dpns_contract.clone(),
             action: DocumentAction::DocumentActionInsertSpecific(
                 BTreeMap::from([
                     ("label".into(), "simon1".into()),
@@ -280,17 +300,11 @@ mod tests {
                 DocumentFieldFillType::FillIfNotRequired,
                 DocumentFieldFillSize::AnyDocumentFillSize,
             ),
-            document_type: platform
-                .drive
-                .system_contracts
-                .dpns_contract
-                .document_type_for_name("domain")
-                .expect("expected a profile document type")
-                .to_owned_document_type(),
+            document_type: domain_document_type_ref.to_owned_document_type(),
         };
 
         let document_op_2 = DocumentOp {
-            contract: platform.drive.system_contracts.dpns_contract.clone(),
+            contract: dpns_contract,
             action: DocumentAction::DocumentActionInsertSpecific(
                 BTreeMap::from([
                     ("label".into(), "simon1".into()),
@@ -309,13 +323,7 @@ mod tests {
                 DocumentFieldFillType::FillIfNotRequired,
                 DocumentFieldFillSize::AnyDocumentFillSize,
             ),
-            document_type: platform
-                .drive
-                .system_contracts
-                .dpns_contract
-                .document_type_for_name("domain")
-                .expect("expected a profile document type")
-                .to_owned_document_type(),
+            document_type: domain_document_type_ref.to_owned_document_type(),
         };
 
         let strategy = NetworkStrategy {
