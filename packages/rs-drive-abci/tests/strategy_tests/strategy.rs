@@ -171,6 +171,7 @@ pub struct NetworkStrategy {
     pub verify_state_transition_results: bool,
     pub max_tx_bytes_per_block: u64,
     pub independent_process_proposal_verification: bool,
+    pub sign_chain_locks: bool,
 }
 
 impl Default for NetworkStrategy {
@@ -194,6 +195,7 @@ impl Default for NetworkStrategy {
             verify_state_transition_results: false,
             max_tx_bytes_per_block: 44800,
             independent_process_proposal_verification: false,
+            sign_chain_locks: false,
         }
     }
 }

@@ -58,6 +58,7 @@ mod tests {
             query_testing: None,
             verify_state_transition_results: false,
             independent_process_proposal_verification: true,
+            sign_chain_locks: true,
             ..Default::default()
         };
 

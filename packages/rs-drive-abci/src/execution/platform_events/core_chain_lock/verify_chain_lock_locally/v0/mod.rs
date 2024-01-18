@@ -81,7 +81,7 @@ where
 
         // Based on the deterministic masternode list at the given height, a quorum must be selected that was active at the time this block was mined
 
-        let quorum = self.choose_quorum(
+        let quorum = Platform::<C>::choose_quorum(
             self.config.chain_lock_quorum_type(),
             quorums,
             request_id.as_ref(),

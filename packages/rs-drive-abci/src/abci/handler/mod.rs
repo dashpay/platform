@@ -367,6 +367,12 @@ where
             elapsed_time_ms,
         );
 
+        let a = self.platform
+            .drive
+            .grove
+            .root_hash(Some(transaction))
+            .unwrap().expect("a"); //GroveDb errors are system errors
+
         Ok(response)
     }
 

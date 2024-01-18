@@ -20,7 +20,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 
 use dashcore_rpc::json::{ExtendedQuorumListResult, SoftforkInfo};
-use dpp::dashcore::ChainLock;
+use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
@@ -28,16 +28,20 @@ use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
 use drive_abci::platform_types::epoch_info::v0::EpochInfoV0;
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
-use drive_abci::rpc::core::MockCoreRPCLike;
+use drive_abci::rpc::core::{CoreRPCLike, MockCoreRPCLike};
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use rand::prelude::{SliceRandom, StdRng};
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 use std::collections::{BTreeMap, HashMap};
 use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::serializers::timestamp::FromMilis;
 use tenderdash_abci::Application;
+use dpp::bls_signatures::PrivateKey;
+use dpp::dashcore::consensus::Encodable;
+use dpp::dashcore::hashes::{HashEngine, sha256d};
+use platform_version::version::PlatformVersion;
 
 pub(crate) fn run_chain_for_strategy(
     platform: &mut Platform<MockCoreRPCLike>,
@@ -55,6 +59,18 @@ pub(crate) fn run_chain_for_strategy(
 
     let any_changes_in_strategy = strategy.proposer_strategy.any_is_set();
     let updated_proposers_in_strategy = strategy.proposer_strategy.any_kind_of_update_is_set();
+
+    let max_core_height = strategy.initial_core_height + strategy.core_height_increase.max_event_count() as u32 * block_count as u32;
+
+    let chain_lock_quorum_type = config.chain_lock_quorum_type();
+
+    let sign_chain_locks = strategy.sign_chain_locks;
+
+    let mut core_blocks = BTreeMap::new();
+    for x in strategy.initial_core_height..max_core_height {
+        let block_hash : [u8;32] = rng.gen();
+        core_blocks.insert(x, block_hash);
+    }
 
     let (
         initial_masternodes_with_updates,
@@ -525,19 +541,79 @@ pub(crate) fn run_chain_for_strategy(
     let core_height_increase = strategy.core_height_increase.clone();
     let mut core_height_rng = rng.clone();
 
+    let chain_lock_quorums_private_keys: BTreeMap<QuorumHash, [u8; 32]> = chain_lock_quorums.iter().map(|(quorum_hash, info)| {
+        let bytes = info.private_key.to_bytes();
+        let fixed_bytes: [u8; 32] = bytes.as_slice().try_into().expect("Expected a byte array of length 32");
+        (quorum_hash.clone(), fixed_bytes)
+    }).collect();
+
     platform
         .core_rpc
         .expect_get_best_chain_lock()
         .returning(move || {
-            let chain_lock = ChainLock {
-                block_height: core_height,
-                block_hash: BlockHash::from_byte_array([1; 32]),
-                signature: [2; 96].into(),
-            };
 
-            core_height += core_height_increase.events_if_hit(&mut core_height_rng) as u32;
+            let block_hash = *core_blocks.get(&core_height).expect("expected a block hash to be known");
 
-            Ok(chain_lock)
+            if sign_chain_locks {
+
+                // From DIP 8: https://github.com/dashpay/dips/blob/master/dip-0008.md#finalization-of-signed-blocks
+                // The request id is SHA256("clsig", blockHeight) and the message hash is the block hash of the previously successful attempt.
+
+                let mut engine = QuorumSigningRequestId::engine();
+
+                // Prefix
+                let prefix_len = VarInt("clsig".len() as u64);
+                prefix_len
+                    .consensus_encode(&mut engine)
+                    .expect("expected to encode the prefix");
+
+                engine.input("clsig".as_bytes());
+                engine.input(core_height.to_le_bytes().as_slice());
+
+                let request_id = QuorumSigningRequestId::from_engine(engine);
+
+                // Based on the deterministic masternode list at the given height, a quorum must be selected that was active at the time this block was mined
+
+                let quorum = Platform::<MockCoreRPCLike>::choose_quorum_thread_safe(
+                    chain_lock_quorum_type,
+                    &chain_lock_quorums_private_keys,
+                    request_id.as_ref(),
+                    PlatformVersion::latest(), //it should be okay to use latest here
+                ).expect("expected a quorum");
+
+                let (quorum_hash, quorum_private_key) = quorum.expect("expected to find a quorum");
+
+                // The signature must verify against the quorum public key and SHA256(llmqType, quorumHash, SHA256(height), blockHash). llmqType and quorumHash must be taken from the quorum selected in 1.
+
+                let mut engine = sha256d::Hash::engine();
+
+                engine.input(&[chain_lock_quorum_type as u8]);
+                engine.input(quorum_hash.as_byte_array());
+                engine.input(request_id.as_byte_array());
+                engine.input(&block_hash);
+
+                let message_digest = sha256d::Hash::from_engine(engine);
+
+                let quorum_private_key = PrivateKey::from_bytes(quorum_private_key.as_slice(), false).expect("expected to have a valid private key");
+                let signature = quorum_private_key.sign(message_digest.as_byte_array());
+                let chain_lock = ChainLock {
+                    block_height: core_height,
+                    block_hash: BlockHash::from_byte_array(block_hash),
+                    signature: (*signature.to_bytes()).into(),
+                };
+
+                core_height += core_height_increase.events_if_hit(&mut core_height_rng) as u32;
+
+                Ok(chain_lock)
+            } else {
+                let chain_lock = ChainLock {
+                    block_height: core_height,
+                    block_hash: BlockHash::from_byte_array(block_hash),
+                    signature: [2; 96].into(),
+                };
+
+                Ok(chain_lock)
+            }
         });
 
     create_chain_for_strategy(
