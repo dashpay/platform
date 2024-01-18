@@ -37,8 +37,7 @@ use dpp::consensus::basic::BasicError::{
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     IdentityAssetLockTransactionOutputNotFoundError, IncompatibleProtocolVersionError,
     IncompatibleRe2PatternError, InvalidAssetLockProofCoreChainHeightError,
-    InvalidAssetLockProofTransactionHeightError, InvalidAssetLockProofValueError,
-    InvalidAssetLockTransactionOutputReturnSizeError,
+    InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
     InvalidIdentityAssetLockProofChainLockValidationError,
     InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
     InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
@@ -216,6 +215,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::DataContractConfigUpdateError(e) => {
             DataContractConfigUpdateErrorWasm::from(e).into()
         }
+        StateError::InvalidAssetLockProofValueError(e) => {
+            InvalidAssetLockProofValueErrorWasm::from(e).into()
+        }
         // TODO(versioning): restore
         _ => todo!(),
     }
@@ -375,7 +377,6 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         InvalidAssetLockProofTransactionHeightError(e) => {
             InvalidAssetLockProofTransactionHeightErrorWasm::from(e).into()
         }
-        InvalidAssetLockProofValueError(e) => InvalidAssetLockProofValueErrorWasm::from(e).into(),
         InvalidIdentityCreditWithdrawalTransitionCoreFeeError(e) => {
             InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm::from(e).into()
         }

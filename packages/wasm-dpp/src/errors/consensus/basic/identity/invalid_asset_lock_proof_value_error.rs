@@ -1,7 +1,7 @@
-use dpp::consensus::basic::identity::InvalidAssetLockProofValueError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 
+use dpp::consensus::state::identity::invalid_asset_lock_proof_value::InvalidAssetLockProofValueError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidAssetLockProofValueError)]
