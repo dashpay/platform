@@ -143,8 +143,12 @@ where
                     found_valid_by_core,
                 } = match verification_result {
                     Ok(verification_result) => verification_result,
+                    Err(Error::Execution(e)) => {
+                        // This will happen only if an internal version error
+                        return Err(Error::Execution(e));
+                    }
                     Err(e) => {
-                        // This will happen if the signature is not
+                        // This will happen only if a core rpc error
                         return Ok(ValidationResult::new_with_error(
                             AbciError::InvalidChainLock(e.to_string()).into(),
                         ));
