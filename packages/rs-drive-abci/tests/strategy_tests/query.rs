@@ -414,7 +414,7 @@ mod tests {
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+                validator_set_rotation_block_count: 100,
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
@@ -519,7 +519,7 @@ mod tests {
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+                validator_set_rotation_block_count: 100,
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
@@ -625,7 +625,7 @@ mod tests {
             chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+                validator_set_rotation_block_count: 100,
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,

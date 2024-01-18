@@ -70,7 +70,7 @@ mod tests {
                     chain_lock_quorum_type: "llmq_100_67".to_string(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
-                        validator_set_quorum_rotation_block_count: 125,
+                        validator_set_rotation_block_count: 125,
                         epoch_time_length_s: 1576800,
                         ..Default::default()
                     },
@@ -343,7 +343,7 @@ mod tests {
                     chain_lock_quorum_type: "llmq_100_67".to_string(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
-                        validator_set_quorum_rotation_block_count: 30,
+                        validator_set_rotation_block_count: 30,
                         epoch_time_length_s: one_hour_in_s,
                         ..Default::default()
                     },
@@ -606,7 +606,7 @@ mod tests {
                     chain_lock_quorum_type: "llmq_100_67".to_string(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
-                        validator_set_quorum_rotation_block_count: 80,
+                        validator_set_rotation_block_count: 80,
                         epoch_time_length_s: 1576800,
                         ..Default::default()
                     },
@@ -869,7 +869,7 @@ mod tests {
                     chain_lock_quorum_type: "llmq_100_67".to_string(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
-                        validator_set_quorum_rotation_block_count: 50,
+                        validator_set_rotation_block_count: 50,
                         epoch_time_length_s: 1576800,
                         ..Default::default()
                     },
@@ -1237,7 +1237,7 @@ mod tests {
                     chain_lock_quorum_type: "llmq_100_67".to_string(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
-                        validator_set_quorum_rotation_block_count: 30,
+                        validator_set_rotation_block_count: 30,
                         epoch_time_length_s: 1576800,
                         ..Default::default()
                     },
