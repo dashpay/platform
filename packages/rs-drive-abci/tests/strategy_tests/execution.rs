@@ -1,10 +1,7 @@
 use crate::masternodes;
 use crate::masternodes::{GenerateTestMasternodeUpdates, MasternodeListItemWithUpdates};
 use crate::query::ProofVerification;
-use crate::strategy::{
-    ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
-    ValidatorVersionMigration,
-};
+use crate::strategy::{ChainExecutionOutcome, ChainExecutionParameters, CoreHeightIncrease, NetworkStrategy, StrategyRandomness, ValidatorVersionMigration};
 use crate::verify_state_transitions::verify_state_transitions_were_or_were_not_executed;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{BlockHash, ProTxHash, QuorumHash};
@@ -60,16 +57,19 @@ pub(crate) fn run_chain_for_strategy(
     let any_changes_in_strategy = strategy.proposer_strategy.any_is_set();
     let updated_proposers_in_strategy = strategy.proposer_strategy.any_kind_of_update_is_set();
 
-    let max_core_height = strategy.initial_core_height
-        + strategy.core_height_increase.max_event_count() as u32 * block_count as u32;
+    let core_height_increase = strategy.core_height_increase.clone();
+
+    let max_core_height = core_height_increase.max_core_height(block_count, strategy.initial_core_height);
 
     let chain_lock_quorum_type = config.chain_lock_quorum_type();
 
     let sign_chain_locks = strategy.sign_chain_locks;
 
     let mut core_blocks = BTreeMap::new();
-    for x in strategy.initial_core_height..max_core_height {
-        let block_hash: [u8; 32] = rng.gen();
+    let mut block_rng = StdRng::seed_from_u64(rng.gen()); // so we don't need to regenerate tests
+
+    for x in strategy.initial_core_height..max_core_height + 1 {
+        let block_hash: [u8; 32] = block_rng.gen();
         core_blocks.insert(x, block_hash);
     }
 
@@ -79,9 +79,7 @@ pub(crate) fn run_chain_for_strategy(
         with_extra_masternodes_with_updates,
         with_extra_hpmns_with_updates,
     ) = if any_changes_in_strategy {
-        let approximate_end_core_height =
-            ((block_count as f64) * strategy.core_height_increase.average_event_count()) as u32;
-        let end_core_height = approximate_end_core_height * 2; //let's be safe
+        let end_core_height = strategy.core_height_increase.max_core_height(block_count, strategy.initial_core_height);
         let generate_updates = if updated_proposers_in_strategy {
             Some(GenerateTestMasternodeUpdates {
                 start_core_height: config.abci.genesis_core_height,
@@ -539,7 +537,7 @@ pub(crate) fn run_chain_for_strategy(
 
     let mut core_height = strategy.initial_core_height;
 
-    let core_height_increase = strategy.core_height_increase.clone();
+    let mut core_height_increase = strategy.core_height_increase.clone();
     let mut core_height_rng = rng.clone();
 
     let chain_lock_quorums_private_keys: BTreeMap<QuorumHash, [u8; 32]> = chain_lock_quorums
@@ -558,11 +556,24 @@ pub(crate) fn run_chain_for_strategy(
         .core_rpc
         .expect_get_best_chain_lock()
         .returning(move || {
-            let block_hash = *core_blocks
-                .get(&core_height)
-                .expect("expected a block hash to be known");
+            let block_height = match &mut core_height_increase {
+                CoreHeightIncrease::NoCoreHeightIncrease | CoreHeightIncrease::RandomCoreHeightIncrease(_) => {
+                    core_height
+                }
+                CoreHeightIncrease::KnownCoreHeightIncreases(core_block_heights) => {
+                    if core_block_heights.len() == 1 {
+                        *core_block_heights.first().unwrap()
+                    } else {
+                        core_block_heights.remove(0)
+                    }
+                }
+            };
 
-            if sign_chain_locks {
+            let block_hash = *core_blocks
+                .get(&block_height)
+                .expect(format!("expected a block hash to be known for {}", core_height).as_str());
+
+            let chain_lock = if sign_chain_locks {
                 // From DIP 8: https://github.com/dashpay/dips/blob/master/dip-0008.md#finalization-of-signed-blocks
                 // The request id is SHA256("clsig", blockHeight) and the message hash is the block hash of the previously successful attempt.
 
@@ -612,7 +623,7 @@ pub(crate) fn run_chain_for_strategy(
                     signature: (*signature.to_bytes()).into(),
                 };
 
-                core_height += core_height_increase.events_if_hit(&mut core_height_rng) as u32;
+
 
                 Ok(chain_lock)
             } else {
@@ -623,7 +634,13 @@ pub(crate) fn run_chain_for_strategy(
                 };
 
                 Ok(chain_lock)
-            }
+            };
+
+            if let CoreHeightIncrease::RandomCoreHeightIncrease(core_height_increase) = &core_height_increase {
+                core_height += core_height_increase.events_if_hit(&mut core_height_rng) as u32;
+            };
+
+            chain_lock
         });
 
     platform
@@ -811,21 +828,23 @@ pub(crate) fn continue_chain_for_strategy(
     let mut state_transition_results_per_block = BTreeMap::new();
 
     for block_height in block_start..(block_start + block_count) {
+        let state = platform
+            .state
+            .read()
+            .expect("lock is poisoned");
         let epoch_info = EpochInfoV0::calculate(
             first_block_time,
             current_time_ms,
-            platform
-                .state
-                .read()
-                .expect("lock is poisoned")
-                .last_committed_block_info()
+            state.last_committed_block_info()
                 .as_ref()
                 .map(|block_info| block_info.basic_info().time_ms),
             config.execution.epoch_time_length_s,
         )
         .expect("should calculate epoch info");
 
-        current_core_height += strategy.core_height_increase.events_if_hit(&mut rng) as u32;
+        current_core_height = state.last_committed_core_height();
+
+        drop(state);
 
         let block_info = BlockInfo {
             time_ms: current_time_ms,

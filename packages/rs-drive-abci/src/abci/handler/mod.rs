@@ -182,9 +182,11 @@ where
 
         let state = self.platform.state.read().unwrap();
 
+        let last_committed_core_height = state.last_committed_core_height();
+
         let core_chain_lock_update = match self.platform.core_rpc.get_best_chain_lock() {
             Ok(latest_chain_lock) => {
-                if latest_chain_lock.block_height > state.last_committed_core_height() {
+                if state.last_committed_block_info().is_none() || latest_chain_lock.block_height > last_committed_core_height {
                     Some(latest_chain_lock)
                 } else {
                     None
@@ -226,6 +228,8 @@ where
                 request.height
             );
             block_proposal.core_chain_locked_height = core_chain_lock_update.block_height;
+        } else {
+            block_proposal.core_chain_locked_height = last_committed_core_height;
         }
 
         // Prepare transaction

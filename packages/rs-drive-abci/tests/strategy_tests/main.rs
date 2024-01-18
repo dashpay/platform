@@ -94,6 +94,7 @@ mod tests {
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
     use tenderdash_abci::proto::types::CoreChainLock;
     use tenderdash_abci::Application;
+    use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
 
     pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
         let mut quorums = QuorumListExtendedInfo::new();
@@ -136,10 +137,6 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -185,10 +182,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -234,10 +228,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -362,10 +353,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: Some(FailureStrategy {
@@ -497,10 +485,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -539,7 +524,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99869074420)
+        assert_eq!(balance, 99868891100)
     }
 
     #[test]
@@ -560,10 +545,10 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.01),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -609,10 +594,10 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.5),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -666,10 +651,10 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.5),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -728,10 +713,10 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 5..6,
                 chance_per_block: Some(0.5),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: true,
             failure_testing: None,
@@ -805,10 +790,10 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: Some(0.2),
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Frequency {
                     times_per_block_range: 1..3,
@@ -869,10 +854,10 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: Some(0.2),
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Frequency {
                     times_per_block_range: 1..3,
@@ -936,10 +921,10 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: Some(0.2),
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 updated_hpmns: Frequency {
                     times_per_block_range: 1..3,
@@ -1030,10 +1015,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1086,10 +1068,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1135,7 +1114,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "7185a9b987f4fe7290f048ccdb2935d92446c240b9361be46a20f956164a9378".to_string()
+            "3c6bd30ad909138e7b119ce92305fc328ae1110771b1395425495b6fe97f2c08".to_string()
         )
     }
 
@@ -1165,10 +1144,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1271,10 +1247,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1372,10 +1345,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1449,10 +1419,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1554,10 +1521,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1659,10 +1623,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1709,7 +1670,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "5dfc31d164388c22154e10629030edb5557620c5fcd5c87ffeff5f4e81bdb657".to_string()
+            "6964587ace67e307a3e48f3dc85c5d229d00123e46cca0267b79482a2ec8b8f2".to_string()
         )
     }
 
@@ -1778,10 +1739,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1903,10 +1861,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1973,10 +1928,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2049,10 +2001,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2132,10 +2081,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2222,10 +2168,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2276,10 +2219,10 @@ mod tests {
             extra_normal_mns: 0,
             validator_quorum_count: 10,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: true,
             failure_testing: None,
@@ -2435,10 +2378,10 @@ mod tests {
             extra_normal_mns: 0,
             validator_quorum_count: 100,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: true,
             failure_testing: None,
@@ -2504,7 +2447,7 @@ mod tests {
         );
         assert_eq!(
             masternodes_fingerprint_a,
-            "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
+            "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
         let masternodes_fingerprint_b = hash_to_hex_string(
             outcome_b
@@ -2515,7 +2458,7 @@ mod tests {
         );
         assert_eq!(
             masternodes_fingerprint_b,
-            "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
+            "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
 
         let last_app_hash_a = outcome_a
@@ -2565,10 +2508,10 @@ mod tests {
             extra_normal_mns: 0,
             validator_quorum_count: 100,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: true,
             failure_testing: None,
@@ -2633,7 +2576,7 @@ mod tests {
         );
         assert_eq!(
             masternodes_fingerprint_a,
-            "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
+            "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
         let masternodes_fingerprint_b = hash_to_hex_string(
             outcome_b
@@ -2644,7 +2587,7 @@ mod tests {
         );
         assert_eq!(
             masternodes_fingerprint_b,
-            "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
+            "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
 
         let last_app_hash_a = outcome_a
@@ -2672,8 +2615,8 @@ mod tests {
             .into_iter()
             .filter(|(_, balance)| *balance != 0)
             .count();
-        // we have a maximum 90 quorums, that could have been used, 4 were used twice
-        assert_eq!(balance_count, 86);
+        // we have a maximum 90 quorums, that could have been used, 6 were used twice
+        assert_eq!(balance_count, 84);
     }
 
     #[test]
@@ -2695,10 +2638,7 @@ mod tests {
             extra_normal_mns: 0,
             validator_quorum_count: 100,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2829,10 +2769,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,

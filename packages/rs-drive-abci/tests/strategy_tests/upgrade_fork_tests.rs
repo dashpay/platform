@@ -52,10 +52,7 @@ mod tests {
                         proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
                         upgrade_three_quarters_life: 0.1,
                     }),
-                    core_height_increase: Frequency {
-                        times_per_block_range: Default::default(),
-                        chance_per_block: None,
-                    },
+
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -324,10 +321,7 @@ mod tests {
                         proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
                         upgrade_three_quarters_life: 0.2,
                     }),
-                    core_height_increase: Frequency {
-                        times_per_block_range: Default::default(),
-                        chance_per_block: None,
-                    },
+
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -588,10 +582,7 @@ mod tests {
                         proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
                         upgrade_three_quarters_life: 5.0, //it will take many epochs before we get enough nodes
                     }),
-                    core_height_increase: Frequency {
-                        times_per_block_range: Default::default(),
-                        chance_per_block: None,
-                    },
+
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -851,10 +842,7 @@ mod tests {
                         proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
                         upgrade_three_quarters_life: 5.0,
                     }),
-                    core_height_increase: Frequency {
-                        times_per_block_range: Default::default(),
-                        chance_per_block: None,
-                    },
+
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -1034,10 +1022,7 @@ mod tests {
                         ],
                         upgrade_three_quarters_life: 0.1,
                     }),
-                    core_height_increase: Frequency {
-                        times_per_block_range: Default::default(),
-                        chance_per_block: None,
-                    },
+
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -1219,10 +1204,7 @@ mod tests {
                         ],
                         upgrade_three_quarters_life: 0.75,
                     }),
-                    core_height_increase: Frequency {
-                        times_per_block_range: Default::default(),
-                        chance_per_block: None,
-                    },
+
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -1334,10 +1316,7 @@ mod tests {
                         ],
                         upgrade_three_quarters_life: 0.5,
                     }),
-                    core_height_increase: Frequency {
-                        times_per_block_range: Default::default(),
-                        chance_per_block: None,
-                    },
+
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,

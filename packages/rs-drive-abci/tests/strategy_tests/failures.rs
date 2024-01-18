@@ -26,6 +26,7 @@ mod tests {
     use simple_signer::signer::SimpleSigner;
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use tenderdash_abci::proto::types::CoreChainLock;
+    use crate::strategy::CoreHeightIncrease::{KnownCoreHeightIncreases, NoCoreHeightIncrease};
 
     #[test]
     fn run_chain_insert_one_new_identity_and_a_contract_with_bad_update() {
@@ -66,10 +67,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: Some(FailureStrategy {
@@ -145,10 +143,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: Some(FailureStrategy {
@@ -350,11 +345,7 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
-
+            core_height_increase: KnownCoreHeightIncreases(vec![10, 11]),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: Some(FailureStrategy {
@@ -369,23 +360,6 @@ mod tests {
             ..Default::default()
         };
 
-        let mut core_block_heights = vec![10, 11];
-
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                let block_height = if core_block_heights.len() == 1 {
-                    *core_block_heights.first().unwrap()
-                } else {
-                    core_block_heights.remove(0)
-                };
-                Ok(ChainLock {
-                    block_height,
-                    block_hash: BlockHash::from_byte_array([1; 32]),
-                    signature: [2; 96].into(),
-                })
-            });
         // On the first block we only have identities and contracts
         let outcome =
             run_chain_for_strategy(&mut platform, 2, strategy.clone(), config.clone(), 15);

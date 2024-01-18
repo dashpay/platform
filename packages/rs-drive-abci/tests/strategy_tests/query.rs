@@ -353,6 +353,7 @@ mod tests {
     use dpp::dashcore::{BlockHash, ChainLock};
     use tenderdash_abci::proto::types::CoreChainLock;
     use tenderdash_abci::Application;
+    use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
 
     macro_rules! extract_single_variant_or_panic {
         ($expression:expr, $pattern:pat, $binding:ident) => {
@@ -396,10 +397,10 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.5),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -501,10 +502,10 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.5),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -607,10 +608,10 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.5),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,

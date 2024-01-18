@@ -12,6 +12,7 @@ mod tests {
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::Strategy;
+    use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
 
     #[test]
     fn run_chain_random_bans() {
@@ -31,10 +32,10 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Default::default(),
                 removed_hpmns: Default::default(),
@@ -130,10 +131,10 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Default::default(),
                 removed_hpmns: Frequency {
@@ -215,10 +216,10 @@ mod tests {
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Default::default(),
                 removed_hpmns: Default::default(),
