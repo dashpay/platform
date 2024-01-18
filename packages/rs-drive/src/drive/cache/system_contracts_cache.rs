@@ -22,7 +22,7 @@ impl SystemDataContracts {
             contracts: Cache::new(50),
         }
     }
-    /// Retrieves a reference to a `DataContract` from the cache, or loads it if not already present.
+    /// Retrieves a `DataContract` from the cache, or loads it if not already present.
     ///
     /// This function takes a `SystemDataContract` and a reference to a `PlatformVersion` as arguments.
     /// It constructs a key using the `contract` and the `withdrawals` field of `system_data_contracts`
@@ -36,7 +36,7 @@ impl SystemDataContracts {
     ///
     /// # Returns
     ///
-    /// * `Result<&DataContract, Error>` - A result that contains a reference to the `DataContract` if successful,
+    /// * `Result<DataContract, Error>` - A result that contains a reference to the `DataContract` if successful,
     /// or an `Error` if the loading operation fails.
     ///
     /// # Panics
