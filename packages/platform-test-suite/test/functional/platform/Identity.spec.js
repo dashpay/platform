@@ -110,7 +110,7 @@ describe('Platform', () => {
       );
     });
 
-    it(' to create an identity with already used asset lock output', async () => {
+    it('should fail to create an identity with already used asset lock output', async () => {
       // Create new identity
       const sourceIdentity = await client.platform.identities.register(400000);
 
