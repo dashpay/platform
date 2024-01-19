@@ -952,7 +952,7 @@ dependencies = [
  "prost 0.11.9",
  "serde",
  "serde_bytes",
- "tenderdash-proto 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci)",
+ "tenderdash-proto",
  "tonic",
  "tonic-build",
 ]
@@ -1026,16 +1026,45 @@ source = "git+https://github.com/dashpay/rust-dashcore?branch=master#35a166e7625
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.1"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#016e3af953fe92e0e58a8fe2b3958334e318b6c0"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc#b9482f1d02b469f146404f9ee6d9d9fe68d3b99a"
 dependencies = [
  "dashcore-private",
- "dashcore-rpc-json",
+ "dashcore-rpc-json 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc)",
  "env_logger 0.10.1",
  "hex",
  "jsonrpc",
  "log",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "dashcore-rpc"
+version = "0.15.1"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#016e3af953fe92e0e58a8fe2b3958334e318b6c0"
+dependencies = [
+ "dashcore-private",
+ "dashcore-rpc-json 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=master)",
+ "env_logger 0.10.1",
+ "hex",
+ "jsonrpc",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "dashcore-rpc-json"
+version = "0.15.1"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc#b9482f1d02b469f146404f9ee6d9d9fe68d3b99a"
+dependencies = [
+ "bincode 2.0.0-rc.3",
+ "dashcore",
+ "hex",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "serde_with 2.3.3",
 ]
 
 [[package]]
@@ -1268,7 +1297,7 @@ dependencies = [
  "ciborium",
  "clap 4.4.11",
  "dapi-grpc",
- "dashcore-rpc",
+ "dashcore-rpc 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc)",
  "delegate",
  "derive_more",
  "dotenvy",
@@ -1299,7 +1328,7 @@ dependencies = [
  "simple-signer",
  "strategy-tests",
  "tempfile",
- "tenderdash-abci 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2)",
+ "tenderdash-abci",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -1320,7 +1349,7 @@ dependencies = [
  "lazy_static",
  "serde",
  "serde_json",
- "tenderdash-abci 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci)",
+ "tenderdash-abci",
  "thiserror",
  "tracing",
 ]
@@ -3462,7 +3491,7 @@ dependencies = [
  "bincode 2.0.0-rc.3",
  "ciborium",
  "dapi-grpc",
- "dashcore-rpc",
+ "dashcore-rpc 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=master)",
  "data-contracts",
  "derive_more",
  "dotenvy",
@@ -3909,7 +3938,7 @@ version = "1.0.0-dev.3"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
- "dashcore-rpc",
+ "dashcore-rpc 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=master)",
  "dpp",
 ]
 
@@ -4132,7 +4161,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-abci"
 version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2#6ebfaa31052f7ad538d6589323e5daf7e5e55999"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/withdrawals#b02ef2770999cfbc5dedd0de0803c478dc18628d"
 dependencies = [
  "bytes",
  "futures",
@@ -4140,28 +4169,7 @@ dependencies = [
  "lhash",
  "prost 0.12.3",
  "semver",
- "tenderdash-proto 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2)",
- "thiserror",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid 1.6.1",
-]
-
-[[package]]
-name = "tenderdash-abci"
-version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#b4df6543efb0457a477db30153131495da1b8bbb"
-dependencies = [
- "bytes",
- "futures",
- "hex",
- "lhash",
- "prost 0.12.3",
- "semver",
- "tenderdash-proto 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci)",
+ "tenderdash-proto",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -4174,7 +4182,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto"
 version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2#6ebfaa31052f7ad538d6589323e5daf7e5e55999"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/withdrawals#b02ef2770999cfbc5dedd0de0803c478dc18628d"
 dependencies = [
  "bytes",
  "chrono",
@@ -4185,46 +4193,14 @@ dependencies = [
  "prost 0.12.3",
  "serde",
  "subtle-encoding",
- "tenderdash-proto-compiler 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2)",
- "time",
-]
-
-[[package]]
-name = "tenderdash-proto"
-version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#b4df6543efb0457a477db30153131495da1b8bbb"
-dependencies = [
- "bytes",
- "chrono",
- "derive_more",
- "flex-error",
- "num-derive",
- "num-traits",
- "prost 0.12.3",
- "serde",
- "subtle-encoding",
- "tenderdash-proto-compiler 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci)",
+ "tenderdash-proto-compiler",
  "time",
 ]
 
 [[package]]
 name = "tenderdash-proto-compiler"
 version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2#6ebfaa31052f7ad538d6589323e5daf7e5e55999"
-dependencies = [
- "fs_extra",
- "prost-build 0.12.3",
- "regex",
- "tempfile",
- "ureq",
- "walkdir",
- "zip",
-]
-
-[[package]]
-name = "tenderdash-proto-compiler"
-version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#b4df6543efb0457a477db30153131495da1b8bbb"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/withdrawals#b02ef2770999cfbc5dedd0de0803c478dc18628d"
 dependencies = [
  "fs_extra",
  "prost-build 0.12.3",
