@@ -1778,9 +1778,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashcore-lib@npm:~0.21.0":
+"@dashevo/dashcore-lib@github:dashevo/dashcore-lib#feat/asset-unlock-transaction":
   version: 0.21.0
-  resolution: "@dashevo/dashcore-lib@npm:0.21.0"
+  resolution: "@dashevo/dashcore-lib@https://github.com/dashevo/dashcore-lib.git#commit=bc214cf53abc7a3eb8942f125862c8af1f5c51f3"
   dependencies:
     "@dashevo/bls": "npm:~1.2.9"
     "@dashevo/x11-hash-js": "npm:^1.0.2"
@@ -1794,7 +1794,7 @@ __metadata:
     ripemd160: "npm:^2.0.2"
     tsd: "npm:^0.28.1"
     unorm: "npm:^1.6.0"
-  checksum: fb4419623f0e98e9c32e8f567ad1eb7f8f68c9e89c1f0216362771bf08cbf5e7115ea3c6eea722f6992d4460de7c6c5b1abca5c1c1790a8f5a1987baef78cbbb
+  checksum: 7b0bb63ceb47f3b4c2c442d7856728a23247f8cd4e2172baf4e9fedfc15c6fc5cfe7d9a4c2d7cc84d3733e32b9be0aa96391788061782c2a16adeacfd34d7924
   languageName: node
   linkType: hard
 
