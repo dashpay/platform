@@ -193,7 +193,7 @@ mod tests {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
-        use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+        use dpp::system_data_contracts::withdrawals_contract::v0::document_types::withdrawal;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::version::PlatformVersion;
         use dpp::withdrawal::Pooling;
@@ -206,17 +206,15 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            let data_contract = load_system_data_contract(
-                SystemDataContract::Withdrawals,
-                platform_version.protocol_version,
-            )
-            .expect("to load system data contract");
+            let data_contract =
+                load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                    .expect("to load system data contract");
 
             setup_system_data_contract(&drive, &data_contract, Some(&transaction));
 
             let documents = drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::WithdrawalStatus::QUEUED.into(),
+                    withdrawals_contract::v0::WithdrawalStatus::QUEUED.into(),
                     Some(&transaction),
                     platform_version,
                 )
@@ -234,7 +232,7 @@ mod tests {
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
                     "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
-                    "status": withdrawals_contract::WithdrawalStatus::QUEUED as u8,
+                    "status": withdrawals_contract::v0::WithdrawalStatus::QUEUED as u8,
                     "transactionIndex": 1u64,
                 }),
                 None,
@@ -262,7 +260,7 @@ mod tests {
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
                     "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
-                    "status": withdrawals_contract::WithdrawalStatus::POOLED,
+                    "status": withdrawals_contract::v0::WithdrawalStatus::POOLED,
                     "transactionIndex": 2u64,
                 }),
                 None,
@@ -280,7 +278,7 @@ mod tests {
 
             let documents = drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::WithdrawalStatus::QUEUED.into(),
+                    withdrawals_contract::v0::WithdrawalStatus::QUEUED.into(),
                     Some(&transaction),
                     platform_version,
                 )
@@ -290,7 +288,7 @@ mod tests {
 
             let documents = drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    withdrawals_contract::v0::WithdrawalStatus::POOLED.into(),
                     Some(&transaction),
                     platform_version,
                 )
@@ -305,7 +303,7 @@ mod tests {
         use dpp::document::DocumentV0Getters;
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::{platform_value, Bytes32};
-        use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+        use dpp::system_data_contracts::withdrawals_contract::v0::document_types::withdrawal;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::version::PlatformVersion;
         use dpp::withdrawal::Pooling;
@@ -320,11 +318,9 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            let data_contract = load_system_data_contract(
-                SystemDataContract::Withdrawals,
-                platform_version.protocol_version,
-            )
-            .expect("to load system data contract");
+            let data_contract =
+                load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                    .expect("to load system data contract");
 
             setup_system_data_contract(&drive, &data_contract, Some(&transaction));
 
@@ -338,7 +334,7 @@ mod tests {
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
                     "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
-                    "status": withdrawals_contract::WithdrawalStatus::POOLED as u8,
+                    "status": withdrawals_contract::v0::WithdrawalStatus::POOLED as u8,
                     "transactionIndex": 1u64,
                     "transactionId": Bytes32::default(),
                 }),

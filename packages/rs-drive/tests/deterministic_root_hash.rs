@@ -426,9 +426,8 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
         "e34e316e84c4639f44c512c5e602ee7d674d33ce69f02237de87af5f6151cdf6"
     );
 
-    let dpns_contract =
-        load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)
-            .expect("should load dpns contract");
+    let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+        .expect("should load dpns contract");
 
     drive
         .apply_contract(
