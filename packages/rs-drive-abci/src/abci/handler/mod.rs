@@ -641,11 +641,8 @@ where
                 .map(|asset_unlock_info_bytes| {
                     let asset_unlock_tx = build_asset_unlock_tx(asset_unlock_info_bytes).unwrap();
 
-                    let mut request_id = get_withdrawal_request_id(&asset_unlock_tx);
-                    let mut extension = asset_unlock_tx.txid().as_byte_array().to_vec();
-
-                    // request_id.reverse();
-                    extension.reverse();
+                    let request_id = get_withdrawal_request_id(&asset_unlock_tx);
+                    let extension = asset_unlock_tx.txid().as_byte_array().to_vec();
 
                     proto::ExtendVoteExtension {
                         r#type: VoteExtensionType::ThresholdRecoverRaw as i32,
@@ -701,11 +698,8 @@ where
             .map(|asset_unlock_info_bytes| {
                 let asset_unlock_tx = build_asset_unlock_tx(asset_unlock_info_bytes).unwrap();
 
-                let mut request_id = get_withdrawal_request_id(&asset_unlock_tx);
-                let mut extension = asset_unlock_tx.txid().as_byte_array().to_vec();
-
-                // request_id.reverse();
-                extension.reverse();
+                let request_id = get_withdrawal_request_id(&asset_unlock_tx);
+                let extension = asset_unlock_tx.txid().as_byte_array().to_vec();
 
                 proto::ExtendVoteExtension {
                     r#type: VoteExtensionType::ThresholdRecoverRaw as i32,
