@@ -310,7 +310,14 @@ describe('Platform', () => {
 
       let newIdentity;
       before(async () => {
+        const account = await client.getWalletAccount();
+        let balance = account.getTotalBalance();
+        console.log(`Wallet initial balance ${balance}`);
         newIdentity = await client.platform.identities.register(INITIAL_BALANCE);
+        balance = account.getTotalBalance();
+        const identityBalance = newIdentity.getBalance();
+        console.log(`Wallet balance after identity registration ${balance}`);
+        console.log(`Identity balance ${identityBalance / 1000}`);
 
         // Additional wait time to mitigate testnet latency
         await waitForSTPropagated();
@@ -323,35 +330,30 @@ describe('Platform', () => {
         const identityBalanceBefore = newIdentity.getBalance();
         const walletBalanceBefore = account.getTotalBalance();
 
-        console.log('Identity balance before', identityBalanceBefore);
-        console.log('Wallet balance before', walletBalanceBefore);
         const metadata = newIdentity.getMetadata().toObject();
         const initialCoreChainLockedHeight = metadata.coreChainLockedHeight;
-        console.log('Identity metadata', {
-          platformBlockHeight: metadata.blockHeight,
-          coreChainLockedHeight: initialCoreChainLockedHeight,
-        });
-
+        const amountToWithdraw = identityBalanceBefore / 2;
         await client.platform.identities.withdrawCredits(
           newIdentity,
-          BigInt(INITIAL_BALANCE / 2),
+          BigInt(amountToWithdraw),
           withdrawTo.address,
         );
+        console.log(`Withdrawing ${amountToWithdraw / 1000} to ${withdrawTo.address}`);
 
         let coreChainLockUpdates = 0;
         let walletBalanceUpdated = 0;
-        while (coreChainLockUpdates < 1) {
+        while (coreChainLockUpdates < 1 && walletBalanceUpdated <= walletBalanceBefore) {
           const identity = await client.platform.identities.get(newIdentity.getId());
           walletBalanceUpdated = account.getTotalBalance();
 
-          console.log('\nIdentity balance', identity.getBalance());
+          console.log('\nIdentity balance', identity.getBalance() / 1000);
           console.log('Wallet balance', walletBalanceUpdated);
           const metadata = identity.getMetadata().toObject();
 
-          console.log('Identity metadata', {
-            platformBlockHeight: metadata.blockHeight,
-            coreChainLockedHeight: metadata.coreChainLockedHeight,
-          });
+          // console.log('Identity metadata', {
+          //   platformBlockHeight: metadata.blockHeight,
+          //   coreChainLockedHeight: metadata.coreChainLockedHeight,
+          // });
 
           coreChainLockUpdates = metadata.coreChainLockedHeight - initialCoreChainLockedHeight;
 
