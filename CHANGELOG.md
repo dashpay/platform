@@ -1,3 +1,10 @@
+### [0.25.22](https://github.com/dashpay/platform/compare/v0.25.21...v0.25.22) (2024-01-19)
+
+
+### Bug Fixes
+
+* **dashmate:** dapi kills host machine on container stop ([#1670](https://github.com/dashpay/platform/issues/1670))
+
 ### [0.25.21](https://github.com/dashpay/platform/compare/v0.25.20...v0.25.21) (2023-12-28)
 
 
