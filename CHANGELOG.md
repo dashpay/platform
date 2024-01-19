@@ -1,3 +1,58 @@
+## [1.0.0-dev.3](https://github.com/dashpay/platform/compare/v1.0.0-dev.2...v1.0.0-dev.3) (2024-01-16)
+
+
+### Bug Fixes
+
+* **dapi:** internal errors if broadcasting failed ([#1673](https://github.com/dashpay/platform/issues/1673))
+
+## [1.0.0-dev.2](https://github.com/dashpay/platform/compare/v1.0.0-dev.1...v1.0.0-dev.2) (2024-01-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** adjust consensus params and enable re-check (#1669)
+* **drive-abci:** internal error if vote extension block is already committed (#1663)
+
+### Bug Fixes
+
+* broadcasting already invalidated transitions ([#1668](https://github.com/dashpay/platform/issues/1668))
+* **dashmate:** dapi kills host machine on container stop ([#1670](https://github.com/dashpay/platform/issues/1670))
+* **drive-abci:** internal error if vote extension block is already committed ([#1663](https://github.com/dashpay/platform/issues/1663))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** adjust consensus params and enable re-check ([#1669](https://github.com/dashpay/platform/issues/1669))
+* **drive-abci:** fix state transition logging ([#1664](https://github.com/dashpay/platform/issues/1664))
+* various logging improvements ([#1666](https://github.com/dashpay/platform/issues/1666))
+
+## [1.0.0-dev.1](https://github.com/dashpay/platform/compare/v0.25.21...v1.0.0-dev.1) (2024-01-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* invalid state transitions now included into blocks that makes previous chain data invalid. (#1657)
+* credit transfer state transition requires revision. (#1634)
+* calculated fee amounts are changed (#1656)
+
+### Features
+
+* **drive-abci:** include invalid state transitions into block ([#1657](https://github.com/dashpay/platform/issues/1657))
+* **drive-abci:** processing fees for signature verification ([#1656](https://github.com/dashpay/platform/issues/1656))
+* **drive-abci:** remove unnecessary validation from check tx and re-check ([#1647](https://github.com/dashpay/platform/issues/1647))
+* **sdk:** rs-sdk fetch current epoch ([#1604](https://github.com/dashpay/platform/issues/1604))
+
+
+### Bug Fixes
+
+* **platform:** credit transfer replay attack ([#1634](https://github.com/dashpay/platform/issues/1634))
+* **dapi**: internal error when mempool is full ([#1661](https://github.com/dashpay/platform/issues/1661))
+
+
+### Miscellaneous Chores
+
+* automatic clippy fixes ([#1528](https://github.com/dashpay/platform/issues/1528), [#1602](https://github.com/dashpay/platform/issues/1602))
+
 ### [0.25.21](https://github.com/dashpay/platform/compare/v0.25.20...v0.25.21) (2023-12-28)
 
 
