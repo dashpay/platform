@@ -36,7 +36,7 @@ impl Drive {
                     grove,
                     config,
                     system_contracts: SystemContracts::load_genesis_system_contracts(
-                        0, // TODO: Will be fixed in #1676
+                        1, // TODO: Will be fixed in #1676
                     )?,
                     cache: RwLock::new(DriveCache {
                         cached_contracts: DataContractCache::new(

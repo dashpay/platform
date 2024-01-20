@@ -1,6 +1,5 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::storage::EXECUTION_STORAGE_PATH;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
