@@ -7,6 +7,7 @@ use dpp::platform_value::Error as ValueError;
 use dpp::version::PlatformVersionError;
 use drive::dpp::ProtocolError;
 use drive::error::Error as DriveError;
+use drive::grovedb;
 use tenderdash_abci::proto::abci::ResponseException;
 use tracing::error;
 
@@ -48,6 +49,9 @@ pub enum Error {
     /// Error from metrics subsystem
     #[error("metrics: {0}")]
     Metrics(#[from] crate::metrics::Error),
+    /// GroveDB errors
+    #[error("grovedb: {0}")]
+    GroveDb(#[from] grovedb::Error),
 }
 
 impl From<PlatformVersionError> for Error {

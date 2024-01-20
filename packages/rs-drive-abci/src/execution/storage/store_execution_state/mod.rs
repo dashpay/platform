@@ -21,7 +21,7 @@ impl<C> Platform<C> {
             .execution_state_storage
             .store_execution_state
         {
-            0 => self.store_execution_state_v0(state, transaction, platform_version),
+            0 => self.store_execution_state_v0(state, transaction),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "fetch_execution_state".to_string(),
                 known_versions: vec![0],
