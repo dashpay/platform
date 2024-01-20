@@ -370,8 +370,6 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             },
             platform_system: DrivePlatformSystemMethodVersions {
                 protocol_version: DriveSystemProtocolVersionMethodVersions {
-                    fetch_current_protocol_version: 0,
-                    set_current_protocol_version_operations: 0,
                     fetch_next_protocol_version: 0,
                     set_next_protocol_version_operations: 0,
                 },

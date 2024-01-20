@@ -14,7 +14,7 @@ use std::sync::RwLock;
 
 use dashcore_rpc::dashcore::BlockHash;
 
-use crate::execution::storage::{fetch_current_protocol_version, fetch_execution_state};
+use crate::execution::storage::fetch_execution_state;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
@@ -176,13 +176,9 @@ impl<C> Platform<C> {
     {
         let config = config.unwrap_or_default();
 
-        // TODO: Replace with version from the disk if present or latest?
-        let platform_version = PlatformVersion::latest();
+        let drive = Drive::open(path, Some(config.drive.clone())).map_err(Error::Drive)?;
 
-        let drive = Drive::open(path, Some(config.drive.clone()), platform_version)
-            .map_err(Error::Drive)?;
-
-        if let Some(protocol_version) = fetch_current_protocol_version(&drive)? {
+        if let Some(protocol_version) = drive.fetch_current_protocol_version(None)? {
             let platform_version = PlatformVersion::get(protocol_version)?;
 
             let Some(execution_state) = fetch_execution_state(&drive, None, platform_version)?

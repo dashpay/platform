@@ -211,8 +211,6 @@ pub struct DriveBatchOperationsMethodVersion {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveSystemProtocolVersionMethodVersions {
-    pub fetch_current_protocol_version: FeatureVersion,
-    pub set_current_protocol_version_operations: FeatureVersion,
     pub fetch_next_protocol_version: FeatureVersion,
     pub set_next_protocol_version_operations: FeatureVersion,
 }

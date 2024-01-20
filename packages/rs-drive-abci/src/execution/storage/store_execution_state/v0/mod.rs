@@ -1,8 +1,6 @@
 use crate::error::Error;
-use crate::execution::storage::protocol_version::EXECUTION_STORAGE_PLATFORM_VERSION_KEY;
 use crate::execution::storage::{EXECUTION_STORAGE_PATH, EXECUTION_STORAGE_STATE_KEY};
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
@@ -24,20 +22,6 @@ impl<C> Platform<C> {
             .iter()
             .map(|byte_array| byte_array.to_vec())
             .collect();
-
-        let protocol_version_element = Element::Item(
-            state
-                .current_protocol_version_in_consensus()
-                .to_be_bytes()
-                .to_vec(),
-            None,
-        );
-
-        batch.add_insert(
-            path.clone(),
-            EXECUTION_STORAGE_PLATFORM_VERSION_KEY.to_vec(),
-            protocol_version_element,
-        );
 
         let state_element = Element::Item(state.serialize_to_bytes()?, None);
 

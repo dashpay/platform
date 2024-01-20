@@ -1,15 +1,22 @@
-mod v0;
-
+use crate::drive::grove_operations::BatchInsertApplyType;
+use crate::drive::object_size_info::PathKeyElementInfo;
+use crate::drive::system::misc_path;
+use crate::drive::system::misc_tree_constants::PROTOCOL_VERSION_STORAGE_KEY;
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::TransactionArg;
+use grovedb::{Element, TransactionArg};
+use integer_encoding::VarInt;
 
+///!!!DON'T CHANGE!!!!
 impl Drive {
     /// Sets the current protocol version
+    ///
+    /// !!!DON'T CHANGE!!!!
+    /// This function should never be changed !!! since it must always be compatible
+    /// with fetch_current_protocol_version which is should never be changed.
     ///
     /// # Arguments
     ///
@@ -32,23 +39,17 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version
-            .methods
-            .platform_system
-            .protocol_version
-            .set_current_protocol_version_operations
-        {
-            0 => self.set_current_protocol_version_operations_v0(
-                protocol_version,
-                transaction,
-                drive_operations,
-                drive_version,
-            ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "set_current_protocol_version_operations".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
+        self.batch_insert_if_changed_value(
+            PathKeyElementInfo::PathFixedSizeKeyRefElement((
+                misc_path(),
+                PROTOCOL_VERSION_STORAGE_KEY,
+                Element::new_item(protocol_version.encode_var_vec()),
+            )),
+            BatchInsertApplyType::StatefulBatchInsert,
+            transaction,
+            drive_operations,
+            drive_version,
+        )?;
+        Ok(())
     }
 }

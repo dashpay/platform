@@ -371,10 +371,10 @@ mod test {
     fn setup_db(tempdir: &Path) -> PathBuf {
         let path = tempdir.join("db");
         fs::create_dir(&path).expect("create db dir");
-
+        
+        let drive = Drive::open(&path, None).expect("open drive");
+        
         let platform_version = PlatformVersion::latest();
-
-        let drive = Drive::open(&path, None, platform_version).expect("open drive");
 
         drive
             .create_initial_state_structure(None, platform_version)
