@@ -11,6 +11,7 @@ mod tests {
 
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
 
+    use crate::strategy::CoreHeightIncrease::{KnownCoreHeightIncreases, NoCoreHeightIncrease};
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
@@ -26,7 +27,6 @@ mod tests {
     use simple_signer::signer::SimpleSigner;
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use tenderdash_abci::proto::types::CoreChainLock;
-    use crate::strategy::CoreHeightIncrease::{KnownCoreHeightIncreases, NoCoreHeightIncrease};
 
     #[test]
     fn run_chain_insert_one_new_identity_and_a_contract_with_bad_update() {

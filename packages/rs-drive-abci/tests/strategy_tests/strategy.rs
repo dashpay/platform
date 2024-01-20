@@ -51,8 +51,8 @@ use dpp::state_transition::documents_batch_transition::document_transition::{Doc
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 
-use simple_signer::signer::SimpleSigner;
 use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;
+use simple_signer::signer::SimpleSigner;
 
 #[derive(Clone, Debug, Default)]
 pub struct MasternodeListChangesStrategy {
@@ -166,12 +166,9 @@ pub enum CoreHeightIncrease {
 impl CoreHeightIncrease {
     pub fn max_core_height(&self, block_count: u64, initial_core_height: u32) -> u32 {
         match self {
-            NoCoreHeightIncrease => {
-                initial_core_height
-            }
+            NoCoreHeightIncrease => initial_core_height,
             CoreHeightIncrease::RandomCoreHeightIncrease(frequency) => {
-                initial_core_height
-                    + frequency.max_event_count() as u32 * block_count as u32
+                initial_core_height + frequency.max_event_count() as u32 * block_count as u32
             }
             CoreHeightIncrease::KnownCoreHeightIncreases(values) => {
                 values.last().copied().unwrap_or(initial_core_height)
@@ -180,24 +177,20 @@ impl CoreHeightIncrease {
     }
     pub fn average_core_height(&self, block_count: u64, initial_core_height: u32) -> u32 {
         match self {
-            NoCoreHeightIncrease => {
-                initial_core_height
-            }
+            NoCoreHeightIncrease => initial_core_height,
             CoreHeightIncrease::RandomCoreHeightIncrease(frequency) => {
-                initial_core_height
-                    + frequency.average_event_count() as u32 * block_count as u32
+                initial_core_height + frequency.average_event_count() as u32 * block_count as u32
             }
-            CoreHeightIncrease::KnownCoreHeightIncreases(values) => {
-                values.get(values.len() / 2).copied().unwrap_or(initial_core_height)
-            }
+            CoreHeightIncrease::KnownCoreHeightIncreases(values) => values
+                .get(values.len() / 2)
+                .copied()
+                .unwrap_or(initial_core_height),
         }
     }
 
     pub fn add_events_if_hit(&mut self, core_height: u32, rng: &mut StdRng) -> u32 {
         match self {
-            NoCoreHeightIncrease => {
-                0
-            }
+            NoCoreHeightIncrease => 0,
             CoreHeightIncrease::RandomCoreHeightIncrease(frequency) => {
                 core_height + frequency.events_if_hit(rng) as u32
             }

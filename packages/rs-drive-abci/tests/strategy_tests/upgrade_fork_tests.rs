@@ -140,7 +140,7 @@ mod tests {
                     );
                     assert_eq!(
                         (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
-                        (Some(&16), Some(&416))
+                        (Some(&17), Some(&414))
                     );
                     //most nodes were hit (63 were not)
                 }
@@ -218,7 +218,7 @@ mod tests {
                         TEST_PROTOCOL_VERSION_2
                     );
                     assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&157));
+                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&154));
                 }
 
                 // we locked in
@@ -280,7 +280,7 @@ mod tests {
                         TEST_PROTOCOL_VERSION_2
                     );
                     assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&120));
+                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&122));
                 }
             })
             .expect("Failed to create thread with custom stack size");
@@ -1072,7 +1072,7 @@ mod tests {
                     let counter = &drive_cache.protocol_versions_counter;
                     assert_eq!(
                         (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
-                        (Some(&170), Some(&24))
+                        (Some(&172), Some(&24))
                     );
                     //a lot nodes reverted to previous version, however this won't impact things
                     assert_eq!(
@@ -1135,7 +1135,7 @@ mod tests {
                     let counter = &drive_cache.protocol_versions_counter;
                     assert_eq!(
                         (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
-                        (Some(&22), Some(&3))
+                        (Some(&23), Some(&2))
                     );
                     assert_eq!(
                         platform
@@ -1289,7 +1289,7 @@ mod tests {
                             counter.get(&TEST_PROTOCOL_VERSION_2),
                             counter.get(&TEST_PROTOCOL_VERSION_3)
                         ),
-                        (Some(&2), Some(&69), Some(&3))
+                        (Some(&2), Some(&68), Some(&3))
                     ); //some nodes reverted to previous version
                 }
 
@@ -1343,7 +1343,7 @@ mod tests {
                     ChainExecutionParameters {
                         block_start,
                         core_height_start: 1,
-                        block_count: 700,
+                        block_count: 1100,
                         proposers,
                         quorums,
                         current_quorum_hash,
@@ -1369,7 +1369,7 @@ mod tests {
                             .basic_info()
                             .epoch
                             .index,
-                        4
+                        5
                     );
                     assert_eq!(
                         platform
@@ -1389,7 +1389,7 @@ mod tests {
                             counter.get(&TEST_PROTOCOL_VERSION_2),
                             counter.get(&TEST_PROTOCOL_VERSION_3)
                         ),
-                        (None, Some(&3), Some(&155))
+                        (None, Some(&3), Some(&143))
                     );
                 }
             })

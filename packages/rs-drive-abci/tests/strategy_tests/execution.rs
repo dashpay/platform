@@ -1,7 +1,10 @@
 use crate::masternodes;
 use crate::masternodes::{GenerateTestMasternodeUpdates, MasternodeListItemWithUpdates};
 use crate::query::ProofVerification;
-use crate::strategy::{ChainExecutionOutcome, ChainExecutionParameters, CoreHeightIncrease, NetworkStrategy, StrategyRandomness, ValidatorVersionMigration};
+use crate::strategy::{
+    ChainExecutionOutcome, ChainExecutionParameters, CoreHeightIncrease, NetworkStrategy,
+    StrategyRandomness, ValidatorVersionMigration,
+};
 use crate::verify_state_transitions::verify_state_transitions_were_or_were_not_executed;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{BlockHash, ProTxHash, QuorumHash};
@@ -59,7 +62,8 @@ pub(crate) fn run_chain_for_strategy(
 
     let core_height_increase = strategy.core_height_increase.clone();
 
-    let max_core_height = core_height_increase.max_core_height(block_count, strategy.initial_core_height);
+    let max_core_height =
+        core_height_increase.max_core_height(block_count, strategy.initial_core_height);
 
     let chain_lock_quorum_type = config.chain_lock_quorum_type();
 
@@ -79,7 +83,9 @@ pub(crate) fn run_chain_for_strategy(
         with_extra_masternodes_with_updates,
         with_extra_hpmns_with_updates,
     ) = if any_changes_in_strategy {
-        let end_core_height = strategy.core_height_increase.max_core_height(block_count, strategy.initial_core_height);
+        let end_core_height = strategy
+            .core_height_increase
+            .max_core_height(block_count, strategy.initial_core_height);
         let generate_updates = if updated_proposers_in_strategy {
             Some(GenerateTestMasternodeUpdates {
                 start_core_height: config.abci.genesis_core_height,
@@ -557,9 +563,8 @@ pub(crate) fn run_chain_for_strategy(
         .expect_get_best_chain_lock()
         .returning(move || {
             let block_height = match &mut core_height_increase {
-                CoreHeightIncrease::NoCoreHeightIncrease | CoreHeightIncrease::RandomCoreHeightIncrease(_) => {
-                    core_height
-                }
+                CoreHeightIncrease::NoCoreHeightIncrease
+                | CoreHeightIncrease::RandomCoreHeightIncrease(_) => core_height,
                 CoreHeightIncrease::KnownCoreHeightIncreases(core_block_heights) => {
                     if core_block_heights.len() == 1 {
                         *core_block_heights.first().unwrap()
@@ -623,8 +628,6 @@ pub(crate) fn run_chain_for_strategy(
                     signature: (*signature.to_bytes()).into(),
                 };
 
-
-
                 Ok(chain_lock)
             } else {
                 let chain_lock = ChainLock {
@@ -636,7 +639,9 @@ pub(crate) fn run_chain_for_strategy(
                 Ok(chain_lock)
             };
 
-            if let CoreHeightIncrease::RandomCoreHeightIncrease(core_height_increase) = &core_height_increase {
+            if let CoreHeightIncrease::RandomCoreHeightIncrease(core_height_increase) =
+                &core_height_increase
+            {
                 core_height += core_height_increase.events_if_hit(&mut core_height_rng) as u32;
             };
 
@@ -828,14 +833,12 @@ pub(crate) fn continue_chain_for_strategy(
     let mut state_transition_results_per_block = BTreeMap::new();
 
     for block_height in block_start..(block_start + block_count) {
-        let state = platform
-            .state
-            .read()
-            .expect("lock is poisoned");
+        let state = platform.state.read().expect("lock is poisoned");
         let epoch_info = EpochInfoV0::calculate(
             first_block_time,
             current_time_ms,
-            state.last_committed_block_info()
+            state
+                .last_committed_block_info()
                 .as_ref()
                 .map(|block_info| block_info.basic_info().time_ms),
             config.execution.epoch_time_length_s,

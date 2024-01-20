@@ -75,6 +75,7 @@ mod tests {
         DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
     };
 
+    use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
     use dpp::dashcore::ChainLock;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
@@ -94,7 +95,6 @@ mod tests {
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
     use tenderdash_abci::proto::types::CoreChainLock;
     use tenderdash_abci::Application;
-    use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
 
     pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
         let mut quorums = QuorumListExtendedInfo::new();
