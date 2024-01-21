@@ -52,7 +52,9 @@ where
             return Ok(()); // no need to do anything
         }
 
-        // We should request the quorum list from 8 blocks behind the core block height
+        // We request the quorum list from the current core block height, this is because we also keep
+        // the previous chain lock validating quorum. Core will sign from 8 blocks before the current
+        // core block height, so often we will use the previous chain lock validating quorums instead.
 
         let mut extended_quorum_list = self
             .core_rpc

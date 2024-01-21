@@ -417,13 +417,16 @@ impl PlatformStateV0Methods for PlatformState {
 
     fn set_previous_chain_lock_validating_quorums(
         &mut self,
-        core_height: u32,
+        previous_core_height: u32,
+        change_core_height: u32,
         quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
     ) {
         match self {
-            PlatformState::V0(v0) => {
-                v0.set_previous_chain_lock_validating_quorums(core_height, quorums)
-            }
+            PlatformState::V0(v0) => v0.set_previous_chain_lock_validating_quorums(
+                previous_core_height,
+                change_core_height,
+                quorums,
+            ),
         }
     }
 
@@ -491,7 +494,7 @@ impl PlatformStateV0Methods for PlatformState {
 
     fn previous_height_chain_lock_validating_quorums(
         &self,
-    ) -> Option<&(u32, BTreeMap<QuorumHash, ThresholdBlsPublicKey>)> {
+    ) -> Option<&(u32, u32, BTreeMap<QuorumHash, ThresholdBlsPublicKey>)> {
         match self {
             PlatformState::V0(v0) => v0.previous_height_chain_lock_validating_quorums(),
         }
@@ -499,7 +502,7 @@ impl PlatformStateV0Methods for PlatformState {
 
     fn previous_height_chain_lock_validating_quorums_mut(
         &mut self,
-    ) -> &mut Option<(u32, BTreeMap<QuorumHash, ThresholdBlsPublicKey>)> {
+    ) -> &mut Option<(u32, u32, BTreeMap<QuorumHash, ThresholdBlsPublicKey>)> {
         match self {
             PlatformState::V0(v0) => v0.previous_height_chain_lock_validating_quorums_mut(),
         }
