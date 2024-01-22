@@ -8,7 +8,7 @@ mod v0;
 
 impl Drive {
     /// Fetches execution state from grovedb storage
-    pub fn fetch_execution_state_bytes(
+    pub fn fetch_platform_state_bytes(
         &self,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -17,9 +17,9 @@ impl Drive {
             .drive
             .methods
             .execution_state
-            .fetch_execution_state_bytes
+            .fetch_platform_state_bytes
         {
-            0 => self.fetch_execution_state_bytes_v0(transaction),
+            0 => self.fetch_platform_state_bytes_v0(transaction),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_execution_state_bytes".to_string(),
                 known_versions: vec![0],

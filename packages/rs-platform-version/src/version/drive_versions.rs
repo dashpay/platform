@@ -36,8 +36,8 @@ pub struct DriveMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 struct DriveExecutionStateMethodVersions {
-    pub fetch_execution_state_bytes: FeatureVersion,
-    pub store_execution_state_bytes: FeatureVersion,
+    pub fetch_platform_state_bytes: FeatureVersion,
+    pub store_platform_state_bytes: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

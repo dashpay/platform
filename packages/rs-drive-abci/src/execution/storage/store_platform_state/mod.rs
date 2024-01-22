@@ -9,7 +9,7 @@ use drive::query::TransactionArg;
 
 impl<C> Platform<C> {
     /// Store the execution state in grovedb storage
-    pub fn store_execution_state(
+    pub fn store_platform_state(
         &self,
         state: &PlatformState,
         transaction: TransactionArg,

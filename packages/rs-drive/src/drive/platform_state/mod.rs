@@ -1,5 +1,5 @@
-mod fetch_execution_state_bytes;
-mod store_execution_state_bytes;
+mod fetch_platform_state_bytes;
+mod store_platform_state_bytes;
 
 pub use fetch_execution_state_bytes::*;
 pub use store_execution_state_bytes::*;
