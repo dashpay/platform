@@ -1,5 +1,4 @@
 use crate::error::Error;
-use crate::execution::storage::EXECUTION_STORAGE_STATE_KEY;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::serialization::PlatformDeserializableFromVersionedStructure;
 use dpp::version::PlatformVersion;
@@ -12,10 +11,8 @@ pub(super) fn fetch_execution_state_v0(
     platform_version: &PlatformVersion,
 ) -> Result<Option<PlatformState>, Error> {
     let maybe_bytes = drive
-        .grove
-        .get_aux(EXECUTION_STORAGE_STATE_KEY, transaction)
-        .unwrap()
-        .map_err(Error::GroveDb)?;
+        .fetch_execution_state_bytes(transaction, platform_version)
+        .map_err(Error::Drive)?;
 
     let Some(bytes) = maybe_bytes else {
         return Ok(None);

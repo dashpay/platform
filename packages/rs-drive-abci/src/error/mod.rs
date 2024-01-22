@@ -49,9 +49,6 @@ pub enum Error {
     /// Error from metrics subsystem
     #[error("metrics: {0}")]
     Metrics(#[from] crate::metrics::Error),
-    /// GroveDB errors
-    #[error("grovedb: {0}")]
-    GroveDb(#[from] grovedb::Error),
 }
 
 impl From<PlatformVersionError> for Error {
