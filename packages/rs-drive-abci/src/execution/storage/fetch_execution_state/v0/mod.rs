@@ -10,15 +10,11 @@ pub(super) fn fetch_execution_state_v0(
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<Option<PlatformState>, Error> {
-    let maybe_bytes = drive
+    drive
         .fetch_execution_state_bytes(transaction, platform_version)
-        .map_err(Error::Drive)?;
-
-    let Some(bytes) = maybe_bytes else {
-        return Ok(None);
-    };
-
-    let execution_state = PlatformState::versioned_deserialize(&bytes, platform_version)?;
-
-    Ok(Some(execution_state))
+        .map_err(Error::Drive)?
+        .map(|bytes| {
+            PlatformState::versioned_deserialize(&bytes, platform_version).map_err(Error::Protocol)
+        })
+        .transpose()
 }
