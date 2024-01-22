@@ -16,12 +16,12 @@ impl Drive {
         match platform_version
             .drive
             .methods
-            .execution_state
+            .platform_state
             .fetch_platform_state_bytes
         {
             0 => self.fetch_platform_state_bytes_v0(transaction),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "fetch_execution_state_bytes".to_string(),
+                method: "fetch_platform_state_bytes".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

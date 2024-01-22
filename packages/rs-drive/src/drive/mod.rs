@@ -87,13 +87,13 @@ mod test_utils;
 #[cfg(feature = "full")]
 mod asset_lock;
 #[cfg(feature = "full")]
-mod execution_state;
-#[cfg(feature = "full")]
 pub(crate) mod fee;
 #[cfg(feature = "full")]
 mod open;
 #[cfg(feature = "full")]
 mod operations;
+#[cfg(feature = "full")]
+mod platform_state;
 #[cfg(feature = "full")]
 mod prove;
 #[cfg(feature = "full")]

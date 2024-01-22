@@ -64,7 +64,7 @@ where
         PlatformVersion::set_current(version);
 
         // Persist execution state
-        self.store_execution_state(&state, Some(transaction), platform_version)?;
+        self.store_platform_state(&state, Some(transaction), platform_version)?;
 
         Ok(())
     }

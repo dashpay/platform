@@ -31,11 +31,11 @@ pub struct DriveMethodVersions {
     pub batch_operations: DriveBatchOperationsMethodVersion,
     pub prove: DriveProveMethodVersions,
     pub state_transitions: DriveStateTransitionMethodVersions,
-    pub execution_state: DriveExecutionStateMethodVersions,
+    pub platform_state: DrivePlatformStateMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
-struct DriveExecutionStateMethodVersions {
+pub struct DrivePlatformStateMethodVersions {
     pub fetch_platform_state_bytes: FeatureVersion,
     pub store_platform_state_bytes: FeatureVersion,
 }
