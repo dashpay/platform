@@ -16,9 +16,14 @@ impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionActi
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
         let identity_id = self.identity_id();
         let revision = self.revision();
+        let balance = self.amount();
         let prepared_withdrawal_document = self.prepared_withdrawal_document_owned();
 
         let drive_operations = vec![
+            IdentityOperation(IdentityOperationType::RemoveFromIdentityBalance {
+                identity_id: identity_id.to_buffer(),
+                balance_to_remove: balance,
+            }),
             IdentityOperation(IdentityOperationType::UpdateIdentityRevision {
                 identity_id: identity_id.into_buffer(),
                 revision,

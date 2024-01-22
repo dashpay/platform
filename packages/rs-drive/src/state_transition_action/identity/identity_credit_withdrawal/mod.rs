@@ -32,6 +32,13 @@ impl IdentityCreditWithdrawalTransitionAction {
         }
     }
 
+    /// Amount
+    pub fn amount(&self) -> u64 {
+        match self {
+            IdentityCreditWithdrawalTransitionAction::V0(transition) => transition.amount,
+        }
+    }
+
     /// Recipient Id
     pub fn prepared_withdrawal_document(&self) -> &Document {
         match self {

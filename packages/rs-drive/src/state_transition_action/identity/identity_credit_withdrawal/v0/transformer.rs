@@ -44,6 +44,7 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
             identity_id: identity_credit_withdrawal.identity_id,
             revision: identity_credit_withdrawal.revision,
             prepared_withdrawal_document: withdrawal_document,
+            amount: identity_credit_withdrawal.amount,
         }
     }
 }
