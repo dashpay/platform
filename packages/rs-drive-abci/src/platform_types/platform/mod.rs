@@ -14,7 +14,7 @@ use std::sync::RwLock;
 
 use dashcore_rpc::dashcore::BlockHash;
 
-use crate::execution::storage::fetch_execution_state;
+use crate::execution::storage::fetch_platform_state;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
@@ -148,7 +148,7 @@ impl Platform<MockCoreRPCLike> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
-        let Some(persisted_state) = fetch_execution_state(&self.drive, None, platform_version)?
+        let Some(persisted_state) = fetch_platform_state(&self.drive, None, platform_version)?
         else {
             return Ok(false);
         };
@@ -181,7 +181,7 @@ impl<C> Platform<C> {
         if let Some(protocol_version) = drive.fetch_current_protocol_version(None)? {
             let platform_version = PlatformVersion::get(protocol_version)?;
 
-            let Some(execution_state) = fetch_execution_state(&drive, None, platform_version)?
+            let Some(platform_state) = fetch_platform_state(&drive, None, platform_version)?
             else {
                 return Err(Error::Execution(ExecutionError::CorruptedCachedState(
                     "execution state should be stored as well as protocol version",
@@ -192,7 +192,7 @@ impl<C> Platform<C> {
                 drive,
                 core_rpc,
                 config,
-                execution_state,
+                platform_state,
             );
         }
 

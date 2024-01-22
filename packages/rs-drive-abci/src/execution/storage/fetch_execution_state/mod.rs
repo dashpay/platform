@@ -8,7 +8,7 @@ use drive::query::TransactionArg;
 mod v0;
 
 /// Fetches execution state from grovedb storage
-pub fn fetch_execution_state(
+pub fn fetch_platform_state(
     drive: &Drive,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
@@ -16,12 +16,12 @@ pub fn fetch_execution_state(
     match platform_version
         .drive_abci
         .methods
-        .execution_state_storage
-        .fetch_execution_state
+        .platform_state_storage
+        .fetch_platform_state
     {
-        0 => v0::fetch_execution_state_v0(drive, transaction, platform_version),
+        0 => v0::fetch_platform_state_v0(drive, transaction, platform_version),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-            method: "fetch_execution_state".to_string(),
+            method: "fetch_platform_state".to_string(),
             known_versions: vec![0],
             received: version,
         })),

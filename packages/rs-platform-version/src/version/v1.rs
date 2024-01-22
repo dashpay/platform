@@ -531,9 +531,9 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 update_drive_cache: 0,
                 validator_set_update: 0,
             },
-            execution_state_storage: DriveAbciExecutionStateStorageMethodVersions {
-                fetch_execution_state: 0,
-                store_execution_state: 0,
+            platform_state_storage: DriveAbciExecutionStateStorageMethodVersions {
+                fetch_platform_state: 0,
+                store_platform_state: 0,
             },
         },
         validation_and_processing: DriveAbciValidationVersions {
