@@ -14,7 +14,7 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Updates the execution state at the end of finalize block. This is done by overriding the current
+    /// Updates the state cache at the end of finalize block. This is done by overriding the current
     /// platform state cache with the block execution state cache.
     ///
     /// This function is a version handler that directs to specific version implementations

@@ -13,7 +13,7 @@ where
     C: CoreRPCLike,
 {
     /// Updates the state cache at the end of finalize block. This is done by overriding the current
-    /// platform state cache with the block state cache cache.
+    /// platform state cache with the block execution state cache.
     ///
     /// This function takes an `ExtendedBlockInfo` and a `Transaction` as input and updates the
     /// state cache and quorums based on the given block information. It handles protocol version
