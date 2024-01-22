@@ -527,7 +527,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 clear_drive_block_cache: 0,
             },
             block_end: DriveAbciBlockEndMethodVersions {
-                update_execution_state: 0,
+                update_state_cache: 0,
                 update_drive_cache: 0,
                 validator_set_update: 0,
             },

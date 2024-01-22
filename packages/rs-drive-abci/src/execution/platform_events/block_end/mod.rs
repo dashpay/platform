@@ -1,5 +1,5 @@
 /// Updating the execution state happens as the final part of block finalization
-pub(in crate::execution) mod update_execution_state;
+pub(in crate::execution) mod update_state_cache;
 /// Validator set update
 pub(in crate::execution) mod validator_set_update;
 

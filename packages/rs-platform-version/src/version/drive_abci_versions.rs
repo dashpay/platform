@@ -230,7 +230,7 @@ pub struct DriveAbciBlockStartMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciBlockEndMethodVersions {
-    pub update_execution_state: FeatureVersion,
+    pub update_state_cache: FeatureVersion,
     pub update_drive_cache: FeatureVersion,
     pub validator_set_update: FeatureVersion,
 }

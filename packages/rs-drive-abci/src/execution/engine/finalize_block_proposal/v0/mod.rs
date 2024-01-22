@@ -217,7 +217,7 @@ where
         }
         .into();
 
-        self.update_execution_state(extended_block_info, transaction, platform_version)?;
+        self.update_state_cache(extended_block_info, transaction, platform_version)?;
 
         self.update_drive_cache(platform_version)?;
 
