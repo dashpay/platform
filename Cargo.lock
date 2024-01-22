@@ -1234,6 +1234,7 @@ dependencies = [
  "test-case",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4029,11 +4030,13 @@ dependencies = [
  "bincode 2.0.0-rc.3",
  "dpp",
  "drive",
+ "futures",
  "hex",
  "platform-version",
  "rand",
  "rocksdb",
  "simple-signer",
+ "tracing",
 ]
 
 [[package]]

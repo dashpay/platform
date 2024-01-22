@@ -1,3 +1,4 @@
+use dpp::ProtocolError;
 use dpp::dashcore::secp256k1::Secp256k1;
 use dpp::dashcore::secp256k1::SecretKey;
 use dpp::dashcore::{
@@ -38,6 +39,7 @@ use simple_signer::signer::SimpleSigner;
 
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
+use tracing::info;
 use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
 
@@ -221,26 +223,23 @@ pub fn instant_asset_lock_is_lock_fixture(tx_id: Txid) -> InstantLock {
 /// - If there's an error in converting the generated public key to its private counterpart.
 /// - If there's an error during the creation of the identity top-up transition.
 pub fn create_identity_top_up_transition(
-    rng: &mut StdRng,
     identity: &Identity,
+    create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
     platform_version: &PlatformVersion,
-) -> StateTransition {
-    let (_, pk) = ECDSA_SECP256K1
-        .random_public_and_private_key_data(rng, platform_version)
-        .unwrap();
-    let sk: [u8; 32] = pk.try_into().unwrap();
-    let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
-    let asset_lock_proof =
-        instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
+) -> Result<StateTransition, ProtocolError> {
+    let (asset_lock_proof, private_key) = create_asset_lock(200000)
+        .ok_or(ProtocolError::Generic("Failed to create asset lock proof".to_string()))?;
+
+    let pk_bytes = private_key.to_bytes();
 
     IdentityTopUpTransition::try_from_identity(
         identity,
         asset_lock_proof,
-        secret_key.as_ref(),
+        pk_bytes.as_ref(),
         platform_version,
         None,
     )
-    .expect("expected to create top up transition")
+    .map_err(|e| ProtocolError::Generic(format!("Error creating top up transition: {:?}", e)))
 }
 
 /// Creates a state transition for updating an identity by adding a specified number of new public authentication keys.
@@ -289,6 +288,7 @@ pub fn create_identity_update_transition_add_keys(
     platform_version: &PlatformVersion,
 ) -> (StateTransition, (Identifier, Vec<IdentityPublicKey>)) {
     identity.bump_revision();
+
     let keys = IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(
         identity.public_keys().len() as KeyID,
         count as u32,
@@ -319,7 +319,7 @@ pub fn create_identity_update_transition_add_keys(
         platform_version,
         None,
     )
-    .expect("expected to create top up transition");
+    .expect("expected to create an AddKeys transition");
 
     (state_transition, (identity.id(), add_public_keys))
 }
@@ -427,7 +427,7 @@ pub fn create_identity_update_transition_disable_keys(
         platform_version,
         None,
     )
-    .expect("expected to create top up transition");
+    .expect("expected to create a DisableKeys transition");
 
     Some(state_transition)
 }
@@ -471,8 +471,8 @@ pub fn create_identity_withdrawal_transition(
     *nonce += 1;
     let mut withdrawal: StateTransition = IdentityCreditWithdrawalTransitionV0 {
         identity_id: identity.id(),
-        amount: 100000000, // 0.001 Dash
-        core_fee_per_byte: MIN_CORE_FEE_PER_BYTE,
+        amount: 1000, // 1 duff
+        core_fee_per_byte: 1,
         pooling: Pooling::Never,
         output_script: CoreScript::random_p2sh(rng),
         nonce: *nonce,
@@ -612,17 +612,75 @@ pub fn create_identities_state_transitions(
     key_count: KeyID,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
+    create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
     platform_version: &PlatformVersion,
-) -> Vec<(Identity, StateTransition)> {
-    let (identities, keys) = Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(
+) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
+    // Generate identities and a mapping of public keys to private keys
+    let (mut identities, mut keys) = Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(
         count,
         key_count,
         rng,
         platform_version,
-    )
-    .expect("expected to create identities");
+    ).expect("expected to create identities and keys");
+
+    // Find the highest KeyID in the signer so we can iterate upwards from there
+    let starting_id_num = match signer.private_keys.keys().max() {
+        Some(max_key) => max_key.id().checked_add(1).expect("ID overflow"),
+        None => 0,
+    };
+
+    // Reset the KeyIDs of the generated public keys so they can be added on top of existing signer keys
+    // Also update the identities with the new KeyIDs
+    for (index, (key, _)) in keys.iter_mut().enumerate() {
+        let new_id = starting_id_num.checked_add(index as u32).expect("ID overflow during increment");
+        match key {
+            IdentityPublicKey::V0(ref mut id_pub_key_v0) => {
+                id_pub_key_v0.set_id(new_id);
+            },
+        }
+
+        // Update the identities with the new KeyIDs directly
+        for identity in identities.iter_mut() {
+            match identity {
+                Identity::V0(ref mut identity_v0) => {
+                    if let Some(pub_key) = identity_v0.public_keys.get_mut(&(index as KeyID)) {
+                        match pub_key {
+                            IdentityPublicKey::V0(ref mut id_pub_key_v0) => {
+                                id_pub_key_v0.set_id(new_id);
+                            },
+                        }
+                    }
+                },
+            }
+        }
+    }
+
     signer.add_keys(keys);
-    create_state_transitions_for_identities(identities, signer, rng, platform_version)
+
+    // Generate state transitions for each identity
+    identities.into_iter().map(|mut identity| {
+        // Generate an asset lock proof for each identity
+        let (asset_lock_proof, private_key) = create_asset_lock(200000)
+            .ok_or(ProtocolError::Generic("Failed to create asset lock proof".to_string()))?;
+            
+        // Convert the private key to bytes
+        let pk = private_key.to_bytes();
+
+        // Create the identity transition
+        let identity_create_transition = IdentityCreateTransition::try_from_identity_with_signer(
+            &identity,
+            asset_lock_proof,
+            pk.as_slice(),
+            signer,
+            &NativeBlsModule,
+            platform_version,
+        ).expect("expected to transform identity into identity create transition");
+        
+        // Set the identity ID based on the transition
+        identity.set_id(identity_create_transition.owner_id());
+
+        Ok((identity, identity_create_transition))
+    }).collect()
 }
 
 /// Generates state transitions for the creation of new identities.
@@ -679,7 +737,7 @@ pub fn create_state_transitions_for_identities(
                 instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
             let identity_create_transition =
                 IdentityCreateTransition::try_from_identity_with_signer(
-                    &identity,
+                    &identity.clone(),
                     asset_lock_proof,
                     pk.as_slice(),
                     signer,

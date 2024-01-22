@@ -4,11 +4,13 @@ use crate::operations::{
     DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
 };
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::PrivateKey;
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
 
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::{Identity, KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
@@ -24,7 +26,8 @@ use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Set
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use rand::prelude::{IteratorRandom, StdRng};
 use rand::Rng;
-use std::collections::{BTreeMap, HashSet};
+use tracing::info;
+use std::collections::{BTreeMap, HashSet, HashMap};
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
@@ -40,7 +43,6 @@ use dpp::state_transition::documents_batch_transition::document_transition::docu
 use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition, DocumentsBatchTransitionV0};
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
-
 use simple_signer::signer::SimpleSigner;
 
 pub mod frequency;
@@ -270,101 +272,64 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
 }
 
 impl Strategy {
-    /// // NOTE this function is completely unused
-    /// Adds strategy contracts from the current operations into a specified Drive.
-    ///
-    /// This method iterates over the operations present in the current strategy and for each operation
-    /// of type `Document`, it serializes the associated contract and applies it to the provided drive.
-    ///
-    /// # Parameters
-    /// - `drive`: The Drive where contracts should be added.
-    /// - `platform_version`: The current Platform version used for serializing the contract.
-    ///
-    /// # Panics
-    /// This method may panic in the following situations:
-    /// - If serialization of a contract fails.
-    /// - If applying a contract with serialization to the drive fails.
-    ///
-    /// # Examples
-    /// ```ignore
-    /// // Assuming `strategy` is an instance of `Strategy`
-    /// // and `drive` and `platform_version` are appropriately initialized.
-    /// strategy.add_strategy_contracts_into_drive(&drive, &platform_version);
-    /// ```
-    // TODO: This belongs to `DocumentOp`
-    // pub fn add_strategy_contracts_into_drive(
+    // // REMOVED - Document operations should only use known_contracts
+    // // Returns a vector of state transitions for registering the contracts used for Document ops.
+    // // For every Document op in the strategy, a new contract is registered on initial block.
+    // pub fn generate_document_contract_state_transitions(
     //     &mut self,
-    //     drive: &Drive,
+    //     current_identities: &Vec<Identity>,
+    //     signer: &SimpleSigner,
+    //     rng: &mut StdRng,
     //     platform_version: &PlatformVersion,
-    //     initial_block_info: &BlockInfo,
-    // ) {
-    //     for op in &self.operations {
-    //         if let OperationType::Document(doc_op) = &op.op_type {
-    //             let serialize = doc_op
-    //                 .contract
-    //                 .serialize_to_bytes_with_platform_version(platform_version)
-    //                 .expect("expected to serialize");
-    //             drive
-    //                 .apply_contract_with_serialization(
-    //                     &doc_op.contract,
-    //                     serialize,
-    //                     initial_block_info.clone(),
-    //                     true,
-    //                     Some(Cow::Owned(SingleEpoch(0))),
-    //                     None,
-    //                     platform_version,
-    //                 )
-    //                 .expect("expected to be able to add contract");
-    //         }
-    //     }
-    // }
+    // ) -> Vec<StateTransition> {
+    //     self.operations.iter_mut().filter_map(|op| {
+    //         if let OperationType::Document(doc_op) = &mut op.op_type {
+    //             // Find a matching identity for the signer
+    //             let matching_identity = current_identities.iter().find(|identity| {
+    //                 identity.public_keys().values().any(|public_key| {
+    //                     signer.private_keys.contains_key(&public_key) || signer.private_keys_in_creation.contains_key(&public_key)
+    //                 })
+    //             });
+    //             if let Some(identity) = matching_identity {
+    //                 let identity_info = identity.clone().into_partial_identity_info();
+    //                 let entropy = Bytes32::random_with_rng(rng);
+    
+    //                 let contract = &mut doc_op.contract;
+    //                 let document_type = &mut doc_op.document_type;
+    
+    //                 // Update contract's owner ID and ID based on the selected identity
+    //                 contract.set_owner_id(identity_info.id);
+    //                 let new_id = DataContract::generate_data_contract_id_v0(identity_info.id, entropy);
+    //                 contract.set_id(new_id);
 
-    /// Returns a vector of state transitions for registering the contracts used for Document ops.
-    /// For every Document op in the strategy, a new contract is registered on initial block.
-    pub fn generate_document_contract_state_transitions(
-        &mut self,
-        current_identities: &Vec<Identity>,
-        signer: &SimpleSigner,
-        rng: &mut StdRng,
-        platform_version: &PlatformVersion,
-    ) -> Vec<StateTransition> {
-        self.operations.iter_mut().filter_map(|op| {
-            if let OperationType::Document(doc_op) = &mut op.op_type {
-                let identity_num = rng.gen_range(0..current_identities.len());
-                let identity = current_identities
-                    .get(identity_num)
-                    .unwrap()
-                    .clone()
-                    .into_partial_identity_info();
+    //                 match document_type {
+    //                     DocumentType::V0(ref mut doc_type_v0) => {
+    //                         doc_type_v0.set_data_contract_id(new_id);
+    //                     },
+    //                 }
+                    
+    //                 // Create a data contract create transition and wrap it as StateTransition
+    //                 let data_contract_create_transition = DataContractCreateTransition::new_from_data_contract(
+    //                     contract.clone(),
+    //                     entropy,
+    //                     &identity_info,
+    //                     2, // key id 1 should always be a high or critical auth key in these tests
+    //                     signer,
+    //                     platform_version,
+    //                     None,
+    //                 );
+
+    //                 data_contract_create_transition.ok()
+
+    //             } else {
+    //                 None
+    //             }
+    //         } else {
+    //             None
+    //         }
+    //     }).collect()
+    // }
     
-                let entropy = Bytes32::random_with_rng(rng);
-    
-                let contract = &mut doc_op.contract;
-    
-                // Update contract's owner ID and ID based on the selected identity
-                contract.set_owner_id(identity.id);
-                let new_id = DataContract::generate_data_contract_id_v0(identity.id, entropy);
-                contract.set_id(new_id);
-        
-                // Create a data contract create transition and wrap it as StateTransition
-                let data_contract_create_transition = DataContractCreateTransition::new_from_data_contract(
-                    contract.clone(),
-                    entropy,
-                    &identity,
-                    1, // key id 1 should always be a high or critical auth key in these tests
-                    signer,
-                    platform_version,
-                    None,
-                )
-                .expect("Failed to create a data contract create transition");
-    
-                Some(data_contract_create_transition)
-            } else {
-                None
-            }
-        }).collect()
-    }
-        
     /// Creates state transitions based on the `identities_inserts` and `start_identities` fields.
     /// 
     /// This method creates a list of state transitions associated with identities. If the block height
@@ -394,30 +359,39 @@ impl Strategy {
         block_info: &BlockInfo,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
-        platform_version: &PlatformVersion,
+        create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
         config: &StrategyConfig,
-    ) -> Vec<(Identity, StateTransition)> {
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
         let mut state_transitions = vec![];
+    
+        // Add start_identities
         if block_info.height == config.start_block_height && !self.start_identities.is_empty() {
             state_transitions.append(&mut self.start_identities.clone());
         }
-        let frequency = &self.identities_inserts;
-        if frequency.check_hit(rng) {
-            let count = frequency.events(rng);
-            state_transitions.append(
-                &mut crate::transitions::create_identities_state_transitions(
-                    count,
-                    5,
+    
+        // Add identities_inserts
+        // Don't do this on first block because we need to skip utxo refresh
+        if block_info.height > config.start_block_height {
+            let frequency = &self.identities_inserts;
+            if frequency.check_hit(rng) {
+                let count = frequency.events(rng);
+                let mut new_transitions = crate::transitions::create_identities_state_transitions(
+                    count, // number of identities
+                    3, // number of keys per identity
                     signer,
                     rng,
+                    create_asset_lock,
                     platform_version,
-                ),
-            )
+                )?;
+                state_transitions.append(&mut new_transitions);
+            }    
         }
-        state_transitions
+    
+        Ok(state_transitions)
     }
-
-    /// Generates state transitions for data contracts based on the current set of identities.
+            
+    /// Generates state transitions for the inital contracts of the contracts_with_updates field.
     ///
     /// This method creates state transitions for data contracts by iterating over the contracts with updates
     /// present in the strategy. For each contract:
@@ -451,6 +425,8 @@ impl Strategy {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
+        let mut id_mapping = HashMap::new(); // Maps old IDs to new IDs
+    
         self.contracts_with_updates
             .iter_mut()
             .map(|(created_contract, contract_updates)| {
@@ -460,46 +436,34 @@ impl Strategy {
                     .unwrap()
                     .clone()
                     .into_partial_identity_info();
-
-                let entropy_used = *created_contract.entropy_used();
-
+    
                 let contract = created_contract.data_contract_mut();
-
+    
+                let bytes32 = Bytes32::random_with_rng(rng);
+    
                 contract.set_owner_id(identity.id);
-                // let old_id = contract.id();
-                let new_id = DataContract::generate_data_contract_id_v0(identity.id, entropy_used);
+                let old_id = contract.id();
+                let new_id = DataContract::generate_data_contract_id_v0(identity.id, bytes32);
                 contract.set_id(new_id);
-
+    
+                id_mapping.insert(old_id, new_id); // Store the mapping
+    
                 if let Some(contract_updates) = contract_updates {
                     for (_, updated_contract) in contract_updates.iter_mut() {
-                        updated_contract.data_contract_mut().set_id(contract.id());
-                        updated_contract
-                            .data_contract_mut()
-                            .set_owner_id(contract.owner_id());
+                        let updated_contract_data = updated_contract.data_contract_mut();
+                        // Use the new ID from the mapping
+                        if let Some(new_updated_id) = id_mapping.get(&updated_contract_data.id()) {
+                            updated_contract_data.set_id(*new_updated_id);
+                        }
+                        updated_contract_data.set_owner_id(contract.owner_id());
                     }
                 }
-
-                // // since we are changing the id, we need to update all the strategy
-                // // *** this seems wrong. the document operations dont use the same contracts
-                // // *** from contracts_with_updates.
-                // self.operations.iter_mut().for_each(|operation| {
-                //     if let OperationType::Document(document_op) = &mut operation.op_type {
-                //         if document_op.contract.id() == old_id {
-                //             document_op.contract.set_id(contract.id());
-                //             document_op.document_type = document_op
-                //                 .contract
-                //                 .document_type_for_name(document_op.document_type.name())
-                //                 .expect("document type must exist")
-                //                 .to_owned_document_type();
-                //         }
-                //     }
-                // });
-
+    
                 let state_transition = DataContractCreateTransition::new_from_data_contract(
                     contract.clone(),
-                    *created_contract.entropy_used(),
+                    bytes32,
                     &identity,
-                    1, // key id 1 should always be a high or critical auth key in these tests
+                    2, // key id 1 should always be a high or critical auth key in these tests
                     signer,
                     platform_version,
                     None,
@@ -509,8 +473,8 @@ impl Strategy {
             })
             .collect()
     }
-
-    /// Generates state transitions for updating data contracts based on the current set of identities and block height.
+    
+    /// Generates state transitions for contract updates in contracts_with_updates based on the current set of identities and block height.
     ///
     /// This method creates update state transitions for data contracts by iterating over the contracts with updates
     /// present in the strategy. For each contract:
@@ -548,12 +512,12 @@ impl Strategy {
         self.contracts_with_updates
             .iter_mut()
             .filter_map(|(_, contract_updates)| {
-                let contract_updates = contract_updates.as_ref()?;
+                let contract_updates = contract_updates.as_mut()?;
                 Some(
                     contract_updates
-                        .iter()
+                        .iter_mut()
                         .filter_map(|(update_height, contract_update)| {
-                            let adjusted_update_height = initial_block_height + *update_height;
+                            let adjusted_update_height = initial_block_height + *update_height * 3;
                             if adjusted_update_height == block_height {
                                 let identity = current_identities
                                     .iter()
@@ -568,10 +532,14 @@ impl Strategy {
                                 *identity_contract_nonce += 1;
                 
     
+                                // Use the update height as the version number
+                                let data_contract = contract_update.data_contract_mut();
+                                data_contract.set_version(*update_height as u32);
+    
                                 let state_transition = DataContractUpdateTransition::new_from_data_contract(
-                                    contract_update.data_contract().clone(),
+                                    data_contract.clone(),
                                     &identity,
-                                    1, // Assume key id 1 is a high or critical auth key
+                                    2, // Assume key id 1 is a high or critical auth key
                                     *identity_contract_nonce,
                                     signer,
                                     platform_version,
@@ -588,7 +556,7 @@ impl Strategy {
             .flatten()
             .collect()
     }
-        
+                
     /// Generates state transitions for a given block based on Strategy operations.
     ///
     /// The `state_transitions_for_block` function processes state transitions based on the provided
@@ -636,6 +604,7 @@ impl Strategy {
         &self,
         document_query_callback: &mut impl FnMut(LocalDocumentQuery) -> Vec<Document>,
         identity_fetch_callback: &mut impl FnMut(Identifier, Option<IdentityKeysRequest>) -> PartialIdentity,
+        create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
@@ -644,6 +613,7 @@ impl Strategy {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
+
         // Lists to store generated operations and block finalization operations
         let mut operations = vec![];
         let mut finalize_block_operations = vec![];
@@ -663,6 +633,7 @@ impl Strategy {
                         document_type,
                         contract,
                     }) => {
+                        // TO-DO: these documents should be created according to the data contract's validation rules
                         let documents = document_type
                             .random_documents_with_params(
                                 count as u32,
@@ -714,7 +685,7 @@ impl Strategy {
                                     DocumentsBatchTransitionV0 {
                                         owner_id: identity.id(),
                                         transitions: vec![document_create_transition.into()],
-                                        signature_public_key_id: 0,
+                                        signature_public_key_id: 2,
                                         signature: BinaryData::default(),
                                     }
                                     .into();
@@ -725,7 +696,6 @@ impl Strategy {
                                     .get_first_public_key_matching(
                                         Purpose::AUTHENTICATION,
                                         HashSet::from([
-                                            SecurityLevel::HIGH,
                                             SecurityLevel::CRITICAL,
                                         ]),
                                         HashSet::from([
@@ -740,7 +710,7 @@ impl Strategy {
                                         identity_public_key,
                                         signer,
                                         Some(|_data_contract_id, _document_type_name| {
-                                            Ok(SecurityLevel::HIGH)
+                                            Ok(SecurityLevel::CRITICAL)
                                         }),
                                     )
                                     .expect("expected to sign");
@@ -830,7 +800,7 @@ impl Strategy {
                                     DocumentsBatchTransitionV0 {
                                         owner_id: identity.id(),
                                         transitions: vec![document_create_transition.into()],
-                                        signature_public_key_id: 0,
+                                        signature_public_key_id: 1,
                                         signature: BinaryData::default(),
                                     }
                                     .into();
@@ -929,7 +899,7 @@ impl Strategy {
                                 DocumentsBatchTransitionV0 {
                                     owner_id: identity.id,
                                     transitions: vec![document_delete_transition.into()],
-                                    signature_public_key_id: 0,
+                                    signature_public_key_id: 1,
                                     signature: BinaryData::default(),
                                 }
                                 .into();
@@ -1031,7 +1001,7 @@ impl Strategy {
                                 DocumentsBatchTransitionV0 {
                                     owner_id: identity.id,
                                     transitions: vec![document_replace_transition.into()],
-                                    signature_public_key_id: 0,
+                                    signature_public_key_id: 1,
                                     signature: BinaryData::default(),
                                 }
                                 .into();
@@ -1069,11 +1039,16 @@ impl Strategy {
                             .collect();
 
                         for random_identity in random_identities {
-                            operations.push(crate::transitions::create_identity_top_up_transition(
-                                rng,
+                            match crate::transitions::create_identity_top_up_transition(
                                 random_identity,
+                                create_asset_lock,
                                 platform_version,
-                            ));
+                            ) {
+                                Ok(transition) => operations.push(transition),
+                                Err(_) => {
+                                    tracing::error!("Error creating asset lock proof for identity top up transition");
+                                }
+                            }
                         }
                     }
 
@@ -1138,7 +1113,7 @@ impl Strategy {
 
                     // Generate state transition for identity transfer operation
                     OperationType::IdentityTransfer if current_identities.len() > 1 => {
-                        // chose 2 last identities
+                        // choose 2 last identities
                         let indices: Vec<usize> =
                             vec![current_identities.len() - 2, current_identities.len() - 1];
 
@@ -1204,40 +1179,54 @@ impl Strategy {
     ///     platform_version
     /// );
     /// ```
-    pub fn state_transitions_for_block_with_new_identities(
+    pub async fn state_transitions_for_block_with_new_identities(
         &mut self,
         document_query_callback: &mut impl FnMut(LocalDocumentQuery) -> Vec<Document>,
         identity_fetch_callback: &mut impl FnMut(Identifier, Option<IdentityKeysRequest>) -> PartialIdentity,
+        create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
-        platform_version: &PlatformVersion,
         config: &StrategyConfig,
+        platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
         let mut finalize_block_operations = vec![];
-        let identity_state_transitions =
-            self.identity_state_transitions_for_block(block_info, signer, rng, platform_version, config);
+        
+        // Get identity state transitions
+        let identity_state_transitions = match self.identity_state_transitions_for_block(
+            block_info, signer, rng, create_asset_lock, config, platform_version
+        ) {
+            Ok(transitions) => transitions,
+            Err(_) => return (vec![], finalize_block_operations),
+        };
         let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
 
+        // Append the new identities to current_identities
+        current_identities.append(&mut identities);
+    
+        // Do certain things on the first block
         if block_info.height == config.start_block_height {
-            // add contracts for contracts_with_updates on first block of strategy
+            // Add initial contracts for contracts_with_updates on first block of strategy
             let mut contract_state_transitions =
                 self.contract_state_transitions(current_identities, signer, rng, platform_version);
             state_transitions.append(&mut contract_state_transitions);
 
-            let mut doc_op_contract_state_transitions = 
-                self.generate_document_contract_state_transitions(current_identities, signer, rng, platform_version);
-            state_transitions.append(&mut doc_op_contract_state_transitions);
+            // // REMOVED - Document operations should only use known_contracts
+            // // Add contracts for document operations on first block of strategy
+            // let mut doc_op_contract_state_transitions = 
+            //     self.generate_document_contract_state_transitions(current_identities, signer, rng, platform_version);
+            // state_transitions.append(&mut doc_op_contract_state_transitions);
         } else {
-            // Don't do any state transitions on first block
+            // do operations
             let (mut document_state_transitions, mut add_to_finalize_block_operations) = self
                 .state_transitions_for_block(
                     document_query_callback,
                     identity_fetch_callback,
+                    create_asset_lock,
                     block_info,
                     current_identities,
                     signer,
@@ -1249,8 +1238,7 @@ impl Strategy {
             finalize_block_operations.append(&mut add_to_finalize_block_operations);
             state_transitions.append(&mut document_state_transitions);
 
-            // There can also be contract updates
-
+            // do contract updates for contracts_with_updates
             let mut contract_update_state_transitions = self.contract_update_state_transitions(
                 current_identities,
                 block_info.height,
@@ -1266,6 +1254,55 @@ impl Strategy {
 
         (state_transitions, finalize_block_operations)
     }
+
+    // / // This function is completely unused
+    // / Adds strategy contracts from the current operations into a specified Drive.
+    // /
+    // / This method iterates over the operations present in the current strategy and for each operation
+    // / of type `Document`, it serializes the associated contract and applies it to the provided drive.
+    // /
+    // / # Parameters
+    // / - `drive`: The Drive where contracts should be added.
+    // / - `platform_version`: The current Platform version used for serializing the contract.
+    // /
+    // / # Panics
+    // / This method may panic in the following situations:
+    // / - If serialization of a contract fails.
+    // / - If applying a contract with serialization to the drive fails.
+    // /
+    // / # Examples
+    // / ```ignore
+    // / // Assuming `strategy` is an instance of `Strategy`
+    // / // and `drive` and `platform_version` are appropriately initialized.
+    // / strategy.add_strategy_contracts_into_drive(&drive, &platform_version);
+    // / ```
+    // TODO: This belongs to `DocumentOp`
+    // pub fn add_strategy_contracts_into_drive(
+    //     &mut self,
+    //     drive: &Drive,
+    //     platform_version: &PlatformVersion,
+    //     initial_block_info: &BlockInfo,
+    // ) {
+    //     for op in &self.operations {
+    //         if let OperationType::Document(doc_op) = &op.op_type {
+    //             let serialize = doc_op
+    //                 .contract
+    //                 .serialize_to_bytes_with_platform_version(platform_version)
+    //                 .expect("expected to serialize");
+    //             drive
+    //                 .apply_contract_with_serialization(
+    //                     &doc_op.contract,
+    //                     serialize,
+    //                     initial_block_info.clone(),
+    //                     true,
+    //                     Some(Cow::Owned(SingleEpoch(0))),
+    //                     None,
+    //                     platform_version,
+    //                 )
+    //                 .expect("expected to be able to add contract");
+    //         }
+    //     }
+    // }
 }
 
 #[cfg(test)]
