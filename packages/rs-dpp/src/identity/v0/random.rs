@@ -57,7 +57,8 @@ impl IdentityV0 {
         let balance = rng.gen::<u64>() >> 20; //around 175 Dash as max
         let (public_keys, private_keys): (BTreeMap<KeyID, IdentityPublicKey>, I) =
             IdentityPublicKey::main_keys_with_random_authentication_keys_with_private_keys_with_rng(
-                key_count, rng,
+                key_count, 
+                rng,
                 platform_version,
             )?
                 .into_iter()

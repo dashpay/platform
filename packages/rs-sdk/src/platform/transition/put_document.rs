@@ -17,9 +17,9 @@ use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
 
 #[async_trait::async_trait]
-/// A trait for putting an identity to platform
+/// A trait for putting a document to platform
 pub trait PutDocument<S: Signer> {
-    /// Puts an identity on platform
+    /// Puts a document on platform
     async fn put_to_platform(
         &self,
         sdk: &Sdk,

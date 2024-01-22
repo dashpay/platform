@@ -1,12 +1,16 @@
 use crate::masternodes::MasternodeListItemWithUpdates;
 use crate::query::QueryStrategy;
 use crate::BlockHeight;
-use dashcore_rpc::dashcore;
+use dashcore_rpc::dashcore::{self, PrivateKey, Network};
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
+use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
+use dpp::{ProtocolError, NativeBlsModule};
 use dpp::block::block_info::BlockInfo;
 
+use dpp::dashcore::secp256k1::SecretKey;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
+use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
@@ -15,7 +19,7 @@ use strategy_tests::operations::{
 
 use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
-use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel, KeyID};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
@@ -26,6 +30,7 @@ use drive::drive::flags::StorageFlags::SingleEpoch;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
 
+use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use drive::query::DriveQuery;
@@ -36,10 +41,12 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
 use strategy_tests::Strategy;
+use strategy_tests::transitions::{create_state_transitions_for_identities, instant_asset_lock_proof_fixture};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::str::FromStr;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::BinaryData;
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
@@ -256,7 +263,7 @@ impl NetworkStrategy {
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Vec<(Identity, StateTransition)> {
+    ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
         let mut state_transitions = vec![];
         if block_info.height == 1 && !self.strategy.start_identities.is_empty() {
             state_transitions.append(&mut self.strategy.start_identities.clone());
@@ -264,19 +271,18 @@ impl NetworkStrategy {
         let frequency = &self.strategy.identities_inserts;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
-            state_transitions.append(
-                &mut strategy_tests::transitions::create_identities_state_transitions(
-                    count,
-                    5,
-                    signer,
-                    rng,
-                    platform_version,
-                ),
-            )
+            let mut new_transitions = NetworkStrategy::create_identities_state_transitions(
+                count,
+                5,
+                signer,
+                rng,
+                platform_version,
+            );
+            state_transitions.append(&mut new_transitions);
         }
-        state_transitions
+        Ok(state_transitions)
     }
-
+    
     pub fn contract_state_transitions(
         &mut self,
         current_identities: &Vec<Identity>,
@@ -771,7 +777,7 @@ impl NetworkStrategy {
 
                         for random_identity in random_identities {
                             operations.push(
-                                strategy_tests::transitions::create_identity_top_up_transition(
+                                NetworkStrategy::create_identity_top_up_transition(
                                     rng,
                                     random_identity,
                                     platform_version,
@@ -884,12 +890,21 @@ impl NetworkStrategy {
         let platform_version = platform_state
             .current_platform_version()
             .expect("expected platform version");
-        let identity_state_transitions =
+        
+        let identity_state_transitions_result =
             self.identity_state_transitions_for_block(block_info, signer, rng, platform_version);
-        let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
-            identity_state_transitions.into_iter().unzip();
+        
+        // Handle the Result returned by identity_state_transitions_for_block
+        let (mut identities, mut state_transitions) = match identity_state_transitions_result {
+            Ok(transitions) => transitions.into_iter().unzip(),
+            Err(error) => {
+                eprintln!("Error creating identity state transitions: {:?}", error);
+                (vec![], vec![])
+            },
+        };
+        
         current_identities.append(&mut identities);
-
+    
         if block_info.height == 1 {
             // add contracts on block 1
             let mut contract_state_transitions =
@@ -922,6 +937,49 @@ impl NetworkStrategy {
 
         (state_transitions, finalize_block_operations)
     }
+
+    // add this because strategy tests library now requires a callback and uses the actual chain.
+    fn create_identities_state_transitions(
+        count: u16,
+        key_count: KeyID,
+        signer: &mut SimpleSigner,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Vec<(Identity, StateTransition)> {
+        let (identities, keys) = Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(
+            count,
+            key_count,
+            rng,
+            platform_version,
+        )
+        .expect("expected to create identities");
+        signer.add_keys(keys);
+        create_state_transitions_for_identities(identities, signer, rng, platform_version)
+    }
+
+    // add this because strategy tests library now requires a callback and uses the actual chain.
+    fn create_identity_top_up_transition(
+        rng: &mut StdRng,
+        identity: &Identity,
+        platform_version: &PlatformVersion,
+    ) -> StateTransition {
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(rng, platform_version)
+            .unwrap();
+        let sk: [u8; 32] = pk.try_into().unwrap();
+        let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
+        let asset_lock_proof =
+            instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
+    
+        IdentityTopUpTransition::try_from_identity(
+            identity,
+            asset_lock_proof,
+            secret_key.as_ref(),
+            platform_version,
+            None,
+        )
+        .expect("expected to create top up transition")
+    }    
 }
 
 pub enum StrategyRandomness {

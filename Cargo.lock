@@ -1271,6 +1271,7 @@ dependencies = [
  "test-case",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2287,7 +2288,7 @@ source = "git+https://github.com/fominok/jsonschema-rs?branch=feat-unevaluated-p
 dependencies = [
  "ahash 0.7.7",
  "anyhow",
- "base64 0.13.1",
+ "base64 0.21.5",
  "bytecount",
  "fancy-regex",
  "fraction",
@@ -3974,12 +3975,14 @@ dependencies = [
  "bincode 2.0.0-rc.3",
  "dpp",
  "drive",
+ "futures",
  "hex",
  "platform-serialization-derive",
  "platform-version",
  "rand",
  "rocksdb",
  "simple-signer",
+ "tracing",
 ]
 
 [[package]]
