@@ -7,7 +7,6 @@ use dpp::platform_value::Error as ValueError;
 use dpp::version::PlatformVersionError;
 use drive::dpp::ProtocolError;
 use drive::error::Error as DriveError;
-use drive::grovedb;
 use tenderdash_abci::proto::abci::ResponseException;
 use tracing::error;
 
