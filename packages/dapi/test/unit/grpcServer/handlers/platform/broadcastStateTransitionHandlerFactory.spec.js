@@ -3,6 +3,8 @@ const {
     error: {
       InvalidArgumentGrpcError,
       AlreadyExistsGrpcError,
+      UnavailableGrpcError,
+      ResourceExhaustedGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -115,23 +117,72 @@ describe('broadcastStateTransitionHandlerFactory', () => {
     expect(rpcClientMock.request).to.be.calledOnceWith('broadcast_tx_sync', { tx });
   });
 
-  it('should throw an error if transaction broadcast returns error', async () => {
-    const error = { code: -1, message: "Something didn't work", data: 'Some data' };
-
-    response.error = error;
+  it('should throw a UnavailableGrpcError if tenderdash hands up', async () => {
+    const error = new Error('socket hang up');
+    rpcClientMock.request.throws(error);
 
     try {
       await broadcastStateTransitionHandler(call);
 
-      expect.fail('should throw an error');
+      expect.fail('should throw UnavailableGrpcError');
     } catch (e) {
-      expect(e.message).to.equal(error.message);
-      expect(e.data).to.equal(error.data);
-      expect(e.code).to.equal(error.code);
+      expect(e).to.be.an.instanceOf(UnavailableGrpcError);
+      expect(e.getMessage()).to.equal('Tenderdash is not available');
     }
   });
 
-  it('should throw FailedPreconditionGrpcError if transaction was broadcasted twice', async () => {
+  it('should throw a UnavailableGrpcError if broadcast confirmation not received', async () => {
+    response.error = {
+      code: -32603,
+      message: 'Internal error',
+      data: 'broadcast confirmation not received: heya',
+    };
+
+    try {
+      await broadcastStateTransitionHandler(call);
+
+      expect.fail('should throw UnavailableGrpcError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(UnavailableGrpcError);
+      expect(e.getMessage()).to.equal(response.error.data);
+    }
+  });
+
+  it('should throw an InvalidArgumentGrpcError if state transition size is too big', async () => {
+    response.error = {
+      code: -32603,
+      message: 'Internal error',
+      data: 'Tx too large. La la la',
+    };
+
+    try {
+      await broadcastStateTransitionHandler(call);
+
+      expect.fail('should throw UnavailableGrpcError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
+      expect(e.getMessage()).to.equal('state transition is too large. La la la');
+    }
+  });
+
+  it('should throw a ResourceExhaustedGrpcError if mempool is full', async () => {
+    response.error = {
+      code: -32603,
+      message: 'Internal error',
+      data: 'mempool is full: heya',
+    };
+
+    try {
+      await broadcastStateTransitionHandler(call);
+
+      expect.fail('should throw UnavailableGrpcError');
+    } catch (e) {
+      expect(e).to.be.an.instanceOf(ResourceExhaustedGrpcError);
+      expect(e.getMessage()).to.equal(response.error.data);
+    }
+  });
+
+  it('should throw AlreadyExistsGrpcError if transaction was broadcasted twice', async () => {
     response.error = {
       code: -32603,
       message: 'Internal error',
@@ -148,7 +199,7 @@ describe('broadcastStateTransitionHandlerFactory', () => {
     }
   });
 
-  it('should throw call createGrpcErrorFromDriveResponse if error code is not 0', async () => {
+  it('should throw a gRPC error based on drive\'s response', async () => {
     const message = 'not found';
     const metadata = {
       data: 'some data',
@@ -174,6 +225,22 @@ describe('broadcastStateTransitionHandlerFactory', () => {
         response.result.code,
         response.result.info,
       );
+    }
+  });
+
+  it('should throw an error if transaction broadcast returns unknown error', async () => {
+    const error = { code: -1, message: "Something didn't work", data: 'Some data' };
+
+    response.error = error;
+
+    try {
+      await broadcastStateTransitionHandler(call);
+
+      expect.fail('should throw an error');
+    } catch (e) {
+      expect(e.message).to.equal(error.message);
+      expect(e.data).to.equal(error.data);
+      expect(e.code).to.equal(error.code);
     }
   });
 });
