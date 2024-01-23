@@ -20,6 +20,6 @@ pub mod document_types {
 }
 
 pub fn load_documents_schemas() -> Result<Value, Error> {
-    serde_json::from_str(include_str!("../../schema/v0/dpns-contract-documents.json"))
+    serde_json::from_str(include_str!("../../schema/v1/dpns-contract-documents.json"))
         .map_err(Error::InvalidSchemaJson)
 }

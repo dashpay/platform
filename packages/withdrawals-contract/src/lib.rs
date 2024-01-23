@@ -1,10 +1,12 @@
 pub use crate::error::Error;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 use platform_value::{Identifier, IdentifierBytes32};
 use platform_version::version::PlatformVersion;
 use serde_json::Value;
+use serde_repr::{Deserialize_repr, Serialize_repr};
 
 mod error;
-pub mod v0;
+pub mod v1;
 
 pub const ID_BYTES: [u8; 32] = [
     54, 98, 187, 97, 225, 127, 174, 62, 162, 148, 207, 96, 49, 151, 251, 10, 171, 109, 81, 24, 11,
@@ -19,6 +21,27 @@ pub const OWNER_ID_BYTES: [u8; 32] = [
 pub const ID: Identifier = Identifier(IdentifierBytes32(ID_BYTES));
 pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));
 
+// @append_only
+#[repr(u8)]
+#[derive(
+    Serialize_repr,
+    Deserialize_repr,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Debug,
+    TryFromPrimitive,
+    IntoPrimitive,
+)]
+pub enum WithdrawalStatus {
+    QUEUED = 0,
+    POOLED = 1,
+    BROADCASTED = 2,
+    COMPLETE = 3,
+    EXPIRED = 4,
+}
+
 pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Value>, Error> {
     match platform_version.system_data_contracts.withdrawals {
         1 => Ok(None),
@@ -31,7 +54,7 @@ pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Val
 }
 pub fn load_documents_schemas(platform_version: &PlatformVersion) -> Result<Value, Error> {
     match platform_version.system_data_contracts.withdrawals {
-        1 => v0::load_documents_schemas(),
+        1 => v1::load_documents_schemas(),
         version => Err(Error::UnknownVersionMismatch {
             method: "withdrawals_contract::load_documents_schemas".to_string(),
             known_versions: vec![1],

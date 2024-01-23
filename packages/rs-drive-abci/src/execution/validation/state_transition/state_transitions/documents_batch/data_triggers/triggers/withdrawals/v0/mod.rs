@@ -15,7 +15,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::DocumentV0Getters;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
-use dpp::system_data_contracts::withdrawals_contract::v0::document_types::withdrawal;
+use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -104,8 +104,8 @@ pub fn delete_withdrawal_data_trigger_v0(
         .get_integer("status")
         .map_err(ProtocolError::ValueError)?;
 
-    if status != withdrawals_contract::v0::WithdrawalStatus::COMPLETE as u8
-        || status != withdrawals_contract::v0::WithdrawalStatus::EXPIRED as u8
+    if status != withdrawals_contract::WithdrawalStatus::COMPLETE as u8
+        || status != withdrawals_contract::WithdrawalStatus::EXPIRED as u8
     {
         let err = DataTriggerConditionError::new(
             data_contract.id(),
@@ -218,7 +218,7 @@ mod tests {
                 "coreFeePerByte": 1u32,
                 "pooling": Pooling::Never as u8,
                 "outputScript": (0..23).collect::<Vec<u8>>(),
-                "status": withdrawals_contract::v0::WithdrawalStatus::BROADCASTED as u8,
+                "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
                 "transactionIndex": 1u64,
                 "transactionSignHeight": 93u64,
                 "transactionId": Bytes32::new([1;32]),
@@ -272,7 +272,7 @@ mod tests {
                 "coreFeePerByte": 1u32,
                 "pooling": Pooling::Never as u8,
                 "outputScript": (0..23).collect::<Vec<u8>>(),
-                "status": withdrawals_contract::v0::WithdrawalStatus::BROADCASTED as u8,
+                "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
                 "transactionIndex": 1u64,
                 "transactionSignHeight": 93u64,
                 "transactionId": Bytes32::new([1;32]),

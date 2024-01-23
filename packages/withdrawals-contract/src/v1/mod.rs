@@ -1,7 +1,5 @@
 use crate::error::Error;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde_json::Value;
-use serde_repr::{Deserialize_repr, Serialize_repr};
 
 pub mod document_types {
     pub mod withdrawal {
@@ -23,29 +21,7 @@ pub mod document_types {
     }
 }
 
-// @append_only
-#[repr(u8)]
-#[derive(
-    Serialize_repr,
-    Deserialize_repr,
-    PartialEq,
-    Eq,
-    Clone,
-    Copy,
-    Debug,
-    TryFromPrimitive,
-    IntoPrimitive,
-)]
-
-pub enum WithdrawalStatus {
-    QUEUED = 0,
-    POOLED = 1,
-    BROADCASTED = 2,
-    COMPLETE = 3,
-    EXPIRED = 4,
-}
-
 pub(super) fn load_documents_schemas() -> Result<Value, Error> {
-    serde_json::from_str(include_str!("../../schema/v0/withdrawals-documents.json"))
+    serde_json::from_str(include_str!("../../schema/v1/withdrawals-documents.json"))
         .map_err(Error::InvalidSchemaJson)
 }

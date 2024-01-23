@@ -13,6 +13,6 @@ pub mod document_types {
 }
 
 pub fn load_documents_schemas() -> Result<Value, Error> {
-    serde_json::from_str(include_str!("../../schema/v0/feature-flags-documents.json"))
+    serde_json::from_str(include_str!("../../schema/v1/feature-flags-documents.json"))
         .map_err(Error::InvalidSchemaJson)
 }

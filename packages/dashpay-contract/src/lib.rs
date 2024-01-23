@@ -1,5 +1,5 @@
 mod error;
-pub mod v0;
+pub mod v1;
 
 pub use crate::error::Error;
 use platform_value::{Identifier, IdentifierBytes32};
@@ -18,6 +18,7 @@ pub const OWNER_ID_BYTES: [u8; 32] = [
 
 pub const ID: Identifier = Identifier(IdentifierBytes32(ID_BYTES));
 pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));
+
 pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Value>, Error> {
     match platform_version.system_data_contracts.dashpay {
         1 => Ok(None),
@@ -30,7 +31,7 @@ pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Val
 }
 pub fn load_documents_schemas(platform_version: &PlatformVersion) -> Result<Value, Error> {
     match platform_version.system_data_contracts.dashpay {
-        1 => v0::load_documents_schemas(),
+        1 => v1::load_documents_schemas(),
         version => Err(Error::UnknownVersionMismatch {
             method: "dashpay_contract::load_documents_schemas".to_string(),
             known_versions: vec![1],

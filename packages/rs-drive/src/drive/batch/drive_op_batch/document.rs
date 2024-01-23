@@ -14,7 +14,7 @@ use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
 
-use dpp::system_data_contracts::withdrawals_contract::v0::document_types::withdrawal;
+use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
 use dpp::data_contracts::SystemDataContract;
 use dpp::version::PlatformVersion;

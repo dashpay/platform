@@ -14,7 +14,7 @@ pub mod document_types {
 
 pub(super) fn load_documents_schemas() -> Result<Value, Error> {
     serde_json::from_str(include_str!(
-        "../../schema/v0/masternode-reward-shares-documents.json"
+        "../../schema/v1/masternode-reward-shares-documents.json"
     ))
     .map_err(Error::InvalidSchemaJson)
 }

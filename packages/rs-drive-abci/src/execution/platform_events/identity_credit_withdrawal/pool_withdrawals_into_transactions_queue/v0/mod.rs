@@ -10,7 +10,7 @@ use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use drive::grovedb::Transaction;
 
 use dpp::system_data_contracts::withdrawals_contract;
-use dpp::system_data_contracts::withdrawals_contract::v0::document_types::withdrawal;
+use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
@@ -58,7 +58,7 @@ where
         };
 
         let mut documents = self.drive.fetch_withdrawal_documents_by_status(
-            withdrawals_contract::v0::WithdrawalStatus::QUEUED.into(),
+            withdrawals_contract::WithdrawalStatus::QUEUED.into(),
             Some(transaction),
             platform_version,
         )?;
@@ -92,7 +92,7 @@ where
 
             document.set_u8(
                 withdrawal::properties::STATUS,
-                withdrawals_contract::v0::WithdrawalStatus::POOLED as u8,
+                withdrawals_contract::WithdrawalStatus::POOLED as u8,
             );
 
             document.set_i64(
@@ -235,7 +235,7 @@ mod tests {
                 "coreFeePerByte": 1u32,
                 "pooling": Pooling::Never as u8,
                 "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
-                "status": withdrawals_contract::v0::WithdrawalStatus::QUEUED as u8,
+                "status": withdrawals_contract::WithdrawalStatus::QUEUED as u8,
                 "transactionIndex": 1u64,
             }),
             None,
@@ -263,7 +263,7 @@ mod tests {
                 "coreFeePerByte": 1u32,
                 "pooling": Pooling::Never as u8,
                 "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
-                "status": withdrawals_contract::v0::WithdrawalStatus::QUEUED as u8,
+                "status": withdrawals_contract::WithdrawalStatus::QUEUED as u8,
                 "transactionIndex": 2u64,
             }),
             None,
@@ -292,7 +292,7 @@ mod tests {
         let updated_documents = platform
             .drive
             .fetch_withdrawal_documents_by_status(
-                withdrawals_contract::v0::WithdrawalStatus::POOLED.into(),
+                withdrawals_contract::WithdrawalStatus::POOLED.into(),
                 Some(&transaction),
                 platform_version,
             )

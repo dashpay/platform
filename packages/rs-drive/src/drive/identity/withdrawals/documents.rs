@@ -5,7 +5,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::Document;
 use dpp::platform_value::Value;
 use dpp::system_data_contracts::withdrawals_contract;
-use dpp::system_data_contracts::withdrawals_contract::v0::document_types::withdrawal;
+use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use indexmap::IndexMap;
@@ -141,7 +141,7 @@ impl Drive {
             WhereClause {
                 field: withdrawal::properties::STATUS.to_string(),
                 operator: crate::query::WhereOperator::Equal,
-                value: Value::U8(withdrawals_contract::v0::WithdrawalStatus::POOLED as u8),
+                value: Value::U8(withdrawals_contract::WithdrawalStatus::POOLED as u8),
             },
         );
 
@@ -193,7 +193,7 @@ mod tests {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
-        use dpp::system_data_contracts::withdrawals_contract::v0::document_types::withdrawal;
+        use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::version::PlatformVersion;
         use dpp::withdrawal::Pooling;
@@ -214,7 +214,7 @@ mod tests {
 
             let documents = drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::v0::WithdrawalStatus::QUEUED.into(),
+                    withdrawals_contract::WithdrawalStatus::QUEUED.into(),
                     Some(&transaction),
                     platform_version,
                 )
@@ -232,7 +232,7 @@ mod tests {
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
                     "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
-                    "status": withdrawals_contract::v0::WithdrawalStatus::QUEUED as u8,
+                    "status": withdrawals_contract::WithdrawalStatus::QUEUED as u8,
                     "transactionIndex": 1u64,
                 }),
                 None,
@@ -260,7 +260,7 @@ mod tests {
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
                     "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
-                    "status": withdrawals_contract::v0::WithdrawalStatus::POOLED,
+                    "status": withdrawals_contract::WithdrawalStatus::POOLED,
                     "transactionIndex": 2u64,
                 }),
                 None,
@@ -278,7 +278,7 @@ mod tests {
 
             let documents = drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::v0::WithdrawalStatus::QUEUED.into(),
+                    withdrawals_contract::WithdrawalStatus::QUEUED.into(),
                     Some(&transaction),
                     platform_version,
                 )
@@ -288,7 +288,7 @@ mod tests {
 
             let documents = drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::v0::WithdrawalStatus::POOLED.into(),
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
                     Some(&transaction),
                     platform_version,
                 )
@@ -303,7 +303,7 @@ mod tests {
         use dpp::document::DocumentV0Getters;
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::{platform_value, Bytes32};
-        use dpp::system_data_contracts::withdrawals_contract::v0::document_types::withdrawal;
+        use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::version::PlatformVersion;
         use dpp::withdrawal::Pooling;
@@ -334,7 +334,7 @@ mod tests {
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
                     "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
-                    "status": withdrawals_contract::v0::WithdrawalStatus::POOLED as u8,
+                    "status": withdrawals_contract::WithdrawalStatus::POOLED as u8,
                     "transactionIndex": 1u64,
                     "transactionId": Bytes32::default(),
                 }),

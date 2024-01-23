@@ -14,6 +14,6 @@ pub mod document_types {
 }
 
 pub fn load_documents_schemas() -> Result<Value, Error> {
-    serde_json::from_str(include_str!("../../schema/v0/dashpay.schema.json"))
+    serde_json::from_str(include_str!("../../schema/v1/dashpay.schema.json"))
         .map_err(Error::InvalidSchemaJson)
 }
