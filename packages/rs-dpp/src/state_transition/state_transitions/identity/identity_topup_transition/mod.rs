@@ -80,7 +80,7 @@ impl IdentityTopUpTransition {
         {
             0 => Ok(MinimalAssetLockValue::V0 as u64),
             v => Err(ProtocolError::UnknownVersionError(format!(
-                "Unknown IdentityCreateTransition version for minimal_asset_lock_value {v}"
+                "Unknown IdentityTopUpTransition version for minimal_asset_lock_value {v}"
             ))),
         }
     }
