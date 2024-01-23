@@ -241,9 +241,9 @@ export default function enableCoreQuorumsTaskFactory(generateBlocks) {
           );
 
           let { result: newQuorumList } = await ctx.seedRpcClient.quorum('list');
-          let testPlatformQuorumHash = newQuorumList[LLMQ_TYPE_TEST_PLATFORM][0];
+          let testPlatformQuorumEnabled = !!newQuorumList[LLMQ_TYPE_TEST_PLATFORM][0];
 
-          while (!testPlatformQuorumHash) {
+          while (!testPlatformQuorumEnabled) {
             await wait(300);
 
             await ctx.bumpMockTime();
@@ -260,7 +260,7 @@ export default function enableCoreQuorumsTaskFactory(generateBlocks) {
             );
 
             ({ result: newQuorumList } = await ctx.seedRpcClient.quorum('list'));
-            [testPlatformQuorumHash] = newQuorumList[LLMQ_TYPE_TEST_PLATFORM];
+            testPlatformQuorumEnabled = !!newQuorumList[LLMQ_TYPE_TEST_PLATFORM][0];
           }
 
           const { result: quorumList } = await ctx.seedRpcClient.quorum('list', 1);
