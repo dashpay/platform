@@ -19,9 +19,4 @@ pub trait IdentityTopUpTransitionMethodsV0 {
     fn get_type() -> StateTransitionType {
         StateTransitionType::IdentityTopUp
     }
-
-    /// Get asset lock minimal value
-    fn get_minimal_asset_lock_value(
-        platform_version: &PlatformVersion,
-    ) -> Result<u64, ProtocolError>;
 }

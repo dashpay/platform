@@ -68,13 +68,6 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
     fn get_type() -> StateTransitionType {
         StateTransitionType::IdentityCreate
     }
-
-    /// Get minimal asset lock value
-    fn get_minimal_asset_lock_value(
-        _platform_version: &PlatformVersion,
-    ) -> Result<u64, ProtocolError> {
-        Ok(MinimalAssetLockValue::V0 as u64)
-    }
 }
 
 impl IdentityCreateTransitionAccessorsV0 for IdentityCreateTransitionV0 {

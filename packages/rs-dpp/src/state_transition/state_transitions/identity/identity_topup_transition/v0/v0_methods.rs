@@ -37,12 +37,6 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
 
         Ok(state_transition)
     }
-
-    fn get_minimal_asset_lock_value(
-        _platform_version: &PlatformVersion,
-    ) -> Result<u64, ProtocolError> {
-        Ok(MinimalAssetLockValue::V0 as u64)
-    }
 }
 
 impl IdentityTopUpTransitionAccessorsV0 for IdentityTopUpTransitionV0 {

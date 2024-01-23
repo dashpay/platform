@@ -17,8 +17,4 @@ pub trait IdentityCreateTransitionMethodsV0 {
     ) -> Result<StateTransition, ProtocolError>;
     /// Get State Transition type
     fn get_type() -> StateTransitionType;
-    /// Get asset lock minimal value
-    fn get_minimal_asset_lock_value(
-        platform_version: &PlatformVersion,
-    ) -> Result<u64, ProtocolError>;
 }

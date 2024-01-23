@@ -43,19 +43,4 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransition {
             ))),
         }
     }
-
-    fn get_minimal_asset_lock_value(
-        platform_version: &PlatformVersion,
-    ) -> Result<u64, ProtocolError> {
-        match platform_version
-            .drive_abci
-            .validation_and_processing
-            .process_state_transition
-        {
-            0 => IdentityTopUpTransitionV0::get_minimal_asset_lock_value(platform_version),
-            v => Err(ProtocolError::UnknownVersionError(format!(
-                "Unknown IdentityCreateTransition version for minimal_asset_lock_value {v}"
-            ))),
-        }
-    }
 }
