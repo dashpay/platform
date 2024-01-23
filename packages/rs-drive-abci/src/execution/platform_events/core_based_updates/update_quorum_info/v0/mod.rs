@@ -239,7 +239,7 @@ where
             let added_a_chain_lock_validating_quorum = !quorum_infos.is_empty();
 
             if added_a_chain_lock_validating_quorum {
-                // Map to validator sets
+                // Map to chain lock validating quorums
                 let new_chain_lock_quorums = quorum_infos
                     .into_iter()
                     .map(|(quorum_hash, info_result)| {
