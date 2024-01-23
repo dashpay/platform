@@ -1,6 +1,6 @@
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
-const dpnsDocumentTypes = require('@dashevo/dpns-contract/schema/v0/dpns-contract-documents.json');
+const dpnsDocumentTypes = require('@dashevo/dpns-contract/schema/v1/dpns-contract-documents.json');
 
 // const { DashPlatformProtocol, Identity, Identifier, default: loadWasmDpp }  = require('@dashevo/wasm-dpp');
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
