@@ -171,6 +171,7 @@ export default function getBaseConfigFactory(homeDir) {
             chainLock: {
               llmqType: 2,
               dkgInterval: 288,
+              llmqSize: 400,
             },
             epochTime: 788400,
           },

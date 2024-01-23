@@ -56,6 +56,7 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
             chainLock: {
               llmqType: 1,
               dkgInterval: 24,
+              llmqSize: 50,
             },
           },
           tenderdash: {
