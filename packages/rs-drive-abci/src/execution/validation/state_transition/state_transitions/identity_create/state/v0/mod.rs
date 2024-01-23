@@ -3,6 +3,7 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 
+use dpp::consensus::state::identity::invalid_asset_lock_proof_value::InvalidAssetLockProofValueError;
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::dashcore::signer;
 use dpp::dashcore::signer::double_sha;
@@ -12,6 +13,7 @@ use dpp::identity::state_transition::AssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
 
@@ -125,6 +127,12 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
         }
 
         let tx_out = tx_out_validation.into_data()?;
+        let min_value = IdentityCreateTransition::get_minimal_asset_lock_value(platform_version)?;
+        if tx_out.value < min_value {
+            return Ok(ConsensusValidationResult::new_with_error(
+                InvalidAssetLockProofValueError::new(tx_out.value, min_value).into(),
+            ));
+        }
 
         // Verify one time signature
 
