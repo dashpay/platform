@@ -8,6 +8,7 @@ use crate::prelude::AssetLockProof;
 use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use crate::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 
+use crate::state_transition::identity_topup_transition::MinimalAssetLockValue;
 use platform_version::version::PlatformVersion;
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
@@ -35,6 +36,12 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
         state_transition.sign_by_private_key(asset_lock_proof_private_key, ECDSA_HASH160, bls)?;
 
         Ok(state_transition)
+    }
+
+    fn get_minimal_asset_lock_value(
+        _platform_version: &PlatformVersion,
+    ) -> Result<u64, ProtocolError> {
+        Ok(MinimalAssetLockValue::V0 as u64)
     }
 }
 

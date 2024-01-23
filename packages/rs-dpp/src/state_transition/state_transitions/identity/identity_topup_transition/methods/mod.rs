@@ -10,6 +10,7 @@ use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::{BlsModule, ProtocolError};
 
+use crate::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use platform_version::version::PlatformVersion;
 
 impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransition {
@@ -39,6 +40,21 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransition {
             )?),
             v => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown IdentityTopUpTransition version for try_from_identity {v}"
+            ))),
+        }
+    }
+
+    fn get_minimal_asset_lock_value(
+        platform_version: &PlatformVersion,
+    ) -> Result<u64, ProtocolError> {
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .process_state_transition
+        {
+            0 => IdentityTopUpTransitionV0::get_minimal_asset_lock_value(platform_version),
+            v => Err(ProtocolError::UnknownVersionError(format!(
+                "Unknown IdentityCreateTransition version for minimal_asset_lock_value {v}"
             ))),
         }
     }

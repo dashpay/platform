@@ -13,6 +13,7 @@ use dpp::identity::state_transition::AssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
 
@@ -32,26 +33,6 @@ use drive::grovedb::TransactionArg;
 
 use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_in_state;
-
-#[repr(u64)]
-enum MinimalAssetLockValue {
-    V1 = 120000,
-}
-
-fn minimal_asset_lock_value(platform_version: &PlatformVersion) -> Result<u64, Error> {
-    match platform_version
-        .drive_abci
-        .validation_and_processing
-        .process_state_transition
-    {
-        0 => Ok(MinimalAssetLockValue::V1 as u64),
-        version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-            method: "minimal_asset_lock_value".to_string(),
-            known_versions: vec![0],
-            received: version,
-        })),
-    }
-}
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_create) trait IdentityCreateStateTransitionStateValidationV0
 {
@@ -146,7 +127,7 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
         }
 
         let tx_out = tx_out_validation.into_data()?;
-        let min_value = minimal_asset_lock_value(platform_version)?;
+        let min_value = IdentityCreateTransition::get_minimal_asset_lock_value(platform_version)?;
         if tx_out.value < min_value {
             return Ok(ConsensusValidationResult::new_with_error(
                 InvalidAssetLockProofValueError::new(tx_out.value, min_value).into(),

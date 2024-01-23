@@ -82,3 +82,8 @@ impl StateTransitionFieldTypes for IdentityTopUpTransition {
         vec![]
     }
 }
+
+#[repr(u64)]
+enum MinimalAssetLockValue {
+    V0 = 1000,
+}

@@ -10,6 +10,7 @@ use crate::prelude::AssetLockProof;
 use crate::serialization::Signable;
 use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
+use crate::state_transition::identity_create_transition::MinimalAssetLockValue;
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
@@ -66,6 +67,13 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
     /// Get State Transition type
     fn get_type() -> StateTransitionType {
         StateTransitionType::IdentityCreate
+    }
+
+    /// Get minimal asset lock value
+    fn get_minimal_asset_lock_value(
+        _platform_version: &PlatformVersion,
+    ) -> Result<u64, ProtocolError> {
+        Ok(MinimalAssetLockValue::V0 as u64)
     }
 }
 

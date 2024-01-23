@@ -11,6 +11,7 @@ use dpp::identity::KeyType;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
+use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
 
@@ -26,26 +27,6 @@ use crate::execution::types::execution_operation::signature_verification_operati
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
 use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
-
-#[repr(u64)]
-enum MinimalAssetLockValue {
-    V1 = 1000,
-}
-
-fn minimal_asset_lock_value(platform_version: &PlatformVersion) -> Result<u64, Error> {
-    match platform_version
-        .drive_abci
-        .validation_and_processing
-        .process_state_transition
-    {
-        0 => Ok(MinimalAssetLockValue::V1 as u64),
-        version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-            method: "minimal_asset_lock_value".to_string(),
-            known_versions: vec![0],
-            received: version,
-        })),
-    }
-}
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_top_up) trait IdentityTopUpStateTransitionStateValidationV0
 {
@@ -109,7 +90,7 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
         }
 
         let tx_out = tx_out_validation.into_data()?;
-        let min_value = minimal_asset_lock_value(platform_version)?;
+        let min_value = IdentityTopUpTransition::get_minimal_asset_lock_value(platform_version)?;
         if tx_out.value < min_value {
             return Ok(ConsensusValidationResult::new_with_error(
                 InvalidAssetLockProofValueError::new(tx_out.value, min_value).into(),
