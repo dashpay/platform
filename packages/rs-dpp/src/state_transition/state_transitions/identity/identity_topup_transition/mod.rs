@@ -72,9 +72,11 @@ impl IdentityTopUpTransition {
         platform_version: &PlatformVersion,
     ) -> Result<u64, ProtocolError> {
         match platform_version
-            .drive_abci
-            .validation_and_processing
-            .process_state_transition
+            .dpp
+            .state_transitions
+            .identities
+            .asset_locks
+            .minimal_asset_lock_value
         {
             0 => Ok(MinimalAssetLockValue::V0 as u64),
             v => Err(ProtocolError::UnknownVersionError(format!(
