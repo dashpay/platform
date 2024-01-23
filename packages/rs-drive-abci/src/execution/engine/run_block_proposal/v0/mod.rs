@@ -139,8 +139,8 @@ where
                 let VerifyChainLockResult {
                     chain_lock_signature_is_deserializable,
                     found_valid_locally,
-                    submitted,
                     found_valid_by_core,
+                    core_is_synced,
                 } = match verification_result {
                     Ok(verification_result) => verification_result,
                     Err(Error::Execution(e)) => {
@@ -179,20 +179,6 @@ where
                     }
                 }
 
-                if let Some(submission_accepted_by_core) = submitted {
-                    // This means we are able to check if the chain lock is valid
-                    if !submission_accepted_by_core {
-                        // The submission was not accepted by core
-                        return Ok(ValidationResult::new_with_error(
-                            AbciError::ChainLockedBlockNotKnownByCore(format!(
-                                "received a chain lock for height {} that we figured out was invalid based on platform state {:?}",
-                                block_info.height, core_chain_lock_update,
-                            ))
-                                .into(),
-                        ));
-                    }
-                }
-
                 if let Some(found_valid_by_core) = found_valid_by_core {
                     // This means we asked core if the chain lock was valid
                     if !found_valid_by_core {
@@ -200,6 +186,20 @@ where
                         return Ok(ValidationResult::new_with_error(
                             AbciError::InvalidChainLock(format!(
                                 "received a chain lock for height {} that is invalid based on a core request {:?}",
+                                block_info.height, core_chain_lock_update,
+                            ))
+                                .into(),
+                        ));
+                    }
+                }
+
+                if let Some(core_is_synced) = core_is_synced {
+                    // Core is just not synced
+                    if !core_is_synced {
+                        // The submission was not accepted by core
+                        return Ok(ValidationResult::new_with_error(
+                            AbciError::ChainLockedBlockNotKnownByCore(format!(
+                                "received a chain lock for height {} that we figured out was invalid based on platform state {:?}",
                                 block_info.height, core_chain_lock_update,
                             ))
                                 .into(),

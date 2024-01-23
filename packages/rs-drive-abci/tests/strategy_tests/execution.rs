@@ -651,7 +651,7 @@ pub(crate) fn run_chain_for_strategy(
     platform
         .core_rpc
         .expect_submit_chain_lock()
-        .returning(move |chain_lock: &ChainLock| return Ok(true));
+        .returning(move |chain_lock: &ChainLock| return Ok(chain_lock.block_height));
 
     create_chain_for_strategy(
         platform,

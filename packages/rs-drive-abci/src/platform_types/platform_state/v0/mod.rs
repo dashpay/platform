@@ -412,7 +412,7 @@ pub trait PlatformStateV0Methods {
     /// Returns a mutable reference to the previous chain lock validating quorums.
     fn previous_height_chain_lock_validating_quorums_mut(
         &mut self,
-    ) -> &mut Option<(u32, BTreeMap<QuorumHash, ThresholdBlsPublicKey>)>;
+    ) -> &mut Option<(u32, u32, BTreeMap<QuorumHash, ThresholdBlsPublicKey>)>;
 
     /// Returns a mutable reference to the full masternode list.
     fn full_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem>;
@@ -428,7 +428,7 @@ pub trait PlatformStateV0Methods {
     /// The previous height chain lock validating quorums
     fn previous_height_chain_lock_validating_quorums(
         &self,
-    ) -> Option<&(u32, BTreeMap<QuorumHash, ThresholdBlsPublicKey>)>;
+    ) -> Option<&(u32, u32, BTreeMap<QuorumHash, ThresholdBlsPublicKey>)>;
 }
 
 impl PlatformStateV0Methods for PlatformStateV0 {

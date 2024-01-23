@@ -28,7 +28,7 @@ pub trait CoreRPCLike {
     fn get_best_chain_lock(&self) -> Result<ChainLock, Error>;
 
     /// Submit a chain lock
-    fn submit_chain_lock(&self, chain_lock: &ChainLock) -> Result<bool, Error>;
+    fn submit_chain_lock(&self, chain_lock: &ChainLock) -> Result<u32, Error>;
 
     /// Get transaction
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
@@ -203,7 +203,7 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self.inner.get_best_chain_lock())
     }
 
-    fn submit_chain_lock(&self, chain_lock: &ChainLock) -> Result<bool, Error> {
+    fn submit_chain_lock(&self, chain_lock: &ChainLock) -> Result<u32, Error> {
         retry!(self.inner.submit_chain_lock(chain_lock))
     }
 

@@ -188,6 +188,7 @@ where
                 tracing::trace!("updated chain lock validating quorums to current validator set",);
                 block_platform_state.set_previous_chain_lock_validating_quorums(
                     block_platform_state.last_committed_core_height(),
+                    core_block_height,
                     previous_quorums,
                 );
             }
@@ -276,6 +277,7 @@ where
                         old_state.chain_lock_validating_quorums().clone();
                     block_platform_state.set_previous_chain_lock_validating_quorums(
                         block_platform_state.last_committed_core_height(),
+                        core_block_height,
                         previous_chain_lock_validating_quorums,
                     );
                 }

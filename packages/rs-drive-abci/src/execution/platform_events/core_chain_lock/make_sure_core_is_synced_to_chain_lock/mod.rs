@@ -8,6 +8,16 @@ use dpp::version::PlatformVersion;
 /// Version 0
 pub mod v0;
 
+/// As we ask to make sure that core is synced to the chain lock, we get back one of 3
+pub enum CoreSyncStatus {
+    /// Core is synced
+    CoreIsSynced,
+    /// Core is 1 or 2 blocks off, we should retry shortly
+    CoreAlmostSynced,
+    /// Core is more than 2 blocks off
+    CoreNotSynced,
+}
+
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
@@ -26,7 +36,7 @@ where
         &self,
         chain_lock: &ChainLock,
         platform_version: &PlatformVersion,
-    ) -> Result<bool, Error> {
+    ) -> Result<CoreSyncStatus, Error> {
         match platform_version
             .drive_abci
             .methods

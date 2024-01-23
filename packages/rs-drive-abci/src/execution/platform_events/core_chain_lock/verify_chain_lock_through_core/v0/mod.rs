@@ -1,5 +1,7 @@
 use crate::error::Error;
 use dpp::dashcore::ChainLock;
+use crate::execution::platform_events::core_chain_lock::make_sure_core_is_synced_to_chain_lock::CoreSyncStatus;
+use crate::execution::platform_events::core_chain_lock::make_sure_core_is_synced_to_chain_lock::CoreSyncStatus::{CoreAlmostSynced, CoreIsSynced, CoreNotSynced};
 
 use crate::platform_types::platform::Platform;
 
@@ -14,11 +16,20 @@ where
         &self,
         chain_lock: &ChainLock,
         submit: bool,
-    ) -> Result<bool, Error> {
+    ) -> Result<(bool, Option<CoreSyncStatus>), Error> {
         if submit {
-            Ok(self.core_rpc.submit_chain_lock(chain_lock)?)
+            let given_chain_lock_height = chain_lock.block_height;
+
+            let best_chain_locked_height = self.core_rpc.submit_chain_lock(chain_lock)?;
+            Ok(if best_chain_locked_height >= given_chain_lock_height {
+                (true, Some(CoreIsSynced))
+            } else if best_chain_locked_height - given_chain_lock_height < 3 {
+                (true, Some(CoreAlmostSynced))
+            } else {
+                (true, Some(CoreNotSynced))
+            })
         } else {
-            Ok(self.core_rpc.verify_chain_lock(chain_lock)?)
+            Ok((self.core_rpc.verify_chain_lock(chain_lock)?, None))
         }
     }
 }
