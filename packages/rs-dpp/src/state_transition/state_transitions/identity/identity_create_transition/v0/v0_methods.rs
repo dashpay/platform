@@ -10,7 +10,6 @@ use crate::prelude::AssetLockProof;
 use crate::serialization::Signable;
 use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
-use crate::state_transition::identity_create_transition::MinimalAssetLockValue;
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;

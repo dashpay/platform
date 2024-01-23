@@ -10,7 +10,6 @@ use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::{BlsModule, ProtocolError};
 
-use crate::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use platform_version::version::PlatformVersion;
 
 impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransition {

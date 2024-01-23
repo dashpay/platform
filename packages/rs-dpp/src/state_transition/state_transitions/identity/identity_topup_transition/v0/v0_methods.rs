@@ -8,7 +8,6 @@ use crate::prelude::AssetLockProof;
 use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use crate::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 
-use crate::state_transition::identity_topup_transition::MinimalAssetLockValue;
 use platform_version::version::PlatformVersion;
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
