@@ -71,6 +71,7 @@ export default function getLocalConfigFactory(getBaseConfig) {
             chainLock: {
               llmqType: 100,
               dkgInterval: 24,
+              llmqSize: 3,
             },
           },
         },

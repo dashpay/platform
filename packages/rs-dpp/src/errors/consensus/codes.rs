@@ -177,6 +177,7 @@ impl ErrorWithCode for StateError {
             Self::MissingIdentityPublicKeyIdsError { .. } => 4024,
             Self::IdentityInsufficientBalanceError(_) => 4026,
             Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 4027,
+            Self::InvalidAssetLockProofValueError(_) => 4028,
         }
     }
 }
