@@ -117,12 +117,17 @@ where
             return Ok(None);
         };
 
+        let mut quorum_hash = quorum_hash.to_byte_array().to_vec();
+
+        // Only the quorum hash needs reversal.
+        quorum_hash.reverse();
+
         // The signature must verify against the quorum public key and SHA256(llmqType, quorumHash, SHA256(height), blockHash). llmqType and quorumHash must be taken from the quorum selected in 1.
 
         let mut engine = sha256d::Hash::engine();
 
         engine.input(&[self.config.chain_lock_quorum_type() as u8]);
-        engine.input(quorum_hash.as_byte_array());
+        engine.input(quorum_hash.as_slice());
         engine.input(request_id.as_byte_array());
         engine.input(chain_lock.block_hash.as_byte_array());
 
@@ -140,49 +145,6 @@ where
         let mut chain_lock_verified = public_key.verify(&signature, message_digest.as_ref());
 
         if !chain_lock_verified {
-
-            let mut quorum_hash = quorum_hash.to_byte_array().to_vec();
-            let mut request_id = request_id.to_byte_array().to_vec();
-            let mut block_hash = chain_lock.block_hash.to_byte_array().to_vec();
-
-            for reverse_quorum_hash in 0..=1 {
-                for reverse_request_id in 0..=1 {
-                    for reverse_block_hash in 0..=1 {
-                        for reverse_output in 0..=1 {
-                            if reverse_quorum_hash == 1 {
-                                quorum_hash.reverse();
-                            }
-                            if reverse_request_id == 1 {
-                                request_id.reverse();
-                            }
-                            if reverse_block_hash == 1 {
-                                block_hash.reverse();
-                            }
-                            let mut engine = sha256d::Hash::engine();
-
-                            engine.input(&[self.config.chain_lock_quorum_type() as u8]);
-                            engine.input(quorum_hash.as_slice());
-                            engine.input(request_id.as_slice());
-                            engine.input(block_hash.as_slice());
-
-                            let message_digest = sha256d::Hash::from_engine(engine);
-
-                            let mut message_digest_vec = message_digest.as_byte_array().to_vec();
-
-                            if reverse_output == 1{
-                                message_digest_vec.reverse();
-                            }
-
-                            let chain_lock_verified_b = public_key.verify(&signature, message_digest_vec.as_slice());
-
-                            tracing::trace!("reverse_quorum_hash {}, reverse_request_id {}, reverse_block_hash {}, reverse_output {} gives chain lock verified {}", reverse_quorum_hash, reverse_request_id, reverse_block_hash, reverse_output, chain_lock_verified_b);
-                        }
-                    }
-                }
-            }
-        }
-
-        if !chain_lock_verified {
             // We should also check the other quorum, as there could be the situation where the core height wasn't updated every block.
             if let Some(second_to_check_quorums) = second_to_check_quorums {
                 let quorum = Platform::<C>::choose_quorum(
@@ -197,12 +159,16 @@ where
                     return Ok(None);
                 };
 
+                let mut quorum_hash = quorum_hash.to_byte_array().to_vec();
+
+                quorum_hash.reverse();
+
                 // The signature must verify against the quorum public key and SHA256(llmqType, quorumHash, SHA256(height), blockHash). llmqType and quorumHash must be taken from the quorum selected in 1.
 
                 let mut engine = sha256d::Hash::engine();
 
                 engine.input(&[self.config.chain_lock_quorum_type() as u8]);
-                engine.input(quorum_hash.as_byte_array());
+                engine.input(quorum_hash.as_slice());
                 engine.input(request_id.as_byte_array());
                 engine.input(chain_lock.block_hash.as_byte_array());
 
