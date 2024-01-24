@@ -199,7 +199,7 @@ where
                 tracing::trace!(
                     "we had no previous quorums locally, we should validate through core",
                 );
-                Ok(None)
+                return Ok(None);
             } else {
                 tracing::error!("chain lock was invalid, and we deemed there was no reason to check old quorums");
             }
