@@ -138,7 +138,7 @@ where
             "message_digest for chain lock at height {} is {}, quorum hash is {}, block hash is {}",
             chain_lock.block_height,
             hex::encode(message_digest.as_byte_array()),
-            hex::encode(quorum_hash.as_byte_array()),
+            hex::encode(quorum_hash.as_slice()),
             hex::encode(chain_lock.block_hash.as_byte_array())
         );
 
