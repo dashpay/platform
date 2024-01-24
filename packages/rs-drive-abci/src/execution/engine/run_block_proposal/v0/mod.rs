@@ -199,7 +199,7 @@ where
                         // The submission was not accepted by core
                         return Ok(ValidationResult::new_with_error(
                             AbciError::ChainLockedBlockNotKnownByCore(format!(
-                                "received a chain lock for height {} that we figured out was invalid based on platform state {:?}",
+                                "received a chain lock for height {} that we could not accept because core is not synced {:?}",
                                 block_info.height, core_chain_lock_update,
                             ))
                                 .into(),

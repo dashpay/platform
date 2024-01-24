@@ -97,6 +97,13 @@ where
 
         let request_id = QuorumSigningRequestId::from_engine(engine);
 
+        tracing::trace!(
+            ?chain_lock,
+            "request id for chain lock at height {} is {}",
+            chain_lock.block_height,
+            hex::encode(request_id.as_byte_array())
+        );
+
         // Based on the deterministic masternode list at the given height, a quorum must be selected that was active at the time this block was mined
 
         let quorum = Platform::<C>::choose_quorum(
@@ -120,6 +127,15 @@ where
         engine.input(chain_lock.block_hash.as_byte_array());
 
         let message_digest = sha256d::Hash::from_engine(engine);
+
+        tracing::trace!(
+            ?chain_lock,
+            "message_digest for chain lock at height {} is {}, quorum hash is {}, block hash is {}",
+            chain_lock.block_height,
+            hex::encode(message_digest.as_byte_array()),
+            hex::encode(quorum_hash.as_byte_array()),
+            hex::encode(chain_lock.block_hash.as_byte_array())
+        );
 
         let mut chain_lock_verified = public_key.verify(&signature, message_digest.as_ref());
 
