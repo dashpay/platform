@@ -133,16 +133,17 @@ where
 
         let message_digest = sha256d::Hash::from_engine(engine);
 
+        let mut chain_lock_verified = public_key.verify(&signature, message_digest.as_ref());
+
         tracing::trace!(
             ?chain_lock,
-            "message_digest for chain lock at height {} is {}, quorum hash is {}, block hash is {}",
+            "message_digest for chain lock at height {} is {}, quorum hash is {}, block hash is {}, chain lock was {}",
             chain_lock.block_height,
             hex::encode(message_digest.as_byte_array()),
             hex::encode(quorum_hash.as_slice()),
-            hex::encode(chain_lock.block_hash.as_byte_array())
+            hex::encode(chain_lock.block_hash.as_byte_array()),
+            if chain_lock_verified { "verified"} else {"not verified"}
         );
-
-        let mut chain_lock_verified = public_key.verify(&signature, message_digest.as_ref());
 
         if !chain_lock_verified {
             // We should also check the other quorum, as there could be the situation where the core height wasn't updated every block.
@@ -175,6 +176,32 @@ where
                 let message_digest = sha256d::Hash::from_engine(engine);
 
                 chain_lock_verified = public_key.verify(&signature, message_digest.as_ref());
+
+                tracing::trace!(
+                    ?chain_lock,
+                    "tried second quorums message_digest for chain lock at height {} is {}, quorum hash is {}, block hash is {}, chain lock was {}",
+                    chain_lock.block_height,
+                    hex::encode(message_digest.as_byte_array()),
+                    hex::encode(quorum_hash.as_slice()),
+                    hex::encode(chain_lock.block_hash.as_byte_array()),
+                    if chain_lock_verified { "verified"} else {"not verified"}
+                );
+                if !chain_lock_verified {
+                    tracing::error!(
+                        "chain lock was invalid for both recent and old chain lock quorums"
+                    );
+                }
+            } else if platform_state
+                .previous_height_chain_lock_validating_quorums()
+                .is_none()
+            {
+                // we don't have old quorums, this means our node is very new.
+                tracing::trace!(
+                    "we had no previous quorums locally, we should validate through core",
+                );
+                Ok(None)
+            } else {
+                tracing::error!("chain lock was invalid, and we deemed there was no reason to check old quorums");
             }
         }
 
