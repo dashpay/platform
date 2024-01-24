@@ -91,12 +91,7 @@ where
 
         let mut engine = QuorumSigningRequestId::engine();
 
-        // Prefix
-        let prefix_len = VarInt(CHAIN_LOCK_REQUEST_ID_PREFIX.len() as u64);
-        prefix_len
-            .consensus_encode(&mut engine)
-            .expect("expected to encode the prefix");
-
+        engine.input(&[CHAIN_LOCK_REQUEST_ID_PREFIX.len() as u8]);
         engine.input(CHAIN_LOCK_REQUEST_ID_PREFIX.as_bytes());
         engine.input(chain_lock.block_height.to_le_bytes().as_slice());
 
@@ -159,5 +154,79 @@ where
         }
 
         return Ok(Some(chain_lock_verified));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::execution::platform_events::core_chain_lock::verify_chain_lock_locally::v0::CHAIN_LOCK_REQUEST_ID_PREFIX;
+    use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
+    use dpp::dashcore::QuorumSigningRequestId;
+
+    #[test]
+    fn verify_request_id() {
+        assert_eq!(
+            hex::encode(CHAIN_LOCK_REQUEST_ID_PREFIX.as_bytes()),
+            "636c736967"
+        );
+        assert_eq!(hex::encode(122u32.to_le_bytes()), "7a000000");
+
+        let mut engine = QuorumSigningRequestId::engine();
+
+        engine.input(&[CHAIN_LOCK_REQUEST_ID_PREFIX.len() as u8]);
+        engine.input(CHAIN_LOCK_REQUEST_ID_PREFIX.as_bytes());
+        engine.input(122u32.to_le_bytes().as_slice());
+
+        let request_id = QuorumSigningRequestId::from_engine(engine);
+
+        assert_eq!(
+            hex::encode(request_id.as_byte_array()),
+            "e1a9d40e5145fdc168819125b5ae1b8f12d5115471624eb363a6c7a3693be2e6"
+        );
+
+        //
+        // let mut chain_lock_verified = public_key.verify(&signature, message_digest.as_ref());
+    }
+
+    #[test]
+    fn verify_message_digest() {
+        let mut engine = QuorumSigningRequestId::engine();
+
+        engine.input(&[CHAIN_LOCK_REQUEST_ID_PREFIX.len() as u8]);
+        engine.input(CHAIN_LOCK_REQUEST_ID_PREFIX.as_bytes());
+        engine.input(956087u32.to_le_bytes().as_slice());
+
+        let request_id = QuorumSigningRequestId::from_engine(engine);
+
+        assert_eq!(
+            hex::encode(request_id.as_byte_array()),
+            "ea04b27adfaa698487aee46b922fb8f1c77a562787b6afe65eecf7e685888928"
+        );
+
+        let mut block_hash =
+            hex::decode("000000d94ea7ac4f86c5f583e7da0feb90b9f8d038f25e55cc305524c5327266")
+                .unwrap();
+        let mut quorum_hash =
+            hex::decode("0000009d376e73a22aa997bb6542bd1fc3018f61c2301a817126a737ffdcdc80")
+                .unwrap();
+
+        block_hash.reverse();
+        quorum_hash.reverse();
+
+        let mut engine = sha256d::Hash::engine();
+
+        engine.input(&[1u8]);
+        engine.input(quorum_hash.as_slice());
+        engine.input(request_id.to_byte_array().as_slice());
+        engine.input(block_hash.as_slice());
+
+        let mut message_digest = sha256d::Hash::from_engine(engine).as_byte_array().to_vec();
+
+        message_digest.reverse();
+
+        assert_eq!(
+            hex::encode(message_digest.as_slice()),
+            "5ec53e83b8ff390b970e28db21da5b8e45fbe3b69d9f11a2c39062769b1f5e47"
+        );
     }
 }
