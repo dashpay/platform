@@ -535,6 +535,7 @@ where
             // This was an error running this proposal, tell tenderdash that the block isn't valid
             let response = ResponseProcessProposal {
                 status: proto::response_process_proposal::ProposalStatus::Reject.into(),
+                app_hash: [0;32].to_vec(), // we must send 32 bytes
                 ..Default::default()
             };
 
