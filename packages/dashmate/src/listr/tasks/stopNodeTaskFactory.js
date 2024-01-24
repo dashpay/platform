@@ -1,3 +1,4 @@
+import lodash from 'lodash';
 import { Listr } from 'listr2';
 
 /**
@@ -31,6 +32,37 @@ export default function stopNodeTaskFactory(
 
           if (!await dockerCompose.isNodeRunning(config, { profiles })) {
             throw new Error('Node is not running');
+          }
+        },
+      },
+      {
+        title: 'Check node is participating in DKG',
+        skip: (ctx) => ctx.isForce,
+        task: async () => {
+          const rpcClient = createRpcClient({
+            port: config.get('core.rpc.port'),
+            user: config.get('core.rpc.user'),
+            pass: config.get('core.rpc.password'),
+            host: await getConnectionHost(config, 'core', 'core.rpc.host'),
+          });
+
+          const {result: blockCount} = await rpcClient.getBlockCount();
+
+          const firstWindow = [Math.floor(blockCount / 24) * 24, Math.floor(blockCount / 24) * 24 + 10]
+          const secondWindow = [Math.floor(blockCount / 288) * 288, Math.floor(blockCount / 288) * 288 + 42]
+
+          console.log('BlockCount', blockCount)
+          console.log(`First window [${firstWindow[0]}, ${firstWindow[1]}]`)
+          console.log(`Second window [${secondWindow[0]}, ${secondWindow[1]}]`)
+
+          const isInFirstWindow = lodash.inRange(blockCount, firstWindow[0], firstWindow[1])
+          const isInSecondWindow = lodash.inRange(blockCount, secondWindow[0], secondWindow[1])
+
+          if (isInFirstWindow || isInSecondWindow) {
+            console.log(`Is in first window = ${isInFirstWindow}`)
+            console.log(`Is in second window = ${isInSecondWindow}`)
+
+            throw new Error('Node is currently in the DKG window')
           }
         },
       },
