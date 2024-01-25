@@ -67,7 +67,7 @@ describe('DPNS', () => {
       identity = await ownerClient.platform.identities.get(dpnsOwnerId);
 
       expect(identity).to.exist();
-      await ownerClient.platform.identities.topUp(dpnsOwnerId, 500);
+      await ownerClient.platform.identities.topUp(dpnsOwnerId, 1000);
     });
 
     after(async () => {

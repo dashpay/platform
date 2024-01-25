@@ -12,7 +12,7 @@ use crate::errors::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm,
     IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityCreditTransferToSelfErrorWasm,
     IdentityInsufficientBalanceErrorWasm, InvalidAssetLockProofCoreChainHeightErrorWasm,
-    InvalidAssetLockProofTransactionHeightErrorWasm,
+    InvalidAssetLockProofTransactionHeightErrorWasm, InvalidAssetLockProofValueErrorWasm,
     InvalidAssetLockTransactionOutputReturnSizeErrorWasm,
     InvalidIdentityAssetLockProofChainLockValidationErrorWasm,
     InvalidIdentityAssetLockTransactionErrorWasm,
@@ -208,6 +208,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DataContractConfigUpdateError(e) => {
             DataContractConfigUpdateErrorWasm::from(e).into()
+        }
+        StateError::InvalidAssetLockProofValueError(e) => {
+            InvalidAssetLockProofValueErrorWasm::from(e).into()
         }
         // TODO(versioning): restore
         _ => todo!(),

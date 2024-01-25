@@ -114,7 +114,6 @@ pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
                 // We are dealing with old Rust edition so we can't use optional remove
                 if payload.credit_outputs.get(output_index as usize).is_some() {
                     let output = payload.credit_outputs.remove(output_index as usize);
-
                     return Ok(ValidationResult::new_with_data(output));
                 }
             }
