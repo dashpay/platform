@@ -612,7 +612,7 @@ pub(crate) fn run_chain_for_strategy(
                 let mut engine = sha256d::Hash::engine();
 
                 engine.input(&[chain_lock_quorum_type as u8]);
-                engine.input(quorum_hash.as_byte_array());
+                engine.input(quorum_hash.as_slice());
                 engine.input(request_id.as_byte_array());
                 engine.input(&block_hash);
 

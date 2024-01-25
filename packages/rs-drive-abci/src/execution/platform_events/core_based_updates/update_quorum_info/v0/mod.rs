@@ -189,6 +189,9 @@ where
                 block_platform_state.set_previous_chain_lock_validating_quorums(
                     block_platform_state.last_committed_core_height(),
                     core_block_height,
+                    block_platform_state
+                        .previous_height_chain_lock_validating_quorums()
+                        .map(|(_, previous_change_height, _, _)| *previous_change_height),
                     previous_quorums,
                 );
             }
@@ -278,6 +281,9 @@ where
                     block_platform_state.set_previous_chain_lock_validating_quorums(
                         block_platform_state.last_committed_core_height(),
                         core_block_height,
+                        block_platform_state
+                            .previous_height_chain_lock_validating_quorums()
+                            .map(|(_, previous_change_height, _, _)| *previous_change_height),
                         previous_chain_lock_validating_quorums,
                     );
                 }

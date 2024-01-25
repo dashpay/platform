@@ -14,6 +14,8 @@ use crate::rpc::core::CoreRPCLike;
 
 use dpp::version::PlatformVersion;
 
+pub type ReversedQuorumHashBytes = Vec<u8>;
+
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
@@ -25,7 +27,7 @@ where
         quorums: &'a BTreeMap<QuorumHash, BlsPublicKey>,
         request_id: &[u8; 32],
         platform_version: &PlatformVersion,
-    ) -> Result<Option<(&'a QuorumHash, &'a BlsPublicKey)>, Error> {
+    ) -> Result<Option<(ReversedQuorumHashBytes, &'a BlsPublicKey)>, Error> {
         match platform_version
             .drive_abci
             .methods
@@ -36,7 +38,6 @@ where
                 llmq_quorum_type,
                 quorums,
                 request_id,
-                platform_version,
             )),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "choose_quorum".to_string(),
@@ -53,7 +54,7 @@ where
         quorums: &'a BTreeMap<QuorumHash, [u8; T]>,
         request_id: &[u8; 32],
         platform_version: &PlatformVersion,
-    ) -> Result<Option<(&'a QuorumHash, &'a [u8; T])>, Error> {
+    ) -> Result<Option<(ReversedQuorumHashBytes, &'a [u8; T])>, Error> {
         match platform_version
             .drive_abci
             .methods
@@ -64,7 +65,6 @@ where
                 llmq_quorum_type,
                 quorums,
                 request_id,
-                platform_version,
             )),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "choose_quorum_thread_safe".to_string(),
