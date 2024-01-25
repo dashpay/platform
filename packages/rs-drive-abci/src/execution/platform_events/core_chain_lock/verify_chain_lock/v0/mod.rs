@@ -11,6 +11,9 @@ use crate::platform_types::platform_state::PlatformState;
 
 use crate::rpc::core::CoreRPCLike;
 
+const CORE_ALMOST_SYNCED_RETRIES: u32 = 5;
+const CORE_ALMOST_SYNCED_SLEEP_TIME: u64 = 200;
+
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
@@ -37,24 +40,27 @@ where
                                     core_is_synced: Some(true),
                                 }),
                                 CoreSyncStatus::CoreAlmostSynced => {
-                                    // The chain lock is valid we just need to sleep a bit and retry
-                                    sleep(Duration::from_millis(200));
-                                    let best_chain_locked = self.core_rpc.get_best_chain_lock()?;
-                                    if best_chain_locked.block_height < chain_lock.block_height {
-                                        Ok(VerifyChainLockResult {
-                                            chain_lock_signature_is_deserializable: true,
-                                            found_valid_locally: Some(true),
-                                            found_valid_by_core: Some(true),
-                                            core_is_synced: Some(false),
-                                        })
-                                    } else {
-                                        Ok(VerifyChainLockResult {
-                                            chain_lock_signature_is_deserializable: true,
-                                            found_valid_locally: Some(valid),
-                                            found_valid_by_core: Some(true),
-                                            core_is_synced: Some(true),
-                                        })
+                                    for _i in 0..CORE_ALMOST_SYNCED_RETRIES {
+                                        // The chain lock is valid we just need to sleep a bit and retry
+                                        sleep(Duration::from_millis(CORE_ALMOST_SYNCED_SLEEP_TIME));
+                                        let best_chain_locked =
+                                            self.core_rpc.get_best_chain_lock()?;
+                                        if best_chain_locked.block_height >= chain_lock.block_height
+                                        {
+                                            return Ok(VerifyChainLockResult {
+                                                chain_lock_signature_is_deserializable: true,
+                                                found_valid_locally: Some(valid),
+                                                found_valid_by_core: Some(true),
+                                                core_is_synced: Some(true),
+                                            });
+                                        }
                                     }
+                                    Ok(VerifyChainLockResult {
+                                        chain_lock_signature_is_deserializable: true,
+                                        found_valid_locally: Some(true),
+                                        found_valid_by_core: Some(true),
+                                        core_is_synced: Some(false),
+                                    })
                                 }
                                 CoreSyncStatus::CoreNotSynced => Ok(VerifyChainLockResult {
                                     chain_lock_signature_is_deserializable: true,
@@ -102,24 +108,25 @@ where
                             core_is_synced: Some(true),
                         }),
                         CoreSyncStatus::CoreAlmostSynced => {
-                            // The chain lock is valid we just need to sleep a bit and retry
-                            sleep(Duration::from_millis(200));
-                            let best_chain_locked = self.core_rpc.get_best_chain_lock()?;
-                            if best_chain_locked.block_height < chain_lock.block_height {
-                                Ok(VerifyChainLockResult {
-                                    chain_lock_signature_is_deserializable: true,
-                                    found_valid_locally: None,
-                                    found_valid_by_core: Some(true),
-                                    core_is_synced: Some(false),
-                                })
-                            } else {
-                                Ok(VerifyChainLockResult {
-                                    chain_lock_signature_is_deserializable: true,
-                                    found_valid_locally: None,
-                                    found_valid_by_core: Some(true),
-                                    core_is_synced: Some(true),
-                                })
+                            for _i in 0..CORE_ALMOST_SYNCED_RETRIES {
+                                // The chain lock is valid we just need to sleep a bit and retry
+                                sleep(Duration::from_millis(CORE_ALMOST_SYNCED_SLEEP_TIME));
+                                let best_chain_locked = self.core_rpc.get_best_chain_lock()?;
+                                if best_chain_locked.block_height >= chain_lock.block_height {
+                                    return Ok(VerifyChainLockResult {
+                                        chain_lock_signature_is_deserializable: true,
+                                        found_valid_locally: None,
+                                        found_valid_by_core: Some(true),
+                                        core_is_synced: Some(true),
+                                    });
+                                }
                             }
+                            Ok(VerifyChainLockResult {
+                                chain_lock_signature_is_deserializable: true,
+                                found_valid_locally: None,
+                                found_valid_by_core: Some(true),
+                                core_is_synced: Some(false),
+                            })
                         }
                         CoreSyncStatus::CoreNotSynced => Ok(VerifyChainLockResult {
                             chain_lock_signature_is_deserializable: true,

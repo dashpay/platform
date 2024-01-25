@@ -43,7 +43,7 @@ where
             .core_chain_lock
             .make_sure_core_is_synced_to_chain_lock
         {
-            0 => self.make_sure_core_is_synced_to_chain_lock_v0(chain_lock),
+            0 => self.make_sure_core_is_synced_to_chain_lock_v0(chain_lock, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "make_sure_core_is_synced_to_chain_lock".to_string(),
                 known_versions: vec![0],

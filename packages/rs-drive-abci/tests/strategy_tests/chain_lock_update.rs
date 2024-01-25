@@ -82,10 +82,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
-
-        // we expect to see quorums with banned members
-
-        let state = outcome.abci_app.platform.state.read().unwrap();
+        run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
     }
 }

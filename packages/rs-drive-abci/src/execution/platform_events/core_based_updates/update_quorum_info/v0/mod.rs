@@ -218,6 +218,15 @@ where
                 .chain_lock_validating_quorums_mut()
                 .retain(|quorum_hash, _| {
                     let retain = chain_lock_quorums_list.contains_key::<QuorumHash>(quorum_hash);
+                    if !retain {
+                        tracing::trace!(
+                            ?quorum_hash,
+                            quorum_type = ?chain_lock_quorum_type,
+                            "removed old chain lock quorum {} with quorum type {}",
+                            quorum_hash,
+                            chain_lock_quorum_type
+                        );
+                    }
                     removed_a_chain_lock_validating_quorum |= !retain;
                     retain
                 });
