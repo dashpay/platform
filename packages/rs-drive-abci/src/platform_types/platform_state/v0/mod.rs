@@ -99,7 +99,7 @@ pub(super) struct PlatformStateForSavingV0 {
     /// Information about the last block
     pub last_committed_block_info: Option<ExtendedBlockInfo>,
     /// Current Version
-    pub current_protocol_version_in_consensus: ProtocolVersion, // TODO: Remove this
+    pub current_protocol_version_in_consensus: ProtocolVersion,
     /// upcoming protocol version
     pub next_epoch_protocol_version: ProtocolVersion,
     /// current quorum
