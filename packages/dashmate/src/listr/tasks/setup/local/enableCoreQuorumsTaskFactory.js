@@ -1,15 +1,11 @@
 import { Listr } from 'listr2';
-import lodash from 'lodash';
-import { LLMQ_TYPE_TEST, NETWORK_LOCAL } from '../../../../constants.js';
+import { LLMQ_TYPE_TEST_PLATFORM, NETWORK_LOCAL } from '../../../../constants.js';
 import waitForNodesToHaveTheSameHeight from '../../../../core/waitForNodesToHaveTheSameHeight.js';
 import waitForQuorumPhase from '../../../../core/quorum/waitForQuorumPhase.js';
 import waitForQuorumConnections from '../../../../core/quorum/waitForQuorumConnections.js';
 import waitForQuorumCommitments from '../../../../core/quorum/waitForQuorumCommitements.js';
 import wait from '../../../../util/wait.js';
 import waitForMasternodeProbes from '../../../../core/quorum/waitForMasternodeProbes.js';
-
-const { isEqual } = lodash;
-
 /**
  * @param {generateBlocks} generateBlocks
  * @return {enableCoreQuorumsTask}
@@ -245,8 +241,9 @@ export default function enableCoreQuorumsTaskFactory(generateBlocks) {
           );
 
           let { result: newQuorumList } = await ctx.seedRpcClient.quorum('list');
+          let testPlatformQuorumEnabled = !!newQuorumList[LLMQ_TYPE_TEST_PLATFORM][0];
 
-          while (isEqual(ctx.initialQuorumList, newQuorumList)) {
+          while (!testPlatformQuorumEnabled) {
             await wait(300);
 
             await ctx.bumpMockTime();
@@ -263,12 +260,13 @@ export default function enableCoreQuorumsTaskFactory(generateBlocks) {
             );
 
             ({ result: newQuorumList } = await ctx.seedRpcClient.quorum('list'));
+            testPlatformQuorumEnabled = !!newQuorumList[LLMQ_TYPE_TEST_PLATFORM][0];
           }
 
           const { result: quorumList } = await ctx.seedRpcClient.quorum('list', 1);
 
           // eslint-disable-next-line prefer-destructuring
-          ctx.quorumHash = quorumList[LLMQ_TYPE_TEST][0];
+          ctx.quorumHash = quorumList[LLMQ_TYPE_TEST_PLATFORM][0];
 
           const llmqType = ctx.masternodeCoreServices[0].getConfig().get('platform.drive.abci.validatorSet.llmqType');
 
