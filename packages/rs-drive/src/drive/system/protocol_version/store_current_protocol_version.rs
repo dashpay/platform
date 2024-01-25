@@ -10,9 +10,37 @@ use dpp::version::drive_versions::DriveVersion;
 use grovedb::{Element, TransactionArg};
 use integer_encoding::VarInt;
 
-///!!!DON'T CHANGE!!!!
 impl Drive {
-    /// Sets the current protocol version
+    /// Store the current protocol version in grovedb storage
+    ///
+    /// !!!DON'T CHANGE!!!!
+    /// This function should never be changed !!! since it must always be compatible
+    /// with fetch_current_protocol_version which is should never be changed.
+    pub fn store_current_protocol_version(
+        &self,
+        protocol_version: ProtocolVersion,
+        transaction: TransactionArg,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        let mut batch_operations = vec![];
+
+        self.set_current_protocol_version_operations(
+            protocol_version,
+            transaction,
+            &mut batch_operations,
+            drive_version,
+        )?;
+
+        self.apply_batch_low_level_drive_operations(
+            None,
+            transaction,
+            batch_operations,
+            &mut vec![],
+            drive_version,
+        )
+    }
+
+    /// Sets the current protocol version operations to batch
     ///
     /// !!!DON'T CHANGE!!!!
     /// This function should never be changed !!! since it must always be compatible

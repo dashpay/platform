@@ -80,20 +80,9 @@ where
         state_guard.set_genesis_block_info(Some(genesis_block_info));
 
         // Store initial protocol version
-        let mut batch_operations = vec![];
-
-        self.drive.set_current_protocol_version_operations(
+        self.drive.store_current_protocol_version(
             state_guard.current_protocol_version_in_consensus(),
             Some(transaction),
-            &mut batch_operations,
-            &platform_version.drive,
-        )?;
-
-        self.drive.apply_batch_low_level_drive_operations(
-            None,
-            Some(transaction),
-            batch_operations,
-            &mut vec![],
             &platform_version.drive,
         )?;
 
