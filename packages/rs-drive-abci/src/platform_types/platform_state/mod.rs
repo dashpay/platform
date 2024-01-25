@@ -176,8 +176,7 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
             PlatformStateForSaving::V0(v0) => {
                 match platform_version.drive_abci.structs.platform_state_structure {
                     0 => {
-                        let platform_state_v0: PlatformStateV0 =
-                            v0.try_into_platform_versioned(platform_version)?;
+                        let platform_state_v0 = PlatformStateV0::from(v0);
 
                         Ok(platform_state_v0.into())
                     }
