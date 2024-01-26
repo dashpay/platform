@@ -46,8 +46,6 @@ pub enum WithdrawalStatus {
     POOLED = 1,
     BROADCASTED = 2,
     COMPLETE = 3,
-    // TODO(withdrawals): do we need it?
-    EXPIRED = 4,
 }
 
 pub const ID_BYTES: [u8; 32] = [
