@@ -599,7 +599,6 @@ where
         }
     }
 
-    //Todo: Verify compatibility with Core
     fn extend_vote(
         &self,
         request: proto::RequestExtendVote,
@@ -703,7 +702,6 @@ where
 
                 proto::ExtendVoteExtension {
                     r#type: VoteExtensionType::ThresholdRecoverRaw as i32,
-                    // TODO(withdrawals): Do the same here as in extend_vote
                     extension,
                     sign_request_id: Some(request_id),
                 }
@@ -748,7 +746,7 @@ where
             });
         }
 
-        // TODO: provide validator public key and quorum_hash
+        // TODO: provide validator public key and quorum_hash?
         let validation_result = self.platform.check_withdrawals(
             &got,
             &expected,

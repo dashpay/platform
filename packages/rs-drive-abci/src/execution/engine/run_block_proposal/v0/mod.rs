@@ -232,26 +232,11 @@ where
 
         let mut block_execution_context: BlockExecutionContext = block_execution_context.into();
 
-        // TODO(withdrawals): check for TX submission?
         // >>>>>> Withdrawal Status Update <<<<<<<
-        // Only update the broadcasted withdrawal statuses if the core chain lock height has
-        // changed. If it hasn't changed there should be no way a status could update
 
-        // TODO(withdrawals): transforms queued withdrawals into core transactions
-        //    updates queued status to pooled, and saves core transactions to drive
-        //    for further usage
-        // TODO(withdrawals): it seems that this function is called right after withdrawal state transition action execution,
-        //   and we are changing status of withdrawals from queued to pooled right away in the same block.
-        //   Perhaps it makes sens to save them as pooled right away in state transition action?
-
-        // Withdrawal logic is started taking effect on the Block-W + 1
-        // Block-W is where IdentityCreditWithdrawal transitions were processed
-
-        // Block-W + 1 - Pool withdrawals into transactions and prepare them for signing and broadcasting
+        // Before asset unlocks is broadcasted:
+        // Prepare pooled withdrawals to be broadcasted to the core in the current block
         {
-            // TODO(withdrawals): can't we do this in a previous step before saving newly created
-            //   L1 tx info to drive?
-            //
             // Takes L1 withdrawal transactions info from drive, appends request info to them,
             // and saves them back to drive
             let unsigned_withdrawal_transaction_bytes = self
@@ -263,7 +248,7 @@ where
                 )?;
 
             // Save unsigned transaction bytes to block execution context
-            // to be signed and broadcasted later (extend_vote and finalize_block)
+            // to be signed (on extend_vote) and broadcasted (on finalize_block)
             block_execution_context.set_withdrawal_transactions(
                 unsigned_withdrawal_transaction_bytes
                     .into_iter()
@@ -275,31 +260,27 @@ where
                     })
                     .collect(),
             );
-        }
 
-        // Block-W + 2 - Update statuses of pooled withdrawals to broadcasted considering
-        // that transactions were broadcasted in the previous block
-        self.update_queued_withdrawal_transaction_statuses(
-            &block_execution_context,
-            transaction,
-            platform_version,
-        )?;
-
-        // TODO(withdrawals): executed when Core transactions already broadcasted
-        if block_execution_context
-            .block_state_info()
-            .core_chain_locked_height()
-            != last_block_core_height
-        {
-            self.update_broadcasted_withdrawal_transaction_statuses(
+            // Update pooled transactions statuses to broadcasted
+            self.update_pooled_withdrawal_transaction_statuses(
                 &block_execution_context,
                 transaction,
                 platform_version,
             )?;
         }
 
-        // This checks for broadcasted core transactions and updates the withdrawal statuses
-        // from queued to broadcasted
+        // After asset unlocks were broadcasted and chainlocked:
+        if block_execution_context
+            .block_state_info()
+            .core_chain_locked_height()
+            != last_block_core_height
+        {
+            self.update_chainlocked_withdrawal_transaction_statuses(
+                &block_execution_context,
+                transaction,
+                platform_version,
+            )?;
+        }
 
         let state_transitions_result = self.process_raw_state_transitions(
             raw_state_transitions,
@@ -320,7 +301,6 @@ where
         )?;
 
         // while we have the state transitions executed, we now need to process the block fees
-
         let block_fees_v0: BlockFeesV0 = state_transitions_result.aggregated_fees().clone().into();
 
         // Process fees

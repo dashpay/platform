@@ -35,7 +35,7 @@ where
     /// * There is an issue interacting with the underlying storage.
     /// * There is an error fetching the withdrawal data contract.
     /// * There is an error getting the transactionId or transactionSignHeight from the withdrawal document.
-    pub fn update_queued_withdrawal_transaction_statuses(
+    pub fn update_pooled_withdrawal_transaction_statuses(
         &self,
         block_execution_context: &BlockExecutionContext,
         transaction: &Transaction,
@@ -45,15 +45,15 @@ where
             .drive_abci
             .methods
             .identity_credit_withdrawal
-            .update_queued_withdrawal_transaction_statuses
+            .update_pooled_withdrawal_transaction_statuses
         {
-            0 => self.update_queued_withdrawal_transaction_statuses_v0(
+            0 => self.update_pooled_withdrawal_transaction_statuses_v0(
                 block_execution_context,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "update_queued_withdrawal_transaction_statuses".to_string(),
+                method: "update_pooled_withdrawal_transaction_statuses".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
