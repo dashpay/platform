@@ -1,4 +1,4 @@
-use crate::drive::platform_state::EXECUTION_STORAGE_STATE_KEY;
+use crate::drive::platform_state::PLATFROM_STATE_KEY;
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::serialization::PlatformSerializable;
@@ -11,7 +11,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         self.grove
-            .put_aux(EXECUTION_STORAGE_STATE_KEY, state_bytes, None, transaction)
+            .put_aux(PLATFROM_STATE_KEY, state_bytes, None, transaction)
             .unwrap()
             .map_err(Error::GroveDB)
     }

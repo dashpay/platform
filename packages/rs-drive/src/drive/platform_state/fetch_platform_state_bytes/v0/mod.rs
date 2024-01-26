@@ -1,4 +1,4 @@
-use crate::drive::platform_state::EXECUTION_STORAGE_STATE_KEY;
+use crate::drive::platform_state::PLATFROM_STATE_KEY;
 use crate::drive::Drive;
 use crate::error::Error;
 use grovedb::TransactionArg;
@@ -9,7 +9,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Option<Vec<u8>>, Error> {
         self.grove
-            .get_aux(EXECUTION_STORAGE_STATE_KEY, transaction)
+            .get_aux(PLATFROM_STATE_KEY, transaction)
             .unwrap()
             .map_err(Error::GroveDB)
     }

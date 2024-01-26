@@ -79,9 +79,10 @@ where
 
         state_guard.set_genesis_block_info(Some(genesis_block_info));
 
-        // Store initial protocol version
+        state_guard.set_current_protocol_version_in_consensus(request.initial_protocol_version);
+
         self.drive.store_current_protocol_version(
-            state_guard.current_protocol_version_in_consensus(),
+            request.initial_protocol_version,
             Some(transaction),
             &platform_version.drive,
         )?;

@@ -26,7 +26,6 @@ impl Drive {
 
         self.set_current_protocol_version_operations(
             protocol_version,
-            transaction,
             &mut batch_operations,
             drive_version,
         )?;
@@ -63,18 +62,15 @@ impl Drive {
     pub fn set_current_protocol_version_operations(
         &self,
         protocol_version: ProtocolVersion,
-        transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        self.batch_insert_if_changed_value(
+        self.batch_insert(
             PathKeyElementInfo::PathFixedSizeKeyRefElement((
                 misc_path(),
                 PROTOCOL_VERSION_STORAGE_KEY,
                 Element::new_item(protocol_version.encode_var_vec()),
             )),
-            BatchInsertApplyType::StatefulBatchInsert,
-            transaction,
             drive_operations,
             drive_version,
         )?;
