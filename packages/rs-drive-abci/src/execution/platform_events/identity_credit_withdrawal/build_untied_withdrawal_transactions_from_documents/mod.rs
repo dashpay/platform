@@ -30,7 +30,7 @@ where
     /// # Returns
     ///
     /// * `Result<HashMap<Identifier, WithdrawalTransactionIdAndBytes>, Error>` - Returns a HashMap containing withdrawal transactions if found, otherwise returns an `Error`.
-    pub(in crate::execution::platform_events::identity_credit_withdrawal) fn build_withdrawal_transactions_from_documents(
+    pub(in crate::execution::platform_events::identity_credit_withdrawal) fn build_untied_withdrawal_transactions_from_documents(
         &self,
         documents: &[Document],
         drive_operation_types: &mut Vec<DriveOperation>,
@@ -41,9 +41,9 @@ where
             .drive_abci
             .methods
             .identity_credit_withdrawal
-            .build_withdrawal_transactions_from_documents
+            .build_untied_withdrawal_transactions_from_documents
         {
-            0 => self.build_withdrawal_transactions_from_documents_v0(
+            0 => self.build_untied_withdrawal_transactions_from_documents_v0(
                 documents,
                 drive_operation_types,
                 transaction,

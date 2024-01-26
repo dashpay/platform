@@ -512,7 +512,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 fetch_reward_shares_list_for_masternode: 0,
             },
             identity_credit_withdrawal: DriveAbciIdentityCreditWithdrawalMethodVersions {
-                build_withdrawal_transactions_from_documents: 0,
+                build_untied_withdrawal_transactions_from_documents: 0,
                 fetch_and_prepare_unsigned_withdrawal_transactions: 0,
                 fetch_transactions_block_inclusion_status: 0,
                 pool_withdrawals_into_transactions_queue: 0,

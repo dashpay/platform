@@ -1,5 +1,6 @@
 use dashcore_rpc::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
 use dpp::block::epoch::Epoch;
+use rust_decimal::prelude::Signed;
 
 use dpp::validation::SimpleValidationResult;
 
@@ -35,6 +36,7 @@ use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
+use crate::platform_types::withdrawal::signed_withdrawal_txs::v0::SignedWithdrawalTxs;
 use crate::rpc::core::CoreRPCLike;
 
 impl<C> Platform<C>
@@ -144,7 +146,20 @@ where
             return Ok(validation_result.into());
         }
 
-        let quorum_public_key = &state_cache.current_validator_set()?.threshold_public_key();
+        // Verify vote extensions
+        let received_withdrawals =
+            SignedWithdrawalTxs::from(&commit_info.threshold_vote_extensions);
+
+        let expected_withdrawals = block_execution_context.unsigned_withdrawal_transactions();
+
+        if expected_withdrawals.ne(&received_withdrawals) {
+            validation_result.add_error(AbciError::VoteExtensionMismatchReceived {
+                got: received_withdrawals.to_string(),
+                expected: expected_withdrawals.to_string(),
+            });
+
+            return Ok(validation_result.into());
+        }
 
         // In production this will always be true
         if self
@@ -154,6 +169,7 @@ where
         {
             // Verify commit
 
+            let quorum_public_key = &state_cache.current_validator_set()?.threshold_public_key();
             let quorum_type = self.config.quorum_type();
             let commit = Commit::new_from_cleaned(
                 commit_info.clone(),
@@ -176,12 +192,6 @@ where
             //  Moreover, if signatures aren't correct then Core RPC will fail when we broadcast these transactions
             //  to Core. Do we need to verify Tenderdash signatures twice, here in Drive and then in Core?
 
-            // Verify vote extensions
-            // let received_withdrawals = WithdrawalTxs::from(&commit.threshold_vote_extensions);
-            // TODO: This is incorrect, we should take withdrawals from block execution context
-            // let our_withdrawals = WithdrawalTxs::load(Some(transaction), &self.drive)
-            //     .map_err(|e| AbciError::WithdrawalTransactionsDBLoadError(e.to_string()))?;
-            //
             // if let Err(e) = self.check_withdrawals(
             //     &received_withdrawals,
             //     &our_withdrawals,
@@ -210,31 +220,15 @@ where
 
         to_commit_block_info.core_height = block_header.core_chain_locked_height;
 
-        // TODO(withdrawals): Finalize method alters drive state. Are we allowed to do that in finalize block handler?
-        //
-        // TODO(withdrawals): withdrawal finalization.
-        //    I assume that core TX broadcast should come before this step.
-        // // Finalize withdrawal processing
-        // our_withdrawals.finalize(Some(transaction), &self.drive, &to_commit_block_info)?;
-
-        tracing::trace!(
-            "[Withdrawals] Transactions {}, extensions {}",
-            block_execution_context.withdrawal_transactions().len(),
-            commit_info.threshold_vote_extensions.len()
-        );
-        // Block proposer broadcasts asset unlock transactions
-        // if block_execution_context.proposer_results().is_some() {
-        // TODO(withdrawals): should we error in case withdrawal_transactions is empty and threshold_vote_extensions is not
-        // or vice versa?
-        if !block_execution_context.withdrawal_transactions().is_empty()
-            && !commit_info.threshold_vote_extensions.is_empty()
-        {
-            tracing::trace!(
-                "[Withdrawals] Broadcasting {} items",
-                block_execution_context.withdrawal_transactions().len()
+        // Broadcast asset unlock transactions to Core
+        // TODO: Extract to a function. Combine with verification?
+        if !received_withdrawals.is_empty() {
+            tracing::debug!(
+                "Broadcasting {} withdrawal transactions",
+                received_withdrawals.len()
             );
             for (index, (_, tx)) in block_execution_context
-                .withdrawal_transactions()
+                .unsigned_withdrawal_transactions()
                 .iter()
                 .enumerate()
             {
@@ -271,10 +265,6 @@ where
                     }
                 }
             }
-        } else if !block_execution_context.withdrawal_transactions().is_empty()
-            && commit_info.threshold_vote_extensions.is_empty()
-        {
-            tracing::error!("[Withdrawals] No quorum signatures for withdrawals");
         }
         // }
 

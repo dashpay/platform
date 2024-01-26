@@ -1,6 +1,7 @@
 use crate::abci::AbciError;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::withdrawal::withdrawal_txs;
+use crate::platform_types::withdrawal::signed_withdrawal_txs::v0::SignedWithdrawalTxs;
+use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use crate::rpc::core::CoreRPCLike;
 use dpp::bls_signatures;
 use dpp::validation::SimpleValidationResult;
@@ -32,14 +33,14 @@ where
     ///
     pub(super) fn check_withdrawals_v0(
         &self,
-        received_withdrawals: &withdrawal_txs::v0::WithdrawalTxs,
-        our_withdrawals: &withdrawal_txs::v0::WithdrawalTxs,
+        received_withdrawals: &SignedWithdrawalTxs,
+        our_withdrawals: &UnsignedWithdrawalTxs,
         height: u64,
         round: u32,
         verify_with_validator_public_key: Option<&bls_signatures::PublicKey>,
         quorum_hash: Option<&[u8]>,
     ) -> SimpleValidationResult<AbciError> {
-        if received_withdrawals.ne(our_withdrawals) {
+        if our_withdrawals.ne(received_withdrawals) {
             return SimpleValidationResult::new_with_error(
                 AbciError::VoteExtensionMismatchReceived {
                     got: received_withdrawals.to_string(),

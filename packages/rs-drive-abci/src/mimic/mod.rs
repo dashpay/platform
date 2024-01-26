@@ -280,9 +280,9 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 )))?.v0()?;
 
         let extensions = block_execution_context
-            .withdrawal_transactions
-            .keys()
-            .map(|tx_id| {
+            .unsigned_withdrawal_transactions
+            .iter()
+            .map(|(tx_id, _)| {
                 VoteExtension {
                     r#type: VoteExtensionType::ThresholdRecover as i32,
                     extension: tx_id.to_byte_array().to_vec(),
@@ -294,7 +294,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         //todo: tidy up and fix
         // TODO(withdrawals): restore Dashcore transactions here
-        let withdrawals = block_execution_context.withdrawal_transactions.clone();
+        //let withdrawals = &block_execution_context.unsigned_withdrawal_transactions;
         // .values()
         // .map(|transaction| {
         //     let AssetUnlockBaseTransactionInfo {
@@ -460,7 +460,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         Ok(MimicExecuteBlockOutcome {
             state_transaction_results,
             app_version: APP_VERSION,
-            withdrawal_transactions: withdrawals,
+            withdrawal_transactions: Default::default(),
             validator_set_update,
             next_validator_set_hash,
             root_app_hash: app_hash

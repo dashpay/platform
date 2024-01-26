@@ -8,7 +8,6 @@ use drive::error::Error::GroveDB;
 
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
-use std::collections::BTreeMap;
 
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
@@ -150,7 +149,7 @@ where
             block_state_info: block_state_info.into(),
             epoch_info: epoch_info.clone(),
             hpmn_count: hpmn_list_len as u32,
-            withdrawal_transactions: BTreeMap::new(),
+            unsigned_withdrawal_transactions: Default::default(),
             block_platform_state,
             proposer_results: None,
         };
@@ -239,6 +238,7 @@ where
         {
             // Takes L1 withdrawal transactions info from drive, appends request info to them,
             // and saves them back to drive
+            // TODO: Must be named dequeue_and_prepare_unsigned_withdrawal_transactions
             let unsigned_withdrawal_transaction_bytes = self
                 .fetch_and_prepare_unsigned_withdrawal_transactions(
                     validator_set_quorum_hash,
@@ -249,17 +249,8 @@ where
 
             // Save unsigned transaction bytes to block execution context
             // to be signed (on extend_vote) and broadcasted (on finalize_block)
-            block_execution_context.set_withdrawal_transactions(
-                unsigned_withdrawal_transaction_bytes
-                    .into_iter()
-                    .map(|withdrawal_transaction| {
-                        (
-                            Txid::hash(withdrawal_transaction.as_slice()),
-                            withdrawal_transaction,
-                        )
-                    })
-                    .collect(),
-            );
+            block_execution_context
+                .set_unsigned_withdrawal_transactions(unsigned_withdrawal_transaction_bytes.into());
 
             // Update pooled transactions statuses to broadcasted
             self.update_pooled_withdrawal_transaction_statuses(
@@ -269,12 +260,13 @@ where
             )?;
         }
 
-        // After asset unlocks were broadcasted and chainlocked:
+        // Mark all previously broadcasted and chainlocked withdrawals as complete
         if block_execution_context
             .block_state_info()
             .core_chain_locked_height()
             != last_block_core_height
         {
+            // TODO: Rename to mark_chainlocked_withdrawals_as_complete
             self.update_chainlocked_withdrawal_transaction_statuses(
                 &block_execution_context,
                 transaction,

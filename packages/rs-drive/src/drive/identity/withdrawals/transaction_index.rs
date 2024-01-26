@@ -22,6 +22,7 @@ impl Drive {
         drive_operation_types: &mut Vec<DriveOperation>,
         transaction: TransactionArg,
     ) -> Result<u64, Error> {
+        // TODO(withdrawals): we don't need to reuse indices. Just use always incremental counter.
         let mut inner_query = Query::new();
 
         inner_query.insert_all();

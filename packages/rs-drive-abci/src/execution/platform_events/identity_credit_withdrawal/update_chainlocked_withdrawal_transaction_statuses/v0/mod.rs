@@ -314,7 +314,7 @@ mod tests {
             }
             .into(),
             hpmn_count: 100,
-            withdrawal_transactions: Default::default(),
+            unsigned_withdrawal_transactions: Default::default(),
             block_platform_state: PlatformStateV0 {
                 last_committed_block_info: None,
                 current_protocol_version_in_consensus: 0,

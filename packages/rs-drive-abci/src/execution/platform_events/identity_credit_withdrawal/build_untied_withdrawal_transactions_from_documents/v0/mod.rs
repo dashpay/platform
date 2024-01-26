@@ -27,7 +27,7 @@ where
     C: CoreRPCLike,
 {
     /// Build list of Core transactions from withdrawal documents
-    pub(super) fn build_withdrawal_transactions_from_documents_v0(
+    pub(super) fn build_untied_withdrawal_transactions_from_documents_v0(
         &self,
         documents: &[Document],
         drive_operation_types: &mut Vec<DriveOperation>,
@@ -216,7 +216,7 @@ mod tests {
             let mut batch = vec![];
 
             let transactions = platform
-                .build_withdrawal_transactions_from_documents_v0(
+                .build_untied_withdrawal_transactions_from_documents_v0(
                     &documents,
                     &mut batch,
                     Some(&transaction),

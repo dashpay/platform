@@ -70,16 +70,18 @@ where
         let mut drive_operations = vec![];
 
         // TODO(withdrawals): review - build core TXs from documents
-        let withdrawal_transactions = self.build_withdrawal_transactions_from_documents(
-            &documents,
-            &mut drive_operations,
-            Some(transaction),
-            platform_version,
-        )?;
+        let untied_withdrawal_transactions = self
+            .build_untied_withdrawal_transactions_from_documents(
+                &documents,
+                &mut drive_operations,
+                Some(transaction),
+                platform_version,
+            )?;
 
         let mut tx_hashes = vec![];
         for document in documents.iter_mut() {
-            let Some((_, transaction_bytes)) = withdrawal_transactions.get(&document.id()) else {
+            let Some((_, transaction_bytes)) = untied_withdrawal_transactions.get(&document.id())
+            else {
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "transactions must contain a transaction",
                 )));
@@ -131,7 +133,7 @@ where
         )?;
 
         let withdrawal_transactions: Vec<WithdrawalTransactionIdAndBytes> =
-            withdrawal_transactions.values().cloned().collect();
+            untied_withdrawal_transactions.values().cloned().collect();
 
         // TODO(withdrawals): saving Core transactions to the drive to be broadcasted
         //   when platform block is final
@@ -207,7 +209,7 @@ mod tests {
                 }
                 .into(),
                 hpmn_count: 100,
-                withdrawal_transactions: Default::default(),
+                unsigned_withdrawal_transactions: Default::default(),
                 block_platform_state: PlatformStateV0 {
                     last_committed_block_info: None,
                     current_protocol_version_in_consensus: 0,

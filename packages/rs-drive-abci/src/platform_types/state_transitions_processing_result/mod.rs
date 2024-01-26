@@ -27,7 +27,8 @@ pub enum StateTransitionExecutionResult {
 #[derive(Debug, Default, Clone)]
 pub struct StateTransitionsProcessingResult {
     execution_results: Vec<StateTransitionExecutionResult>,
-    invalid_count: usize,
+    invalid_paid_count: usize,
+    invalid_unpaid_count: usize,
     valid_count: usize,
     failed_count: usize,
     fees: FeeResult,
@@ -40,9 +41,11 @@ impl StateTransitionsProcessingResult {
             StateTransitionExecutionResult::DriveAbciError(_) => {
                 self.failed_count += 1;
             }
-            StateTransitionExecutionResult::PaidConsensusError(_)
-            | StateTransitionExecutionResult::UnpaidConsensusError(_) => {
-                self.invalid_count += 1;
+            StateTransitionExecutionResult::PaidConsensusError(_) => {
+                self.invalid_paid_count += 1;
+            }
+            StateTransitionExecutionResult::UnpaidConsensusError(_) => {
+                self.invalid_unpaid_count += 1;
             }
             StateTransitionExecutionResult::SuccessfulExecution(_, actual_fees) => {
                 self.valid_count += 1;
@@ -56,9 +59,14 @@ impl StateTransitionsProcessingResult {
         Ok(())
     }
 
-    /// Returns the number of invalid state transitions
-    pub fn invalid_count(&self) -> usize {
-        self.invalid_count
+    /// Returns the number of paid invalid state transitions
+    pub fn invalid_paid_count(&self) -> usize {
+        self.invalid_paid_count
+    }
+
+    /// Returns the number of unpaid invalid state transitions
+    pub fn invalid_unpaid_count(&self) -> usize {
+        self.invalid_unpaid_count
     }
 
     /// Returns the number of valid state transitions
