@@ -27,7 +27,7 @@ use std::fmt::{Debug, Formatter};
 #[derive(Clone)]
 pub struct PlatformStateV0 {
     /// Information about the genesis block
-    pub genesis_block_info: Option<BlockInfo>,
+    pub genesis_block_info: Option<BlockInfo>, // TODO: we already have it in epoch 0
     /// Information about the last block
     pub last_committed_block_info: Option<ExtendedBlockInfo>,
     /// Current Version
@@ -72,6 +72,7 @@ pub struct PlatformStateV0 {
 impl Debug for PlatformStateV0 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PlatformStateV0")
+            .field("genesis_block_info", &self.genesis_block_info)
             .field("last_committed_block_info", &self.last_committed_block_info)
             .field(
                 "current_protocol_version_in_consensus",

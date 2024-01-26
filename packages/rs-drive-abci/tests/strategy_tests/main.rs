@@ -283,7 +283,7 @@ mod tests {
 
         abci_app
             .platform
-            .recreate_state(platform_version)
+            .reload_state_from_storage(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {
@@ -414,7 +414,7 @@ mod tests {
 
         abci_app
             .platform
-            .recreate_state(platform_version)
+            .reload_state_from_storage(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {
@@ -524,7 +524,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99868891100)
+        assert_eq!(balance, 99868861500)
     }
 
     #[test]
@@ -1114,7 +1114,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "3c6bd30ad909138e7b119ce92305fc328ae1110771b1395425495b6fe97f2c08".to_string()
+            "b1717304d3ce607569ca53d7f801df874578f510b352f23d8e4c087cdfed5697".to_string()
         )
     }
 
@@ -1670,7 +1670,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "6964587ace67e307a3e48f3dc85c5d229d00123e46cca0267b79482a2ec8b8f2".to_string()
+            "40b51654a73ab89e98076819498a746dc179d54c53f599fa5ceeec57cec3576e".to_string()
         )
     }
 
@@ -2693,7 +2693,7 @@ mod tests {
 
         abci_app
             .platform
-            .recreate_state(platform_version)
+            .reload_state_from_storage(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {

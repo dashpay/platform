@@ -24,11 +24,7 @@ impl Drive {
     ///
     /// * `Result<Self, Error>` - On success, returns `Ok(Self)`, where `Self` is a `Drive` instance. On error, returns an `Error`.
     ///
-    pub fn open<P: AsRef<Path>>(
-        path: P,
-        config: Option<DriveConfig>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, Error> {
+    pub fn open<P: AsRef<Path>>(path: P, config: Option<DriveConfig>) -> Result<Self, Error> {
         match GroveDb::open(path) {
             Ok(grove) => {
                 let config = config.unwrap_or_default();
@@ -40,7 +36,7 @@ impl Drive {
                     grove,
                     config,
                     system_contracts: SystemContracts::load_genesis_system_contracts(
-                        platform_version.protocol_version,
+                        1, // TODO: Will be fixed in #1676
                     )?,
                     cache: RwLock::new(DriveCache {
                         cached_contracts: DataContractCache::new(
