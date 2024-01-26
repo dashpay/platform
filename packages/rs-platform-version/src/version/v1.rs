@@ -18,8 +18,9 @@ use crate::version::drive_abci_versions::{
     DriveAbciFeePoolOutwardsDistributionMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
-    DriveAbciProtocolUpgradeMethodVersions, DriveAbciQueryDataContractVersions,
-    DriveAbciQueryIdentityVersions, DriveAbciQuerySystemVersions, DriveAbciQueryVersions,
+    DriveAbciPlatformStateStorageMethodVersions, DriveAbciProtocolUpgradeMethodVersions,
+    DriveAbciQueryDataContractVersions, DriveAbciQueryIdentityVersions,
+    DriveAbciQuerySystemVersions, DriveAbciQueryVersions,
     DriveAbciStateTransitionCommonValidationVersions,
     DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion,
     DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions,
@@ -50,13 +51,13 @@ use crate::version::drive_versions::{
     DriveIdentityKeysProveMethodVersions, DriveIdentityMethodVersions,
     DriveIdentityProveMethodVersions, DriveIdentityUpdateMethodVersions,
     DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
-    DrivePlatformSystemMethodVersions, DriveProtocolUpgradeVersions, DriveProveMethodVersions,
-    DriveStateTransitionMethodVersions, DriveStateTransitionOperationMethodVersions,
-    DriveStructureVersion, DriveSystemEstimationCostsMethodVersions,
-    DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
-    DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
-    DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions,
-    DriveVerifySystemMethodVersions, DriveVersion,
+    DrivePlatformStateMethodVersions, DrivePlatformSystemMethodVersions,
+    DriveProtocolUpgradeVersions, DriveProveMethodVersions, DriveStateTransitionMethodVersions,
+    DriveStateTransitionOperationMethodVersions, DriveStructureVersion,
+    DriveSystemEstimationCostsMethodVersions, DriveSystemProtocolVersionMethodVersions,
+    DriveVerifyContractMethodVersions, DriveVerifyDocumentMethodVersions,
+    DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
+    DriveVerifySingleDocumentMethodVersions, DriveVerifySystemMethodVersions, DriveVersion,
 };
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
@@ -358,8 +359,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             },
             platform_system: DrivePlatformSystemMethodVersions {
                 protocol_version: DriveSystemProtocolVersionMethodVersions {
-                    fetch_current_protocol_version: 0,
-                    set_current_protocol_version_operations: 0,
                     fetch_next_protocol_version: 0,
                     set_next_protocol_version_operations: 0,
                 },
@@ -387,6 +386,10 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             batch_operations: DriveBatchOperationsMethodVersion {
                 convert_drive_operations_to_grove_operations: 0,
                 apply_drive_operations: 0,
+            },
+            platform_state: DrivePlatformStateMethodVersions {
+                fetch_platform_state_bytes: 0,
+                store_platform_state_bytes: 0,
             },
         },
         grove_methods: DriveGroveMethodVersions {
@@ -528,10 +531,13 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 clear_drive_block_cache: 0,
             },
             block_end: DriveAbciBlockEndMethodVersions {
-                store_ephemeral_state: 0,
                 update_state_cache: 0,
                 update_drive_cache: 0,
                 validator_set_update: 0,
+            },
+            platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
+                fetch_platform_state: 0,
+                store_platform_state: 0,
             },
         },
         validation_and_processing: DriveAbciValidationVersions {
