@@ -599,7 +599,6 @@ where
         }
     }
 
-    //Todo: Verify compatibility with Core
     fn extend_vote(
         &self,
         request: proto::RequestExtendVote,

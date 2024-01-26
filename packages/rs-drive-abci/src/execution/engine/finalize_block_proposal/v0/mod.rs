@@ -210,7 +210,7 @@ where
 
         to_commit_block_info.core_height = block_header.core_chain_locked_height;
 
-        // Finalize method alters drive state. Are we allowed to do that in finalize block handler?
+        // TODO(withdrawals): Finalize method alters drive state. Are we allowed to do that in finalize block handler?
         //
         // TODO(withdrawals): withdrawal finalization.
         //    I assume that core TX broadcast should come before this step.
@@ -224,6 +224,8 @@ where
         );
         // Block proposer broadcasts asset unlock transactions
         // if block_execution_context.proposer_results().is_some() {
+        // TODO(withdrawals): should we error in case withdrawal_transactions is empty and threshold_vote_extensions is not
+        // or vice versa?
         if !block_execution_context.withdrawal_transactions().is_empty()
             && !commit_info.threshold_vote_extensions.is_empty()
         {
