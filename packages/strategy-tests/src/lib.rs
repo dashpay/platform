@@ -26,7 +26,7 @@ use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Set
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use rand::prelude::{IteratorRandom, StdRng};
 use rand::Rng;
-use tracing::info;
+use tracing::{error, info};
 use std::collections::{BTreeMap, HashSet, HashMap};
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -81,7 +81,7 @@ pub mod transitions;
 ///
 /// # Note
 /// Ensure that when using or updating the `Strategy`, all associated operations, identities, and contracts are coherent with the intended workflow or simulation. Inconsistencies might lead to unexpected behaviors or simulation failures.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct Strategy {
     pub contracts_with_updates: Vec<(
         CreatedDataContract,
@@ -1076,14 +1076,15 @@ impl Strategy {
                         let owner = current_identities.get(indices[0]).unwrap();
                         let recipient = current_identities.get(indices[1]).unwrap();
 
-                        let fetched_owner_balance = identity_fetch_callback(owner.id(), None);
+                        info!("owner: {:?}", owner);
+                        info!("recipient: {:?}", recipient);
 
                         let state_transition =
                             crate::transitions::create_identity_credit_transfer_transition(
                                 owner,
                                 recipient,
                                 signer,
-                                fetched_owner_balance.balance.unwrap() - 100,
+                                100,
                             );
                         operations.push(state_transition);
                     }
@@ -1153,8 +1154,13 @@ impl Strategy {
             block_info, signer, rng, create_asset_lock, config, platform_version
         ) {
             Ok(transitions) => transitions,
-            Err(_) => return (vec![], finalize_block_operations),
+            Err(e) => {
+                error!("identity_state_transitions_for_block error: {}", e);
+                return (vec![], finalize_block_operations)
+            },
         };
+
+        // Create state_transitions vec and identities vec based on identity_state_transitions outcome
         let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
 

@@ -14,6 +14,7 @@ use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
 
 use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
+use tracing::info;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
 
