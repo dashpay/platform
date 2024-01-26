@@ -4,4 +4,4 @@ mod store_platform_state_bytes;
 pub use fetch_platform_state_bytes::*;
 pub use store_platform_state_bytes::*;
 
-const PLATFROM_STATE_KEY: &[u8; 11] = b"saved_state";
+const PLATFORM_STATE_KEY: &[u8; 11] = b"saved_state";
