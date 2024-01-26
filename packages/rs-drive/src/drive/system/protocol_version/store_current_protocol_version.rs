@@ -73,7 +73,6 @@ impl Drive {
             )),
             drive_operations,
             drive_version,
-        )?;
-        Ok(())
+        )
     }
 }
