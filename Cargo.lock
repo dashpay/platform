@@ -1026,10 +1026,10 @@ source = "git+https://github.com/dashpay/rust-dashcore?branch=master#35a166e7625
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.1"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc#b9482f1d02b469f146404f9ee6d9d9fe68d3b99a"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/getassetunlockstatuses#c85c829338fab8db665b90c47063f57be1342fdf"
 dependencies = [
  "dashcore-private",
- "dashcore-rpc-json 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc)",
+ "dashcore-rpc-json 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/getassetunlockstatuses)",
  "env_logger 0.10.1",
  "hex",
  "jsonrpc",
@@ -1056,7 +1056,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.15.1"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc#b9482f1d02b469f146404f9ee6d9d9fe68d3b99a"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/getassetunlockstatuses#c85c829338fab8db665b90c47063f57be1342fdf"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dashcore",
@@ -1297,7 +1297,7 @@ dependencies = [
  "ciborium",
  "clap 4.4.11",
  "dapi-grpc",
- "dashcore-rpc 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=fix/gettxchainlock-rpc)",
+ "dashcore-rpc 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/getassetunlockstatuses)",
  "delegate",
  "derive_more",
  "dotenvy",

@@ -69,7 +69,6 @@ where
 
         let mut drive_operations = vec![];
 
-        // TODO(withdrawals): review - build core TXs from documents
         let untied_withdrawal_transactions = self
             .build_untied_withdrawal_transactions_from_documents(
                 &documents,
@@ -78,18 +77,25 @@ where
                 platform_version,
             )?;
 
-        let mut tx_hashes = vec![];
         for document in documents.iter_mut() {
-            let Some((_, transaction_bytes)) = untied_withdrawal_transactions.get(&document.id())
+            let Some((transaction_index_bytes, transaction_bytes)) =
+                untied_withdrawal_transactions.get(&document.id())
             else {
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "transactions must contain a transaction",
                 )));
             };
 
-            // TODO(withdrawals): recheck - don't we need to use dashcore x11 hash instead of double sha here?
+            let transaction_index_bytes: [u8; 8] =
+                transaction_index_bytes.clone().try_into().map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Can't convert transaction index bytes to [u8; 64]",
+                    ))
+                })?;
+            let transaction_index = u64::from_be_bytes(transaction_index_bytes);
             let transaction_id = hash::hash_to_vec(transaction_bytes);
-            tx_hashes.push(transaction_id.clone());
+
+            document.set_u64(withdrawal::properties::TRANSACTION_INDEX, transaction_index);
 
             document.set_bytes(
                 withdrawal::properties::TRANSACTION_ID,
@@ -135,8 +141,6 @@ where
         let withdrawal_transactions: Vec<WithdrawalTransactionIdAndBytes> =
             untied_withdrawal_transactions.values().cloned().collect();
 
-        // TODO(withdrawals): saving Core transactions to the drive to be broadcasted
-        //   when platform block is final
         self.drive.add_enqueue_withdrawal_transaction_operations(
             &withdrawal_transactions,
             &mut drive_operations,

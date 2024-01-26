@@ -67,33 +67,38 @@ where
         )?;
 
         // Collecting only documents that have been updated
-        let transactions_to_check: Vec<[u8; 32]> = broadcasted_withdrawal_documents
+        let withdrawal_indices_to_check: Vec<u64> = broadcasted_withdrawal_documents
             .iter()
             .map(|document| {
                 document
                     .properties()
-                    .get_hash256_bytes(withdrawal::properties::TRANSACTION_ID)
-                    .map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedDriveResponse(
-                            "Can't get transactionId from withdrawal document".to_string(),
-                        ))
-                    })
+                    .get_optional_u64(withdrawal::properties::TRANSACTION_INDEX)?
+                    .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                        "Can't get transaction index from withdrawal document".to_string(),
+                    )))
             })
-            .collect::<Result<Vec<[u8; 32]>, Error>>()?;
+            .collect::<Result<Vec<u64>, Error>>()?;
 
-        let core_transactions_statuses = if transactions_to_check.is_empty() {
+        let core_transactions_statuses = if withdrawal_indices_to_check.is_empty() {
             BTreeMap::new()
         } else {
-            // TODO(withdrawals): transaction ids in withdrawal documents are actually double SHA256 hashes, not X11
-            //    most probably this fetch is not going to find any matches
             self.fetch_transactions_block_inclusion_status(
                 block_execution_context
                     .block_state_info()
                     .core_chain_locked_height(),
-                transactions_to_check,
+                withdrawal_indices_to_check.clone(),
                 platform_version,
             )?
         };
+
+        println!(
+            "[Withdrawals] withdrawal_indices: {:?}",
+            &withdrawal_indices_to_check
+        );
+        println!(
+            "[Withdrawals] core_transactions_statuses: {:?}",
+            &core_transactions_statuses
+        );
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
@@ -101,11 +106,11 @@ where
         let documents_to_update: Vec<Document> = broadcasted_withdrawal_documents
             .into_iter()
             .map(|mut document| {
-                let transaction_id = document
+                let withdrawal_index = document
                     .properties()
-                    .get_optional_hash256_bytes(withdrawal::properties::TRANSACTION_ID)?
+                    .get_optional_u64(withdrawal::properties::TRANSACTION_INDEX)?
                     .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
-                        "Can't get transactionId from withdrawal document".to_string(),
+                        "Can't get transaction index from withdrawal document".to_string(),
                     )))?;
 
                 let current_status: WithdrawalStatus = document
@@ -123,7 +128,7 @@ where
 
                 let is_chain_locked =
                     *core_transactions_statuses
-                        .get(&transaction_id)
+                        .get(&withdrawal_index)
                         .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "we should always have a withdrawal status",
                         )))?;
