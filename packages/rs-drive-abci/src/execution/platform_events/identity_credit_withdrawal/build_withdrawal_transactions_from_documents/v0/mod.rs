@@ -70,7 +70,6 @@ where
                     ))
                 })?;
 
-            // TODO(withdrawals): is it okay to hardcode this?
             let state_transition_size = 190;
 
             let output_script = ScriptBuf::from_bytes(output_script_bytes);

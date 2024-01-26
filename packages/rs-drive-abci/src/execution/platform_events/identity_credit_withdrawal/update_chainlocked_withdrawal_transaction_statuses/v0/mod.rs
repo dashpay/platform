@@ -84,8 +84,6 @@ where
         let core_transactions_statuses = if transactions_to_check.is_empty() {
             BTreeMap::new()
         } else {
-            // TODO(withdrawals): transaction ids in withdrawal documents are actually double SHA256 hashes, not X11
-            //    most probably this fetch is not going to find any matches
             self.fetch_transactions_block_inclusion_status(
                 block_execution_context
                     .block_state_info()
