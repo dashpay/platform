@@ -1,6 +1,5 @@
 use dashcore_rpc::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
 use dpp::block::epoch::Epoch;
-use std::hash::Hash;
 
 use dpp::validation::SimpleValidationResult;
 
@@ -110,7 +109,7 @@ where
             .expect("invalid sha256 length");
 
         //// Verification that commit is for our current executed block
-        // When receiving the finalized block, we need to make sure that info matches our current block
+        // When receiving the finalized block, we need to make sure info matches our current block
 
         // First let's check the basics, height, round and hash
         if !block_state_info.matches_expected_block_info(
@@ -170,24 +169,29 @@ where
             if !validation_result.is_valid() {
                 return Ok(validation_result.into());
             }
+
+            // TODO(withdrawals): We verify withdrawal transactions set what we pass for singing to tenderdash
+            //  is correct on verify_vote_extension. Do we need to verify resulting signatures from tenderdash?
+            //  It does make sense only in case if we don't trust to tenderdash.
+            //  Moreover, if signatures aren't correct then Core RPC will fail when we broadcast these transactions
+            //  to Core. Do we need to verify Tenderdash signatures twice, here in Drive and then in Core?
+
+            // Verify vote extensions
+            // let received_withdrawals = WithdrawalTxs::from(&commit.threshold_vote_extensions);
+            // TODO: This is incorrect, we should take withdrawals from block execution context
+            // let our_withdrawals = WithdrawalTxs::load(Some(transaction), &self.drive)
+            //     .map_err(|e| AbciError::WithdrawalTransactionsDBLoadError(e.to_string()))?;
+            //
+            // if let Err(e) = self.check_withdrawals(
+            //     &received_withdrawals,
+            //     &our_withdrawals,
+            //     Some(quorum_public_key),
+            // ) {
+            //     validation_result.add_error(e);
+            //     return Ok(validation_result.into());
+            // }
         }
         drop(state_cache);
-
-        // TODO(withdrawals): we have this in verify_vote_extension handler. Do we need it here as well?
-        // Verify vote extensions
-        // let received_withdrawals = WithdrawalTxs::from(&commit.threshold_vote_extensions);
-        // let our_withdrawals = WithdrawalTxs::load(Some(transaction), &self.drive)
-        //     .map_err(|e| AbciError::WithdrawalTransactionsDBLoadError(e.to_string()))?;
-        //todo: reenable check
-        //
-        // if let Err(e) = self.check_withdrawals(
-        //     &received_withdrawals,
-        //     &our_withdrawals,
-        //     Some(quorum_public_key),
-        // ) {
-        //     validation_result.add_error(e);
-        //     return Ok(validation_result.into());
-        // }
 
         // Next let's check that the hash received is the same as the hash we expect
 

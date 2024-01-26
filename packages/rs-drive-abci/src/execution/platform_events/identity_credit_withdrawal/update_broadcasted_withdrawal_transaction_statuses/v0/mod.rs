@@ -61,7 +61,7 @@ where
         };
 
         let broadcasted_withdrawal_documents = self.drive.fetch_withdrawal_documents_by_status(
-            withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+            WithdrawalStatus::BROADCASTED.into(),
             Some(transaction),
             platform_version,
         )?;
@@ -406,7 +406,7 @@ mod tests {
         let documents = platform
             .drive
             .fetch_withdrawal_documents_by_status(
-                withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
+                withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
                 Some(&transaction),
                 platform_version,
             )

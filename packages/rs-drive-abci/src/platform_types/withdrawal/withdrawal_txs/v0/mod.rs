@@ -32,7 +32,7 @@ pub struct WithdrawalTxs<'a> {
 
 impl<'a> WithdrawalTxs<'a> {
     /// Load pending withdrawal transactions from database
-    pub fn load(transaction: TransactionArg, drive: &Drive) -> Result<Self, AbciError> {
+    pub fn dequeue(transaction: TransactionArg, drive: &Drive) -> Result<Self, AbciError> {
         let mut drive_operations = Vec::<DriveOperation>::new();
 
         let inner = drive
@@ -325,6 +325,7 @@ mod test {
             .into(),
             signature,
             r#type: VoteExtensionType::ThresholdRecover.into(),
+            sign_request_id: None,
         });
 
         assert!(wt
