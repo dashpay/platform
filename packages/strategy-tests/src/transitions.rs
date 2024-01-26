@@ -39,6 +39,7 @@ use simple_signer::signer::SimpleSigner;
 
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
+use tracing::error;
 use tracing::info;
 use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
@@ -615,72 +616,63 @@ pub fn create_identities_state_transitions(
     create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
-    // Generate identities and a mapping of public keys to private keys
-    let (mut identities, mut keys) = Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(
+    let (identities, mut keys) = Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(
         count,
         key_count,
         rng,
         platform_version,
-    ).expect("expected to create identities and keys");
+    ).expect("Expected to create identities and keys");
 
-    // Find the highest KeyID in the signer so we can iterate upwards from there
-    let starting_id_num = match signer.private_keys.keys().max() {
-        Some(max_key) => max_key.id().checked_add(1).expect("ID overflow"),
-        None => 0,
-    };
+    let starting_id_num = signer.private_keys.keys().max().map_or(0, |max_key| max_key.id() + 1);
 
-    // Reset the KeyIDs of the generated public keys so they can be added on top of existing signer keys
-    // Also update the identities with the new KeyIDs
-    for (index, (key, _)) in keys.iter_mut().enumerate() {
-        let new_id = starting_id_num.checked_add(index as u32).expect("ID overflow during increment");
-        match key {
-            IdentityPublicKey::V0(ref mut id_pub_key_v0) => {
-                id_pub_key_v0.set_id(new_id);
-            },
-        }
-
-        // Update the identities with the new KeyIDs directly
-        for identity in identities.iter_mut() {
-            match identity {
-                Identity::V0(ref mut identity_v0) => {
-                    if let Some(pub_key) = identity_v0.public_keys.get_mut(&(index as KeyID)) {
-                        match pub_key {
-                            IdentityPublicKey::V0(ref mut id_pub_key_v0) => {
-                                id_pub_key_v0.set_id(new_id);
-                            },
-                        }
-                    }
-                },
-            }
+    // Update keys with new KeyIDs and add them to signer
+    let mut current_id_num = starting_id_num;
+    for (key, _) in &mut keys {
+        if let IdentityPublicKey::V0(ref mut id_pub_key_v0) = key {
+            id_pub_key_v0.set_id(current_id_num);
+            current_id_num += 1; // Increment for each key
         }
     }
-
     signer.add_keys(keys);
 
     // Generate state transitions for each identity
-    identities.into_iter().map(|mut identity| {
-        // Generate an asset lock proof for each identity
-        let (asset_lock_proof, private_key) = create_asset_lock(200000)
-            .ok_or(ProtocolError::Generic("Failed to create asset lock proof".to_string()))?;
-            
-        // Convert the private key to bytes
-        let pk = private_key.to_bytes();
+    identities.into_iter().enumerate().map(|(index, mut identity)| {
+        // Calculate the starting KeyID for this identity
+        let identity_starting_id = starting_id_num + (index as u32) * key_count;
 
-        // Create the identity transition
-        let identity_create_transition = IdentityCreateTransition::try_from_identity_with_signer(
-            &identity,
-            asset_lock_proof,
-            pk.as_slice(),
-            signer,
-            &NativeBlsModule,
-            platform_version,
-        ).expect("expected to transform identity into identity create transition");
-        
-        // Set the identity ID based on the transition
-        identity.set_id(identity_create_transition.owner_id());
+        // Update the identity with the new KeyIDs
+        let public_keys_map = identity.public_keys_mut();
+        public_keys_map.values_mut().enumerate().for_each(|(key_index, public_key)| {
+            if let IdentityPublicKey::V0(ref mut id_pub_key_v0) = public_key {
+                let new_id = identity_starting_id + key_index as u32;
+                id_pub_key_v0.set_id(new_id);
+            }
+        });
 
-        Ok((identity, identity_create_transition))
-    }).collect()
+        // Attempt to create an asset lock
+        match create_asset_lock(200000) {
+            Some((proof, private_key)) => {
+                let pk = private_key.to_bytes();
+                match IdentityCreateTransition::try_from_identity_with_signer(
+                    &identity,
+                    proof,
+                    &pk,
+                    signer,
+                    &NativeBlsModule,
+                    platform_version,
+                ) {
+                    Ok(identity_create_transition) => {
+                        identity.set_id(identity_create_transition.owner_id());
+                        Ok((identity, identity_create_transition))
+                    },
+                    Err(e) => {
+                        Err(e)
+                    }
+                }
+            },
+            None => Err(ProtocolError::Generic("Failed to create asset lock proof".to_string()))
+        }
+    }).collect::<Result<Vec<(Identity, StateTransition)>, ProtocolError>>()
 }
 
 /// Generates state transitions for the creation of new identities.
