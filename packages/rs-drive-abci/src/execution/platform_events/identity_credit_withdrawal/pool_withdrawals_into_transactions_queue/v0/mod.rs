@@ -312,11 +312,11 @@ mod tests {
             .expect("to fetch withdrawal documents");
 
         let tx_ids = [
-            "4b74f91644215904ff1aa4122b204ba674aea74d99a17c03fbda483692bf735b",
-            "897ec16cb13d802ee6acdaf55274c59f3509a4929d726bab919a962ed4a8703c",
+            "d67616802027314d72f4b99b7aad0129c5ea2428de01387c662de33a880d64e3",
+            "81ded46f1c205906bc99f042c6ec1610b7b21ba650bc4235b33cdc048b68d226",
         ];
 
-        for document in updated_documents {
+        for (i, document) in updated_documents.into_iter().enumerate() {
             assert_eq!(document.revision(), Some(2));
 
             let tx_id: Vec<u8> = document
@@ -326,7 +326,7 @@ mod tests {
 
             let tx_id_hex = hex::encode(tx_id);
 
-            assert!(tx_ids.contains(&tx_id_hex.as_str()));
+            assert_eq!(tx_id_hex.as_str(), tx_ids[i]);
         }
     }
 }

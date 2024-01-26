@@ -663,6 +663,7 @@ where
     ) -> Result<proto::ResponseVerifyVoteExtension, proto::ResponseException> {
         let _timer = crate::metrics::abci_request_duration("verify_vote_extension");
 
+        // Verify that this is a vote extension for our current executed block and our proposer
         let proto::RequestVerifyVoteExtension {
             height,
             round,
@@ -673,6 +674,7 @@ where
         let height: u64 = height as u64;
         let round: u32 = round as u32;
 
+        // Make sure we are in a block execution phase
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
         let Some(block_execution_context) = guarded_block_execution_context.as_ref() else {
             tracing::warn!(
@@ -685,29 +687,6 @@ where
                 status: VerifyStatus::Reject.into(),
             });
         };
-
-        let platform_version = block_execution_context
-            .block_platform_state()
-            .current_platform_version()?;
-
-        let got: withdrawal_txs::v0::WithdrawalTxs = vote_extensions.into();
-        let expected = block_execution_context
-            .withdrawal_transactions()
-            .values()
-            .map(|asset_unlock_info_bytes| {
-                let asset_unlock_tx = build_asset_unlock_tx(asset_unlock_info_bytes).unwrap();
-
-                let request_id = get_withdrawal_request_id(&asset_unlock_tx);
-                let extension = asset_unlock_tx.txid().as_byte_array().to_vec();
-
-                proto::ExtendVoteExtension {
-                    r#type: VoteExtensionType::ThresholdRecoverRaw as i32,
-                    extension,
-                    sign_request_id: Some(request_id),
-                }
-            })
-            .collect::<Vec<_>>()
-            .into();
 
         // let state = self.platform.state.read().unwrap();
         //
@@ -727,10 +706,9 @@ where
         //     });
         // };
 
-        let block_state_info = block_execution_context.block_state_info();
+        // Make sure vote extension is for our currently executing block
 
-        //// Verification that vote extension is for our current executed block
-        // When receiving the vote extension, we need to make sure that info matches our current block
+        let block_state_info = block_execution_context.block_state_info();
 
         if block_state_info.height() != height || block_state_info.round() != round {
             tracing::warn!(
@@ -746,12 +724,38 @@ where
             });
         }
 
-        // TODO: provide validator public key and quorum_hash?
+        // Verify that a validator is requesting a signatures
+        // for a correct set of withdrawal transactions
+
+        let platform_version = block_execution_context
+            .block_platform_state()
+            .current_platform_version()?;
+
+        let got: withdrawal_txs::v0::WithdrawalTxs = vote_extensions.into();
+        let expected = block_execution_context
+            .withdrawal_transactions()
+            .values()
+            .map(|asset_unlock_info_bytes| {
+                let asset_unlock_tx = build_asset_unlock_tx(asset_unlock_info_bytes).unwrap();
+
+                let request_id = get_withdrawal_request_id(&asset_unlock_tx);
+                let extension = asset_unlock_tx.txid().as_byte_array().to_vec();
+
+                proto::ExtendVoteExtension {
+                    r#type: VoteExtensionType::ThresholdRecoverRaw as i32,
+                    // TODO(withdrawals): Do the same here as in extend_vote
+                    extension,
+                    sign_request_id: Some(request_id),
+                }
+            })
+            .collect::<Vec<_>>()
+            .into();
+
         let validation_result = self.platform.check_withdrawals(
             &got,
             &expected,
-            height as u64,
-            round as u32,
+            height,
+            round,
             None,
             None,
             platform_version,

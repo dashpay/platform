@@ -27,7 +27,6 @@ impl Drive {
 
         self.set_current_protocol_version_operations(
             current_version,
-            transaction,
             &mut batch_operations,
             &platform_version.drive,
         )?;

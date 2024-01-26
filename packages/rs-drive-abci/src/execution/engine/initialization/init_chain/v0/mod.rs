@@ -79,6 +79,14 @@ where
 
         state_guard.set_genesis_block_info(Some(genesis_block_info));
 
+        state_guard.set_current_protocol_version_in_consensus(request.initial_protocol_version);
+
+        self.drive.store_current_protocol_version(
+            request.initial_protocol_version,
+            Some(transaction),
+            &platform_version.drive,
+        )?;
+
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(
                 platform_state_fingerprint = hex::encode(state_guard.fingerprint()),
