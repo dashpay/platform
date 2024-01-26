@@ -532,7 +532,7 @@ pub(crate) fn start_chain_for_strategy(
         .expect("expected a quorum to be found");
 
     // init chain
-    let mut init_chain_request = static_init_chain_request();
+    let mut init_chain_request = static_init_chain_request(&config);
 
     init_chain_request.initial_core_height = config.abci.genesis_core_height;
     init_chain_request.validator_set = Some(ValidatorSetUpdate {
