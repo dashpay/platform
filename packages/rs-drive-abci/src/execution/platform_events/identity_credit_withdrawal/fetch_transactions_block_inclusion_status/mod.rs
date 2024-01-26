@@ -27,9 +27,9 @@ where
     pub(in crate::execution::platform_events::identity_credit_withdrawal) fn fetch_transactions_block_inclusion_status(
         &self,
         current_chain_locked_core_height: u32,
-        transaction_identifiers: Vec<[u8; 32]>,
+        withdrawal_indices: Vec<u64>,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<[u8; 32], bool>, Error> {
+    ) -> Result<BTreeMap<u64, bool>, Error> {
         match platform_version
             .drive_abci
             .methods
@@ -38,7 +38,7 @@ where
         {
             0 => self.fetch_transactions_block_inclusion_status_v0(
                 current_chain_locked_core_height,
-                transaction_identifiers,
+                withdrawal_indices,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "fetch_transactions_block_inclusion_status".to_string(),

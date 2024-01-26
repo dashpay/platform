@@ -71,31 +71,32 @@ where
         }
 
         // Collecting only documents that have been updated
-        let transactions_to_check: Vec<[u8; 32]> = pooled_withdrawal_documents
-            .iter()
-            .map(|document| {
-                document
-                    .properties()
-                    .get_hash256_bytes(withdrawal::properties::TRANSACTION_ID)
-                    .map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedDriveResponse(
-                            "Can't get transactionId from withdrawal document".to_string(),
-                        ))
-                    })
-            })
-            .collect::<Result<Vec<[u8; 32]>, Error>>()?;
+        // let transactions_to_check: Vec<[u8; 32]> = pooled_withdrawal_documents
+        //     .iter()
+        //     .map(|document| {
+        //         document
+        //             .properties()
+        //             .get_hash256_bytes(withdrawal::properties::TRANSACTION_ID)
+        //             .map_err(|_| {
+        //                 Error::Execution(ExecutionError::CorruptedDriveResponse(
+        //                     "Can't get transactionId from withdrawal document".to_string(),
+        //                 ))
+        //             })
+        //     })
+        //     .collect::<Result<Vec<[u8; 32]>, Error>>()?;
 
-        let core_transactions_statuses = if transactions_to_check.is_empty() {
-            BTreeMap::new()
-        } else {
-            self.fetch_transactions_block_inclusion_status(
-                block_execution_context
-                    .block_state_info()
-                    .core_chain_locked_height(),
-                transactions_to_check,
-                platform_version,
-            )?
-        };
+        // TODO: should we have it here?
+        // let core_transactions_statuses = if transactions_to_check.is_empty() {
+        //     BTreeMap::new()
+        // } else {
+        //     self.fetch_transactions_block_inclusion_status(
+        //         block_execution_context
+        //             .block_state_info()
+        //             .core_chain_locked_height(),
+        //         transactions_to_check,
+        //         platform_version,
+        //     )?
+        // };
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
@@ -103,18 +104,19 @@ where
         let documents_to_update: Vec<Document> = pooled_withdrawal_documents
             .into_iter()
             .map(|mut document| {
-                let transaction_id = document
-                    .properties()
-                    .get_optional_hash256_bytes(withdrawal::properties::TRANSACTION_ID)?
-                    .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
-                        "Can't get transactionId from withdrawal document".to_string(),
-                    )))?;
+                // let transaction_id = document
+                //     .properties()
+                //     .get_optional_hash256_bytes(withdrawal::properties::TRANSACTION_ID)?
+                //     .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                //         "Can't get transactionId from withdrawal document".to_string(),
+                //     )))?;
 
                 // Transaction has not been broadcasted or failed to be added to core mempool,
                 // skip updating this document
-                if !core_transactions_statuses.contains_key(&transaction_id) {
-                    return Ok(None);
-                }
+                // TODO: should we have it here?
+                // if !core_transactions_statuses.contains_key(&transaction_id) {
+                //     return Ok(None);
+                // }
 
                 document.set_u8(
                     withdrawal::properties::STATUS,

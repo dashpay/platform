@@ -1,9 +1,9 @@
 use dashcore_rpc::dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
-    ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult, GetChainTipsResult,
-    GetTransactionLockedResult, MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType,
-    SoftforkInfo,
+    AssetUnlockStatusResult, ExtendedQuorumDetails, ExtendedQuorumListResult,
+    GetBestChainLockResult, GetChainTipsResult, GetTransactionLockedResult, MasternodeListDiff,
+    MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
 };
 use dashcore_rpc::json::GetRawTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
@@ -35,6 +35,12 @@ pub trait CoreRPCLike {
         &self,
         tx_ids: Vec<Txid>,
     ) -> Result<Vec<Option<GetTransactionLockedResult>>, Error>;
+
+    /// Get asset unlock statuses
+    fn get_asset_unlock_statuses(
+        &self,
+        indices: &Vec<u64>,
+    ) -> Result<Vec<AssetUnlockStatusResult>, Error>;
 
     /// Get transaction
     fn get_transaction_extended_info(&self, tx_id: &Txid)
@@ -325,5 +331,12 @@ impl CoreRPCLike for DefaultCoreRPC {
 
     fn send_raw_transaction(&self, transaction: &Vec<u8>) -> Result<Txid, Error> {
         retry!(self.inner.send_raw_transaction(transaction.as_slice()))
+    }
+
+    fn get_asset_unlock_statuses(
+        &self,
+        indices: &Vec<u64>,
+    ) -> Result<Vec<AssetUnlockStatusResult>, Error> {
+        retry!(self.inner.get_asset_unlock_statuses(indices))
     }
 }

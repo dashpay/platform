@@ -77,13 +77,24 @@ where
         )?;
 
         for document in documents.iter_mut() {
-            let Some((_, transaction_bytes)) = withdrawal_transactions.get(&document.id()) else {
+            let Some((transaction_index_bytes, transaction_bytes)) =
+                withdrawal_transactions.get(&document.id())
+            else {
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "transactions must contain a transaction",
                 )));
             };
 
+            let transaction_index_bytes: [u8; 8] =
+                transaction_index_bytes.clone().try_into().map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Can't convert transaction index bytes to [u8; 64]",
+                    ))
+                })?;
+            let transaction_index = u64::from_be_bytes(transaction_index_bytes);
             let transaction_id = hash::hash_to_vec(transaction_bytes);
+
+            document.set_u64(withdrawal::properties::TRANSACTION_INDEX, transaction_index);
 
             document.set_bytes(
                 withdrawal::properties::TRANSACTION_ID,

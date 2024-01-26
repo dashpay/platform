@@ -3,6 +3,7 @@ use dpp::dashcore::Txid;
 use std::collections::BTreeMap;
 
 use crate::{error::Error, platform_types::platform::Platform, rpc::core::CoreRPCLike};
+use dashcore_rpc::json::AssetUnlockStatus;
 
 impl<C> Platform<C>
 where
@@ -12,28 +13,29 @@ where
     pub(super) fn fetch_transactions_block_inclusion_status_v0(
         &self,
         current_chain_locked_core_height: u32,
-        transaction_identifiers: Vec<[u8; 32]>,
-    ) -> Result<BTreeMap<[u8; 32], bool>, Error> {
-        let tx_ids: Vec<Txid> = transaction_identifiers
-            .iter()
-            .map(|transaction_id| Txid::from_byte_array(*transaction_id))
-            .collect();
-        let transactions_are_chain_locked_result =
-            self.core_rpc.get_transactions_are_chain_locked(tx_ids)?;
+        withdrawal_indices: Vec<u64>,
+    ) -> Result<BTreeMap<u64, bool>, Error> {
+        let asset_unlock_statuses_result = self
+            .core_rpc
+            .get_asset_unlock_statuses(&withdrawal_indices)?;
 
-        Ok(transactions_are_chain_locked_result
+        Ok(asset_unlock_statuses_result
             .into_iter()
-            .zip(transaction_identifiers)
-            .filter(|(lock_result, _)| lock_result.is_some())
-            .map(|(lock_result, identifier)| {
-                let lock_result = lock_result.unwrap();
+            .zip(withdrawal_indices)
+            // .filter(|(asset_unlock_status, _)| asset_unlock_status.is_some())
+            .map(|(asset_unlock_status_result, withdrawal_index)| {
+                // let asset_unlock_status_result = asset_unlock_status_result.unwrap();
                 // Transaction has not been mined yet
-                if lock_result.height < 0 {
-                    return (identifier, false);
-                };
-                let withdrawal_chain_locked = lock_result.chain_lock
-                    && current_chain_locked_core_height >= lock_result.height as u32;
-                (identifier, withdrawal_chain_locked)
+                match asset_unlock_status_result.status {
+                    AssetUnlockStatus::Chainlocked => (withdrawal_index, true),
+                    _ => (withdrawal_index, false),
+                }
+                // if asset_unlock_status_result.status == AssetUnlockStatusResult < 0 {
+                //     return (identifier, false);
+                // };
+                // let withdrawal_chain_locked = lock_result.chain_lock
+                //     && current_chain_locked_core_height >= lock_result.height as u32;
+                // (identifier, withdrawal_chain_locked)
             })
             .collect())
     }
