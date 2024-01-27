@@ -146,7 +146,7 @@ where
 
         tracing::trace!(
             ?chain_lock,
-            "message_digest for chain lock at height {} is {}, quorum hash is {}, block hash is {}, chain lock was {}, last committed core height {}, verification window {}, last block in window"
+            "message_digest for chain lock at height {} is {}, quorum hash is {}, block hash is {}, chain lock was {}, last committed core height {}, verification window {}, last block in window {}",
             chain_lock.block_height,
             hex::encode(message_digest.as_byte_array()),
             hex::encode(quorum_hash.as_slice()),
