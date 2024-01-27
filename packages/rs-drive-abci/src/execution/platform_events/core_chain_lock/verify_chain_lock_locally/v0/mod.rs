@@ -146,12 +146,15 @@ where
 
         tracing::trace!(
             ?chain_lock,
-            "message_digest for chain lock at height {} is {}, quorum hash is {}, block hash is {}, chain lock was {}",
+            "message_digest for chain lock at height {} is {}, quorum hash is {}, block hash is {}, chain lock was {}, last committed core height {}, verification window {}, last block in window"
             chain_lock.block_height,
             hex::encode(message_digest.as_byte_array()),
             hex::encode(quorum_hash.as_slice()),
             hex::encode(chain_lock.block_hash.as_byte_array()),
-            if chain_lock_verified { "verified"} else {"not verified"}
+            if chain_lock_verified { "verified"} else {"not verified"},
+            platform_state.last_committed_core_height(),
+            verification_height,
+            last_block_in_window,
         );
 
         if !chain_lock_verified {

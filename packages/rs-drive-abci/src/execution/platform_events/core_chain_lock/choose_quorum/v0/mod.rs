@@ -47,11 +47,15 @@ impl<C> Platform<C> {
             scores.push((quorum_hash_bytes, public_key, hash_result.into()));
         }
 
-        scores.sort_by_key(|k| k.2);
+        if scores.is_empty() {
+            None
+        } else {
+            scores.sort_by_key(|k| k.2);
 
-        let (quorum_hash, key, _) = scores.remove(0);
+            let (quorum_hash, key, _) = scores.remove(0);
 
-        Some((quorum_hash, key))
+            Some((quorum_hash, key))
+        }
     }
 
     /// Based on DIP8 deterministically chooses a pseudorandom quorum from the list of quorums
