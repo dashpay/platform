@@ -186,14 +186,17 @@ where
                 let previous_quorums = block_platform_state
                     .replace_chain_lock_validating_quorums(chain_lock_validating_quorums);
                 tracing::trace!("updated chain lock validating quorums to current validator set",);
-                block_platform_state.set_previous_chain_lock_validating_quorums(
-                    block_platform_state.last_committed_core_height(),
-                    core_block_height,
-                    block_platform_state
-                        .previous_height_chain_lock_validating_quorums()
-                        .map(|(_, previous_change_height, _, _)| *previous_change_height),
-                    previous_quorums,
-                );
+                // the only case where there will be no platform_state is init chain where we
+                if platform_state.is_some() {
+                    block_platform_state.set_previous_chain_lock_validating_quorums(
+                        block_platform_state.last_committed_core_height(),
+                        core_block_height,
+                        block_platform_state
+                            .previous_height_chain_lock_validating_quorums()
+                            .map(|(_, previous_change_height, _, _)| *previous_change_height),
+                        previous_quorums,
+                    );
+                }
             }
         } else {
             let chain_lock_quorums_list: BTreeMap<_, _> = extended_quorum_list
