@@ -29,7 +29,7 @@ impl<C> Platform<C> {
             let mut request_id_bytes = request_id.to_vec();
 
             // Only the quorum hash needs reversal.
-            request_id_bytes.reverse();
+            // request_id_bytes.reverse();
 
             let mut hasher = sha256d::Hash::engine();
 
@@ -76,7 +76,7 @@ impl<C> Platform<C> {
             let mut request_id_bytes = request_id.to_vec();
 
             // Only the quorum hash needs reversal.
-            request_id_bytes.reverse();
+            // request_id_bytes.reverse();
 
             let mut hasher = sha256d::Hash::engine();
 

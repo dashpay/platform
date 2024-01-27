@@ -1,3 +1,4 @@
+use dpp::block::block_info::BlockInfo;
 use dpp::bls_signatures::G2Element;
 use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
@@ -146,7 +147,8 @@ where
 
         tracing::trace!(
             ?chain_lock,
-            "message_digest for chain lock at height {} is {}, quorum hash is {}, block hash is {}, chain lock was {}, last committed core height {}, verification window {}, last block in window {}",
+            "h:{} message_digest for chain lock at core height {} is {}, quorum hash is {}, block hash is {}, chain lock was {}, last committed core height {}, verification window {}, last block in window {}",
+            platform_state.last_committed_block_height() + 1,
             chain_lock.block_height,
             hex::encode(message_digest.as_byte_array()),
             hex::encode(quorum_hash.as_slice()),
@@ -187,7 +189,8 @@ where
 
                 tracing::trace!(
                     ?chain_lock,
-                    "tried second quorums message_digest for chain lock at height {} is {}, quorum hash is {}, block hash is {}, chain lock was {}",
+                    "h:{} tried second quorums message_digest for chain lock at height {} is {}, quorum hash is {}, block hash is {}, chain lock was {}",
+                    platform_state.last_committed_block_height() + 1,
                     chain_lock.block_height,
                     hex::encode(message_digest.as_byte_array()),
                     hex::encode(quorum_hash.as_slice()),
