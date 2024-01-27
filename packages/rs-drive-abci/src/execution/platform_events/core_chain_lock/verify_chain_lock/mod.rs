@@ -21,6 +21,7 @@ where
     /// valid on platform.
     pub fn verify_chain_lock(
         &self,
+        round: u32,
         platform_state: &PlatformState,
         chain_lock: &ChainLock,
         make_sure_core_is_synced: bool,
@@ -33,6 +34,7 @@ where
             .verify_chain_lock
         {
             0 => self.verify_chain_lock_v0(
+                round,
                 platform_state,
                 chain_lock,
                 make_sure_core_is_synced,

@@ -20,13 +20,14 @@ where
 {
     pub(super) fn verify_chain_lock_v0(
         &self,
+        round: u32,
         platform_state: &PlatformState,
         chain_lock: &ChainLock,
         make_sure_core_is_synced: bool,
         platform_version: &PlatformVersion,
     ) -> Result<VerifyChainLockResult, Error> {
         // first we try to verify the chain lock locally
-        match self.verify_chain_lock_locally(platform_state, chain_lock, platform_version) {
+        match self.verify_chain_lock_locally(round, platform_state, chain_lock, platform_version) {
             Ok(Some(valid)) => {
                 if valid && make_sure_core_is_synced {
                     match self.make_sure_core_is_synced_to_chain_lock(chain_lock, platform_version)

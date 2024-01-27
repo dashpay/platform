@@ -20,6 +20,7 @@ where
     /// the quorum
     pub fn verify_chain_lock_locally(
         &self,
+        round: u32,
         platform_state: &PlatformState,
         chain_lock: &ChainLock,
         platform_version: &PlatformVersion,
@@ -30,7 +31,12 @@ where
             .core_chain_lock
             .verify_chain_lock_locally
         {
-            0 => self.verify_chain_lock_locally_v0(platform_state, chain_lock, platform_version),
+            0 => self.verify_chain_lock_locally_v0(
+                round,
+                platform_state,
+                chain_lock,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "verify_chain_lock_locally".to_string(),
                 known_versions: vec![0],

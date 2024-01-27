@@ -26,11 +26,6 @@ impl<C> Platform<C> {
             // Only the quorum hash needs reversal.
             quorum_hash_bytes.reverse();
 
-            let mut request_id_bytes = request_id.to_vec();
-
-            // Only the quorum hash needs reversal.
-            // request_id_bytes.reverse();
-
             let mut hasher = sha256d::Hash::engine();
 
             // Serialize and hash the LLMQ type
@@ -40,7 +35,7 @@ impl<C> Platform<C> {
             hasher.input(quorum_hash_bytes.as_slice());
 
             // Serialize and add the selection hash from the chain lock
-            hasher.input(request_id_bytes.as_slice());
+            hasher.input(request_id.as_slice());
 
             // Finalize the hash
             let hash_result = sha256d::Hash::from_engine(hasher);
@@ -73,11 +68,6 @@ impl<C> Platform<C> {
             // Only the quorum hash needs reversal.
             quorum_hash_bytes.reverse();
 
-            let mut request_id_bytes = request_id.to_vec();
-
-            // Only the quorum hash needs reversal.
-            // request_id_bytes.reverse();
-
             let mut hasher = sha256d::Hash::engine();
 
             // Serialize and hash the LLMQ type
@@ -87,7 +77,7 @@ impl<C> Platform<C> {
             hasher.input(quorum_hash_bytes.as_slice());
 
             // Serialize and add the selection hash from the chain lock
-            hasher.input(request_id_bytes.as_slice());
+            hasher.input(request_id.as_slice());
 
             // Finalize the hash
             let hash_result = sha256d::Hash::from_engine(hasher);
@@ -150,11 +140,13 @@ mod tests {
         // llmqType[5] requestID[bdcf9fb3ef01209a09db19170a1950775afb5f824c5f0662b9cdae2bf3bb36d5] -> 000000dc07d722238a994116c3395c334211d9864ff5b37c3be51d5fdda66223
         // llmqType[100] requestID[bdcf9fb3ef01209a09db19170a1950775afb5f824c5f0662b9cdae2bf3bb36d5] -> 0000000e6d15a11825211c943c4a995c44ebb2b0834b7848c2e080b48ca0148e
 
-        let request_id: [u8; 32] =
+        let mut request_id: [u8; 32] =
             hex::decode("bdcf9fb3ef01209a09db19170a1950775afb5f824c5f0662b9cdae2bf3bb36d5")
                 .unwrap()
                 .try_into()
                 .unwrap();
+
+        request_id.reverse();
 
         let mut quorum = Platform::<MockCoreRPCLike>::choose_quorum_v0(
             QuorumType::Llmq50_60,
@@ -222,11 +214,13 @@ mod tests {
         // llmqType[5] requestID[b06aa45eb35423f988e36c022967b4c02bb719b037717df13fa57c0f503d8a20] -> 000000bd5639c21dd8abf60253c3fe0343d87a9762b5b8f57e2b4ea1523fd071
         // llmqType[100] requestID[b06aa45eb35423f988e36c022967b4c02bb719b037717df13fa57c0f503d8a20] -> 0000006faac9003919a6d5456a0a46ae10db517f572221279f0540b79fd9cf1b
 
-        let request_id: [u8; 32] =
+        let mut request_id: [u8; 32] =
             hex::decode("b06aa45eb35423f988e36c022967b4c02bb719b037717df13fa57c0f503d8a20")
                 .unwrap()
                 .try_into()
                 .unwrap();
+
+        request_id.reverse();
 
         let mut quorum = Platform::<MockCoreRPCLike>::choose_quorum_v0(
             QuorumType::Llmq50_60,
@@ -294,11 +288,13 @@ mod tests {
         // llmqType[5] requestID[2fc41ef02a3216e4311805a9a11405a41a8d7a9f179526b4f6f2866bff009a10] -> 000000bd5639c21dd8abf60253c3fe0343d87a9762b5b8f57e2b4ea1523fd071
         // llmqType[100] requestID[2fc41ef02a3216e4311805a9a11405a41a8d7a9f179526b4f6f2866bff009a10] -> 000000dc07d722238a994116c3395c334211d9864ff5b37c3be51d5fdda66223
 
-        let request_id: [u8; 32] =
+        let mut request_id: [u8; 32] =
             hex::decode("2fc41ef02a3216e4311805a9a11405a41a8d7a9f179526b4f6f2866bff009a10")
                 .unwrap()
                 .try_into()
                 .unwrap();
+
+        request_id.reverse();
 
         let mut quorum = Platform::<MockCoreRPCLike>::choose_quorum_v0(
             QuorumType::Llmq50_60,

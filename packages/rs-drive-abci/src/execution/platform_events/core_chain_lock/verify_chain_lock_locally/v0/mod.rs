@@ -27,6 +27,7 @@ where
     /// the quorum
     pub fn verify_chain_lock_locally_v0(
         &self,
+        round: u32,
         platform_state: &PlatformState,
         chain_lock: &ChainLock,
         platform_version: &PlatformVersion,
@@ -48,6 +49,16 @@ where
         let verification_height = chain_lock_height.saturating_sub(SIGN_OFFSET);
 
         if verification_height > last_block_in_window {
+            tracing::debug!(
+                ?chain_lock,
+                "h:{} r:{} skipped message_digest for chain lock at core height {} is {}, verification height {}, last block in window {}",
+                platform_state.last_committed_block_height() + 1,
+                round,
+                chain_lock.block_height,
+                platform_state.last_committed_core_height(),
+                verification_height,
+                last_block_in_window,
+            );
             return Ok(None); // the chain lock is too far in the future or the past to verify locally
         }
 
@@ -145,10 +156,11 @@ where
 
         let mut chain_lock_verified = public_key.verify(&signature, message_digest.as_ref());
 
-        tracing::trace!(
+        tracing::debug!(
             ?chain_lock,
-            "h:{} message_digest for chain lock at core height {} is {}, quorum hash is {}, block hash is {}, chain lock was {}, last committed core height {}, verification window {}, last block in window {}",
+            "h:{} r:{} message_digest for chain lock at core height {} is {}, quorum hash is {}, block hash is {}, chain lock was {}, last committed core height {}, verification height {}, last block in window {}",
             platform_state.last_committed_block_height() + 1,
+            round,
             chain_lock.block_height,
             hex::encode(message_digest.as_byte_array()),
             hex::encode(quorum_hash.as_slice()),
@@ -187,10 +199,11 @@ where
 
                 chain_lock_verified = public_key.verify(&signature, message_digest.as_ref());
 
-                tracing::trace!(
+                tracing::debug!(
                     ?chain_lock,
-                    "h:{} tried second quorums message_digest for chain lock at height {} is {}, quorum hash is {}, block hash is {}, chain lock was {}",
+                    "h:{} r:{} tried second quorums message_digest for chain lock at height {} is {}, quorum hash is {}, block hash is {}, chain lock was {}",
                     platform_state.last_committed_block_height() + 1,
+                    round,
                     chain_lock.block_height,
                     hex::encode(message_digest.as_byte_array()),
                     hex::encode(quorum_hash.as_slice()),
@@ -198,7 +211,7 @@ where
                     if chain_lock_verified { "verified"} else {"not verified"}
                 );
                 if !chain_lock_verified {
-                    tracing::error!(
+                    tracing::debug!(
                         "chain lock was invalid for both recent and old chain lock quorums"
                     );
                 }
@@ -207,17 +220,19 @@ where
                 .is_none()
             {
                 // we don't have old quorums, this means our node is very new.
-                tracing::trace!(
+                tracing::debug!(
                     "we had no previous quorums locally, we should validate through core",
                 );
                 return Ok(None);
             } else if !should_be_verifiable {
-                tracing::trace!(
+                tracing::debug!(
                     "we were in a situation where it would be possible we didn't have all quorums and we couldn't verify locally, we should validate through core",
                 );
                 return Ok(None);
+            } else if round >= 10 {
+                tracing::debug!("high round when chain lock was invalid, asking core to verify");
             } else {
-                tracing::error!("chain lock was invalid, and we deemed there was no reason to check old quorums");
+                tracing::debug!("chain lock was invalid, and we deemed there was no reason to check old quorums");
             }
         }
 

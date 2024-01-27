@@ -130,6 +130,7 @@ where
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
             if !known_from_us {
                 let verification_result = self.verify_chain_lock(
+                    block_state_info.round, // the round is to allow us to bypass local verification in case of chain stall
                     &block_platform_state,
                     core_chain_lock_update,
                     true, // if it's not known from us, then we should try submitting it
