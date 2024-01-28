@@ -229,7 +229,7 @@ mod tests {
                 Ok(indices
                     .into_iter()
                     .map(|index| {
-                        if index == 0 {
+                        if index == &0 {
                             Some(GetTransactionLockedResult {
                                 height: 93,
                                 chainlock: true,

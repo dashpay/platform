@@ -33,7 +33,6 @@ where
     pub(in crate::execution::platform_events::identity_credit_withdrawal) fn build_untied_withdrawal_transactions_from_documents(
         &self,
         documents: &[Document],
-        drive_operation_types: &mut Vec<DriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<HashMap<Identifier, WithdrawalTransactionIdAndBytes>, Error> {
@@ -43,11 +42,9 @@ where
             .identity_credit_withdrawal
             .build_untied_withdrawal_transactions_from_documents
         {
-            0 => self.build_untied_withdrawal_transactions_from_documents_v0(
-                documents,
-                drive_operation_types,
-                transaction,
-            ),
+            0 => {
+                self.build_untied_withdrawal_transactions_from_documents_v0(documents, transaction)
+            }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "build_withdrawal_transactions_from_documents".to_string(),
                 known_versions: vec![0],

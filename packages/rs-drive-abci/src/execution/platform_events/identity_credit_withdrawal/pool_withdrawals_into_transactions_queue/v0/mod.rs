@@ -14,7 +14,9 @@ use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal
 
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
-use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
+use crate::execution::types::block_state_info::v0::{
+    BlockStateInfoV0Getters, BlockStateInfoV0Methods,
+};
 use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::{
     error::{execution::ExecutionError, Error},
@@ -33,14 +35,9 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let block_info = BlockInfo {
-            time_ms: block_execution_context.block_state_info().block_time_ms(),
-            height: block_execution_context.block_state_info().height(),
-            core_height: block_execution_context
-                .block_state_info()
-                .core_chain_locked_height(),
-            epoch: Epoch::new(block_execution_context.epoch_info().current_epoch_index())?,
-        };
+        let block_info = block_execution_context
+            .block_state_info()
+            .to_block_info(block_execution_context.epoch_info().try_into()?);
 
         let data_contract_id = withdrawals_contract::ID;
 
@@ -67,12 +64,9 @@ where
             return Ok(());
         }
 
-        let mut drive_operations = vec![];
-
         let untied_withdrawal_transactions = self
             .build_untied_withdrawal_transactions_from_documents(
                 &documents,
-                &mut drive_operations,
                 Some(transaction),
                 platform_version,
             )?;
@@ -122,6 +116,8 @@ where
                 ))
             })?;
         }
+
+        let mut drive_operations = vec![];
 
         self.drive.add_update_multiple_documents_operations(
             &documents,

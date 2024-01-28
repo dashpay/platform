@@ -30,17 +30,13 @@ where
     pub(super) fn build_untied_withdrawal_transactions_from_documents_v0(
         &self,
         documents: &[Document],
-        drive_operation_types: &mut Vec<DriveOperation>,
         transaction: TransactionArg,
     ) -> Result<HashMap<Identifier, WithdrawalTransactionIdAndBytes>, Error> {
         let mut withdrawals: HashMap<Identifier, WithdrawalTransactionIdAndBytes> = HashMap::new();
 
         let latest_withdrawal_index = self
             .drive
-            .fetch_and_remove_latest_withdrawal_transaction_index_operations(
-                drive_operation_types,
-                transaction,
-            )?;
+            .fetch_latest_withdrawal_transaction_index(transaction)?;
 
         for (i, document) in documents.iter().enumerate() {
             let output_script_bytes = document
@@ -212,26 +208,12 @@ mod tests {
 
             let documents = vec![document_1, document_2];
 
-            let mut batch = vec![];
-
             let transactions = platform
                 .build_untied_withdrawal_transactions_from_documents_v0(
                     &documents,
-                    &mut batch,
                     Some(&transaction),
                 )
                 .expect("to build transactions from documents");
-
-            platform
-                .drive
-                .apply_drive_operations(
-                    batch,
-                    true,
-                    &BlockInfo::default(),
-                    Some(&transaction),
-                    platform_version,
-                )
-                .expect("to apply drive op batch");
 
             assert_eq!(
                 transactions
