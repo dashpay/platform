@@ -103,7 +103,7 @@ impl Platform<DefaultCoreRPC> {
         path: P,
         config: Option<PlatformConfig>,
     ) -> Result<Platform<DefaultCoreRPC>, Error> {
-        let config = config.unwrap_or_default();
+        let config = config.unwrap_or(PlatformConfig::default_testnet());
         let core_rpc = DefaultCoreRPC::open(
             config.core.rpc.url().as_str(),
             config.core.rpc.username.clone(),
@@ -174,7 +174,7 @@ impl<C> Platform<C> {
     where
         C: CoreRPCLike,
     {
-        let config = config.unwrap_or_default();
+        let config = config.unwrap_or(PlatformConfig::default_testnet());
 
         let drive = Drive::open(path, Some(config.drive.clone())).map_err(Error::Drive)?;
 

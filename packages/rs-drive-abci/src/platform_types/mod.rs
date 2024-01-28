@@ -58,3 +58,6 @@ pub mod validator;
 pub mod validator_set;
 /// Withdrawal types
 pub mod withdrawal;
+
+/// Verify chain lock result
+pub mod verify_chain_lock_result;

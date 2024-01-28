@@ -31,6 +31,7 @@ use crate::platform_types::epoch_info::v0::{EpochInfoV0Getters, EpochInfoV0Metho
 use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::verify_chain_lock_result::v0::VerifyChainLockResult;
 use crate::rpc::core::CoreRPCLike;
 
 impl<C> Platform<C>
@@ -46,6 +47,7 @@ where
     /// # Arguments
     ///
     /// * `block_proposal` - The block proposal to be processed.
+    /// * `known_from_us` - Do we know that we made this block proposal?.
     /// * `transaction` - The transaction associated with the block proposal.
     ///
     /// # Returns
@@ -63,6 +65,7 @@ where
     pub(super) fn run_block_proposal_v0(
         &self,
         block_proposal: block_proposal::v0::BlockProposal,
+        known_from_us: bool,
         epoch_info: EpochInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
@@ -80,11 +83,11 @@ where
             block_proposal.round,
         );
 
-        let last_block_time_ms = state.last_block_time_ms();
+        let last_block_time_ms = state.last_committed_block_time_ms();
         let last_block_height =
-            state.known_height_or(self.config.abci.genesis_height.saturating_sub(1));
+            state.last_committed_known_height_or(self.config.abci.genesis_height.saturating_sub(1));
         let last_block_core_height =
-            state.known_core_height_or(self.config.abci.genesis_core_height);
+            state.last_committed_known_core_height_or(self.config.abci.genesis_core_height);
         let hpmn_list_len = state.hpmn_list_len();
 
         let mut block_platform_state = state.clone();
@@ -110,6 +113,7 @@ where
         // destructure the block proposal
         let block_proposal::v0::BlockProposal {
             core_chain_locked_height,
+            core_chain_lock_update,
             proposed_app_version,
             proposer_pro_tx_hash,
             validator_set_quorum_hash,
@@ -121,6 +125,90 @@ where
             Epoch::new(epoch_info.current_epoch_index())
                 .expect("current epoch index should be in range"),
         );
+
+        // If there is a core chain lock update, we should start by verifying it
+        if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
+            if !known_from_us {
+                let verification_result = self.verify_chain_lock(
+                    block_state_info.round, // the round is to allow us to bypass local verification in case of chain stall
+                    &block_platform_state,
+                    core_chain_lock_update,
+                    true, // if it's not known from us, then we should try submitting it
+                    platform_version,
+                );
+
+                let VerifyChainLockResult {
+                    chain_lock_signature_is_deserializable,
+                    found_valid_locally,
+                    found_valid_by_core,
+                    core_is_synced,
+                } = match verification_result {
+                    Ok(verification_result) => verification_result,
+                    Err(Error::Execution(e)) => {
+                        // This will happen only if an internal version error
+                        return Err(Error::Execution(e));
+                    }
+                    Err(e) => {
+                        // This will happen only if a core rpc error
+                        return Ok(ValidationResult::new_with_error(
+                            AbciError::InvalidChainLock(e.to_string()).into(),
+                        ));
+                    }
+                };
+
+                if !chain_lock_signature_is_deserializable {
+                    return Ok(ValidationResult::new_with_error(
+                        AbciError::InvalidChainLock(format!(
+                            "received a chain lock for height {} that has a signature that can not be deserialized {:?}",
+                            block_info.height, core_chain_lock_update,
+                        ))
+                            .into(),
+                    ));
+                }
+
+                if let Some(found_valid_locally) = found_valid_locally {
+                    // This means we are able to check if the chain lock is valid
+                    if !found_valid_locally {
+                        // The signature was not valid
+                        return Ok(ValidationResult::new_with_error(
+                            AbciError::InvalidChainLock(format!(
+                                "received a chain lock for height {} that we figured out was invalid based on platform state {:?}",
+                                block_info.height, core_chain_lock_update,
+                            ))
+                                .into(),
+                        ));
+                    }
+                }
+
+                if let Some(found_valid_by_core) = found_valid_by_core {
+                    // This means we asked core if the chain lock was valid
+                    if !found_valid_by_core {
+                        // Core said it wasn't valid
+                        return Ok(ValidationResult::new_with_error(
+                            AbciError::InvalidChainLock(format!(
+                                "received a chain lock for height {} that is invalid based on a core request {:?}",
+                                block_info.height, core_chain_lock_update,
+                            ))
+                                .into(),
+                        ));
+                    }
+                }
+
+                if let Some(core_is_synced) = core_is_synced {
+                    // Core is just not synced
+                    if !core_is_synced {
+                        // The submission was not accepted by core
+                        return Ok(ValidationResult::new_with_error(
+                            AbciError::ChainLockedBlockNotKnownByCore(format!(
+                                "received a chain lock for height {} that we could not accept because core is not synced {:?}",
+                                block_info.height, core_chain_lock_update,
+                            ))
+                                .into(),
+                        ));
+                    }
+                }
+            }
+        }
 
         // Update the masternode list and create masternode identities and also update the active quorums
         self.update_core_info(

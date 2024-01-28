@@ -82,7 +82,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
     let add_to_cache_if_pulled = transaction.is_some();
     let (_, contract_fetch_info) = drive.get_contract_with_fetch_info_and_fee(
         contract_id.to_buffer(),
-        Some(&platform.state.epoch()),
+        Some(&platform.state.last_committed_block_epoch()),
         add_to_cache_if_pulled,
         transaction,
         platform_version,
