@@ -224,25 +224,22 @@ mod tests {
         let mut mock_rpc_client = MockCoreRPCLike::new();
 
         mock_rpc_client
-            .expect_get_transactions_are_chain_locked()
-            .returning(move |tx_ids: Vec<Txid>| {
-                Ok(tx_ids
+            .expect_get_asset_unlock_statuses()
+            .returning(move |indices: &Vec<u64>| {
+                Ok(indices
                     .into_iter()
-                    .map(|tx_id| {
-                        if tx_id.to_byte_array()
-                            == [
-                                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-                                1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-                            ]
-                        {
+                    .map(|index| {
+                        if index == 0 {
                             Some(GetTransactionLockedResult {
                                 height: 93,
-                                chain_lock: true,
+                                chainlock: true,
+                                mempool: false,
                             })
                         } else {
                             Some(GetTransactionLockedResult {
                                 height: -1,
-                                chain_lock: false,
+                                chainlock: false,
+                                mempool: false,
                             })
                         }
                     })

@@ -8,7 +8,6 @@ use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 use dpp::version::PlatformVersion;
-use std::collections::BTreeMap;
 
 use drive::drive::batch::DriveOperation;
 use drive::grovedb::Transaction;
@@ -216,7 +215,8 @@ mod tests {
                         {
                             Some(GetTransactionLockedResult {
                                 height: 93,
-                                chain_lock: true,
+                                chainlock: true,
+                                mempool: false,
                             })
                         } else {
                             None
