@@ -250,17 +250,13 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
             } => {
                 let cache = drive.cache.read().expect("should get cache lock");
 
-                let contract = cache
-                    .system_data_contracts
-                    .get_or_load(SystemDataContract::Withdrawals, platform_version)?;
-
-                drop(cache);
+                let contract = &cache.system_data_contracts.withdrawals;
 
                 let document_type = contract.document_type_for_name(withdrawal::NAME)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,
-                    contract: &contract,
+                    contract,
                     document_type,
                 };
                 drive.add_document_for_contract_operations(

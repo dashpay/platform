@@ -1,8 +1,11 @@
 use crate::drive::cache::SystemDataContracts;
 use crate::drive::cache::{DataContractCache, DriveCache, ProtocolVersionsCache};
 use crate::drive::config::DriveConfig;
+use crate::drive::defaults::INITIAL_PROTOCOL_VERSION;
 use crate::drive::Drive;
 use crate::error::Error;
+use dpp::errors::ProtocolError;
+use dpp::util::deserializer::ProtocolVersion;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
 use std::path::Path;
@@ -24,7 +27,10 @@ impl Drive {
     ///
     /// * `Result<Self, Error>` - On success, returns `Ok(Self)`, where `Self` is a `Drive` instance. On error, returns an `Error`.
     ///
-    pub fn open<P: AsRef<Path>>(path: P, config: Option<DriveConfig>) -> Result<Self, Error> {
+    pub fn open<P: AsRef<Path>>(
+        path: P,
+        config: Option<DriveConfig>,
+    ) -> Result<(Self, Option<ProtocolVersion>), Error> {
         match GroveDb::open(path) {
             Ok(grove) => {
                 let config = config.unwrap_or_default();
@@ -32,12 +38,16 @@ impl Drive {
                 let data_contracts_global_cache_size = config.data_contracts_global_cache_size;
                 let data_contracts_block_cache_size = config.data_contracts_block_cache_size;
 
+                let protocol_version =
+                    Drive::fetch_current_protocol_version_with_grovedb(&grove, None)?;
+
+                let platform_version =
+                    PlatformVersion::get(protocol_version.unwrap_or(INITIAL_PROTOCOL_VERSION))
+                        .map_err(ProtocolError::PlatformVersionError)?;
+
                 let drive = Drive {
                     grove,
                     config,
-                    // system_contracts: SystemContracts::load_genesis_system_contracts(
-                    //     platform_version.protocol_version,
-                    // )?,
                     cache: RwLock::new(DriveCache {
                         cached_contracts: DataContractCache::new(
                             data_contracts_global_cache_size,
@@ -45,11 +55,13 @@ impl Drive {
                         ),
                         genesis_time_ms,
                         protocol_versions_counter: ProtocolVersionsCache::new(),
-                        system_data_contracts: SystemDataContracts::new(),
+                        system_data_contracts: SystemDataContracts::load_genesis_system_contracts(
+                            platform_version,
+                        )?,
                     }),
                 };
 
-                Ok(drive)
+                Ok((drive, protocol_version))
             }
             Err(e) => Err(Error::GroveDB(e)),
         }

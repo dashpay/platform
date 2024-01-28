@@ -263,12 +263,7 @@ mod tests {
             .read()
             .expect("expected to get a read lock on the cache");
 
-        let dpns_contract = cache
-            .system_data_contracts
-            .get_or_load(SystemDataContract::DPNS, &platform_version)
-            .expect("expected to get dpns contract");
-
-        drop(cache);
+        let dpns_contract = &cache.system_data_contracts.dpns;
 
         let dpns_contract_for_type = dpns_contract.clone();
 
@@ -300,7 +295,7 @@ mod tests {
         };
 
         let document_op_2 = DocumentOp {
-            contract: dpns_contract,
+            contract: dpns_contract.clone(),
             action: DocumentAction::DocumentActionInsertSpecific(
                 BTreeMap::from([
                     ("label".into(), "simon1".into()),
@@ -367,6 +362,8 @@ mod tests {
             verify_state_transition_results: true,
             ..Default::default()
         };
+
+        drop(cache);
 
         // On the first block we only have identities and contracts
         let outcome =
