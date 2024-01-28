@@ -29,6 +29,8 @@ use tenderdash_abci::proto::types::{
 use tenderdash_abci::signatures::SignBytes;
 use tenderdash_abci::{signatures::SignDigest, proto::version::Consensus, Application};
 use tenderdash_abci::proto::abci::tx_record::TxAction;
+use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
 use crate::mimic::test_quorum::TestQuorumInfo;
 
 /// Test quorum for mimic block execution
@@ -65,6 +67,10 @@ pub struct MimicExecuteBlockOptions {
     pub dont_finalize_block: bool,
     /// rounds before finalization
     pub rounds_before_finalization: Option<u32>,
+    /// max tx bytes per block
+    pub max_tx_bytes_per_block: u64,
+    /// run process proposal independently
+    pub independent_process_proposal_verification: bool,
 }
 
 impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
@@ -80,9 +86,30 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         expect_validation_errors: &[u32],
         expect_vote_extension_errors: bool,
         state_transitions: Vec<StateTransition>,
-        max_tx_bytes_per_block: i64,
         options: MimicExecuteBlockOptions,
     ) -> Result<MimicExecuteBlockOutcome, Error> {
+        // This will be NONE, except on init chain
+        let original_block_execution_context = self
+            .platform
+            .block_execution_context
+            .read()
+            .unwrap()
+            .as_ref()
+            .cloned();
+
+        let transaction_guard = self.transaction.read().unwrap();
+
+        let init_chain_root_hash = transaction_guard.as_ref().map(|transaction| {
+            self.platform
+                .drive
+                .grove
+                .root_hash(Some(transaction))
+                .unwrap()
+                .unwrap()
+        });
+
+        drop(transaction_guard);
+
         const APP_VERSION: u64 = 0;
 
         let mut rng = StdRng::seed_from_u64(block_info.height);
@@ -106,7 +133,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         // PREPARE (also processes internally)
 
         let request_prepare_proposal = RequestPrepareProposal {
-            max_tx_bytes: max_tx_bytes_per_block,
+            max_tx_bytes: options.max_tx_bytes_per_block as i64,
             txs: serialized_state_transitions.clone(),
             local_last_commit: None,
             misbehavior: vec![],
@@ -217,14 +244,112 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             quorum_hash: current_quorum.quorum_hash.to_byte_array().to_vec(),
         };
 
-        //we must call process proposal so the app hash is set
-        self.process_proposal(request_process_proposal)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "should skip processing (because we prepared it) block #{} at time #{} : {:?}",
-                    block_info.height, block_info.time_ms, e
-                )
-            });
+        if !options.independent_process_proposal_verification {
+            //we just check as if we were the proposer
+            //we must call process proposal so the app hash is set
+            self.process_proposal(request_process_proposal)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "should skip processing (because we prepared it) block #{} at time #{} : {:?}",
+                        block_info.height, block_info.time_ms, e
+                    )
+                });
+        } else {
+            //we first call process proposal as the proposer
+            //we must call process proposal so the app hash is set
+            self.process_proposal(request_process_proposal.clone())
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "should skip processing (because we prepared it) block #{} at time #{} : {:?}",
+                        block_info.height, block_info.time_ms, e
+                    )
+                });
+
+            let mut block_execution_context =
+                self.platform.block_execution_context.write().unwrap();
+
+            let application_hash = block_execution_context
+                .as_ref()
+                .expect("expected a block execution context")
+                .block_state_info()
+                .app_hash()
+                .expect("expected an application hash after process proposal");
+
+            *block_execution_context = original_block_execution_context.clone();
+            drop(block_execution_context);
+
+            if let Some(init_chain_root_hash) = init_chain_root_hash
+            //we are in init chain
+            {
+                // special logic on init chain
+                let transaction = self.transaction.write().unwrap();
+
+                let transaction = transaction.as_ref().ok_or(Error::Execution(
+                    ExecutionError::NotInTransaction(
+                        "trying to finalize block without a current transaction",
+                    ),
+                ))?;
+
+                transaction
+                    .rollback_to_savepoint()
+                    .expect("expected to rollback to savepoint");
+
+                let start_root_hash = self
+                    .platform
+                    .drive
+                    .grove
+                    .root_hash(Some(transaction))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(start_root_hash, init_chain_root_hash);
+                // this is just to verify that the rollback worked.
+            };
+
+            //we call process proposal as if we are a processor
+            self.process_proposal(request_process_proposal)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "should skip processing (because we prepared it) block #{} at time #{} : {:?}",
+                        block_info.height, block_info.time_ms, e
+                    )
+                });
+
+            let block_execution_context = self.platform.block_execution_context.read().unwrap();
+
+            let process_proposal_application_hash = block_execution_context
+                .as_ref()
+                .expect("expected a block execution context")
+                .block_state_info()
+                .app_hash()
+                .expect("expected an application hash after process proposal");
+
+            assert_eq!(
+                application_hash, process_proposal_application_hash,
+                "the application hashed are not valid for height {}",
+                block_info.height
+            );
+
+            let transaction_guard = self.transaction.read().unwrap();
+
+            let transaction = transaction_guard.as_ref().ok_or(Error::Execution(
+                ExecutionError::NotInTransaction(
+                    "trying to finalize block without a current transaction",
+                ),
+            ))?;
+
+            let direct_root_hash = self
+                .platform
+                .drive
+                .grove
+                .root_hash(Some(transaction))
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                application_hash, direct_root_hash,
+                "the application hashed are not valid for height {}",
+                block_info.height
+            );
+        }
 
         let request_extend_vote = RequestExtendVote {
             hash: block_header_hash.to_vec(),
@@ -321,7 +446,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         // We need to sign the block
 
-        let quorum_type = self.platform.config.quorum_type();
+        let quorum_type = self.platform.config.validator_set_quorum_type();
         let state_id_hash = state_id
             .sha256(CHAIN_ID, height as i64, round as i32)
             .expect("cannot calculate state id hash");

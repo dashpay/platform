@@ -11,6 +11,9 @@ mod tests {
 
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
 
+    use crate::strategy::CoreHeightIncrease::{KnownCoreHeightIncreases, NoCoreHeightIncrease};
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
@@ -62,12 +65,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: Some(FailureStrategy {
@@ -82,10 +83,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -95,16 +98,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
         outcome
@@ -147,12 +141,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: Some(FailureStrategy {
@@ -167,10 +159,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -187,15 +181,15 @@ mod tests {
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
-                let core_block_height = if core_block_heights.len() == 1 {
+                let block_height = if core_block_heights.len() == 1 {
                     *core_block_heights.first().unwrap()
                 } else {
                     core_block_heights.remove(0)
                 };
-                Ok(CoreChainLock {
-                    core_block_height,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
+                Ok(ChainLock {
+                    block_height,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: [2; 96].into(),
                 })
             });
         run_chain_for_strategy(&mut platform, 1, strategy.clone(), config.clone(), 15);
@@ -213,11 +207,13 @@ mod tests {
         // We use the dpns contract and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -354,13 +350,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
-
+            core_height_increase: KnownCoreHeightIncreases(vec![10, 11]),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: Some(FailureStrategy {
@@ -375,23 +368,6 @@ mod tests {
             ..Default::default()
         };
 
-        let mut core_block_heights = vec![10, 11];
-
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                let core_block_height = if core_block_heights.len() == 1 {
-                    *core_block_heights.first().unwrap()
-                } else {
-                    core_block_heights.remove(0)
-                };
-                Ok(CoreChainLock {
-                    core_block_height,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
         // On the first block we only have identities and contracts
         let outcome =
             run_chain_for_strategy(&mut platform, 2, strategy.clone(), config.clone(), 15);

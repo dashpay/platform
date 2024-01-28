@@ -93,6 +93,8 @@ mod open;
 #[cfg(feature = "full")]
 mod operations;
 #[cfg(feature = "full")]
+mod platform_state;
+#[cfg(feature = "full")]
 mod prove;
 /// Contains a set of useful grovedb proof verification functions
 #[cfg(any(feature = "full", feature = "verify"))]

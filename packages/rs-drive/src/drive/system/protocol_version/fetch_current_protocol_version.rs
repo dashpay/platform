@@ -1,16 +1,36 @@
-use crate::drive::system::misc_path;
-use crate::drive::system::misc_tree_constants::PROTOCOL_VERSION_STORAGE_KEY;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
+use crate::drive::system::misc_path;
+use crate::drive::system::misc_tree_constants::PROTOCOL_VERSION_STORAGE_KEY;
 use dpp::util::deserializer::ProtocolVersion;
 use grovedb::TransactionArg;
 use integer_encoding::VarInt;
 
+///
 impl Drive {
     /// Gets the current protocol version from the backing store
-    pub(super) fn fetch_current_protocol_version_v0(
+    ///
+    /// !!!DON'T CHANGE!!!!
+    ///
+    /// This function should never be changed !!! since it's using
+    /// to get protocol version to read the state from the storage.
+    /// In plain English, this is the first function that we call,
+    /// so we don't know version yet.
+    ///
+    /// # Arguments
+    ///
+    /// * `transaction` - A `TransactionArg` object representing the transaction.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Option<ProtocolVersion>, Error>` - If successful, returns an `Ok(Option<ProtocolVersion>)`. If an error occurs during the operation, returns an `Error`.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the Drive version is unknown.
+    pub fn fetch_current_protocol_version(
         &self,
         transaction: TransactionArg,
     ) -> Result<Option<ProtocolVersion>, Error> {

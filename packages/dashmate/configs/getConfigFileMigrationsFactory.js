@@ -413,6 +413,15 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.platform.drive.tenderdash.genesis = defaultConfigs.get(name).get('platform.drive.tenderdash.genesis');
             }
             options.platform.dapi.api.docker.deploy = base.get('platform.dapi.api.docker.deploy');
+
+            let baseConfigName = name;
+            if (options.group !== null && defaultConfigs.has(options.group)) {
+              baseConfigName = options.group;
+            } else if (!defaultConfigs.has(baseConfigName)) {
+              baseConfigName = 'testnet';
+            }
+
+            options.platform.drive.abci.chainLock = defaultConfigs.get(baseConfigName).get('platform.drive.abci.chainLock');
           });
 
         return configFile;

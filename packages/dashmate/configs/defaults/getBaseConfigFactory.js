@@ -72,7 +72,7 @@ export default function getBaseConfigFactory(homeDir) {
           port: 3001,
         },
         docker: {
-          image: 'dashpay/dashd:20', commandArgs: [],
+          image: 'dashpay/dashd:20.1.0-devpr5806.a1814ce2', commandArgs: [],
         },
         p2p: {
           host: '0.0.0.0',
@@ -167,6 +167,11 @@ export default function getBaseConfigFactory(homeDir) {
             },
             validatorSet: {
               llmqType: 4,
+            },
+            chainLock: {
+              llmqType: 2,
+              dkgInterval: 288,
+              llmqSize: 400,
             },
             epochTime: 788400,
           },
