@@ -150,17 +150,8 @@ where
 
         if expected_withdrawal_transactions.ne(&commit_info.threshold_vote_extensions) {
             validation_result.add_error(AbciError::VoteExtensionMismatchReceived {
-                got: commit_info
-                    .threshold_vote_extensions
-                    .iter()
-                    .map(|vote_extension| hex::encode(&vote_extension.extension))
-                    .collect::<Vec<String>>()
-                    .join(","),
-                expected: expected_withdrawal_transactions
-                    .iter()
-                    .map(|tx| hex::encode(tx.txid().as_byte_array()))
-                    .collect::<Vec<String>>()
-                    .join(","),
+                got: commit_info.threshold_vote_extensions,
+                expected: expected_withdrawal_transactions.into(),
             });
 
             return Ok(validation_result.into());

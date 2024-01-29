@@ -7,6 +7,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::bls_signatures;
 use dpp::validation::SimpleValidationResult;
 use dpp::version::PlatformVersion;
+use tenderdash_abci::proto::abci::ExtendVoteExtension;
 use tenderdash_abci::proto::types::VoteExtension;
 
 mod v0;

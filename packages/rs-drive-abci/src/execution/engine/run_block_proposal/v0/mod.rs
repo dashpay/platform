@@ -271,7 +271,9 @@ where
 
         let mut block_execution_context: BlockExecutionContext = block_execution_context;
 
-        // Takes queued withdrawals, creates untiled withdrawal transaction payload saves them to queue,
+        // Pool withdrawals into transactions queue
+
+        // Takes queued withdrawals, creates untiled withdrawal transaction payload, saves them to queue
         // Corresponding withdrawal documents are changed from queued to pooled
         self.pool_withdrawals_into_transactions_queue(&block_info, transaction, platform_version)?;
 

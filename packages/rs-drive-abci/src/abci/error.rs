@@ -1,4 +1,6 @@
 use dpp::bls_signatures::BlsError;
+use tenderdash_abci::proto::abci::ExtendVoteExtension;
+use tenderdash_abci::proto::types::VoteExtension;
 
 // @append_only
 /// Error returned within ABCI server
@@ -12,10 +14,11 @@ pub enum AbciError {
     RequestForWrongBlockReceived(String),
     /// Withdrawal vote extensions mismatch
     #[error("vote extensions mismatch: got {got:?}, expected {expected:?}")]
-    // TODO: pass something more meaningful than String
-    // TODO: We need two errors for ExtendVote on verify and VoteExtension on finalize
     #[allow(missing_docs)]
-    VoteExtensionMismatchReceived { got: String, expected: String },
+    VoteExtensionMismatchReceived {
+        got: Vec<VoteExtension>,
+        expected: Vec<ExtendVoteExtension>,
+    },
     /// Vote extensions signature is invalid
     #[error("one of vote extension signatures is invalid")]
     VoteExtensionsSignatureInvalid,

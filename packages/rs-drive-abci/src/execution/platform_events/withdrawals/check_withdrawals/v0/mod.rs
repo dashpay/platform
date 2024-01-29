@@ -4,7 +4,10 @@ use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWith
 use crate::rpc::core::CoreRPCLike;
 use dpp::bls_signatures;
 use dpp::validation::SimpleValidationResult;
+use tenderdash_abci::proto::abci::ExtendVoteExtension;
 use tenderdash_abci::proto::types::VoteExtension;
+
+// TODO: Remove if we don't need this
 
 impl<C> Platform<C>
 where
@@ -43,8 +46,8 @@ where
         if our_withdrawals.ne(received_withdrawals) {
             return SimpleValidationResult::new_with_error(
                 AbciError::VoteExtensionMismatchReceived {
-                    got: String::new(), //received_withdrawals.to_string(),
-                    expected: our_withdrawals.to_string(),
+                    got: received_withdrawals.clone(),
+                    expected: our_withdrawals.into(),
                 },
             );
         }
