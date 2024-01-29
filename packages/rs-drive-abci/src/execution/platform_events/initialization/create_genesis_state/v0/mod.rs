@@ -83,6 +83,8 @@ impl<C> Platform<C> {
 
         let cache = self.drive.cache.read().unwrap();
 
+        let dpns_data_contract = cache.system_data_contracts.dpns.clone();
+
         let system_data_contract_types = BTreeMap::from_iter([
             (
                 SystemDataContract::DPNS,
@@ -124,6 +126,8 @@ impl<C> Platform<C> {
                 ),
             ),
         ]);
+
+        drop(cache);
 
         for (_, (data_contract, identity_public_keys_set)) in system_data_contract_types {
             let public_keys = [
@@ -174,10 +178,7 @@ impl<C> Platform<C> {
             self.register_system_identity_operations(identity, &mut operations);
         }
 
-        self.register_dpns_top_level_domain_operations(
-            &cache.system_data_contracts.dpns,
-            &mut operations,
-        )?;
+        self.register_dpns_top_level_domain_operations(&dpns_data_contract, &mut operations)?;
 
         let block_info = BlockInfo::default_with_time(genesis_time);
 
