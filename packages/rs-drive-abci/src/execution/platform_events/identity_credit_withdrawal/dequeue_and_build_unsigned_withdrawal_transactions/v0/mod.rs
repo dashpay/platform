@@ -18,10 +18,6 @@ use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
 use drive::query::TransactionArg;
 
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
-use crate::execution::types::block_execution_context::BlockExecutionContext;
-use crate::execution::types::block_state_info::v0::{
-    BlockStateInfoV0Getters, BlockStateInfoV0Methods,
-};
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use crate::rpc::core::CoreHeight;
 use crate::{
@@ -41,14 +37,10 @@ where
     pub(super) fn dequeue_and_build_unsigned_withdrawal_transactions_v0(
         &self,
         validator_set_quorum_hash: [u8; 32],
-        block_execution_context: &BlockExecutionContext,
+        block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<UnsignedWithdrawalTxs, Error> {
-        let block_info = block_execution_context
-            .block_state_info()
-            .to_block_info(block_execution_context.epoch_info().try_into()?);
-
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
         // Get 16 latest withdrawal transactions from the queue
@@ -113,9 +105,7 @@ where
                 build_transaction_with_quorum_hash_and_core_height(
                     untied_transaction_bytes,
                     validator_set_quorum_hash,
-                    block_execution_context
-                        .block_state_info()
-                        .core_chain_locked_height(),
+                    block_info.core_height,
                 )
             })
             .collect::<Result<_, _>>()?;

@@ -31,14 +31,10 @@ where
     /// Pool withdrawal documents into transactions
     pub(super) fn pool_withdrawals_into_transactions_queue_v0(
         &self,
-        block_execution_context: &BlockExecutionContext,
+        block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let block_info = block_execution_context
-            .block_state_info()
-            .to_block_info(block_execution_context.epoch_info().try_into()?);
-
         // TODO: Use drive.cache.system_data_contracts.withdrawals
 
         let data_contract_id = withdrawals_contract::ID;
@@ -159,8 +155,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore_rpc::dashcore::QuorumHash;
-    use dpp::dashcore::hashes::Hash;
 
     use dpp::data_contracts::SystemDataContract;
     use dpp::identifier::Identifier;
@@ -169,10 +163,6 @@ mod tests {
     use dpp::withdrawal::Pooling;
     use drive::tests::helpers::setup::{setup_document, setup_system_data_contract};
 
-    use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
-    use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
-    use crate::platform_types::epoch_info::v0::EpochInfoV0;
-    use crate::platform_types::platform_state::v0::PlatformStateV0;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
@@ -188,46 +178,12 @@ mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        platform.block_execution_context.write().unwrap().replace(
-            BlockExecutionContextV0 {
-                block_state_info: BlockStateInfoV0 {
-                    height: 1,
-                    round: 0,
-                    block_time_ms: 1,
-                    previous_block_time_ms: Some(1),
-                    proposer_pro_tx_hash: [
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        0, 0, 0, 0, 0, 0, 0,
-                    ],
-                    core_chain_locked_height: 96,
-                    block_hash: None,
-                    app_hash: None,
-                }
-                .into(),
-                epoch_info: EpochInfoV0 {
-                    current_epoch_index: 1,
-                    previous_epoch_index: None,
-                    is_epoch_change: false,
-                }
-                .into(),
-                hpmn_count: 100,
-                unsigned_withdrawal_transactions: Default::default(),
-                block_platform_state: PlatformStateV0 {
-                    last_committed_block_info: None,
-                    current_protocol_version_in_consensus: 0,
-                    next_epoch_protocol_version: 0,
-                    current_validator_set_quorum_hash: QuorumHash::all_zeros(),
-                    next_validator_set_quorum_hash: None,
-                    validator_sets: Default::default(),
-                    full_masternode_list: Default::default(),
-                    hpmn_masternode_list: Default::default(),
-                    genesis_block_info: None,
-                }
-                .into(),
-                proposer_results: None,
-            }
-            .into(),
-        );
+        let block_info = BlockInfo {
+            time_ms: 1,
+            height: 1,
+            core_height: 96,
+            epoch: Epoch::default(),
+        };
 
         let data_contract = load_system_data_contract(
             SystemDataContract::Withdrawals,
@@ -291,11 +247,9 @@ mod tests {
             Some(&transaction),
         );
 
-        let guarded_block_execution_context = platform.block_execution_context.write().unwrap();
-        let block_execution_context = guarded_block_execution_context.as_ref().unwrap();
         platform
             .pool_withdrawals_into_transactions_queue_v0(
-                block_execution_context,
+                &block_info,
                 &transaction,
                 platform_version,
             )
@@ -310,22 +264,15 @@ mod tests {
             )
             .expect("to fetch withdrawal documents");
 
-        let tx_ids = [
-            "d67616802027314d72f4b99b7aad0129c5ea2428de01387c662de33a880d64e3",
-            "81ded46f1c205906bc99f042c6ec1610b7b21ba650bc4235b33cdc048b68d226",
-        ];
-
         for (i, document) in updated_documents.into_iter().enumerate() {
             assert_eq!(document.revision(), Some(2));
 
-            let tx_id: Vec<u8> = document
+            let tx_index = document
                 .properties()
-                .get_bytes("transactionId")
-                .expect("to get transactionId");
+                .get_u64(withdrawal::properties::TRANSACTION_INDEX)
+                .expect("to get transactionIndex");
 
-            let tx_id_hex = hex::encode(tx_id);
-
-            assert_eq!(tx_id_hex.as_str(), tx_ids[i]);
+            assert_eq!(tx_index, i as u64);
         }
     }
 }

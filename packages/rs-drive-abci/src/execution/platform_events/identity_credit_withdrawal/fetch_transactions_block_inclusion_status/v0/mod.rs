@@ -12,11 +12,11 @@ where
     pub(super) fn fetch_transactions_block_inclusion_status_v0(
         &self,
         current_chain_locked_core_height: u32,
-        withdrawal_indices: Vec<WithdrawalTransactionIndex>,
+        withdrawal_indices: &[WithdrawalTransactionIndex],
     ) -> Result<BTreeMap<WithdrawalTransactionIndex, AssetUnlockStatus>, Error> {
         let asset_unlock_statuses_result = self
             .core_rpc
-            .get_asset_unlock_statuses(&withdrawal_indices, current_chain_locked_core_height)?;
+            .get_asset_unlock_statuses(withdrawal_indices, current_chain_locked_core_height)?;
 
         Ok(asset_unlock_statuses_result
             .into_iter()

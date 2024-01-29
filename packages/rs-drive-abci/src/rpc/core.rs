@@ -39,7 +39,7 @@ pub trait CoreRPCLike {
     /// Get asset unlock statuses
     fn get_asset_unlock_statuses(
         &self,
-        indices: &Vec<u64>,
+        indices: &[u64],
         core_chain_locked_height: u32,
     ) -> Result<Vec<AssetUnlockStatusResult>, Error>;
 
@@ -336,7 +336,7 @@ impl CoreRPCLike for DefaultCoreRPC {
 
     fn get_asset_unlock_statuses(
         &self,
-        indices: &Vec<u64>,
+        indices: &[u64],
         core_chain_locked_height: u32,
     ) -> Result<Vec<AssetUnlockStatusResult>, Error> {
         retry!(self

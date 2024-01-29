@@ -1041,10 +1041,10 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.1"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?rev=65999be2e96d6dae597ca52a9ae480ecdf901b7c#65999be2e96d6dae597ca52a9ae480ecdf901b7c"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?rev=8da95e139a9f6adf7f84f47928e939bf09a32bd1#8da95e139a9f6adf7f84f47928e939bf09a32bd1"
 dependencies = [
  "dashcore-private",
- "dashcore-rpc-json 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?rev=65999be2e96d6dae597ca52a9ae480ecdf901b7c)",
+ "dashcore-rpc-json 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?rev=8da95e139a9f6adf7f84f47928e939bf09a32bd1)",
  "env_logger 0.10.1",
  "hex",
  "jsonrpc",
@@ -1070,7 +1070,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.15.1"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?rev=65999be2e96d6dae597ca52a9ae480ecdf901b7c#65999be2e96d6dae597ca52a9ae480ecdf901b7c"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?rev=8da95e139a9f6adf7f84f47928e939bf09a32bd1#8da95e139a9f6adf7f84f47928e939bf09a32bd1"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dashcore",
@@ -1297,7 +1297,7 @@ dependencies = [
  "ciborium",
  "clap 4.4.11",
  "dapi-grpc",
- "dashcore-rpc 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?rev=65999be2e96d6dae597ca52a9ae480ecdf901b7c)",
+ "dashcore-rpc 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?rev=8da95e139a9f6adf7f84f47928e939bf09a32bd1)",
  "delegate",
  "derive_more",
  "dotenvy",

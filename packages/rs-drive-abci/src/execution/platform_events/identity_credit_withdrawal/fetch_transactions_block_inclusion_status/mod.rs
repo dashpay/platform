@@ -29,7 +29,7 @@ where
     pub(in crate::execution::platform_events::identity_credit_withdrawal) fn fetch_transactions_block_inclusion_status(
         &self,
         current_chain_locked_core_height: u32,
-        withdrawal_indices: Vec<u64>,
+        withdrawal_indices: &[WithdrawalTransactionIndex],
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<WithdrawalTransactionIndex, AssetUnlockStatus>, Error> {
         match platform_version

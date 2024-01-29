@@ -4,6 +4,7 @@ use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Transaction;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
@@ -31,7 +32,7 @@ where
     pub(in crate::execution) fn dequeue_and_build_unsigned_withdrawal_transactions(
         &self,
         validator_set_quorum_hash: [u8; 32],
-        block_execution_context: &BlockExecutionContext,
+        block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<UnsignedWithdrawalTxs, Error> {
@@ -43,7 +44,7 @@ where
         {
             0 => self.dequeue_and_build_unsigned_withdrawal_transactions_v0(
                 validator_set_quorum_hash,
-                block_execution_context,
+                block_info,
                 transaction,
                 platform_version,
             ),

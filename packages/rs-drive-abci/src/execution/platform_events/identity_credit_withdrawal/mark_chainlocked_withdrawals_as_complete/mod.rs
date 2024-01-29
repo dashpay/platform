@@ -1,8 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
@@ -37,7 +37,7 @@ where
     /// * There is an error getting the transactionId or transactionSignHeight from the withdrawal document.
     pub fn mark_chainlocked_withdrawals_as_complete(
         &self,
-        block_execution_context: &BlockExecutionContext,
+        block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -48,7 +48,7 @@ where
             .mark_chainlocked_withdrawals_as_complete
         {
             0 => self.mark_chainlocked_withdrawals_as_complete_v0(
-                block_execution_context,
+                block_info,
                 transaction,
                 platform_version,
             ),

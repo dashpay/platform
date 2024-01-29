@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
@@ -27,7 +28,7 @@ where
     /// * `Result<(), Error>` - Returns `Ok(())` if successful, otherwise returns an `Error`.
     pub(in crate::execution) fn pool_withdrawals_into_transactions_queue(
         &self,
-        block_execution_context: &BlockExecutionContext,
+        block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -38,7 +39,7 @@ where
             .pool_withdrawals_into_transactions_queue
         {
             0 => self.pool_withdrawals_into_transactions_queue_v0(
-                block_execution_context,
+                block_info,
                 transaction,
                 platform_version,
             ),
