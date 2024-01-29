@@ -2,7 +2,9 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dashcore_rpc::json::AssetUnlockStatus;
 use dpp::version::PlatformVersion;
+use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
 use std::collections::BTreeMap;
 
 mod v0;
@@ -29,7 +31,7 @@ where
         current_chain_locked_core_height: u32,
         withdrawal_indices: Vec<u64>,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<u64, bool>, Error> {
+    ) -> Result<BTreeMap<WithdrawalTransactionIndex, AssetUnlockStatus>, Error> {
         match platform_version
             .drive_abci
             .methods

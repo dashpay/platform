@@ -3,29 +3,33 @@ use dashcore_rpc::dashcore::{
     hashes::Hash, QuorumHash,
 };
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
+use dpp::dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::build_asset_unlock_tx;
+use dpp::dashcore::Transaction;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::document_methods::DocumentMethodsV0;
-use dpp::document::{Document, DocumentV0Setters};
+use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::version::PlatformVersion;
 
 use drive::dpp::system_data_contracts::withdrawals_contract;
 use drive::dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 
-use drive::dpp::util::hash;
-
 use drive::drive::batch::DriveOperation;
-use drive::grovedb::Transaction;
+use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
+use drive::query::TransactionArg;
 
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
-use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
-use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
+use crate::execution::types::block_state_info::v0::{
+    BlockStateInfoV0Getters, BlockStateInfoV0Methods,
+};
+use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
+use crate::rpc::core::CoreHeight;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform_types::platform::Platform,
     rpc::core::CoreRPCLike,
 };
+use dpp::errors::ProtocolError;
 
 const WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT: u16 = 16;
 
@@ -38,17 +42,39 @@ where
         &self,
         validator_set_quorum_hash: [u8; 32],
         block_execution_context: &BlockExecutionContext,
-        transaction: &Transaction,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<Vec<u8>>, Error> {
-        let block_info = BlockInfo {
-            time_ms: block_execution_context.block_state_info().block_time_ms(),
-            height: block_execution_context.block_state_info().height(),
-            core_height: block_execution_context
-                .block_state_info()
-                .core_chain_locked_height(),
-            epoch: Epoch::new(block_execution_context.epoch_info().current_epoch_index())?,
-        };
+    ) -> Result<UnsignedWithdrawalTxs, Error> {
+        let block_info = block_execution_context
+            .block_state_info()
+            .to_block_info(block_execution_context.epoch_info().try_into()?);
+
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+
+        // Get 16 latest withdrawal transactions from the queue
+        let untied_withdrawal_transactions = self.drive.dequeue_withdrawal_transactions(
+            WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT,
+            transaction,
+            &mut drive_operations,
+        )?;
+
+        if untied_withdrawal_transactions.is_empty() {
+            return Ok(UnsignedWithdrawalTxs::default());
+        }
+
+        let transaction_indices = untied_withdrawal_transactions
+            .iter()
+            .map(|(transaction_id, _)| *transaction_id)
+            .collect::<Vec<_>>();
+
+        let documents = self.fetch_and_modify_withdrawal_documents_to_broadcasted_by_indices(
+            &transaction_indices,
+            &block_info,
+            transaction,
+            platform_version,
+        )?;
+
+        // TODO: Use drive.cache.system_data_contracts.withdrawals
 
         let data_contract_id = withdrawals_contract::ID;
 
@@ -56,7 +82,7 @@ where
             data_contract_id.to_buffer(),
             None,
             true,
-            Some(transaction),
+            transaction,
             platform_version,
         )?
         else {
@@ -65,86 +91,8 @@ where
             )));
         };
 
-        let mut drive_operations: Vec<DriveOperation> = vec![];
-
-        // Get 16 latest withdrawal transactions from the queue
-        let untied_withdrawal_transactions = self.drive.dequeue_withdrawal_transactions(
-            WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT,
-            Some(transaction),
-            &mut drive_operations,
-        )?;
-
-        if untied_withdrawal_transactions.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        // Appending request_height and quorum_hash to withdrawal transaction
-        // and pass it to JS Drive for singing and broadcasting
-        let (unsigned_withdrawal_transactions, documents_to_update): (Vec<_>, Vec<_>) =
-            untied_withdrawal_transactions
-                .into_iter()
-                .map(|(_, untied_transaction_bytes)| {
-                    let mut q = validator_set_quorum_hash.clone();
-                    q.reverse();
-                    let reversed_q = q;
-                    let request_info = AssetUnlockRequestInfo {
-                        request_height: block_execution_context
-                            .block_state_info()
-                            .core_chain_locked_height(),
-                        quorum_hash: QuorumHash::from_byte_array(reversed_q.to_owned()),
-                    };
-
-                    let mut unsigned_transaction_bytes = vec![];
-
-                    request_info
-                        .consensus_append_to_base_encode(
-                            untied_transaction_bytes.clone(),
-                            &mut unsigned_transaction_bytes,
-                        )
-                        .map_err(|_| {
-                            Error::Execution(ExecutionError::CorruptedCodeExecution(
-                                "could not add additional request info to asset unlock transaction",
-                            ))
-                        })?;
-
-                    let original_transaction_id = hash::hash_to_vec(untied_transaction_bytes);
-                    let update_transaction_id =
-                        hash::hash_to_vec(unsigned_transaction_bytes.clone());
-
-                    let mut document = self.drive.find_withdrawal_document_by_transaction_id(
-                        &original_transaction_id,
-                        Some(transaction),
-                        platform_version,
-                    )?;
-
-                    document.set_bytes(
-                        withdrawal::properties::TRANSACTION_ID,
-                        update_transaction_id,
-                    );
-
-                    document.set_i64(
-                        withdrawal::properties::UPDATED_AT,
-                        block_info.time_ms.try_into().map_err(|_| {
-                            Error::Execution(ExecutionError::CorruptedCodeExecution(
-                                "Can't convert u64 block time to i64 updated_at",
-                            ))
-                        })?,
-                    );
-
-                    document.increment_revision().map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "Could not increment document revision",
-                        ))
-                    })?;
-
-                    Ok((unsigned_transaction_bytes, document))
-                })
-                .collect::<Result<Vec<(Vec<u8>, Document)>, Error>>()?
-                .into_iter()
-                .unzip();
-
         self.drive.add_update_multiple_documents_operations(
-            &documents_to_update,
+            &documents,
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
@@ -158,14 +106,104 @@ where
             &platform_version.drive,
         )?;
 
+        // Appending request_height and quorum_hash to withdrawal transaction
+        let unsigned_withdrawal_transactions = untied_withdrawal_transactions
+            .into_iter()
+            .map(|(_, untied_transaction_bytes)| {
+                build_transaction_with_quorum_hash_and_core_height(
+                    untied_transaction_bytes,
+                    validator_set_quorum_hash,
+                    block_execution_context
+                        .block_state_info()
+                        .core_chain_locked_height(),
+                )
+            })
+            .collect::<Result<_, _>>()?;
+
         self.drive.apply_drive_operations(
             drive_operations,
             true,
             &block_info,
-            Some(transaction),
+            transaction,
             platform_version,
         )?;
 
-        Ok(unsigned_withdrawal_transactions)
+        Ok(UnsignedWithdrawalTxs::from_vec(
+            unsigned_withdrawal_transactions,
+        ))
     }
+
+    fn fetch_and_modify_withdrawal_documents_to_broadcasted_by_indices(
+        &self,
+        transaction_indices: &[WithdrawalTransactionIndex],
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Document>, Error> {
+        let mut documents = self
+            .drive
+            .find_withdrawal_documents_by_status_and_transaction_indices(
+                withdrawals_contract::WithdrawalStatus::POOLED,
+                &transaction_indices,
+                transaction,
+                platform_version,
+            )?;
+
+        documents
+            .into_iter()
+            .map(|mut document| {
+                document.set_i64(
+                    withdrawal::properties::STATUS,
+                    withdrawals_contract::WithdrawalStatus::BROADCASTED as i64,
+                );
+
+                document.set_i64(
+                    withdrawal::properties::UPDATED_AT,
+                    block_info.time_ms.try_into().map_err(|_| {
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "Can't convert u64 block time to i64 updated_at",
+                        ))
+                    })?,
+                );
+
+                document.increment_revision().map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Could not increment document revision",
+                    ))
+                })?;
+
+                Ok(document)
+            })
+            .collect()
+    }
+}
+
+fn build_transaction_with_quorum_hash_and_core_height(
+    untied_transaction_bytes: Vec<u8>,
+    mut validator_set_quorum_hash: [u8; 32],
+    core_chain_locked_height: CoreHeight,
+) -> Result<Transaction, Error> {
+    // Core expects it reversed
+    validator_set_quorum_hash.reverse();
+
+    let request_info = AssetUnlockRequestInfo {
+        request_height: core_chain_locked_height,
+        quorum_hash: QuorumHash::from_byte_array(validator_set_quorum_hash),
+    };
+
+    let mut unsigned_transaction_bytes = vec![];
+
+    request_info
+        .consensus_append_to_base_encode(
+            untied_transaction_bytes.clone(),
+            &mut unsigned_transaction_bytes,
+        )
+        .map_err(|_| {
+            Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "could not add additional request info to asset unlock transaction",
+            ))
+        })?;
+
+    build_asset_unlock_tx(&unsigned_transaction_bytes)
+        .map_err(|error| Error::Protocol(ProtocolError::DashCoreError(error)))
 }

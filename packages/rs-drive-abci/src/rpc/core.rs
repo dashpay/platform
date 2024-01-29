@@ -341,6 +341,6 @@ impl CoreRPCLike for DefaultCoreRPC {
     ) -> Result<Vec<AssetUnlockStatusResult>, Error> {
         retry!(self
             .inner
-            .get_asset_unlock_statuses(indices, core_chain_locked_height))
+            .get_asset_unlock_statuses(indices, Some(core_chain_locked_height)))
     }
 }

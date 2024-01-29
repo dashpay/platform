@@ -1,5 +1,6 @@
 use grovedb::{Element, TransactionArg};
 
+use crate::drive::identity::withdrawals::WithdrawalTransactionIndex;
 use crate::{
     drive::{
         batch::{drive_op_batch::WithdrawalOperationType, DriveOperation},
@@ -15,7 +16,7 @@ impl Drive {
     pub fn fetch_latest_withdrawal_transaction_index(
         &self,
         transaction: TransactionArg,
-    ) -> Result<u64, Error> {
+    ) -> Result<WithdrawalTransactionIndex, Error> {
         let element = self
             .grove
             .get(
@@ -34,11 +35,12 @@ impl Drive {
             ));
         };
 
-        let counter = u64::from_be_bytes(counter_bytes.try_into().map_err(|_| {
-            DriveError::CorruptedWithdrawalTransactionsCounterInvalidLength(
-                "withdrawal transactions counter must be an u64",
-            )
-        })?);
+        let counter =
+            WithdrawalTransactionIndex::from_be_bytes(counter_bytes.try_into().map_err(|_| {
+                DriveError::CorruptedWithdrawalTransactionsCounterInvalidLength(
+                    "withdrawal transactions counter must be an u64",
+                )
+            })?);
 
         Ok(counter)
     }
@@ -46,7 +48,7 @@ impl Drive {
     /// Add counter update operations to the batch
     pub fn add_update_withdrawal_index_counter_operation(
         &self,
-        value: u64,
+        value: WithdrawalTransactionIndex,
         drive_operation_types: &mut Vec<DriveOperation>,
     ) {
         drive_operation_types.push(DriveOperation::WithdrawalOperation(

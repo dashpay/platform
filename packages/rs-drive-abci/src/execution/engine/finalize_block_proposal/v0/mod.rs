@@ -1,6 +1,5 @@
 use dashcore_rpc::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
 use dpp::block::epoch::Epoch;
-use rust_decimal::prelude::Signed;
 
 use dpp::validation::SimpleValidationResult;
 
@@ -12,8 +11,7 @@ use dpp::version::PlatformVersion;
 
 use dpp::dashcore::bls_sig_utils::BLSSignature;
 use dpp::dashcore::consensus::Encodable;
-use dpp::dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::build_asset_unlock_tx;
-use tenderdash_abci::proto::abci::ExtendVoteExtension;
+use dpp::dashcore::hashes::Hash;
 use tenderdash_abci::{
     proto::{serializers::timestamp::ToMilis, types::BlockId as ProtoBlockId},
     signatures::SignBytes,
@@ -37,7 +35,6 @@ use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
-use crate::platform_types::withdrawal::signed_withdrawal_txs::v0::SignedWithdrawalTxs;
 use crate::rpc::core::CoreRPCLike;
 
 impl<C> Platform<C>
@@ -148,34 +145,20 @@ where
         }
 
         // Verify vote extensions
-        // let received_withdrawals =
-        //     SignedWithdrawalTxs::from(&commit_info.threshold_vote_extensions);
-        let received_withdrawals = commit_info
-            .threshold_vote_extensions
-            .iter()
-            .map(|s| s.extension.clone())
-            .collect::<Vec<_>>();
+        let expected_withdrawal_transactions =
+            block_execution_context.unsigned_withdrawal_transactions();
 
-        // TODO(Withdrawals): refactor once block execution context contains proper special transactions
-        let vote_extensions: Vec<ExtendVoteExtension> = block_execution_context
-            .unsigned_withdrawal_transactions()
-            .into();
-
-        let expected_withdrawals = vote_extensions
-            .iter()
-            .map(|s| s.extension.clone())
-            .collect::<Vec<_>>();
-
-        if expected_withdrawals.ne(&received_withdrawals) {
+        if expected_withdrawal_transactions.ne(&commit_info.threshold_vote_extensions) {
             validation_result.add_error(AbciError::VoteExtensionMismatchReceived {
-                got: received_withdrawals
+                got: commit_info
+                    .threshold_vote_extensions
                     .iter()
-                    .map(|hash| hex::encode(hash))
+                    .map(|vote_extension| hex::encode(&vote_extension.extension))
                     .collect::<Vec<String>>()
                     .join(","),
-                expected: expected_withdrawals
+                expected: expected_withdrawal_transactions
                     .iter()
-                    .map(|hash| hex::encode(hash))
+                    .map(|tx| hex::encode(tx.txid().as_byte_array()))
                     .collect::<Vec<String>>()
                     .join(","),
             });
@@ -244,34 +227,35 @@ where
 
         // Broadcast asset unlock transactions to Core
         // TODO: Extract to a function. Combine with verification?
-        if !received_withdrawals.is_empty() {
+        if !&commit_info.threshold_vote_extensions.is_empty() {
             tracing::debug!(
                 "Broadcasting {} withdrawal transactions",
-                received_withdrawals.len()
+                &commit_info.threshold_vote_extensions.len()
             );
-            for (index, (_, tx)) in block_execution_context
+
+            // TODO: Shall we just consume txs from block execution context and keep them empty there?
+            let unsigned_withdrawal_transactions = block_execution_context
                 .unsigned_withdrawal_transactions()
-                .iter()
-                .enumerate()
-            {
-                let mut asset_unlock_tx = build_asset_unlock_tx(tx).unwrap();
+                .clone();
+
+            for (index, mut tx) in unsigned_withdrawal_transactions.into_iter().enumerate() {
                 let quorum_sig = commit_info.threshold_vote_extensions[index]
                     .signature
                     .clone();
 
-                let AssetUnlockPayloadType(mut payload) =
-                    asset_unlock_tx.special_transaction_payload.take().unwrap()
+                let AssetUnlockPayloadType(mut payload) = tx.special_transaction_payload.unwrap()
                 else {
+                    // TODO: No panic
                     panic!("expected asset unlock payload");
                 };
 
                 let signature_bytes: [u8; 96] = quorum_sig.try_into().unwrap();
                 payload.quorum_sig = BLSSignature::from(&signature_bytes);
 
-                asset_unlock_tx.special_transaction_payload = Some(AssetUnlockPayloadType(payload));
+                tx.special_transaction_payload = Some(AssetUnlockPayloadType(payload));
 
                 let mut tx_bytes = vec![];
-                asset_unlock_tx.consensus_encode(&mut tx_bytes).unwrap();
+                tx.consensus_encode(&mut tx_bytes).unwrap();
 
                 let result = self.core_rpc.send_raw_transaction(&tx_bytes);
 

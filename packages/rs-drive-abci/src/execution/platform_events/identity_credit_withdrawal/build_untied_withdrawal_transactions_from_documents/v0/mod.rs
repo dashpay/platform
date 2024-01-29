@@ -13,7 +13,7 @@ use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal
 
 use drive::dpp::identifier::Identifier;
 use drive::dpp::identity::convert_credits_to_duffs;
-use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
+use drive::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
 use drive::{drive::batch::DriveOperation, query::TransactionArg};
 
 use crate::{
@@ -31,8 +31,9 @@ where
         &self,
         documents: &[Document],
         transaction: TransactionArg,
-    ) -> Result<HashMap<Identifier, WithdrawalTransactionIdAndBytes>, Error> {
-        let mut withdrawals: HashMap<Identifier, WithdrawalTransactionIdAndBytes> = HashMap::new();
+    ) -> Result<HashMap<Identifier, WithdrawalTransactionIndexAndBytes>, Error> {
+        let mut withdrawals: HashMap<Identifier, WithdrawalTransactionIndexAndBytes> =
+            HashMap::new();
 
         let latest_withdrawal_index = self
             .drive
@@ -98,10 +99,7 @@ where
                     ))
                 })?;
 
-            withdrawals.insert(
-                document.id(),
-                (transaction_index.to_be_bytes().to_vec(), transaction_buffer),
-            );
+            withdrawals.insert(document.id(), (transaction_index, transaction_buffer));
         }
 
         Ok(withdrawals)
@@ -127,7 +125,7 @@ mod tests {
         use dpp::prelude::Identifier;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::version::PlatformVersion;
-        use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
+        use drive::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
         use drive::tests::helpers::setup::setup_system_data_contract;
         use itertools::Itertools;
 
@@ -220,10 +218,10 @@ mod tests {
                     .values()
                     .cloned()
                     .sorted()
-                    .collect::<Vec<WithdrawalTransactionIdAndBytes>>(),
+                    .collect::<Vec<WithdrawalTransactionIndexAndBytes>>(),
                 vec![
                     (
-                        vec![0, 0, 0, 0, 0, 0, 0, 0],
+                        0,
                         vec![
                             1, 0, 9, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 23, 0, 1, 2, 3, 4, 5, 6, 7,
                             8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 0, 0, 0, 0,
@@ -231,7 +229,7 @@ mod tests {
                         ],
                     ),
                     (
-                        vec![0, 0, 0, 0, 0, 0, 0, 1],
+                        1,
                         vec![
                             1, 0, 9, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 23, 0, 1, 2, 3, 4, 5, 6, 7,
                             8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 0, 0, 0, 0,
@@ -241,7 +239,7 @@ mod tests {
                 ]
                 .into_iter()
                 .sorted()
-                .collect::<Vec<WithdrawalTransactionIdAndBytes>>(),
+                .collect::<Vec<WithdrawalTransactionIndexAndBytes>>(),
             );
         }
     }

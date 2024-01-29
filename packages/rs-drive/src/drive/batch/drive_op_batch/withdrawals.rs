@@ -10,7 +10,9 @@ use crate::drive::identity::withdrawals::paths::{
     get_withdrawal_root_path_vec, get_withdrawal_transactions_queue_path,
     get_withdrawal_transactions_queue_path_vec, WITHDRAWAL_TRANSACTIONS_INDEX_COUNTER_KEY,
 };
-use crate::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
+use crate::drive::identity::withdrawals::{
+    WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
+};
 use crate::drive::object_size_info::PathKeyElementInfo;
 use crate::{drive::Drive, error::Error, fee::op::LowLevelDriveOperation};
 
@@ -22,17 +24,17 @@ pub enum WithdrawalOperationType<'a> {
     /// Update index counter
     UpdateIndexCounter {
         /// index counter value
-        index: u64,
+        index: WithdrawalTransactionIndex,
     },
     /// Insert Core Transaction into queue
     InsertTransactions {
         /// transaction id bytes
-        withdrawal_transactions: &'a [WithdrawalTransactionIdAndBytes],
+        withdrawal_transactions: &'a [WithdrawalTransactionIndexAndBytes], // TODO: consume withdrawals
     },
     /// Delete withdrawal
     DeleteWithdrawalTransaction {
         /// withdrawal transaction tuple with id and bytes
-        id: Vec<u8>,
+        index: WithdrawalTransactionIndex,
     },
 }
 
@@ -72,11 +74,11 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType<'_> {
 
                 let path = get_withdrawal_transactions_queue_path_vec();
 
-                for (id, bytes) in withdrawal_transactions {
+                for (index, bytes) in withdrawal_transactions {
                     drive.batch_insert(
                         PathKeyElementInfo::PathKeyElement::<'_, 1>((
                             path.clone(),
-                            id.clone(),
+                            index.to_be_bytes().to_vec(),
                             Element::Item(bytes.clone(), None),
                         )),
                         &mut drive_operations,
@@ -86,14 +88,14 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType<'_> {
 
                 Ok(drive_operations)
             }
-            WithdrawalOperationType::DeleteWithdrawalTransaction { id } => {
+            WithdrawalOperationType::DeleteWithdrawalTransaction { index } => {
                 let mut drive_operations = vec![];
 
                 let path = get_withdrawal_transactions_queue_path();
 
                 drive.batch_delete(
                     (&path).into(),
-                    &id,
+                    &index.to_be_bytes(),
                     // we know that we are not deleting a subtree
                     BatchDeleteApplyType::StatefulBatchDelete {
                         is_known_to_be_subtree_with_sum: Some((false, false)),

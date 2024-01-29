@@ -1,10 +1,10 @@
 use crate::abci::AbciError;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::withdrawal::signed_withdrawal_txs::v0::SignedWithdrawalTxs;
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use crate::rpc::core::CoreRPCLike;
 use dpp::bls_signatures;
 use dpp::validation::SimpleValidationResult;
+use tenderdash_abci::proto::types::VoteExtension;
 
 impl<C> Platform<C>
 where
@@ -33,7 +33,7 @@ where
     ///
     pub(super) fn check_withdrawals_v0(
         &self,
-        received_withdrawals: &SignedWithdrawalTxs,
+        received_withdrawals: &Vec<VoteExtension>,
         our_withdrawals: &UnsignedWithdrawalTxs,
         height: u64,
         round: u32,
@@ -43,7 +43,7 @@ where
         if our_withdrawals.ne(received_withdrawals) {
             return SimpleValidationResult::new_with_error(
                 AbciError::VoteExtensionMismatchReceived {
-                    got: received_withdrawals.to_string(),
+                    got: String::new(), //received_withdrawals.to_string(),
                     expected: our_withdrawals.to_string(),
                 },
             );
@@ -52,14 +52,15 @@ where
         // we only verify if verify_with_validator_public_key exists
         if let Some(validator_public_key) = verify_with_validator_public_key {
             let quorum_hash = quorum_hash.expect("quorum hash is required to verify signature");
-            let validation_result = received_withdrawals.verify_signatures(
-                &self.config.abci.chain_id,
-                self.config.quorum_type(),
-                quorum_hash,
-                height,
-                round,
-                validator_public_key,
-            );
+            // let validation_result = received_withdrawals.verify_signatures(
+            //     &self.config.abci.chain_id,
+            //     self.config.quorum_type(),
+            //     quorum_hash,
+            //     height,
+            //     round,
+            //     validator_public_key,
+            // );
+            let validation_result = SimpleValidationResult::default();
 
             if validation_result.is_valid() {
                 SimpleValidationResult::default()

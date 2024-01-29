@@ -33,6 +33,7 @@ use tenderdash_abci::proto::abci::tx_record::TxAction;
 use dpp::dashcore::consensus;
 use dpp::dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::build_asset_unlock_tx;
 use crate::mimic::test_quorum::TestQuorumInfo;
+use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::make_extend_vote_request_id;
 
 /// Test quorum for mimic block execution
 pub mod test_quorum;
@@ -284,12 +285,13 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         let extensions = block_execution_context
             .unsigned_withdrawal_transactions
             .iter()
-            .map(|(tx_id, tx_payload)| {
-                let tx = build_asset_unlock_tx(tx_payload).unwrap();
+            .map(|tx| {
+                let sign_request_id = Some(make_extend_vote_request_id(tx));
+
                 VoteExtension {
-                    r#type: VoteExtensionType::ThresholdRecover as i32,
+                    r#type: VoteExtensionType::ThresholdRecoverRaw as i32,
                     extension: tx.txid().to_byte_array().to_vec(),
-                    sign_request_id: None,
+                    sign_request_id,
                     signature: vec![0; 96], //todo: signature
                 }
             })
@@ -299,19 +301,15 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         let withdrawals = block_execution_context
             .unsigned_withdrawal_transactions
             .iter()
-            .map(|(_, tx_payload)| {
-                let tx = build_asset_unlock_tx(tx_payload).unwrap();
+            .map(|tx| {
                 let tx_bytes = consensus::serialize(&tx);
 
-                let index = if let AssetUnlockPayloadType(payload) =
-                    &tx.special_transaction_payload.unwrap()
-                {
-                    payload.base.index
-                } else {
+                let Some(AssetUnlockPayloadType(ref payload)) = &tx.special_transaction_payload
+                else {
                     panic!("expected asset unlock payload");
                 };
 
-                (index, tx_bytes)
+                (payload.base.index, tx_bytes)
             })
             .collect();
 

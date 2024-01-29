@@ -2,13 +2,12 @@ use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::withdrawal::signed_withdrawal_txs::v0::SignedWithdrawalTxs;
-use crate::platform_types::withdrawal::unsigned_withdrawal_txs;
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use crate::rpc::core::CoreRPCLike;
 use dpp::bls_signatures;
 use dpp::validation::SimpleValidationResult;
 use dpp::version::PlatformVersion;
+use tenderdash_abci::proto::types::VoteExtension;
 
 mod v0;
 
@@ -44,7 +43,7 @@ where
     ///
     pub(crate) fn check_withdrawals(
         &self,
-        received_withdrawals: &SignedWithdrawalTxs,
+        received_withdrawals: &Vec<VoteExtension>,
         our_withdrawals: &UnsignedWithdrawalTxs,
         height: u64,
         round: u32,

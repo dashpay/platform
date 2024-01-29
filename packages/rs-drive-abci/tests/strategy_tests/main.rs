@@ -67,7 +67,7 @@ mod tests {
     use crate::strategy::{FailureStrategy, MasternodeListChangesStrategy};
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
-    use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
+    use dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, ExtendedQuorumDetails};
     use dashcore_rpc::json::AssetUnlockStatusResult;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use std::sync::{Arc, Mutex};
@@ -87,6 +87,7 @@ mod tests {
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
+    use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
     use drive_abci::config::{ExecutionConfig, PlatformTestConfig};
     use drive_abci::logging::LogLevel;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -2418,7 +2419,7 @@ mod tests {
             .returning(move |_| Ok(Txid::all_zeros()));
 
         struct CoreState {
-            asset_unlock_statuses: BTreeMap<u64, AssetUnlockStatusResult>,
+            asset_unlock_statuses: BTreeMap<WithdrawalTransactionIndex, AssetUnlockStatusResult>,
             core_chain_lock: CoreChainLock,
         }
 
@@ -2534,7 +2535,7 @@ mod tests {
                     *index,
                     AssetUnlockStatusResult {
                         index: *index,
-                        is_mined: false,
+                        status: AssetUnlockStatus::Unknown,
                     },
                 );
             });
@@ -2608,7 +2609,7 @@ mod tests {
                     *index,
                     AssetUnlockStatusResult {
                         index: *index,
-                        is_mined: false,
+                        status: AssetUnlockStatus::Unknown,
                     },
                 );
             });
@@ -2638,10 +2639,10 @@ mod tests {
             core_state
                 .asset_unlock_statuses
                 .iter_mut()
-                .for_each(|(index, status)| {
+                .for_each(|(index, status_result)| {
                     // Do not settle yet transactions that were broadcasted in the last block
                     if !last_block_withdrawals.contains_key(index) {
-                        status.is_mined = true;
+                        status_result.status = AssetUnlockStatus::Chainlocked;
                     }
                 });
 
@@ -2705,7 +2706,7 @@ mod tests {
                     *index,
                     AssetUnlockStatusResult {
                         index: *index,
-                        is_mined: false,
+                        status: AssetUnlockStatus::Unknown,
                     },
                 );
             });
@@ -2734,11 +2735,11 @@ mod tests {
             core_state
                 .asset_unlock_statuses
                 .iter_mut()
-                .for_each(|(index, status)| {
+                .for_each(|(index, status_result)| {
                     // Do not settle yet transactions that were broadcasted in the last block
                     if !last_block_withdrawals.contains_key(index) {
-                        status.index = *index;
-                        status.is_mined = true;
+                        status_result.index = *index;
+                        status_result.status = AssetUnlockStatus::Chainlocked;
                     }
                 });
 

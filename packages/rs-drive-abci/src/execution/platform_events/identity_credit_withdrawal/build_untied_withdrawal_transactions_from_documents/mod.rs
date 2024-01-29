@@ -6,7 +6,7 @@ use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
-use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
+use drive::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
 use drive::grovedb::TransactionArg;
 use std::collections::HashMap;
 
@@ -35,7 +35,7 @@ where
         documents: &[Document],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<HashMap<Identifier, WithdrawalTransactionIdAndBytes>, Error> {
+    ) -> Result<HashMap<Identifier, WithdrawalTransactionIndexAndBytes>, Error> {
         match platform_version
             .drive_abci
             .methods

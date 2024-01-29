@@ -6,7 +6,7 @@ use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::version::PlatformVersion;
 
 use drive::dpp::util::hash;
-use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
+use drive::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
 use drive::grovedb::Transaction;
 
 use dpp::system_data_contracts::withdrawals_contract;
@@ -39,6 +39,8 @@ where
             .block_state_info()
             .to_block_info(block_execution_context.epoch_info().try_into()?);
 
+        // TODO: Use drive.cache.system_data_contracts.withdrawals
+
         let data_contract_id = withdrawals_contract::ID;
 
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info_and_fee(
@@ -64,6 +66,8 @@ where
             return Ok(());
         }
 
+        // TODO: we need to pass index to start with and store it
+        //  otherwise we this logic shared between two functions
         let untied_withdrawal_transactions = self
             .build_untied_withdrawal_transactions_from_documents(
                 &documents,
@@ -73,30 +77,20 @@ where
 
         let mut last_transaction_index = None;
         for document in documents.iter_mut() {
-            let Some((transaction_index_bytes, transaction_bytes)) =
-                untied_withdrawal_transactions.get(&document.id())
+            let Some((transaction_index, _)) = untied_withdrawal_transactions.get(&document.id())
             else {
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "transactions must contain a transaction",
                 )));
             };
 
-            let transaction_index_bytes: [u8; 8] =
-                transaction_index_bytes.clone().try_into().map_err(|_| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Can't convert transaction index bytes to [u8; 64]",
-                    ))
-                })?;
-            let transaction_index = u64::from_be_bytes(transaction_index_bytes);
-            last_transaction_index = Some(transaction_index);
-            let transaction_id = hash::hash_to_vec(transaction_bytes);
-
-            document.set_u64(withdrawal::properties::TRANSACTION_INDEX, transaction_index);
-
-            document.set_bytes(
-                withdrawal::properties::TRANSACTION_ID,
-                transaction_id.clone(),
+            document.set_u64(
+                withdrawal::properties::TRANSACTION_INDEX,
+                *transaction_index,
             );
+
+            // TODO: Just use number of txs
+            last_transaction_index = Some(*transaction_index);
 
             document.set_u8(
                 withdrawal::properties::STATUS,
@@ -119,7 +113,16 @@ where
             })?;
         }
 
-        let mut drive_operations = vec![];
+        let withdrawal_transactions: Vec<WithdrawalTransactionIndexAndBytes> =
+            untied_withdrawal_transactions.into_values().collect();
+
+        let mut drive_operations = Vec::new();
+
+        // TODO: It's better consume transactions
+        self.drive.add_enqueue_withdrawal_transaction_operations(
+            &withdrawal_transactions,
+            &mut drive_operations,
+        );
 
         self.drive.add_update_multiple_documents_operations(
             &documents,
@@ -135,14 +138,6 @@ where
             &mut drive_operations,
             &platform_version.drive,
         )?;
-
-        let withdrawal_transactions: Vec<WithdrawalTransactionIdAndBytes> =
-            untied_withdrawal_transactions.values().cloned().collect();
-
-        self.drive.add_enqueue_withdrawal_transaction_operations(
-            &withdrawal_transactions,
-            &mut drive_operations,
-        );
 
         if let Some(index) = last_transaction_index {
             self.drive

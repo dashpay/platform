@@ -2,9 +2,11 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use crate::rpc::core::CoreRPCLike;
+use dpp::dashcore::Transaction;
 use dpp::version::PlatformVersion;
-use drive::grovedb::Transaction;
+use drive::grovedb::TransactionArg;
 
 mod v0;
 
@@ -30,9 +32,9 @@ where
         &self,
         validator_set_quorum_hash: [u8; 32],
         block_execution_context: &BlockExecutionContext,
-        transaction: &Transaction,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<Vec<u8>>, Error> {
+    ) -> Result<UnsignedWithdrawalTxs, Error> {
         match platform_version
             .drive_abci
             .methods

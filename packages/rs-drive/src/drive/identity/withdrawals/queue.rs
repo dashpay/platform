@@ -5,7 +5,9 @@ use grovedb::{
     TransactionArg,
 };
 
-use crate::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
+use crate::drive::identity::withdrawals::{
+    WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
+};
 use crate::{
     drive::{
         batch::{drive_op_batch::WithdrawalOperationType, DriveOperation},
@@ -20,7 +22,7 @@ impl Drive {
     /// Add insert operations for withdrawal transactions to the batch
     pub fn add_enqueue_withdrawal_transaction_operations<'a>(
         &self,
-        withdrawals: &'a [WithdrawalTransactionIdAndBytes],
+        withdrawals: &'a [WithdrawalTransactionIndexAndBytes],
         drive_operation_types: &mut Vec<DriveOperation<'a>>,
     ) {
         if !withdrawals.is_empty() {
@@ -38,7 +40,7 @@ impl Drive {
         max_amount: u16,
         transaction: TransactionArg,
         drive_operation_types: &mut Vec<DriveOperation>,
-    ) -> Result<Vec<WithdrawalTransactionIdAndBytes>, Error> {
+    ) -> Result<Vec<WithdrawalTransactionIndexAndBytes>, Error> {
         let mut query = Query::new();
 
         query.insert_item(QueryItem::RangeFull(RangeFull));
@@ -68,18 +70,28 @@ impl Drive {
 
         let withdrawals = result_items
             .into_iter()
-            .map(|(id, element)| match element {
-                Element::Item(bytes, _) => Ok((id, bytes)),
+            .map(|(index_bytes, element)| match element {
+                Element::Item(bytes, _) => {
+                    let index = WithdrawalTransactionIndex::from_be_bytes(
+                        index_bytes.try_into().map_err(|_| {
+                            Error::Drive(DriveError::CorruptedSerialization(String::from(
+                                "withdrawal index must be u64",
+                            )))
+                        })?,
+                    );
+
+                    Ok((index, bytes))
+                }
                 _ => Err(Error::Drive(DriveError::CorruptedWithdrawalNotItem(
                     "withdrawal is not an item",
                 ))),
             })
-            .collect::<Result<Vec<(Vec<u8>, Vec<u8>)>, Error>>()?;
+            .collect::<Result<Vec<WithdrawalTransactionIndexAndBytes>, Error>>()?;
 
         if !withdrawals.is_empty() {
-            for (id, _) in withdrawals.iter() {
+            for (index, _) in withdrawals.iter() {
                 drive_operation_types.push(DriveOperation::WithdrawalOperation(
-                    WithdrawalOperationType::DeleteWithdrawalTransaction { id: id.clone() },
+                    WithdrawalOperationType::DeleteWithdrawalTransaction { index: *index },
                 ));
             }
         }
@@ -90,6 +102,9 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::identity::withdrawals::{
+        WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
+    };
     use crate::{
         drive::batch::DriveOperation,
         tests::helpers::setup::setup_drive_with_initial_state_structure,
@@ -106,8 +121,8 @@ mod tests {
 
         let transaction = drive.grove.start_transaction();
 
-        let withdrawals: Vec<(Vec<u8>, Vec<u8>)> = (0..17)
-            .map(|i: u8| (i.to_be_bytes().to_vec(), vec![i; 32]))
+        let withdrawals: Vec<WithdrawalTransactionIndexAndBytes> = (0..17)
+            .map(|i: u8| (i as WithdrawalTransactionIndex, vec![i; 32]))
             .collect();
 
         let block_info = BlockInfo {

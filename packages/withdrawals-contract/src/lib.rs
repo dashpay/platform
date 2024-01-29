@@ -9,12 +9,6 @@ pub mod document_types {
         pub const NAME: &str = "withdrawal";
 
         pub mod properties {
-            pub const TRANSACTION_ID: &str = "transactionId";
-            // TODO(withdrawals): get rid of this property since expiration of the withdrawal
-            //   is not a thing anymore?
-            pub const TRANSACTION_SIGN_HEIGHT: &str = "transactionSignHeight";
-            // TODO(withdrawals): get rid of this property since expiration of the withdrawal
-            //   is not a thing anymore?
             pub const TRANSACTION_INDEX: &str = "transactionIndex";
             pub const AMOUNT: &str = "amount";
             pub const CORE_FEE_PER_BYTE: &str = "coreFeePerByte";

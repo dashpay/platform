@@ -11,6 +11,7 @@ use grovedb::TransactionArg;
 use indexmap::IndexMap;
 
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
+use crate::drive::identity::withdrawals::WithdrawalTransactionIndex;
 use crate::{
     drive::Drive,
     error::{drive::DriveError, Error},
@@ -97,13 +98,15 @@ impl Drive {
         Ok(outcome.documents_owned())
     }
 
-    /// Find one document by it's transactionId field
-    pub fn find_withdrawal_document_by_transaction_id(
+    /// Find documents by it's transactionIndex field
+    pub fn find_withdrawal_documents_by_status_and_transaction_indices(
         &self,
-        original_transaction_id: &[u8],
+        status: withdrawals_contract::WithdrawalStatus,
+        transaction_indices: &[WithdrawalTransactionIndex],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Document, Error> {
+    ) -> Result<Vec<Document>, Error> {
+        // TODO: Use drive cache system_data_contracts
         let data_contract_id = withdrawals_contract::ID;
 
         let contract_fetch_info = self
@@ -128,22 +131,41 @@ impl Drive {
         let mut where_clauses = BTreeMap::new();
 
         where_clauses.insert(
-            withdrawal::properties::TRANSACTION_ID.to_string(),
-            WhereClause {
-                field: withdrawal::properties::TRANSACTION_ID.to_string(),
-                operator: crate::query::WhereOperator::Equal,
-                value: Value::Bytes(original_transaction_id.to_vec()),
-            },
-        );
-
-        where_clauses.insert(
             withdrawal::properties::STATUS.to_string(),
             WhereClause {
                 field: withdrawal::properties::STATUS.to_string(),
                 operator: crate::query::WhereOperator::Equal,
-                value: Value::U8(withdrawals_contract::WithdrawalStatus::POOLED as u8),
+                value: Value::U8(status as u8),
             },
         );
+
+        where_clauses.insert(
+            withdrawal::properties::TRANSACTION_INDEX.to_string(),
+            WhereClause {
+                field: withdrawal::properties::TRANSACTION_INDEX.to_string(),
+                operator: crate::query::WhereOperator::In,
+                value: Value::Array(
+                    transaction_indices
+                        .iter()
+                        .map(|index| Value::U64(*index))
+                        .collect::<Vec<_>>(),
+                ),
+            },
+        );
+
+        let mut order_by = IndexMap::new();
+
+        order_by.insert(
+            withdrawal::properties::TRANSACTION_INDEX.to_string(),
+            OrderClause {
+                field: withdrawal::properties::TRANSACTION_INDEX.to_string(),
+                ascending: true,
+            },
+        );
+
+        // TODO: Currently it queries only 100 documents
+        //  We need to query all documents. It would be nice to update DriveQuery
+        //  with internal param that will allow us to disable strict limits
 
         let drive_query = DriveQuery {
             contract: &contract_fetch_info.contract,
@@ -156,8 +178,8 @@ impl Drive {
                 equal_clauses: where_clauses,
             },
             offset: None,
-            limit: Some(1),
-            order_by: IndexMap::new(),
+            limit: None,
+            order_by,
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
@@ -171,11 +193,7 @@ impl Drive {
             Some(platform_version.protocol_version),
         )?;
 
-        let document = outcome.documents_owned().pop().ok_or(Error::Drive(
-            DriveError::CorruptedDriveState("document was not found by transactionId".to_string()),
-        ))?;
-
-        Ok(document)
+        Ok(outcome.documents_owned())
     }
 }
 
@@ -300,7 +318,8 @@ mod tests {
         }
     }
 
-    mod find_document_by_transaction_id {
+    mod find_withdrawal_documents_by_status_and_transaction_indices {
+        use crate::drive::identity::withdrawals::WithdrawalTransactionIndex;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::document::DocumentV0Getters;
         use dpp::identity::core_script::CoreScript;
@@ -313,7 +332,7 @@ mod tests {
         use super::*;
 
         #[test]
-        fn test_find_document_by_transaction_id() {
+        fn test_find_pooled_withdrawal_documents_by_transaction_index() {
             let drive = setup_drive_with_initial_state_structure();
 
             let transaction = drive.grove.start_transaction();
@@ -330,6 +349,8 @@ mod tests {
 
             let owner_id = Identifier::new([1u8; 32]);
 
+            let transaction_index: WithdrawalTransactionIndex = 1;
+
             let document = get_withdrawal_document_fixture(
                 &data_contract,
                 owner_id,
@@ -339,8 +360,7 @@ mod tests {
                     "pooling": Pooling::Never as u8,
                     "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
                     "status": withdrawals_contract::WithdrawalStatus::POOLED as u8,
-                    "transactionIndex": 1u64,
-                    "transactionId": Bytes32::default(),
+                    "transactionIndex": transaction_index,
                 }),
                 None,
                 platform_version.protocol_version,
@@ -360,14 +380,15 @@ mod tests {
             );
 
             let found_document = drive
-                .find_withdrawal_document_by_transaction_id(
-                    Bytes32::default().as_slice(),
+                .find_withdrawal_documents_by_status_and_transaction_indices(
+                    withdrawals_contract::WithdrawalStatus::POOLED,
+                    &[transaction_index],
                     Some(&transaction),
                     platform_version,
                 )
                 .expect("to find document by it's transaction id");
 
-            assert_eq!(found_document.id().to_vec(), document.id().to_vec());
+            assert_eq!(found_document.len(), 1);
         }
     }
 }

@@ -1,6 +1,3 @@
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::Txid;
-
 use dpp::block::epoch::Epoch;
 
 use dpp::validation::ValidationResult;
@@ -247,6 +244,7 @@ where
 
         // Preparing withdrawal transactions for signing and broadcasting
         {
+            // TODO: Pass blockinfo?
             // To process withdrawals we need to dequeue untiled transactions from the withdrawal transactions queue
             // Untiled transactions then converted to unsigned transactions, appending current block information
             // required for signature verification (core height and quorum hash)
@@ -254,21 +252,14 @@ where
                 .dequeue_and_build_unsigned_withdrawal_transactions(
                     validator_set_quorum_hash,
                     &block_execution_context,
-                    transaction,
+                    Some(transaction),
                     platform_version,
                 )?;
 
             // Save unsigned transaction bytes to block execution context
-            // to be signed (on extend_vote) and broadcasted (on finalize_block)
+            // to be signed (on extend_vote), verified (on verify_vote) and broadcasted (on finalize_block)
             block_execution_context
-                .set_unsigned_withdrawal_transactions(unsigned_withdrawal_transaction_bytes.into());
-
-            // Update corresponding withdrawal statuses to broadcasted
-            self.update_pooled_withdrawal_transaction_statuses(
-                &block_execution_context,
-                transaction,
-                platform_version,
-            )?;
+                .set_unsigned_withdrawal_transactions(unsigned_withdrawal_transaction_bytes);
         }
 
         let state_transitions_result = self.process_raw_state_transitions(
@@ -281,8 +272,8 @@ where
 
         let mut block_execution_context: BlockExecutionContext = block_execution_context;
 
-        // Takes queued withdrawals, creates L1 withdrawal transactions info and saves them to drive,
-        // and changes withdrawal documents from queued to pooled
+        // Takes queued withdrawals, creates untiled withdrawal transaction payload saves them to queue,
+        // Corresponding withdrawal documents are changed from queued to pooled
         self.pool_withdrawals_into_transactions_queue(
             &block_execution_context,
             transaction,

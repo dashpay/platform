@@ -10,8 +10,10 @@ pub enum AbciError {
     /// Request does not match currently processed block
     #[error("request does not match current block: {0}")]
     RequestForWrongBlockReceived(String),
-    /// Withdrawal transactions mismatch
+    /// Withdrawal vote extensions mismatch
     #[error("vote extensions mismatch: got {got:?}, expected {expected:?}")]
+    // TODO: pass something more meaningful than String
+    // TODO: We need two errors for ExtendVote on verify and VoteExtension on finalize
     #[allow(missing_docs)]
     VoteExtensionMismatchReceived { got: String, expected: String },
     /// Vote extensions signature is invalid
