@@ -242,6 +242,7 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
     pub fetch_transactions_block_inclusion_status: FeatureVersion,
     pub pool_withdrawals_into_transactions_queue: FeatureVersion,
     pub mark_chainlocked_withdrawals_as_complete: FeatureVersion,
+    pub append_signatures_and_broadcast_withdrawal_transactions: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

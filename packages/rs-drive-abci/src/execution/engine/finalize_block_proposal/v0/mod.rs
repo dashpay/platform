@@ -199,7 +199,16 @@ where
         }
         drop(state_cache);
 
-        // Next let's check that the hash received is the same as the hash we expect
+        // Append signatures and broadcast asset unlock transactions to Core
+        self.append_signatures_and_broadcast_withdrawal_transactions(
+            expected_withdrawal_transactions.clone(),
+            commit_info
+                .threshold_vote_extensions
+                .iter()
+                .map(|e| e.signature.clone()) // TODO: clone?
+                .collect(),
+            platform_version,
+        )?;
 
         if height == self.config.abci.genesis_height {
             self.drive
@@ -215,55 +224,6 @@ where
         to_commit_block_info.time_ms = block_header.time.to_milis();
 
         to_commit_block_info.core_height = block_header.core_chain_locked_height;
-
-        // Broadcast asset unlock transactions to Core
-        // TODO: Extract to a function. Combine with verification?
-        if !&commit_info.threshold_vote_extensions.is_empty() {
-            tracing::debug!(
-                "Broadcasting {} withdrawal transactions",
-                &commit_info.threshold_vote_extensions.len()
-            );
-
-            // TODO: Shall we just consume txs from block execution context and keep them empty there?
-            let unsigned_withdrawal_transactions = block_execution_context
-                .unsigned_withdrawal_transactions()
-                .clone();
-
-            for (index, mut tx) in unsigned_withdrawal_transactions.into_iter().enumerate() {
-                let quorum_sig = commit_info.threshold_vote_extensions[index]
-                    .signature
-                    .clone();
-
-                let AssetUnlockPayloadType(mut payload) = tx.special_transaction_payload.unwrap()
-                else {
-                    // TODO: No panic
-                    panic!("expected asset unlock payload");
-                };
-
-                let signature_bytes: [u8; 96] = quorum_sig.try_into().unwrap();
-                payload.quorum_sig = BLSSignature::from(&signature_bytes);
-
-                tx.special_transaction_payload = Some(AssetUnlockPayloadType(payload));
-
-                let mut tx_bytes = vec![];
-                tx.consensus_encode(&mut tx_bytes).unwrap();
-
-                let result = self.core_rpc.send_raw_transaction(&tx_bytes);
-
-                match result {
-                    Ok(_) => {
-                        tracing::trace!(
-                            "[Withdrawals] Broadcasted asset unlock tx: {}",
-                            hex::encode(tx_bytes)
-                        );
-                    }
-                    Err(e) => {
-                        tracing::error!("[Withdrawals] Failed to broadcast asset unlock tx: {}", e);
-                    }
-                }
-            }
-        }
-        // }
 
         // At the end we update the state cache
         drop(guarded_block_execution_context);

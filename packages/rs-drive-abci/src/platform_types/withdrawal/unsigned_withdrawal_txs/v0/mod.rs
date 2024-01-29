@@ -22,6 +22,14 @@ impl UnsignedWithdrawalTxs {
         self.0.into_iter()
     }
 
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     pub fn from_vec(transactions: Vec<Transaction>) -> Self {
         Self(transactions)
     }
