@@ -26,7 +26,7 @@ where
         );
 
         for (i, mut tx) in unsigned_withdrawal_transactions.into_iter().enumerate() {
-            let quorum_sig = signatures.swap_remove(i);
+            let quorum_sig = signatures.remove(i);
 
             let Some(AssetUnlockPayloadType(mut payload)) = tx.special_transaction_payload else {
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
