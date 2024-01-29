@@ -46,7 +46,7 @@ pub struct MimicExecuteBlockOutcome {
     pub state_transaction_results: Vec<(StateTransition, ExecTxResult)>,
     /// withdrawal transactions
     // pub withdrawal_transactions: Vec<dashcore_rpc::dashcore::Transaction>,
-    pub withdrawal_transactions: BTreeMap<dashcore_rpc::dashcore::Txid, Vec<u8>>,
+    pub withdrawal_transactions: BTreeMap<u64, Vec<u8>>,
     /// The next validators
     pub validator_set_update: Option<ValidatorSetUpdate>,
     /// The next validators hash
@@ -302,7 +302,16 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             .map(|(_, tx_payload)| {
                 let tx = build_asset_unlock_tx(tx_payload).unwrap();
                 let tx_bytes = consensus::serialize(&tx);
-                (tx.txid(), tx_bytes)
+
+                let index = if let AssetUnlockPayloadType(payload) =
+                    &tx.special_transaction_payload.unwrap()
+                {
+                    payload.base.index
+                } else {
+                    panic!("expected asset unlock payload");
+                };
+
+                (index, tx_bytes)
             })
             .collect();
 

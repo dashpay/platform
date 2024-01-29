@@ -71,6 +71,7 @@ where
                 platform_version,
             )?;
 
+        let mut last_transaction_index = None;
         for document in documents.iter_mut() {
             let Some((transaction_index_bytes, transaction_bytes)) =
                 untied_withdrawal_transactions.get(&document.id())
@@ -87,6 +88,7 @@ where
                     ))
                 })?;
             let transaction_index = u64::from_be_bytes(transaction_index_bytes);
+            last_transaction_index = Some(transaction_index);
             let transaction_id = hash::hash_to_vec(transaction_bytes);
 
             document.set_u64(withdrawal::properties::TRANSACTION_INDEX, transaction_index);
@@ -141,6 +143,11 @@ where
             &withdrawal_transactions,
             &mut drive_operations,
         );
+
+        if let Some(index) = last_transaction_index {
+            self.drive
+                .add_update_withdrawal_index_counter_operation(index + 1, &mut drive_operations);
+        }
 
         self.drive.apply_drive_operations(
             drive_operations,

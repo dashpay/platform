@@ -231,6 +231,20 @@ where
 
         let mut block_execution_context: BlockExecutionContext = block_execution_context.into();
 
+        // Mark all previously broadcasted and chainlocked withdrawals as complete
+        // only when we are on a new core height
+        if block_execution_context
+            .block_state_info()
+            .core_chain_locked_height()
+            != last_block_core_height
+        {
+            self.mark_chainlocked_withdrawals_as_complete(
+                &block_execution_context,
+                transaction,
+                platform_version,
+            )?;
+        }
+
         // Preparing withdrawal transactions for signing and broadcasting
         {
             // To process withdrawals we need to dequeue untiled transactions from the withdrawal transactions queue
@@ -251,20 +265,6 @@ where
 
             // Update corresponding withdrawal statuses to broadcasted
             self.update_pooled_withdrawal_transaction_statuses(
-                &block_execution_context,
-                transaction,
-                platform_version,
-            )?;
-        }
-
-        // Mark all previously broadcasted and chainlocked withdrawals as complete
-        // only when we are on a new core height
-        if block_execution_context
-            .block_state_info()
-            .core_chain_locked_height()
-            != last_block_core_height
-        {
-            self.mark_chainlocked_withdrawals_as_complete(
                 &block_execution_context,
                 transaction,
                 platform_version,

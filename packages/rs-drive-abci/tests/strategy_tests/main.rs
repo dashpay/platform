@@ -68,7 +68,7 @@ mod tests {
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
-    use dashcore_rpc::json::GetTransactionLockedResult;
+    use dashcore_rpc::json::AssetUnlockStatusResult;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use std::sync::{Arc, Mutex};
     use strategy_tests::operations::DocumentAction::DocumentActionReplace;
@@ -2418,7 +2418,7 @@ mod tests {
             .returning(move |_| Ok(Txid::all_zeros()));
 
         struct CoreState {
-            tx_chainlocked_statuses: BTreeMap<Txid, GetTransactionLockedResult>,
+            asset_unlock_statuses: BTreeMap<u64, AssetUnlockStatusResult>,
             core_chain_lock: CoreChainLock,
         }
 
@@ -2428,7 +2428,7 @@ mod tests {
         // rpc response along the way but we can't mutate `platform.core_rpc` later
         // because platform reference is moved into the AbciApplication.
         let shared_core_state = Arc::new(Mutex::new(CoreState {
-            tx_chainlocked_statuses: BTreeMap::new(),
+            asset_unlock_statuses: BTreeMap::new(),
             core_chain_lock: CoreChainLock {
                 core_block_height: chain_locked_height,
                 core_block_hash: [1; 32].to_vec(),
@@ -2439,17 +2439,18 @@ mod tests {
         let core_state_to_share = shared_core_state.clone();
         platform
             .core_rpc
-            .expect_get_transactions_are_chain_locked()
-            .returning(move |txids| {
-                Ok(txids
+            .expect_get_asset_unlock_statuses()
+            .returning(move |indices, _| {
+                Ok(indices
                     .iter()
-                    .map(|txid| {
+                    .map(|index| {
                         core_state_to_share
                             .lock()
                             .unwrap()
-                            .tx_chainlocked_statuses
-                            .get(txid)
+                            .asset_unlock_statuses
+                            .get(index)
                             .map(|status| status.clone())
+                            .unwrap()
                     })
                     .collect())
             });
@@ -2528,14 +2529,12 @@ mod tests {
 
             // Update core state to return chain locked status for broadcasted transactions
             let mut core_state = shared_core_state.lock().unwrap();
-            outcome.withdrawals.iter().for_each(|(txid, _)| {
-                let txid = txid.to_owned();
-                core_state.tx_chainlocked_statuses.insert(
-                    txid.to_owned(),
-                    GetTransactionLockedResult {
-                        height: -1,
-                        chainlock: false,
-                        mempool: false,
+            outcome.withdrawals.iter().for_each(|(index, _)| {
+                core_state.asset_unlock_statuses.insert(
+                    *index,
+                    AssetUnlockStatusResult {
+                        index: *index,
+                        is_mined: false,
                     },
                 );
             });
@@ -2596,22 +2595,20 @@ mod tests {
                 )
                 .unwrap();
 
-            // Ensure that broadcasted withdrawals are equal to the latest withdrawal transactions amount
+            // Ensure total amount of withdrawal documents in broadcasted state is correct
             assert_eq!(
                 withdrawal_documents_broadcasted.len(),
-                broadcasted_transactions_amount
+                broadcasted_transactions_amount + outcome.withdrawals.len()
             );
 
             // Simulate transactions being added to the core mempool
             let mut core_state = shared_core_state.lock().unwrap();
-            outcome.withdrawals.iter().for_each(|(txid, _)| {
-                let txid = txid.to_owned();
-                core_state.tx_chainlocked_statuses.insert(
-                    txid.to_owned(),
-                    GetTransactionLockedResult {
-                        height: -1,
-                        chainlock: false,
-                        mempool: false,
+            outcome.withdrawals.iter().for_each(|(index, _)| {
+                core_state.asset_unlock_statuses.insert(
+                    *index,
+                    AssetUnlockStatusResult {
+                        index: *index,
+                        is_mined: false,
                     },
                 );
             });
@@ -2639,13 +2636,12 @@ mod tests {
             // Update core state to return chain locked status for broadcasted transactions
             let mut core_state = shared_core_state.lock().unwrap();
             core_state
-                .tx_chainlocked_statuses
+                .asset_unlock_statuses
                 .iter_mut()
-                .for_each(|(txid, status)| {
+                .for_each(|(index, status)| {
                     // Do not settle yet transactions that were broadcasted in the last block
-                    if !last_block_withdrawals.contains_key(txid) {
-                        status.height = chain_locked_height as i32;
-                        status.chainlock = true;
+                    if !last_block_withdrawals.contains_key(index) {
+                        status.is_mined = true;
                     }
                 });
 
@@ -2680,9 +2676,11 @@ mod tests {
                     platform_version,
                 )
                 .unwrap();
+
+            // Ensure total amount of withdrawal documents in broadcasted state is correct
             assert_eq!(
                 withdrawal_documents_broadcasted.len(),
-                broadcasted_transactions_amount
+                broadcasted_transactions_amount + outcome.withdrawals.len()
             );
 
             let withdrawal_documents_completed = outcome
@@ -2702,14 +2700,12 @@ mod tests {
 
             // Simulate transactions being added to the core mempool
             let mut core_state = shared_core_state.lock().unwrap();
-            outcome.withdrawals.iter().for_each(|(txid, _)| {
-                let txid = txid.to_owned();
-                core_state.tx_chainlocked_statuses.insert(
-                    txid.to_owned(),
-                    GetTransactionLockedResult {
-                        height: -1,
-                        chainlock: false,
-                        mempool: false,
+            outcome.withdrawals.iter().for_each(|(index, _)| {
+                core_state.asset_unlock_statuses.insert(
+                    *index,
+                    AssetUnlockStatusResult {
+                        index: *index,
+                        is_mined: false,
                     },
                 );
             });
@@ -2736,13 +2732,13 @@ mod tests {
             // Update core state to return chain locked status for broadcasted transactions
             let mut core_state = shared_core_state.lock().unwrap();
             core_state
-                .tx_chainlocked_statuses
+                .asset_unlock_statuses
                 .iter_mut()
-                .for_each(|(txid, status)| {
+                .for_each(|(index, status)| {
                     // Do not settle yet transactions that were broadcasted in the last block
-                    if !status.chainlock && !last_block_withdrawals.contains_key(txid) {
-                        status.height = chain_locked_height as i32;
-                        status.chainlock = true;
+                    if !last_block_withdrawals.contains_key(index) {
+                        status.index = *index;
+                        status.is_mined = true;
                     }
                 });
 
@@ -2777,9 +2773,11 @@ mod tests {
                     platform_version,
                 )
                 .unwrap();
+
+            // Ensure total amount of withdrawal documents in broadcasted state is correct
             assert_eq!(
                 withdrawal_documents_broadcasted.len(),
-                broadcasted_transactions_amount
+                broadcasted_transactions_amount + outcome.withdrawals.len()
             );
 
             let withdrawal_documents_completed = outcome
