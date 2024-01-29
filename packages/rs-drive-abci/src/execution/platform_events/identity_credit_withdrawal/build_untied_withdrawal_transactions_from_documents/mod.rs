@@ -46,7 +46,7 @@ where
                 self.build_untied_withdrawal_transactions_from_documents_v0(documents, transaction)
             }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "build_withdrawal_transactions_from_documents".to_string(),
+                method: "build_untied_withdrawal_transactions_from_documents".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

@@ -34,7 +34,7 @@ where
     C: CoreRPCLike,
 {
     /// Prepares a list of an unsigned withdrawal transaction bytes
-    pub(super) fn fetch_and_prepare_unsigned_withdrawal_transactions_v0(
+    pub(super) fn dequeue_and_build_unsigned_withdrawal_transactions_v0(
         &self,
         validator_set_quorum_hash: [u8; 32],
         block_execution_context: &BlockExecutionContext,

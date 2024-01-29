@@ -238,10 +238,10 @@ pub struct DriveAbciBlockEndMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
     pub build_untied_withdrawal_transactions_from_documents: FeatureVersion,
-    pub fetch_and_prepare_unsigned_withdrawal_transactions: FeatureVersion,
+    pub dequeue_and_build_unsigned_withdrawal_transactions: FeatureVersion,
     pub fetch_transactions_block_inclusion_status: FeatureVersion,
     pub pool_withdrawals_into_transactions_queue: FeatureVersion,
-    pub update_chainlocked_withdrawal_transaction_statuses: FeatureVersion,
+    pub mark_chainlocked_withdrawals_as_complete: FeatureVersion,
     pub update_pooled_withdrawal_transaction_statuses: FeatureVersion,
 }
 

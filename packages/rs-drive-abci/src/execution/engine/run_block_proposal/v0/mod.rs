@@ -231,16 +231,13 @@ where
 
         let mut block_execution_context: BlockExecutionContext = block_execution_context.into();
 
-        // >>>>>> Withdrawal Status Update <<<<<<<
-
-        // Before asset unlocks is broadcasted:
-        // Prepare pooled withdrawals to be broadcasted to the core in the current block
+        // Preparing withdrawal transactions for signing and broadcasting
         {
-            // Takes L1 withdrawal transactions info from drive, appends request info to them,
-            // and saves them back to drive
-            // TODO: Must be named dequeue_and_prepare_unsigned_withdrawal_transactions
+            // To process withdrawals we need to dequeue untiled transactions from the withdrawal transactions queue
+            // Untiled transactions then converted to unsigned transactions, appending current block information
+            // required for signature verification (core height and quorum hash)
             let unsigned_withdrawal_transaction_bytes = self
-                .fetch_and_prepare_unsigned_withdrawal_transactions(
+                .dequeue_and_build_unsigned_withdrawal_transactions(
                     validator_set_quorum_hash,
                     &block_execution_context,
                     transaction,
@@ -252,7 +249,7 @@ where
             block_execution_context
                 .set_unsigned_withdrawal_transactions(unsigned_withdrawal_transaction_bytes.into());
 
-            // Update pooled transactions statuses to broadcasted
+            // Update corresponding withdrawal statuses to broadcasted
             self.update_pooled_withdrawal_transaction_statuses(
                 &block_execution_context,
                 transaction,
@@ -261,13 +258,13 @@ where
         }
 
         // Mark all previously broadcasted and chainlocked withdrawals as complete
+        // only when we are on a new core height
         if block_execution_context
             .block_state_info()
             .core_chain_locked_height()
             != last_block_core_height
         {
-            // TODO: Rename to mark_chainlocked_withdrawals_as_complete
-            self.update_chainlocked_withdrawal_transaction_statuses(
+            self.mark_chainlocked_withdrawals_as_complete(
                 &block_execution_context,
                 transaction,
                 platform_version,

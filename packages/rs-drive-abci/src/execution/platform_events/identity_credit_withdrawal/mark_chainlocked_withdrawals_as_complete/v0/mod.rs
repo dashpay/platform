@@ -30,7 +30,7 @@ where
     C: CoreRPCLike,
 {
     /// Update statuses for broadcasted withdrawals
-    pub(super) fn update_chainlocked_withdrawal_transaction_statuses_v0(
+    pub(super) fn mark_chainlocked_withdrawals_as_complete_v0(
         &self,
         block_execution_context: &BlockExecutionContext,
         transaction: &Transaction,
@@ -44,6 +44,8 @@ where
                 .core_chain_locked_height(),
             epoch: Epoch::new(block_execution_context.epoch_info().current_epoch_index())?,
         };
+
+        // TODO: Use drive.cache.system_data_contracts.withdrawals_contract
 
         let data_contract_id = withdrawals_contract::ID;
 
@@ -398,7 +400,7 @@ mod tests {
         );
 
         platform
-            .update_chainlocked_withdrawal_transaction_statuses_v0(
+            .mark_chainlocked_withdrawals_as_complete_v0(
                 &block_execution_context.into(),
                 &transaction,
                 platform_version,
