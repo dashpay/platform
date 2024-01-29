@@ -39,6 +39,8 @@ impl Drive {
     pub fn verify_identity_keys_by_identity_id(
         proof: &[u8],
         key_request: IdentityKeysRequest,
+        with_revision: bool,
+        with_balance: bool,
         is_proof_subset: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<PartialIdentity>), Error> {
@@ -52,6 +54,8 @@ impl Drive {
             0 => Self::verify_identity_keys_by_identity_id_v0(
                 proof,
                 key_request,
+                with_revision,
+                with_balance,
                 is_proof_subset,
                 platform_version,
             ),

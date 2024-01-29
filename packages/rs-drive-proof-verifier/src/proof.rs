@@ -281,6 +281,8 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
             &proof.grovedb_proof,
             key_request,
             false,
+            false,
+            false,
             platform_version,
         )
         .map_err(|e| Error::DriveError {

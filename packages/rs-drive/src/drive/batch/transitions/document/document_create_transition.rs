@@ -30,17 +30,16 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
 
         let storage_flags = StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
 
-        let mut drive_operations = vec![];
-        drive_operations.push(DocumentOperation(DocumentOperationType::AddDocument {
-            owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentOwnedInfo((document, Some(Cow::Owned(storage_flags)))),
-                owner_id: Some(owner_id.into_buffer()),
+        Ok(vec![DocumentOperation(
+            DocumentOperationType::AddDocument {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentOwnedInfo((document, Some(Cow::Owned(storage_flags)))),
+                    owner_id: Some(owner_id.into_buffer()),
+                },
+                contract_id: data_contract_id,
+                document_type_name: Cow::Owned(document_type_name),
+                override_document: false,
             },
-            contract_id: data_contract_id,
-            document_type_name: Cow::Owned(document_type_name),
-            override_document: false,
-        }));
-
-        Ok(drive_operations)
+        )])
     }
 }

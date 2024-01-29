@@ -2,7 +2,6 @@ use crate::errors::ProtocolError;
 use bincode;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-use thiserror::Error;
 
 use crate::consensus::state::state_error::StateError;
 
@@ -16,7 +15,9 @@ use crate::errors::consensus::basic::BasicError;
 
 // TODO It must be versioned as all other serializable types
 
-#[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone)]
+#[derive(
+    thiserror::Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone,
+)]
 #[platform_serialize(limit = 2000)]
 #[error(transparent)]
 pub enum ConsensusError {

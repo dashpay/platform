@@ -961,7 +961,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "dapi-grpc-macros",
  "platform-version",
@@ -969,14 +969,14 @@ dependencies = [
  "serde",
  "serde_bytes",
  "serde_json",
- "tenderdash-proto",
+ "tenderdash-proto 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci)",
  "tonic",
  "tonic-build",
 ]
 
 [[package]]
 name = "dapi-grpc-macros"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "dapi-grpc",
  "heck",
@@ -1021,7 +1021,7 @@ dependencies = [
 
 [[package]]
 name = "dash-platform-sdk"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "async-trait",
  "base64 0.21.5",
@@ -1117,7 +1117,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -1125,7 +1125,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1216,7 +1216,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "dpns-contract"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -1224,7 +1224,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1240,7 +1240,6 @@ dependencies = [
  "derive_more",
  "dpp",
  "ed25519-dalek",
- "enum-map",
  "env_logger 0.9.3",
  "getrandom",
  "hex",
@@ -1268,6 +1267,7 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "sha2",
+ "strum 0.25.0",
  "test-case",
  "thiserror",
  "tokio",
@@ -1276,7 +1276,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "anyhow",
  "base64 0.21.5",
@@ -1311,7 +1311,7 @@ dependencies = [
 
 [[package]]
 name = "drive-abci"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "atty",
  "base64 0.20.0",
@@ -1353,7 +1353,7 @@ dependencies = [
  "simple-signer",
  "strategy-tests",
  "tempfile",
- "tenderdash-abci",
+ "tenderdash-abci 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2)",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -1365,7 +1365,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "dapi-grpc",
  "dpp",
@@ -1373,7 +1373,7 @@ dependencies = [
  "hex",
  "serde",
  "serde_json",
- "tenderdash-abci",
+ "tenderdash-abci 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci)",
  "thiserror",
  "tracing",
 ]
@@ -1565,7 +1565,7 @@ checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 
 [[package]]
 name = "feature-flags-contract"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -1878,7 +1878,7 @@ dependencies = [
  "lazy_static",
  "num_cpus",
  "rocksdb",
- "strum",
+ "strum 0.24.1",
  "tempfile",
  "thiserror",
 ]
@@ -2288,7 +2288,7 @@ source = "git+https://github.com/fominok/jsonschema-rs?branch=feat-unevaluated-p
 dependencies = [
  "ahash 0.7.7",
  "anyhow",
- "base64 0.21.5",
+ "base64 0.13.1",
  "bytecount",
  "fancy-regex",
  "fraction",
@@ -2426,7 +2426,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -2910,7 +2910,7 @@ checksum = "26072860ba924cbfa98ea39c8c19b4dd6a4a25423dbdf219c1eca91aa0cf6964"
 
 [[package]]
 name = "platform-serialization"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "platform-version",
@@ -2918,7 +2918,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2928,7 +2928,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "base64 0.13.1",
  "bincode 2.0.0-rc.3",
@@ -2949,7 +2949,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value-convertible"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "quote",
  "syn 2.0.41",
@@ -2957,14 +2957,14 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "platform-versioning"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3443,7 +3443,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "backon",
  "chrono",
@@ -3879,7 +3879,7 @@ checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 
 [[package]]
 name = "simple-signer"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -3970,7 +3970,7 @@ dependencies = [
 
 [[package]]
 name = "strategy-tests"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dpp",
@@ -3997,7 +3997,16 @@ version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "063e6045c0e62079840579a7e47a355ae92f60eb74daaf156fb1e84ba164e63f"
 dependencies = [
- "strum_macros",
+ "strum_macros 0.24.3",
+]
+
+[[package]]
+name = "strum"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "290d54ea6f91c969195bdbcd7442c8c2a2ba87da8bf60a7ee86a235d4bc1e125"
+dependencies = [
+ "strum_macros 0.25.3",
 ]
 
 [[package]]
@@ -4011,6 +4020,19 @@ dependencies = [
  "quote",
  "rustversion",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.25.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23dc1fa9ac9c169a78ba62f0b841814b7abae11bdd047b9c58f893439e309ea0"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 2.0.41",
 ]
 
 [[package]]
@@ -4108,7 +4130,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-abci"
 version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#6ebfaa31052f7ad538d6589323e5daf7e5e55999"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2#6ebfaa31052f7ad538d6589323e5daf7e5e55999"
 dependencies = [
  "bytes",
  "futures",
@@ -4116,7 +4138,28 @@ dependencies = [
  "lhash",
  "prost",
  "semver",
- "tenderdash-proto",
+ "tenderdash-proto 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2)",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid 1.6.1",
+]
+
+[[package]]
+name = "tenderdash-abci"
+version = "0.14.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#b4df6543efb0457a477db30153131495da1b8bbb"
+dependencies = [
+ "bytes",
+ "futures",
+ "hex",
+ "lhash",
+ "prost",
+ "semver",
+ "tenderdash-proto 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci)",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -4129,7 +4172,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto"
 version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#6ebfaa31052f7ad538d6589323e5daf7e5e55999"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2#6ebfaa31052f7ad538d6589323e5daf7e5e55999"
 dependencies = [
  "bytes",
  "chrono",
@@ -4140,14 +4183,46 @@ dependencies = [
  "prost",
  "serde",
  "subtle-encoding",
- "tenderdash-proto-compiler",
+ "tenderdash-proto-compiler 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2)",
+ "time",
+]
+
+[[package]]
+name = "tenderdash-proto"
+version = "0.14.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#b4df6543efb0457a477db30153131495da1b8bbb"
+dependencies = [
+ "bytes",
+ "chrono",
+ "derive_more",
+ "flex-error",
+ "num-derive",
+ "num-traits",
+ "prost",
+ "serde",
+ "subtle-encoding",
+ "tenderdash-proto-compiler 0.14.0-dev.1 (git+https://github.com/dashpay/rs-tenderdash-abci)",
  "time",
 ]
 
 [[package]]
 name = "tenderdash-proto-compiler"
 version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#6ebfaa31052f7ad538d6589323e5daf7e5e55999"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v0.14.0-dev.2#6ebfaa31052f7ad538d6589323e5daf7e5e55999"
+dependencies = [
+ "fs_extra",
+ "prost-build",
+ "regex",
+ "tempfile",
+ "ureq",
+ "walkdir",
+ "zip",
+]
+
+[[package]]
+name = "tenderdash-proto-compiler"
+version = "0.14.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#b4df6543efb0457a477db30153131495da1b8bbb"
 dependencies = [
  "fs_extra",
  "prost-build",
@@ -4825,7 +4900,7 @@ checksum = "ed9d5b4305409d1fc9482fee2d7f9bcbf24b3972bf59817ef757e23982242a93"
 
 [[package]]
 name = "wasm-dpp"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5067,7 +5142,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-version = "0.25.19"
+version = "0.25.21"
 dependencies = [
  "num_enum",
  "platform-value",

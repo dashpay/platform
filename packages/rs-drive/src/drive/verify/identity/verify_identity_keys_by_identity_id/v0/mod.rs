@@ -1,4 +1,5 @@
-use crate::drive::identity::identity_key_tree_path;
+use crate::drive::balances::{balance_path, balance_path_vec};
+use crate::drive::identity::{identity_key_tree_path, identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 
 use crate::error::proof::ProofError;
@@ -12,7 +13,7 @@ use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 pub use dpp::prelude::{Identity, Revision};
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
-use grovedb::GroveDb;
+use grovedb::{GroveDb, PathQuery};
 use std::collections::BTreeMap;
 
 impl Drive {
@@ -41,28 +42,76 @@ impl Drive {
     pub(super) fn verify_identity_keys_by_identity_id_v0(
         proof: &[u8],
         key_request: IdentityKeysRequest,
+        with_revision: bool,
+        with_balance: bool,
         is_proof_subset: bool,
         _platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<PartialIdentity>), Error> {
         let identity_id = key_request.identity_id;
-        let path_query = key_request.into_path_query();
-        let (root_hash, proved_key_values) = if is_proof_subset {
+        let keys_path_query = key_request.into_path_query();
+        let mut path_queries = vec![&keys_path_query];
+
+        let revision_path_query = Drive::identity_revision_query(&identity_id);
+        let balance_path_query = Drive::balance_for_identity_id_query(identity_id);
+
+        if with_balance {
+            path_queries.push(&balance_path_query);
+        }
+        if with_revision {
+            path_queries.push(&revision_path_query);
+        }
+
+        let path_query = PathQuery::merge(path_queries)?;
+        let (root_hash, proved_values) = if is_proof_subset {
             GroveDb::verify_subset_query(proof, &path_query)?
         } else {
             GroveDb::verify_query(proof, &path_query)?
         };
-        let mut keys = BTreeMap::<KeyID, IdentityPublicKey>::new();
+
+        let mut loaded_public_keys = BTreeMap::<KeyID, IdentityPublicKey>::new();
+        let mut balance = None;
+        let mut revision = None;
+
         let identity_keys_path = identity_key_tree_path(identity_id.as_slice());
-        for proved_key_value in proved_key_values {
-            let (path, _key, maybe_element) = proved_key_value;
+        let identity_balance_path = balance_path();
+        let identity_path = identity_path_vec(&identity_id);
+
+        for proved_key_value in proved_values {
+            let (path, key, maybe_element) = proved_key_value;
             if path == identity_keys_path {
                 if let Some(element) = maybe_element {
                     let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
                     let key = IdentityPublicKey::deserialize_from_bytes(&item_bytes)?;
-                    keys.insert(key.id(), key);
+                    loaded_public_keys.insert(key.id(), key);
                 } else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
                         "we received an absence proof for a key but didn't request one".to_string(),
+                    )));
+                }
+            } else if path == identity_balance_path && key == identity_id {
+                if let Some(grovedb::Element::SumItem(identity_balance, _)) = maybe_element {
+                    balance = Some(identity_balance as u64);
+                } else {
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "balance proof must be an existing sum item".to_string(),
+                    )));
+                }
+            } else if path == identity_path
+                && key == [IdentityRootStructure::IdentityTreeRevision as u8]
+            {
+                if let Some(element) = maybe_element {
+                    let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
+                    revision = Some(Revision::from_be_bytes(
+                        item_bytes.as_slice().try_into().map_err(|_| {
+                            Error::GroveDB(grovedb::Error::WrongElementType(
+                                "expecting 8 bytes of data for revision",
+                            ))
+                        })?,
+                    ));
+                } else {
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "we received an absence proof for a revision but didn't request one"
+                            .to_string(),
                     )));
                 }
             } else {
@@ -71,17 +120,14 @@ impl Drive {
                 )));
             }
         }
-        let maybe_identity = if keys.is_empty() {
-            Ok::<Option<PartialIdentity>, Error>(None)
-        } else {
-            Ok(Some(PartialIdentity {
-                id: Identifier::from(identity_id),
-                balance: None,
-                revision: None,
-                loaded_public_keys: keys,
-                not_found_public_keys: Default::default(),
-            }))
-        }?;
+        let maybe_identity = Some(PartialIdentity {
+            id: Identifier::from(identity_id),
+            balance,
+            revision,
+            loaded_public_keys,
+            not_found_public_keys: Default::default(),
+        });
+
         Ok((root_hash, maybe_identity))
     }
 }

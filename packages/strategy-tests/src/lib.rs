@@ -81,7 +81,7 @@ pub mod transitions;
 ///
 /// # Note
 /// Ensure that when using or updating the `Strategy`, all associated operations, identities, and contracts are coherent with the intended workflow or simulation. Inconsistencies might lead to unexpected behaviors or simulation failures.
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Strategy {
     pub contracts_with_updates: Vec<(
         CreatedDataContract,
@@ -108,6 +108,18 @@ pub struct RandomDocumentQuery<'a> {
 #[derive(Clone, Debug, PartialEq)]
 pub enum LocalDocumentQuery<'a> {
     RandomDocumentQuery(RandomDocumentQuery<'a>)
+}
+
+impl Default for Strategy {
+    fn default() -> Self {
+        Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![],
+            start_identities: vec![],
+            identities_inserts: Frequency::default(),
+            signer: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Encode, Decode)]
@@ -1069,22 +1081,12 @@ impl Strategy {
 
                     // Generate state transition for identity transfer operation
                     OperationType::IdentityTransfer if current_identities.len() > 1 => {
-                        // choose 2 last identities
-                        let indices: Vec<usize> =
-                            vec![current_identities.len() - 2, current_identities.len() - 1];
-
-                        let owner = current_identities.get(indices[0]).unwrap();
-                        let recipient = current_identities.get(indices[1]).unwrap();
-
-                        info!("owner: {:?}", owner);
-                        info!("recipient: {:?}", recipient);
+                        let owner = &current_identities[0];
+                        let recipient = &current_identities[1];
 
                         let state_transition =
                             crate::transitions::create_identity_credit_transfer_transition(
-                                owner,
-                                recipient,
-                                signer,
-                                100,
+                                owner, recipient, signer, 1000,
                             );
                         operations.push(state_transition);
                     }
@@ -1205,6 +1207,8 @@ impl Strategy {
             );
             state_transitions.append(&mut contract_update_state_transitions);
         }
+
+        current_identities.append(&mut identities);
 
         (state_transitions, finalize_block_operations)
     }

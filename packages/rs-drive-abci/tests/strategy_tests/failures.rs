@@ -78,6 +78,7 @@ mod tests {
             }),
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -162,6 +163,7 @@ mod tests {
             }),
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -362,6 +364,7 @@ mod tests {
             }),
             query_testing: None,
             verify_state_transition_results: true,
+            ..Default::default()
         };
 
         let mut core_block_heights = vec![10, 11];
@@ -392,17 +395,17 @@ mod tests {
 
         let first_document_insert_result = &state_transitions_block_2
             .first()
-            .as_ref()
             .expect("expected a document insert")
             .1;
+
         assert_eq!(first_document_insert_result.code, 0);
 
         let second_document_insert_result = &state_transitions_block_2
             .get(1)
-            .as_ref()
-            .expect("expected a document insert")
+            .expect("expected an invalid state transition")
             .1;
 
-        assert_eq!(second_document_insert_result.code, 4009); // we expect an error
+        // Second document should fail with DuplicateUniqueIndexError
+        assert_eq!(second_document_insert_result.code, 4009);
     }
 }

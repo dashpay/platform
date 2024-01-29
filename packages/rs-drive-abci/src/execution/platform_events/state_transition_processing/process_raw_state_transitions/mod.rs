@@ -4,10 +4,9 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
-use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult;
+use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
@@ -43,7 +42,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-    ) -> Result<(FeeResult, Vec<(Vec<u8>, StateTransitionExecutionResult)>), Error> {
+    ) -> Result<StateTransitionsProcessingResult, Error> {
         match platform_version
             .drive_abci
             .methods

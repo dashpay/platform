@@ -525,10 +525,16 @@ pub fn create_identity_credit_transfer_transition(
     signer: &mut SimpleSigner,
     amount: u64,
 ) -> StateTransition {
+    info!("identity: {:?}", identity);
+    info!("recipient: {:?}", recipient);
+    info!("signer: {:?}", signer);
+
+
     let mut transition: StateTransition = IdentityCreditTransferTransitionV0 {
         identity_id: identity.id(),
         recipient_id: recipient.id(),
         amount,
+        revision: identity.revision() + 1,
         signature_public_key_id: 0,
         signature: Default::default(),
     }
@@ -542,6 +548,8 @@ pub fn create_identity_credit_transfer_transition(
         )
         .expect("expected to get a signing key");
 
+    info!("identity_public_key: {:?}", identity_public_key);
+
     transition
         .sign_external(
             identity_public_key,
@@ -549,6 +557,8 @@ pub fn create_identity_credit_transfer_transition(
             None::<GetDataContractSecurityLevelRequirementFn>,
         )
         .expect("expected to sign transfer");
+
+    info!("transition: {:?}", transition);
 
     transition
 }

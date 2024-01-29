@@ -1,6 +1,6 @@
 [package]
 name = "dash-platform-sdk"
-version = "0.25.19"
+version = "0.25.21"
 edition = "2021"
 
 [dependencies]

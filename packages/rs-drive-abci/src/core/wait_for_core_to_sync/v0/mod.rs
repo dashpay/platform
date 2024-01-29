@@ -14,8 +14,9 @@ pub fn wait_for_core_to_sync_v0<C: CoreRPCLike + Debug>(
     core_rpc: &C,
     cancel: CancellationToken,
 ) -> Result<(), Error> {
+    tracing::info!(?core_rpc, "waiting for core rpc to start");
+
     while !cancel.is_cancelled() {
-        tracing::debug!(?core_rpc, "waiting for core rpc to start");
         let mn_sync_status = match core_rpc.masternode_sync_status() {
             Ok(status) => status,
             Err(error) => {
