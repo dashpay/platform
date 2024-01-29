@@ -13,6 +13,7 @@ use dpp::version::PlatformVersion;
 use dpp::dashcore::bls_sig_utils::BLSSignature;
 use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::build_asset_unlock_tx;
+use tenderdash_abci::proto::abci::ExtendVoteExtension;
 use tenderdash_abci::{
     proto::{serializers::timestamp::ToMilis, types::BlockId as ProtoBlockId},
     signatures::SignBytes,
@@ -147,15 +148,36 @@ where
         }
 
         // Verify vote extensions
-        let received_withdrawals =
-            SignedWithdrawalTxs::from(&commit_info.threshold_vote_extensions);
+        // let received_withdrawals =
+        //     SignedWithdrawalTxs::from(&commit_info.threshold_vote_extensions);
+        let received_withdrawals = commit_info
+            .threshold_vote_extensions
+            .iter()
+            .map(|s| s.extension.clone())
+            .collect::<Vec<_>>();
 
-        let expected_withdrawals = block_execution_context.unsigned_withdrawal_transactions();
+        // TODO(Withdrawals): refactor once block execution context contains proper special transactions
+        let vote_extensions: Vec<ExtendVoteExtension> = block_execution_context
+            .unsigned_withdrawal_transactions()
+            .into();
+
+        let expected_withdrawals = vote_extensions
+            .iter()
+            .map(|s| s.extension.clone())
+            .collect::<Vec<_>>();
 
         if expected_withdrawals.ne(&received_withdrawals) {
             validation_result.add_error(AbciError::VoteExtensionMismatchReceived {
-                got: received_withdrawals.to_string(),
-                expected: expected_withdrawals.to_string(),
+                got: received_withdrawals
+                    .iter()
+                    .map(|hash| hex::encode(hash))
+                    .collect::<Vec<String>>()
+                    .join(","),
+                expected: expected_withdrawals
+                    .iter()
+                    .map(|hash| hex::encode(hash))
+                    .collect::<Vec<String>>()
+                    .join(","),
             });
 
             return Ok(validation_result.into());

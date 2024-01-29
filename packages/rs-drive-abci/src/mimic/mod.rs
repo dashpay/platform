@@ -30,6 +30,8 @@ use tenderdash_abci::proto::types::{
 use tenderdash_abci::signatures::SignBytes;
 use tenderdash_abci::{signatures::SignDigest, proto::version::Consensus, Application};
 use tenderdash_abci::proto::abci::tx_record::TxAction;
+use dpp::dashcore::consensus;
+use dpp::dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::build_asset_unlock_tx;
 use crate::mimic::test_quorum::TestQuorumInfo;
 
 /// Test quorum for mimic block execution
@@ -282,43 +284,27 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         let extensions = block_execution_context
             .unsigned_withdrawal_transactions
             .iter()
-            .map(|(tx_id, _)| {
+            .map(|(tx_id, tx_payload)| {
+                let tx = build_asset_unlock_tx(tx_payload).unwrap();
                 VoteExtension {
                     r#type: VoteExtensionType::ThresholdRecover as i32,
-                    extension: tx_id.to_byte_array().to_vec(),
+                    extension: tx.txid().to_byte_array().to_vec(),
                     sign_request_id: None,
-                    signature: vec![], //todo: signature
+                    signature: vec![0; 96], //todo: signature
                 }
             })
             .collect();
 
         //todo: tidy up and fix
-        // TODO(withdrawals): restore Dashcore transactions here
-        //let withdrawals = &block_execution_context.unsigned_withdrawal_transactions;
-        // .values()
-        // .map(|transaction| {
-        //     let AssetUnlockBaseTransactionInfo {
-        //         version,
-        //         lock_time,
-        //         output,
-        //         base_payload,
-        //     } = Decodable::consensus_decode(&mut transaction.reader()).expect("a");
-        //     dashcore::Transaction {
-        //         version,
-        //         lock_time,
-        //         input: vec![],
-        //         output,
-        //         special_transaction_payload: Some(AssetUnlockPayloadType(AssetUnlockPayload {
-        //             base: base_payload,
-        //             request_info: AssetUnlockRequestInfo {
-        //                 request_height: core_height,
-        //                 quorum_hash: current_quorum.quorum_hash,
-        //             },
-        //             quorum_sig: BLSSignature::from([0; 96]),
-        //         })),
-        //     }
-        // })
-        // .collect();
+        let withdrawals = block_execution_context
+            .unsigned_withdrawal_transactions
+            .iter()
+            .map(|(_, tx_payload)| {
+                let tx = build_asset_unlock_tx(tx_payload).unwrap();
+                let tx_bytes = consensus::serialize(&tx);
+                (tx.txid(), tx_bytes)
+            })
+            .collect();
 
         drop(guarded_block_execution_context);
 
@@ -460,7 +446,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         Ok(MimicExecuteBlockOutcome {
             state_transaction_results,
             app_version: APP_VERSION,
-            withdrawal_transactions: Default::default(),
+            withdrawal_transactions: withdrawals,
             validator_set_update,
             next_validator_set_hash,
             root_app_hash: app_hash

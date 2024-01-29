@@ -40,6 +40,7 @@ pub trait CoreRPCLike {
     fn get_asset_unlock_statuses(
         &self,
         indices: &Vec<u64>,
+        core_chain_locked_height: u32,
     ) -> Result<Vec<AssetUnlockStatusResult>, Error>;
 
     /// Get transaction
@@ -336,7 +337,10 @@ impl CoreRPCLike for DefaultCoreRPC {
     fn get_asset_unlock_statuses(
         &self,
         indices: &Vec<u64>,
+        core_chain_locked_height: u32,
     ) -> Result<Vec<AssetUnlockStatusResult>, Error> {
-        retry!(self.inner.get_asset_unlock_statuses(indices))
+        retry!(self
+            .inner
+            .get_asset_unlock_statuses(indices, core_chain_locked_height))
     }
 }

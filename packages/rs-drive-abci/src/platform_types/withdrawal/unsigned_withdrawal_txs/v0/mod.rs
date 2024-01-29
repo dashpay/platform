@@ -107,7 +107,8 @@ fn tx_id_and_bytes_to_extend_vote_extension(
 ) -> ExtendVoteExtension {
     let asset_unlock_tx = build_asset_unlock_tx(tx_bytes).unwrap();
     let request_id = make_extend_vote_request_id(&asset_unlock_tx);
-    let extension = tx_id.as_byte_array().to_vec();
+    // let extension = tx_id.as_byte_array().to_vec();
+    let extension = asset_unlock_tx.txid().as_byte_array().to_vec();
 
     ExtendVoteExtension {
         r#type: VoteExtensionType::ThresholdRecoverRaw as i32,
