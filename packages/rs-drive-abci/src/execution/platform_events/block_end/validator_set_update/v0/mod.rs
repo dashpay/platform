@@ -27,10 +27,7 @@ where
         let mut perform_rotation = false;
 
         if block_execution_context.block_state_info().height()
-            % self
-                .config
-                .execution
-                .validator_set_quorum_rotation_block_count as u64
+            % self.config.execution.validator_set_rotation_block_count as u64
             == 0
         {
             tracing::debug!(

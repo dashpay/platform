@@ -64,6 +64,10 @@ impl Frequency {
         }
     }
 
+    pub fn max_event_count(&self) -> u16 {
+        self.times_per_block_range.end
+    }
+
     pub fn pick_in_range(&self, rng: &mut impl Rng, range: Range<u16>) -> Vec<u16> {
         if !self.is_set() || range.is_empty() {
             return vec![];

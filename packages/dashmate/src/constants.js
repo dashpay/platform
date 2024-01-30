@@ -28,9 +28,11 @@ export const NODE_TYPE_MASTERNODE = 'masternode';
 export const NODE_TYPE_FULLNODE = 'fullnode';
 
 export const LLMQ_TYPE_TEST = 'llmq_test';
+export const LLMQ_TYPE_TEST_PLATFORM = 'llmq_test_platform';
 
 export const QUORUM_TYPES = {
   LLMQ_TYPE_TEST: 100,
+  LLMQ_TYPE_TEST_PLATFORM: 106,
 };
 
 export const MASTERNODE_COLLATERAL_AMOUNT = 1000;

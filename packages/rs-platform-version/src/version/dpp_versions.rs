@@ -29,6 +29,7 @@ pub struct IdentityTransitionVersions {
 pub struct IdentityTransitionAssetLockVersions {
     pub validate_asset_lock_transaction_structure: FeatureVersion,
     pub validate_instant_asset_lock_proof_structure: FeatureVersion,
+    pub minimal_asset_lock_value: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

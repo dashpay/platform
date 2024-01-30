@@ -36,7 +36,7 @@ use std::collections::BTreeMap;
 use tenderdash_abci::proto::abci::ResponsePrepareProposal;
 
 /// V0 of the Block execution context
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockExecutionContextV0 {
     /// Block info
     pub block_state_info: BlockStateInfo,

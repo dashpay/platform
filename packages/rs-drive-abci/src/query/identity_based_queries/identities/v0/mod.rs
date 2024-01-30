@@ -22,7 +22,7 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
-        let quorum_type = self.config.quorum_type() as u32;
+        let quorum_type = self.config.validator_set_quorum_type() as u32;
         let GetIdentitiesRequestV0 { ids, prove } = get_identities_request;
         let identity_ids = check_validation_result_with_data!(ids
             .into_iter()
@@ -50,11 +50,11 @@ impl<C> Platform<C> {
                             get_identities_response::get_identities_response_v0::Result::Proof(
                                 Proof {
                                     grovedb_proof: proof,
-                                    quorum_hash: state.last_quorum_hash().to_vec(),
+                                    quorum_hash: state.last_committed_quorum_hash().to_vec(),
                                     quorum_type,
-                                    block_id_hash: state.last_block_id_hash().to_vec(),
-                                    signature: state.last_block_signature().to_vec(),
-                                    round: state.last_block_round(),
+                                    block_id_hash: state.last_committed_block_id_hash().to_vec(),
+                                    signature: state.last_committed_block_signature().to_vec(),
+                                    round: state.last_committed_block_round(),
                                 },
                             ),
                         ),

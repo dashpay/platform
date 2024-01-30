@@ -190,7 +190,6 @@ mod tests {
     use dpp::util::cbor_serializer;
     use rand::Rng;
     use serde_json::json;
-    use tempfile::TempDir;
 
     use crate::common::setup_contract;
 
@@ -204,13 +203,13 @@ mod tests {
     use crate::drive::batch::DataContractOperationType::ApplyContract;
     use crate::drive::batch::DocumentOperationType::AddDocumentForContract;
     use crate::drive::batch::DriveOperation::{DataContractOperation, DocumentOperation};
-    use crate::drive::config::DriveConfig;
+
     use crate::drive::contract::paths::contract_root_path;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::drive::Drive;
-    use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
     #[test]
     fn test_add_dashpay_documents() {

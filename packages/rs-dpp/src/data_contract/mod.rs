@@ -42,7 +42,6 @@ pub use v0::*;
 use crate::data_contract::serialized_version::{
     DataContractInSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,
 };
-use crate::data_contract::v0::data_contract::DataContractV0;
 use crate::util::hash::hash_to_vec;
 
 use crate::version::{FeatureVersion, PlatformVersion};
@@ -265,7 +264,7 @@ mod tests {
     #[test]
     fn test_contract_serialization() {
         let platform_version = PlatformVersion::latest();
-        let data_contract = load_system_data_contract(Dashpay, platform_version.protocol_version)
+        let data_contract = load_system_data_contract(Dashpay, platform_version)
             .expect("expected dashpay contract");
         let platform_version = PlatformVersion::latest();
         let serialized = data_contract

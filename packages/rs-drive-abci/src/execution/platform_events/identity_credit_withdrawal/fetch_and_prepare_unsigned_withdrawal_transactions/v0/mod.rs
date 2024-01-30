@@ -10,7 +10,7 @@ use dpp::document::{Document, DocumentV0Setters};
 use dpp::version::PlatformVersion;
 
 use drive::dpp::system_data_contracts::withdrawals_contract;
-use drive::dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+use drive::dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
 use drive::dpp::util::hash;
 

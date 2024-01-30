@@ -1,10 +1,10 @@
 use crate::errors::RustConversionError;
-use crate::identity::state_transition::create_asset_lock_proof_from_wasm_instance;
+
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm;
 use crate::identity::IdentityPublicKeyWasm;
 use crate::utils::{generic_of_js_val, to_vec_of_platform_values};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
+
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::serialization::ValueConvertible;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;

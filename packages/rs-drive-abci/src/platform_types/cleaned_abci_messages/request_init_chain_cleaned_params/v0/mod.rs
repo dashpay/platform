@@ -34,6 +34,7 @@
 //!
 
 use crate::abci::AbciError;
+use dpp::util::deserializer::ProtocolVersion;
 use drive::dpp::identity::TimestampMillis;
 use serde::{Deserialize, Serialize};
 use tenderdash_abci::proto::abci::RequestInitChain;
@@ -51,6 +52,9 @@ pub struct RequestInitChainCleanedParams {
 
     /// Initial core chain lock height.
     pub initial_core_height: Option<u32>,
+
+    /// Initial protocol version
+    pub initial_protocol_version: ProtocolVersion,
 }
 
 impl TryFrom<RequestInitChain> for RequestInitChainCleanedParams {
@@ -67,10 +71,20 @@ impl TryFrom<RequestInitChain> for RequestInitChainCleanedParams {
             h => Some(h),
         };
 
+        let consensus_params = request.consensus_params.ok_or(AbciError::BadRequest(
+            "consensus params are required in init chain".to_string(),
+        ))?;
+
+        let tenderdash_abci::proto::types::VersionParams { app_version } =
+            consensus_params.version.ok_or(AbciError::BadRequest(
+                "consensus params version is required in init chain".to_string(),
+            ))?;
+
         Ok(Self {
             genesis_time,
             initial_height: request.initial_height as u64,
             initial_core_height,
+            initial_protocol_version: app_version as ProtocolVersion,
         })
     }
 }

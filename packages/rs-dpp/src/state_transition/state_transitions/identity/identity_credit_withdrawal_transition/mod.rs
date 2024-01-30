@@ -15,9 +15,10 @@ mod version;
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 
+use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
-use data_contracts::withdrawals_contract::document_types::withdrawal::properties::OUTPUT_SCRIPT;
+use data_contracts::withdrawals_contract::v1::document_types::withdrawal::properties::OUTPUT_SCRIPT;
 use derive_more::From;
 use fields::*;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
@@ -65,3 +66,5 @@ impl StateTransitionFieldTypes for IdentityCreditWithdrawalTransition {
         vec![SIGNATURE, OUTPUT_SCRIPT]
     }
 }
+
+impl OptionallyAssetLockProved for IdentityCreditWithdrawalTransition {}

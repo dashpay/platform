@@ -68,6 +68,11 @@ export default function getLocalConfigFactory(getBaseConfig) {
             validatorSet: {
               llmqType: 106,
             },
+            chainLock: {
+              llmqType: 100,
+              dkgInterval: 24,
+              llmqSize: 3,
+            },
           },
         },
       },

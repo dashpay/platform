@@ -3,9 +3,7 @@ use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 
 impl StateTransition {
-    pub fn deserialize_many(
-        raw_state_transitions: &Vec<Vec<u8>>,
-    ) -> Result<Vec<Self>, ProtocolError> {
+    pub fn deserialize_many(raw_state_transitions: &[Vec<u8>]) -> Result<Vec<Self>, ProtocolError> {
         raw_state_transitions
             .iter()
             .map(|raw_state_transition| Self::deserialize_from_bytes(raw_state_transition))
@@ -327,7 +325,7 @@ mod tests {
                     data_contract
                         .document_type_for_name(extended_document.document_type_name())
                         .unwrap(),
-                    extended_document.entropy().clone(),
+                    *extended_document.entropy(),
                 )
             })
             .collect::<Vec<_>>();

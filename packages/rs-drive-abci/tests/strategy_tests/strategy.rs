@@ -4,13 +4,13 @@ use crate::BlockHeight;
 use dashcore_rpc::dashcore;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::created_data_contract::CreatedDataContract;
+
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
-    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
+    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, OperationType,
 };
 
 use dpp::document::DocumentV0Getters;
@@ -50,7 +50,8 @@ use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+
+use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;
 use simple_signer::signer::SimpleSigner;
 
 #[derive(Clone, Debug, Default)]
@@ -154,20 +155,74 @@ pub struct MasternodeChanges {
     pub masternode_change_port_chance: Frequency,
 }
 
+#[derive(Clone, Debug, Default)]
+pub enum CoreHeightIncrease {
+    #[default]
+    NoCoreHeightIncrease,
+    RandomCoreHeightIncrease(Frequency),
+    KnownCoreHeightIncreases(Vec<u32>),
+}
+
+impl CoreHeightIncrease {
+    pub fn max_core_height(&self, block_count: u64, initial_core_height: u32) -> u32 {
+        match self {
+            NoCoreHeightIncrease => initial_core_height,
+            CoreHeightIncrease::RandomCoreHeightIncrease(frequency) => {
+                initial_core_height + frequency.max_event_count() as u32 * block_count as u32
+            }
+            CoreHeightIncrease::KnownCoreHeightIncreases(values) => {
+                values.last().copied().unwrap_or(initial_core_height)
+            }
+        }
+    }
+    pub fn average_core_height(&self, block_count: u64, initial_core_height: u32) -> u32 {
+        match self {
+            NoCoreHeightIncrease => initial_core_height,
+            CoreHeightIncrease::RandomCoreHeightIncrease(frequency) => {
+                initial_core_height + frequency.average_event_count() as u32 * block_count as u32
+            }
+            CoreHeightIncrease::KnownCoreHeightIncreases(values) => values
+                .get(values.len() / 2)
+                .copied()
+                .unwrap_or(initial_core_height),
+        }
+    }
+
+    pub fn add_events_if_hit(&mut self, core_height: u32, rng: &mut StdRng) -> u32 {
+        match self {
+            NoCoreHeightIncrease => 0,
+            CoreHeightIncrease::RandomCoreHeightIncrease(frequency) => {
+                core_height + frequency.events_if_hit(rng) as u32
+            }
+            CoreHeightIncrease::KnownCoreHeightIncreases(values) => {
+                if values.len() == 1 {
+                    *values.get(0).unwrap()
+                } else {
+                    values.pop().unwrap()
+                }
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct NetworkStrategy {
     pub strategy: Strategy,
     pub total_hpmns: u16,
     pub extra_normal_mns: u16,
-    pub quorum_count: u16,
+    pub validator_quorum_count: u16,
+    pub chain_lock_quorum_count: u16,
+    pub initial_core_height: u32,
     pub upgrading_info: Option<UpgradingInfo>,
-    pub core_height_increase: Frequency,
+    pub core_height_increase: CoreHeightIncrease,
     pub proposer_strategy: MasternodeListChangesStrategy,
     pub rotate_quorums: bool,
     pub failure_testing: Option<FailureStrategy>,
     pub query_testing: Option<QueryStrategy>,
     pub verify_state_transition_results: bool,
-    pub max_tx_bytes_per_block: i64,
+    pub max_tx_bytes_per_block: u64,
+    pub independent_process_proposal_verification: bool,
+    pub sign_chain_locks: bool,
 }
 
 impl Default for NetworkStrategy {
@@ -176,18 +231,19 @@ impl Default for NetworkStrategy {
             strategy: Default::default(),
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            initial_core_height: 1,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+            core_height_increase: NoCoreHeightIncrease,
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
             max_tx_bytes_per_block: 44800,
+            independent_process_proposal_verification: false,
+            sign_chain_locks: false,
         }
     }
 }
@@ -862,18 +918,9 @@ impl NetworkStrategy {
                         let owner = current_identities.get(indices[0]).unwrap();
                         let recipient = current_identities.get(indices[1]).unwrap();
 
-                        let fetched_owner_balance = platform
-                            .drive
-                            .fetch_identity_balance(owner.id().to_buffer(), None, platform_version)
-                            .expect("expected to be able to get identity")
-                            .expect("expected to get an identity");
-
                         let state_transition =
                             strategy_tests::transitions::create_identity_credit_transfer_transition(
-                                owner,
-                                recipient,
-                                signer,
-                                fetched_owner_balance - 100,
+                                owner, recipient, signer, 1000,
                             );
                         operations.push(state_transition);
                     }
@@ -909,9 +956,9 @@ impl NetworkStrategy {
             .expect("expected platform version");
         let identity_state_transitions =
             self.identity_state_transitions_for_block(block_info, signer, rng, platform_version);
-        let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
+        let (mut new_identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
-        current_identities.append(&mut identities);
+        current_identities.append(&mut new_identities);
 
         if block_info.height == 1 {
             // add contracts on block 1

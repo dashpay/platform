@@ -118,9 +118,10 @@ mod tests {
     #[test]
     fn test_add_and_remove_family_one_document_no_transaction() {
         let tmp_dir = TempDir::new().unwrap();
+
+        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
         let platform_version = PlatformVersion::latest();
-        let drive: Drive = Drive::open(tmp_dir, None, platform_version)
-            .expect("expected to open Drive successfully");
 
         drive
             .create_initial_state_structure(None, platform_version)

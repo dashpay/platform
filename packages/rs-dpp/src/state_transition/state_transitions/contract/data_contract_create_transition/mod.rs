@@ -27,6 +27,7 @@ use platform_versioning::PlatformVersioned;
 use serde::{Deserialize, Serialize};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
+use crate::identity::state_transition::OptionallyAssetLockProved;
 pub use v0::*;
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
@@ -146,6 +147,8 @@ impl DataContractCreateTransition {
     }
 }
 
+impl OptionallyAssetLockProved for DataContractCreateTransition {}
+
 #[cfg(test)]
 mod test {
     use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
@@ -155,7 +158,6 @@ mod test {
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
-    use crate::state_transition::state_transitions::common_fields::property_names;
     use crate::state_transition::traits::StateTransitionLike;
     use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
     use crate::tests::fixtures::get_data_contract_fixture;
@@ -185,7 +187,7 @@ mod test {
                     ),
                 ),
                 (
-                    property_names::ENTROPY,
+                    ENTROPY,
                     Value::Bytes32(created_data_contract.entropy_used().to_buffer()),
                 ),
                 (

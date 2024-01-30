@@ -53,7 +53,7 @@ where
             let quorum_hash = quorum_hash.expect("quorum hash is required to verify signature");
             let validation_result = received_withdrawals.verify_signatures(
                 &self.config.abci.chain_id,
-                self.config.quorum_type(),
+                self.config.validator_set_quorum_type(),
                 quorum_hash,
                 height,
                 round,

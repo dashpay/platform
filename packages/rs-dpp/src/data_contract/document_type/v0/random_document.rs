@@ -53,7 +53,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
     fn random_documents_with_params(
         &self,
         count: u32,
-        identities: &Vec<Identity>,
+        identities: &[Identity],
         time_ms: u64,
         document_field_fill_type: DocumentFieldFillType,
         document_field_fill_size: DocumentFieldFillSize,

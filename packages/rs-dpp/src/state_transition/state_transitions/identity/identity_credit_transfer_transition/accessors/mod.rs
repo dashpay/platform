@@ -1,5 +1,6 @@
 mod v0;
 
+use crate::prelude::Revision;
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use platform_value::Identifier;
 pub use v0::*;
@@ -44,6 +45,18 @@ impl IdentityCreditTransferTransitionAccessorsV0 for IdentityCreditTransferTrans
             IdentityCreditTransferTransition::V0(transition) => {
                 transition.recipient_id = recipient_id;
             }
+        }
+    }
+
+    fn set_revision(&mut self, revision: Revision) {
+        match self {
+            IdentityCreditTransferTransition::V0(transition) => transition.revision = revision,
+        }
+    }
+
+    fn revision(&self) -> Revision {
+        match self {
+            IdentityCreditTransferTransition::V0(transition) => transition.revision,
         }
     }
 }

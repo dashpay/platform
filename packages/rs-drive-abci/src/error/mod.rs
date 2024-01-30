@@ -3,6 +3,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::serialization::SerializationError;
 use crate::logging;
 use dashcore_rpc::Error as CoreRpcError;
+use dpp::bls_signatures::BlsError;
 use dpp::platform_value::Error as ValueError;
 use dpp::version::PlatformVersionError;
 use drive::dpp::ProtocolError;
@@ -36,6 +37,9 @@ pub enum Error {
     /// Core RPC Error
     #[error("core rpc error: {0}")]
     CoreRpc(#[from] CoreRpcError),
+    /// BLS Error
+    #[error("BLS error: {0}")]
+    BLSError(#[from] BlsError),
     /// Serialization Error
     #[error("serialization: {0}")]
     Serialization(#[from] SerializationError),

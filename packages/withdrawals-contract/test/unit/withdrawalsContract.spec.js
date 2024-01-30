@@ -4,7 +4,7 @@ const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/gener
 
 const { expect } = require('chai');
 const crypto = require('crypto');
-const withdrawalContractDocumentsSchema = require('../../schema/withdrawals-documents.json');
+const withdrawalContractDocumentsSchema = require('../../schema/v1/withdrawals-documents.json');
 
 const expectJsonSchemaError = (validationResult, errorCount = 1) => {
   const errors = validationResult.getErrors();

@@ -25,3 +25,6 @@ pub(in crate::execution) mod withdrawals;
 
 /// Events happening what starting to process a block
 pub(in crate::execution) mod block_start;
+
+/// Verify the chain lock
+pub(in crate::execution) mod core_chain_lock;

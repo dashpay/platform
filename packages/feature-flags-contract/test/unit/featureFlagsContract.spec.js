@@ -4,7 +4,7 @@ const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/gener
 
 const { expect } = require('chai');
 const crypto = require('crypto');
-const featureFlagsContractDocumentsSchema = require('../../schema/feature-flags-documents.json');
+const featureFlagsContractDocumentsSchema = require('../../schema/v1/feature-flags-documents.json');
 
 const expectJsonSchemaError = (validationResult, errorCount = 1) => {
   const errors = validationResult.getErrors();

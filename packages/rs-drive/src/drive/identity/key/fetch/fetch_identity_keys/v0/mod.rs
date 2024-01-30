@@ -2,7 +2,7 @@ use crate::drive::identity::key::fetch::KeyRequestType::{
     AllKeys, ContractBoundKey, ContractDocumentTypeBoundKey, SearchKey, SpecificKeys,
 };
 use crate::drive::identity::key::fetch::{
-    IdentityKeysRequest, IdentityPublicKeyResult, KeyKindRequestType, KeyRequestType,
+    IdentityKeysRequest, IdentityPublicKeyResult, KeyKindRequestType,
 };
 use crate::drive::Drive;
 use crate::error::Error;

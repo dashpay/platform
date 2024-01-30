@@ -78,7 +78,7 @@ impl Drive {
                 };
             }
         };
-        if proved_key_values.len() == 0 {
+        if proved_key_values.is_empty() {
             return Err(Error::Proof(ProofError::WrongElementCount {
                 expected: 1,
                 got: proved_key_values.len(),

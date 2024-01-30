@@ -326,17 +326,9 @@ impl QueryStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
-    use crate::query::QueryStrategy;
-    use crate::strategy::{FailureStrategy, MasternodeListChangesStrategy, NetworkStrategy};
-    use dashcore_rpc::dashcore::hashes::Hash;
-    use dashcore_rpc::dashcore::BlockHash;
-    use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
-    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-    use strategy_tests::operations::DocumentAction::DocumentActionReplace;
-    use strategy_tests::operations::{
-        DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
-    };
+    use crate::execution::run_chain_for_strategy;
+
+    use crate::strategy::NetworkStrategy;
 
     use dapi_grpc::platform::v0::get_epochs_info_request::{GetEpochsInfoRequestV0, Version};
     use dapi_grpc::platform::v0::{
@@ -344,24 +336,22 @@ mod tests {
     };
     use dpp::block::epoch::EpochIndex;
     use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
-    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-    use dpp::data_contract::document_type::random_document::{
-        DocumentFieldFillSize, DocumentFieldFillType,
-    };
-    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    use dpp::serialization::PlatformDeserializable;
-    use dpp::tests::json_document::json_document_to_created_contract;
-    use dpp::util::hash::hash_to_hex_string;
+
     use dpp::version::PlatformVersion;
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
-    use drive_abci::logging::LogLevel;
+
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use drive_abci::rpc::core::QuorumListExtendedInfo;
+
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
-    use itertools::Itertools;
+
     use strategy_tests::Strategy;
-    use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
+
+    use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::{BlockHash, ChainLock};
     use tenderdash_abci::proto::types::CoreChainLock;
     use tenderdash_abci::Application;
 
@@ -404,12 +394,13 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.5),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -419,10 +410,12 @@ mod tests {
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+                validator_set_rotation_block_count: 100,
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
@@ -433,16 +426,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -515,12 +499,13 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.5),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -530,10 +515,12 @@ mod tests {
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+                validator_set_rotation_block_count: 100,
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
@@ -544,16 +531,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -627,12 +605,13 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.5),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -642,10 +621,12 @@ mod tests {
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+                validator_set_rotation_block_count: 100,
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
@@ -656,16 +637,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -691,7 +663,7 @@ mod tests {
             .read()
             .expect("expected to read state");
         let protocol_version = platform_state.current_protocol_version_in_consensus();
-        let current_epoch = platform_state.epoch_ref().index;
+        let current_epoch = platform_state.last_committed_block_epoch_ref().index;
         drop(platform_state);
         let platform_version = PlatformVersion::get(protocol_version)
             .expect("expected to get current platform version");

@@ -3,8 +3,8 @@ mod v0;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
+use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
@@ -40,7 +40,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-    ) -> Result<StateTransitionExecutionResult, Error> {
+    ) -> Result<EventExecutionResult, Error> {
         match platform_version
             .drive_abci
             .methods

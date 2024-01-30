@@ -10,7 +10,7 @@ use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use drive::grovedb::Transaction;
 
 use dpp::system_data_contracts::withdrawals_contract;
-use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
@@ -209,6 +209,8 @@ mod tests {
                     current_validator_set_quorum_hash: QuorumHash::all_zeros(),
                     next_validator_set_quorum_hash: None,
                     validator_sets: Default::default(),
+                    chain_lock_validating_quorums: Default::default(),
+                    previous_height_chain_lock_validating_quorums: None,
                     full_masternode_list: Default::default(),
                     hpmn_masternode_list: Default::default(),
                     genesis_block_info: None,
@@ -219,11 +221,9 @@ mod tests {
             .into(),
         );
 
-        let data_contract = load_system_data_contract(
-            SystemDataContract::Withdrawals,
-            platform_version.protocol_version,
-        )
-        .expect("to load system data contract");
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, &platform_version)
+                .expect("to load system data contract");
 
         setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 

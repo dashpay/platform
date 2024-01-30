@@ -2,7 +2,6 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore_rpc_json::Bip9SoftforkStatus;
 
 impl<C> Platform<C>
 where
@@ -45,7 +44,7 @@ where
         let v20_fork = fork_info.height.unwrap();
 
         if let Some(requested) = requested {
-            let best = self.core_rpc.get_best_chain_lock()?.core_block_height;
+            let best = self.core_rpc.get_best_chain_lock()?.block_height;
 
             tracing::trace!(
                 requested,

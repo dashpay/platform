@@ -1,5 +1,3 @@
-use dashcore_rpc::dashcore::hashes::Hash;
-
 use dpp::block::epoch::Epoch;
 
 use dpp::validation::SimpleValidationResult;
@@ -126,7 +124,7 @@ where
                 block_header.core_chain_locked_height,
                 block_state_info.height(),
                 block_state_info.round(),
-                block_state_info.block_hash().map(|a| hex::encode(a)).unwrap_or("None".to_string()),
+                block_state_info.block_hash().map(hex::encode).unwrap_or("None".to_string()),
                 block_state_info.core_chain_locked_height()
             )));
             return Ok(validation_result.into());
@@ -152,7 +150,7 @@ where
         {
             // Verify commit
 
-            let quorum_type = self.config.quorum_type();
+            let quorum_type = self.config.validator_set_quorum_type();
             let commit = Commit::new_from_cleaned(
                 commit_info.clone(),
                 block_id,

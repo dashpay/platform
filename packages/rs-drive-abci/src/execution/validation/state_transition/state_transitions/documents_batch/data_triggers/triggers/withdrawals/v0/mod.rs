@@ -15,7 +15,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::DocumentV0Getters;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
-use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -202,11 +202,9 @@ mod tests {
     fn can_serialize_and_deserialize_withdrawal() {
         let platform_version = PlatformVersion::first();
 
-        let data_contract = load_system_data_contract(
-            SystemDataContract::Withdrawals,
-            platform_version.protocol_version,
-        )
-        .expect("to load system data contract");
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, &platform_version)
+                .expect("to load system data contract");
         let owner_id = data_contract.owner_id();
 
         let document_type = data_contract
@@ -257,11 +255,9 @@ mod tests {
             .current_platform_version()
             .expect("should return a platform version");
 
-        let data_contract = load_system_data_contract(
-            SystemDataContract::Withdrawals,
-            platform_version.protocol_version,
-        )
-        .expect("to load system data contract");
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, &platform_version)
+                .expect("to load system data contract");
         let owner_id = data_contract.owner_id();
 
         let document_type = data_contract
