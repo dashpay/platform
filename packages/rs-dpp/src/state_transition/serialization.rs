@@ -308,6 +308,8 @@ mod tests {
     #[test]
     fn document_batch_transition_10_created_documents_ser_de() {
         let platform_version = PlatformVersion::latest();
+
+        let mut nonces = BTreeMap::new();
         let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
             .data_contract_owned();
         let documents = get_extended_documents_fixture_with_owner_id_from_contract(
@@ -329,8 +331,10 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
-        let transitions =
-            get_document_transitions_fixture([(DocumentTransitionActionType::Create, documents)]);
+        let transitions = get_document_transitions_fixture(
+            [(DocumentTransitionActionType::Create, documents)],
+            &mut nonces,
+        );
         let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
             owner_id: data_contract.owner_id(),
             transitions,

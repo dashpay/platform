@@ -7,6 +7,7 @@ use crate::data_contract::DataContract;
 use crate::document::errors::DocumentError;
 use crate::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
 use chrono::Utc;
+use std::collections::BTreeMap;
 
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::version::PlatformVersion;
@@ -176,6 +177,7 @@ impl SpecializedDocumentFactoryV0 {
                 Vec<(Document, DocumentTypeRef<'a>, Bytes32)>,
             ),
         >,
+        nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
         let documents: Vec<(
@@ -210,13 +212,14 @@ impl SpecializedDocumentFactoryV0 {
             .into_iter()
             .map(|(action, documents)| match action {
                 DocumentTransitionActionType::Create => {
-                    Self::document_create_transitions(documents, platform_version)
+                    Self::document_create_transitions(documents, nonce_counter, platform_version)
                 }
                 DocumentTransitionActionType::Delete => Self::document_delete_transitions(
                     documents
                         .into_iter()
                         .map(|(document, document_type, _)| (document, document_type))
                         .collect(),
+                    nonce_counter,
                     platform_version,
                 ),
                 DocumentTransitionActionType::Replace => Self::document_replace_transitions(
@@ -224,6 +227,7 @@ impl SpecializedDocumentFactoryV0 {
                         .into_iter()
                         .map(|(document, document_type, _)| (document, document_type))
                         .collect(),
+                    nonce_counter,
                     platform_version,
                 ),
             })
@@ -340,6 +344,7 @@ impl SpecializedDocumentFactoryV0 {
     //
     fn document_create_transitions(
         documents: Vec<(Document, DocumentTypeRef, Bytes32)>,
+        nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
@@ -360,21 +365,30 @@ impl SpecializedDocumentFactoryV0 {
                         .into());
                     }
                 }
-                Ok(DocumentCreateTransition::from_document(
+                let nonce = nonce_counter
+                    .entry((document.owner_id(), document_type.data_contract_id()))
+                    .or_default();
+
+                let transition = DocumentCreateTransition::from_document(
                     document,
                     document_type,
                     entropy.to_buffer(),
+                    *nonce,
                     platform_version,
                     None,
                     None,
-                )?
-                .into())
+                )?;
+
+                *nonce += 1;
+
+                Ok(transition.into())
             })
             .collect()
     }
 
     fn document_replace_transitions(
         documents: Vec<(Document, DocumentTypeRef)>,
+        nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
@@ -396,14 +410,22 @@ impl SpecializedDocumentFactoryV0 {
                 document.set_revision(document.revision().map(|revision| revision + 1));
                 document.set_updated_at(Some(Utc::now().timestamp_millis() as TimestampMillis));
 
-                Ok(DocumentReplaceTransition::from_document(
+                let nonce = nonce_counter
+                    .entry((document.owner_id(), document_type.data_contract_id()))
+                    .or_default();
+
+                let transition = DocumentReplaceTransition::from_document(
                     document,
                     document_type,
+                    *nonce,
                     platform_version,
                     None,
                     None,
-                )?
-                .into())
+                )?;
+
+                *nonce += 1;
+
+                Ok(transition.into())
             })
             .collect()
         // let mut raw_transitions = vec![];
@@ -449,6 +471,7 @@ impl SpecializedDocumentFactoryV0 {
 
     fn document_delete_transitions(
         documents: Vec<(Document, DocumentTypeRef)>,
+        nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
@@ -466,14 +489,21 @@ impl SpecializedDocumentFactoryV0 {
                     }
                     .into());
                 };
-                Ok(DocumentDeleteTransition::from_document(
+                let nonce = nonce_counter
+                    .entry((document.owner_id(), document_type.data_contract_id()))
+                    .or_default();
+                let transition = DocumentDeleteTransition::from_document(
                     document,
                     document_type,
+                    *nonce,
                     platform_version,
                     None,
                     None,
-                )?
-                .into())
+                )?;
+
+                *nonce += 1;
+
+                Ok(transition.into())
             })
             .collect()
     }

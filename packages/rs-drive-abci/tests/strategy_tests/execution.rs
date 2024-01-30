@@ -767,6 +767,7 @@ pub(crate) fn start_chain_for_strategy(
             quorums,
             current_quorum_hash,
             current_proposer_versions: None,
+            current_identity_nonce_counter: Default::default(),
             start_time_ms: 1681094380000,
             current_time_ms: 1681094380000,
         },
@@ -792,6 +793,7 @@ pub(crate) fn continue_chain_for_strategy(
         quorums,
         mut current_quorum_hash,
         current_proposer_versions,
+        mut current_identity_nonce_counter,
         start_time_ms,
         mut current_time_ms,
     } = chain_execution_parameters;
@@ -869,6 +871,7 @@ pub(crate) fn continue_chain_for_strategy(
                 platform,
                 &block_info,
                 &mut current_identities,
+                &mut current_identity_nonce_counter,
                 &mut signer,
                 &mut rng,
             );
@@ -1075,6 +1078,7 @@ pub(crate) fn continue_chain_for_strategy(
         quorums,
         current_quorum_hash,
         current_proposer_versions: proposer_versions,
+        identity_contract_nonce_counter: current_identity_nonce_counter,
         end_epoch_index,
         end_time_ms: current_time_ms,
         strategy,

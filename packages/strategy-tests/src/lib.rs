@@ -31,6 +31,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashSet};
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::identifier::Identifier;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::BinaryData;
 use dpp::ProtocolError;
@@ -562,6 +563,7 @@ impl Strategy {
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
+        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
@@ -604,10 +606,17 @@ impl Strategy {
                                     } else {
                                         None
                                     };
+
+                                let identity_contract_nonce = contract_nonce_counter
+                                    .entry((identity.id(), contract.id()))
+                                    .or_default();
+                                *identity_contract_nonce += 1;
+
                                 let document_create_transition: DocumentCreateTransition =
                                     DocumentCreateTransitionV0 {
                                         base: DocumentBaseTransitionV0 {
                                             id: document.id(),
+                                            identity_contract_nonce: *identity_contract_nonce,
                                             document_type_name: document_type.name().clone(),
                                             data_contract_id: contract.id(),
                                         }
@@ -713,10 +722,17 @@ impl Strategy {
                                     } else {
                                         None
                                     };
+
+                                let identity_contract_nonce = contract_nonce_counter
+                                    .entry((identity.id(), contract.id()))
+                                    .or_default();
+                                *identity_contract_nonce += 1;
+
                                 let document_create_transition: DocumentCreateTransition =
                                     DocumentCreateTransitionV0 {
                                         base: DocumentBaseTransitionV0 {
                                             id: document.id(),
+                                            identity_contract_nonce: *identity_contract_nonce,
                                             document_type_name: document_type.name().clone(),
                                             data_contract_id: contract.id(),
                                         }
@@ -808,10 +824,18 @@ impl Strategy {
                                 .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
+                            let identity_contract_nonce = contract_nonce_counter
+                                .get_mut(&(identity.id, contract.id()))
+                                .expect(
+                                    "the identity should already have a nonce for that contract",
+                                );
+                            *identity_contract_nonce += 1;
+
                             let document_delete_transition: DocumentDeleteTransition =
                                 DocumentDeleteTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
                                         id: document.id(),
+                                        identity_contract_nonce: *identity_contract_nonce,
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),
                                     }
@@ -895,10 +919,18 @@ impl Strategy {
                                 .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
+                            let identity_contract_nonce = contract_nonce_counter
+                                .get_mut(&(identity.id, contract.id()))
+                                .expect(
+                                    "the identity should already have a nonce for that contract",
+                                );
+                            *identity_contract_nonce += 1;
+
                             let document_replace_transition: DocumentReplaceTransition =
                                 DocumentReplaceTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
                                         id: document.id(),
+                                        identity_contract_nonce: *identity_contract_nonce,
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),
                                     }
@@ -1086,6 +1118,7 @@ impl Strategy {
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
+        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
@@ -1108,6 +1141,7 @@ impl Strategy {
                     block_info,
                     current_identities,
                     signer,
+                    contract_nonce_counter,
                     rng,
                     platform_version,
                 );

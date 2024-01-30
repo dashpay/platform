@@ -61,6 +61,7 @@ pub mod prelude {
     pub use crate::validation::ConsensusValidationResult;
     pub type TimestampMillis = u64;
     pub type Revision = u64;
+    pub type IdentityContractNonce = u64;
 }
 
 pub use bincode;

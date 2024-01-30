@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 
 use dpp::document::document_factory::DocumentFactory;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use wasm_bindgen::prelude::*;
 
@@ -107,7 +107,11 @@ impl DocumentFactoryWASM {
     pub fn create_state_transition(
         &self,
         documents: &JsValue,
+        nonce_counter_value: &JsValue, //IdentityID/ContractID -> nonce
     ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
+        // todo transform nonce counter
+        let mut nonce_counter = BTreeMap::new();
+
         let documents_by_action = extract_documents_by_action(documents)?;
 
         let documents: Vec<(
@@ -134,7 +138,10 @@ impl DocumentFactoryWASM {
             })
             .collect();
 
-        let batch_transition = self.0.create_state_transition(documents).with_js_error()?;
+        let batch_transition = self
+            .0
+            .create_state_transition(documents, &mut nonce_counter)
+            .with_js_error()?;
 
         Ok(batch_transition.into())
     }

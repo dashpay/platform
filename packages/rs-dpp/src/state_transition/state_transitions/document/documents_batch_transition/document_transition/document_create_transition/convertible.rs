@@ -1,6 +1,6 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::prelude::DataContract;
+use crate::prelude::{DataContract, IdentityContractNonce};
 use crate::state_transition::data_contract_update_transition::IDENTIFIER_FIELDS;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
 use crate::state_transition::documents_batch_transition::document_create_transition::v0::BINARY_FIELDS;

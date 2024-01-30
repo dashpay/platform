@@ -1,6 +1,7 @@
 use platform_version::version::{FeatureVersion, PlatformVersion};
 use crate::data_contract::document_type::{DocumentTypeRef};
 use crate::document::{Document};
+use crate::prelude::IdentityContractNonce;
 use crate::ProtocolError;
 use crate::state_transition::documents_batch_transition::document_transition::{DocumentReplaceTransition};
 use crate::state_transition::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
@@ -9,6 +10,7 @@ impl DocumentReplaceTransition {
     pub fn from_document(
         document: Document,
         document_type: DocumentTypeRef,
+        identity_contract_nonce: IdentityContractNonce,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
         base_feature_version: Option<FeatureVersion>,
@@ -24,6 +26,7 @@ impl DocumentReplaceTransition {
             0 => Ok(DocumentReplaceTransitionV0::from_document(
                 document,
                 document_type,
+                identity_contract_nonce,
                 platform_version,
                 base_feature_version,
             )?

@@ -2,6 +2,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::identity::signer::Signer;
 use crate::identity::{IdentityPublicKey, SecurityLevel};
+use crate::prelude::IdentityContractNonce;
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::{
@@ -20,6 +21,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         document_type: DocumentTypeRef,
         entropy: [u8; 32],
         identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityContractNonce,
         signer: &S,
         platform_version: &PlatformVersion,
         batch_feature_version: Option<FeatureVersion>,
@@ -32,6 +34,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         document: Document,
         document_type: DocumentTypeRef,
         identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityContractNonce,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,

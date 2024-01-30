@@ -380,6 +380,9 @@ mod test {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
+
+        let mut nonce_counter = BTreeMap::new();
+
         let state_read_guard = platform.state.read().unwrap();
 
         let platform_ref = PlatformStateRef {
@@ -411,10 +414,13 @@ mod test {
         let document_type = data_contract
             .document_type_for_name("domain")
             .expect("expected to get domain document type");
-        let transitions = get_document_transitions_fixture([(
-            DocumentTransitionActionType::Create,
-            vec![(document, document_type, Bytes32::default())],
-        )]);
+        let transitions = get_document_transitions_fixture(
+            [(
+                DocumentTransitionActionType::Create,
+                vec![(document, document_type, Bytes32::default())],
+            )],
+            &mut nonce_counter,
+        );
         let first_transition = transitions.get(0).expect("transition should be present");
 
         let document_create_transition = first_transition

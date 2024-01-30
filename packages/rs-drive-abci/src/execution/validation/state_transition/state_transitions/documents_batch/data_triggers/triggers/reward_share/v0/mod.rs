@@ -232,6 +232,7 @@ mod test {
         document_type_name: String,
         documents: Vec<Document>,
         document_create_transition: DocumentCreateTransitionAction,
+        nonce_counter: BTreeMap<(Identifier, Identifier), u64>,
     }
 
     fn setup_test(platform_state: &mut PlatformStateV0) -> TestData {
@@ -294,14 +295,19 @@ mod test {
             },
         });
 
+        let mut nonce_counter = BTreeMap::new();
+
         let (documents, data_contract) = get_masternode_reward_shares_documents_fixture(1);
         let document_type = data_contract
             .document_type_for_name("rewardShare")
             .expect("expected the rewards document type");
-        let document_transitions = get_document_transitions_fixture([(
-            DocumentTransitionActionType::Create,
-            vec![(documents[0].clone(), document_type, Bytes32::default())],
-        )]);
+        let document_transitions = get_document_transitions_fixture(
+            [(
+                DocumentTransitionActionType::Create,
+                vec![(documents[0].clone(), document_type, Bytes32::default())],
+            )],
+            &mut nonce_counter,
+        );
 
         let document_create_transition = document_transitions[0]
             .as_transition_create()
@@ -315,6 +321,7 @@ mod test {
             document_create_transition: DocumentCreateTransitionAction::from_document_create_transition_with_contract_lookup(document_create_transition, |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::masternode_rewards_contract_fixture(platform_state.current_protocol_version_in_consensus)))
             }).expect("expected to create action"),
+            nonce_counter,
         }
     }
 

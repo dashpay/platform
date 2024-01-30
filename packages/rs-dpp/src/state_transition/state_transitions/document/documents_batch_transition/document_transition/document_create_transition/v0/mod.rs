@@ -15,6 +15,8 @@ use crate::identity::TimestampMillis;
 
 use crate::{data_contract::DataContract, errors::ProtocolError};
 
+use crate::prelude::IdentityContractNonce;
+use crate::state_transition::documents_batch_transition;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::{
     DocumentBaseTransitionV0, DocumentTransitionObjectLike,
 };
@@ -132,10 +134,14 @@ impl DocumentCreateTransitionV0 {
         mut map: BTreeMap<String, Value>,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
+        let identity_contract_nonce = map
+            .remove_integer(documents_batch_transition::document_base_transition::property_names::IDENTITY_CONTRACT_NONCE)
+            .map_err(ProtocolError::ValueError)?;
         Ok(Self {
             base: DocumentBaseTransition::V0(DocumentBaseTransitionV0::from_value_map_consume(
                 &mut map,
                 data_contract,
+                identity_contract_nonce,
             )?),
             entropy: map
                 .remove_hash256_bytes(property_names::ENTROPY)
@@ -280,6 +286,7 @@ mod test {
             "id" : id,
             "$type" : "test",
             "$dataContractId" : data_contract_id,
+            "$identityContractNonce": 0u64,
             "revision" : 1u32,
             "alphaBinary" : alpha_binary,
             "alphaIdentifier" : alpha_identifier,
@@ -311,7 +318,7 @@ mod test {
     }
 
     #[test]
-    fn covert_to_object_from_json_value_with_dynamic_binary_paths() {
+    fn convert_to_object_from_json_value_with_dynamic_binary_paths() {
         let data_contract = data_contract_with_dynamic_properties();
         let alpha_value = vec![10_u8; 32];
         let id = vec![11_u8; 32];
@@ -324,6 +331,7 @@ mod test {
             "$id" : id,
             "$type" : "test",
             "$dataContractId" : data_contract_id,
+            "$identityContractNonce": 0u64,
             "revision" : 1,
             "alphaBinary" : alpha_value,
             "alphaIdentifier" : alpha_value,

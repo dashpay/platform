@@ -100,6 +100,7 @@ mod tests {
                     current_quorum_hash,
                     current_proposer_versions,
                     end_time_ms,
+                    identity_contract_nonce_counter,
                     ..
                 } = run_chain_for_strategy(
                     &mut platform,
@@ -171,6 +172,7 @@ mod tests {
                     quorums,
                     current_quorum_hash,
                     end_time_ms,
+                    identity_contract_nonce_counter,
                     ..
                 } = continue_chain_for_strategy(
                     abci_app,
@@ -182,6 +184,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions.clone()),
+                        current_identity_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -244,6 +247,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
+                        current_identity_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -366,6 +370,7 @@ mod tests {
                     current_quorum_hash,
                     current_proposer_versions,
                     end_time_ms,
+                    identity_contract_nonce_counter,
                     ..
                 } = run_chain_for_strategy(
                     &mut platform,
@@ -434,6 +439,7 @@ mod tests {
                     quorums,
                     current_quorum_hash,
                     end_time_ms,
+                    identity_contract_nonce_counter,
                     ..
                 } = continue_chain_for_strategy(
                     abci_app,
@@ -445,6 +451,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions.clone()),
+                        current_identity_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -507,6 +514,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
+                        current_identity_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -631,6 +639,7 @@ mod tests {
                     current_quorum_hash,
                     current_proposer_versions,
                     end_time_ms,
+                    identity_contract_nonce_counter,
                     ..
                 } = run_chain_for_strategy(
                     &mut platform,
@@ -694,7 +703,9 @@ mod tests {
                     proposers,
                     quorums,
                     current_quorum_hash,
+
                     end_time_ms,
+                    identity_contract_nonce_counter,
                     ..
                 } = continue_chain_for_strategy(
                     abci_app,
@@ -706,6 +717,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions.clone()),
+                        current_identity_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -770,6 +782,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
+                        current_identity_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -890,6 +903,7 @@ mod tests {
                     current_quorum_hash,
                     current_proposer_versions,
                     end_time_ms,
+                    identity_contract_nonce_counter,
                     ..
                 } = run_chain_for_strategy(
                     &mut platform,
@@ -943,7 +957,9 @@ mod tests {
                     proposers,
                     quorums,
                     current_quorum_hash,
+
                     end_time_ms,
+                    identity_contract_nonce_counter,
                     ..
                 } = continue_chain_for_strategy(
                     abci_app,
@@ -955,6 +971,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
+                        current_identity_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -1048,7 +1065,9 @@ mod tests {
                     quorums,
                     current_quorum_hash,
                     current_proposer_versions,
+
                     end_time_ms,
+                    identity_contract_nonce_counter,
                     ..
                 } = continue_chain_for_strategy(
                     abci_app,
@@ -1060,6 +1079,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: None, //restart the proposer versions
+                        current_identity_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -1123,6 +1143,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
+                        current_identity_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -1251,6 +1272,7 @@ mod tests {
                     quorums,
                     current_quorum_hash,
                     end_time_ms,
+                    identity_contract_nonce_counter,
                     ..
                 } = run_chain_for_strategy(&mut platform, 1400, strategy, config.clone(), 15);
                 {
@@ -1348,6 +1370,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: None,
+                        current_identity_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },

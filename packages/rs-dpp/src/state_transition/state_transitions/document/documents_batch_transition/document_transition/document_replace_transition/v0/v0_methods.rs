@@ -3,11 +3,12 @@ use platform_value::Value;
 use std::collections::BTreeMap;
 
 use crate::identity::TimestampMillis;
-use crate::prelude::Revision;
+use crate::prelude::{IdentityContractNonce, Revision};
 
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 
 use crate::state_transition::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
+use crate::state_transition::documents_batch_transition::DocumentReplaceTransition;
 
 pub trait DocumentReplaceTransitionV0Methods {
     /// Returns a reference to the `base` field of the `DocumentReplaceTransitionV0`.
