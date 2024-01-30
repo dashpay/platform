@@ -1,5 +1,6 @@
 import lodash from 'lodash';
 import { Listr } from 'listr2';
+import {NETWORK_LOCAL} from "../../constants.js";
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -37,7 +38,7 @@ export default function stopNodeTaskFactory(
       },
       {
         title: 'Check node is participating in DKG',
-        skip: (ctx) => ctx.isForce,
+        skip: (ctx) => ctx.isForce || config.get('network') === NETWORK_LOCAL,
         task: async (ctx, task) => {
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
