@@ -15,7 +15,6 @@ export default async function register(
   await this.initialize();
 
   const { client } = this;
-  console.log('Register');
 
   const account = await client.getWalletAccount();
 
