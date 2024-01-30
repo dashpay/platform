@@ -5,7 +5,6 @@ use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::version::PlatformVersion;
 
-use drive::dpp::util::hash;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
 use drive::grovedb::Transaction;
 
@@ -13,7 +12,6 @@ use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
-use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::execution::types::block_state_info::v0::{
     BlockStateInfoV0Getters, BlockStateInfoV0Methods,
 };
@@ -35,23 +33,6 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        // TODO: Use drive.cache.system_data_contracts.withdrawals
-
-        let data_contract_id = withdrawals_contract::ID;
-
-        let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info_and_fee(
-            data_contract_id.to_buffer(),
-            None,
-            true,
-            Some(transaction),
-            platform_version,
-        )?
-        else {
-            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "can't fetch withdrawal data contract",
-            )));
-        };
-
         let mut documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
             Some(transaction),
@@ -120,11 +101,14 @@ where
             &mut drive_operations,
         );
 
+        let cache = self.drive.cache.read().unwrap();
+
         self.drive.add_update_multiple_documents_operations(
             &documents,
-            &contract_fetch_info.contract,
-            contract_fetch_info
-                .contract
+            &cache.system_data_contracts.withdrawals,
+            cache
+                .system_data_contracts
+                .withdrawals
                 .document_type_for_name(withdrawal::NAME)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -135,6 +119,7 @@ where
             &platform_version.drive,
         )?;
 
+        // TODO: Use number of added transactions
         if let Some(index) = last_transaction_index {
             self.drive
                 .add_update_withdrawal_index_counter_operation(index + 1, &mut drive_operations);

@@ -35,23 +35,6 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        // TODO: Use drive.cache.system_data_contracts.withdrawals_contract
-
-        let data_contract_id = withdrawals_contract::ID;
-
-        let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info_and_fee(
-            data_contract_id.to_buffer(),
-            None,
-            true,
-            Some(transaction),
-            platform_version,
-        )?
-        else {
-            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "can't fetch withdrawal data contract",
-            )));
-        };
-
         let mut broadcasted_withdrawal_documents =
             self.drive.fetch_withdrawal_documents_by_status(
                 WithdrawalStatus::BROADCASTED.into(),
@@ -132,11 +115,14 @@ where
             return Ok(());
         }
 
+        let cache = self.drive.cache.read().unwrap();
+
         self.drive.add_update_multiple_documents_operations(
             &documents_to_update,
-            &contract_fetch_info.contract,
-            contract_fetch_info
-                .contract
+            &cache.system_data_contracts.withdrawals,
+            cache
+                .system_data_contracts
+                .withdrawals
                 .document_type_for_name(withdrawal::NAME)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
