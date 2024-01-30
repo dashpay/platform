@@ -525,13 +525,33 @@ export default {
                   additionalProperties: false,
                   required: ['llmqType'],
                 },
+                chainLock: {
+                  type: 'object',
+                  properties: {
+                    llmqType: {
+                      type: 'number',
+                      // https://github.com/dashpay/dashcore-lib/blob/843176fed9fc81feae43ccf319d99e2dd942fe1f/lib/constants/index.js#L50-L99
+                      enum: [1, 2, 3, 4, 5, 6, 100, 101, 102, 103, 104, 105, 106, 107],
+                    },
+                    llmqSize: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    dkgInterval: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['llmqType', 'llmqSize', 'dkgInterval'],
+                },
                 epochTime: {
                   type: 'integer',
                   minimum: 180,
                 },
               },
               additionalProperties: false,
-              required: ['docker', 'logs', 'validatorSet', 'epochTime'],
+              required: ['docker', 'logs', 'validatorSet', 'chainLock', 'epochTime'],
             },
             tenderdash: {
               type: 'object',

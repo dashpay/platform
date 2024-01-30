@@ -25,7 +25,7 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
-        let quorum_type = self.config.quorum_type() as u32;
+        let quorum_type = self.config.validator_set_quorum_type() as u32;
         let GetProtocolVersionUpgradeVoteStatusRequestV0 {
             start_pro_tx_hash,
             count,
@@ -71,11 +71,11 @@ impl<C> Platform<C> {
                             get_protocol_version_upgrade_vote_status_response::get_protocol_version_upgrade_vote_status_response_v0::Result::Proof(
                                 Proof {
                                     grovedb_proof: proof,
-                                    quorum_hash: state.last_quorum_hash().to_vec(),
+                                    quorum_hash: state.last_committed_quorum_hash().to_vec(),
                                     quorum_type,
-                                    block_id_hash: state.last_block_id_hash().to_vec(),
-                                    signature: state.last_block_signature().to_vec(),
-                                    round: state.last_block_round(),
+                                    block_id_hash: state.last_committed_block_id_hash().to_vec(),
+                                    signature: state.last_committed_block_signature().to_vec(),
+                                    round: state.last_committed_block_round(),
                                 },
                             ),
                         ),

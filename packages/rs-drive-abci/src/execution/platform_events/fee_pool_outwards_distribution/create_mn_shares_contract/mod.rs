@@ -20,11 +20,9 @@ impl<C> Platform<C> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> DataContract {
-        let contract = load_system_data_contract(
-            SystemDataContract::MasternodeRewards,
-            platform_version.protocol_version,
-        )
-        .expect("should load masternode reward contract");
+        let contract =
+            load_system_data_contract(SystemDataContract::MasternodeRewards, &platform_version)
+                .expect("should load masternode reward contract");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 

@@ -1,6 +1,6 @@
 use crate::state_transition_action::identity::identity_credit_withdrawal::v0::IdentityCreditWithdrawalTransitionActionV0;
 use dpp::data_contracts::withdrawals_contract;
-use dpp::data_contracts::withdrawals_contract::document_types::withdrawal;
+use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::document::{Document, DocumentV0};
 use dpp::platform_value::platform_value;
 use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;

@@ -14,7 +14,7 @@ use derive_more::From;
 use tenderdash_abci::proto::abci::ResponsePrepareProposal;
 
 /// The versioned block execution context
-#[derive(Debug, From)]
+#[derive(Debug, From, Clone)]
 pub enum BlockExecutionContext {
     /// Version 0
     V0(v0::BlockExecutionContextV0),

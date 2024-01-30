@@ -372,7 +372,7 @@ mod test {
         let path = tempdir.join("db");
         fs::create_dir(&path).expect("create db dir");
 
-        let drive = Drive::open(&path, None).expect("open drive");
+        let (drive, _) = Drive::open(&path, None).expect("open drive");
 
         let platform_version = PlatformVersion::latest();
 

@@ -1191,9 +1191,8 @@ mod tests {
             platform_version,
         );
 
-        let dpns_contract =
-            load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)
-                .expect("data contract");
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("data contract");
 
         let document_op_1 = DocumentOp {
             contract: dpns_contract.clone(),

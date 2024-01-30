@@ -1,4 +1,5 @@
 use crate::error::PlatformVersionError;
+use crate::version::contracts::SystemDataContractVersions;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::DriveVersion;
@@ -48,6 +49,7 @@ pub struct PlatformVersion {
     pub drive_abci: DriveAbciVersion,
     pub abci_structure: AbciStructureVersion,
     pub platform_architecture: PlatformArchitectureVersion,
+    pub system_data_contracts: SystemDataContractVersions,
 }
 
 pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[PLATFORM_V1];

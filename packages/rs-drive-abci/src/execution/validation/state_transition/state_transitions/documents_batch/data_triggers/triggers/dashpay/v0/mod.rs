@@ -10,7 +10,8 @@ use dpp::ProtocolError;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
-use dpp::system_data_contracts::dashpay_contract::document_types::contact_request::properties::{CORE_HEIGHT_CREATED_AT, TO_USER_ID};
+use dpp::system_data_contracts::dashpay_contract::v1::document_types::contact_request::properties
+::{CORE_HEIGHT_CREATED_AT, TO_USER_ID};
 use dpp::version::PlatformVersion;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -77,7 +78,7 @@ pub fn create_contact_request_data_trigger_v0(
         }
 
         if let Some(core_height_created_at) = maybe_core_height_created_at {
-            let core_chain_locked_height = context.platform.state.core_height();
+            let core_chain_locked_height = context.platform.state.last_committed_core_height();
 
             let height_window_start = core_chain_locked_height.saturating_sub(BLOCKS_SIZE_WINDOW);
             let height_window_end = core_chain_locked_height.saturating_add(BLOCKS_SIZE_WINDOW);

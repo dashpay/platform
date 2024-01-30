@@ -1,3 +1,4 @@
+pub use crate::drive::cache::system_contracts_cache::SystemDataContracts;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
@@ -16,6 +17,9 @@ use platform_version::version::drive_versions::DriveVersion;
 #[cfg(any(feature = "full", feature = "verify"))]
 use std::sync::Arc;
 
+#[cfg(feature = "full")]
+mod system_contracts_cache;
+
 /// Drive cache struct
 #[cfg(feature = "full")]
 pub struct DriveCache {
@@ -25,6 +29,8 @@ pub struct DriveCache {
     pub genesis_time_ms: Option<TimestampMillis>,
     /// Lazy loaded counter of votes to upgrade protocol version
     pub protocol_versions_counter: ProtocolVersionsCache,
+    /// Versioned system data contracts
+    pub system_data_contracts: SystemDataContracts,
 }
 
 /// ProtocolVersion cache that handles both global and block data

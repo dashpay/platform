@@ -51,6 +51,7 @@ use dpp::state_transition::documents_batch_transition::document_transition::{Doc
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 
+use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;
 use simple_signer::signer::SimpleSigner;
 
 #[derive(Clone, Debug, Default)]
@@ -154,20 +155,74 @@ pub struct MasternodeChanges {
     pub masternode_change_port_chance: Frequency,
 }
 
+#[derive(Clone, Debug, Default)]
+pub enum CoreHeightIncrease {
+    #[default]
+    NoCoreHeightIncrease,
+    RandomCoreHeightIncrease(Frequency),
+    KnownCoreHeightIncreases(Vec<u32>),
+}
+
+impl CoreHeightIncrease {
+    pub fn max_core_height(&self, block_count: u64, initial_core_height: u32) -> u32 {
+        match self {
+            NoCoreHeightIncrease => initial_core_height,
+            CoreHeightIncrease::RandomCoreHeightIncrease(frequency) => {
+                initial_core_height + frequency.max_event_count() as u32 * block_count as u32
+            }
+            CoreHeightIncrease::KnownCoreHeightIncreases(values) => {
+                values.last().copied().unwrap_or(initial_core_height)
+            }
+        }
+    }
+    pub fn average_core_height(&self, block_count: u64, initial_core_height: u32) -> u32 {
+        match self {
+            NoCoreHeightIncrease => initial_core_height,
+            CoreHeightIncrease::RandomCoreHeightIncrease(frequency) => {
+                initial_core_height + frequency.average_event_count() as u32 * block_count as u32
+            }
+            CoreHeightIncrease::KnownCoreHeightIncreases(values) => values
+                .get(values.len() / 2)
+                .copied()
+                .unwrap_or(initial_core_height),
+        }
+    }
+
+    pub fn add_events_if_hit(&mut self, core_height: u32, rng: &mut StdRng) -> u32 {
+        match self {
+            NoCoreHeightIncrease => 0,
+            CoreHeightIncrease::RandomCoreHeightIncrease(frequency) => {
+                core_height + frequency.events_if_hit(rng) as u32
+            }
+            CoreHeightIncrease::KnownCoreHeightIncreases(values) => {
+                if values.len() == 1 {
+                    *values.get(0).unwrap()
+                } else {
+                    values.pop().unwrap()
+                }
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct NetworkStrategy {
     pub strategy: Strategy,
     pub total_hpmns: u16,
     pub extra_normal_mns: u16,
-    pub quorum_count: u16,
+    pub validator_quorum_count: u16,
+    pub chain_lock_quorum_count: u16,
+    pub initial_core_height: u32,
     pub upgrading_info: Option<UpgradingInfo>,
-    pub core_height_increase: Frequency,
+    pub core_height_increase: CoreHeightIncrease,
     pub proposer_strategy: MasternodeListChangesStrategy,
     pub rotate_quorums: bool,
     pub failure_testing: Option<FailureStrategy>,
     pub query_testing: Option<QueryStrategy>,
     pub verify_state_transition_results: bool,
-    pub max_tx_bytes_per_block: i64,
+    pub max_tx_bytes_per_block: u64,
+    pub independent_process_proposal_verification: bool,
+    pub sign_chain_locks: bool,
 }
 
 impl Default for NetworkStrategy {
@@ -176,18 +231,19 @@ impl Default for NetworkStrategy {
             strategy: Default::default(),
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            initial_core_height: 1,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+            core_height_increase: NoCoreHeightIncrease,
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
             max_tx_bytes_per_block: 44800,
+            independent_process_proposal_verification: false,
+            sign_chain_locks: false,
         }
     }
 }

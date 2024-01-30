@@ -2,7 +2,7 @@ const { expect } = require('chai');
 const crypto = require('crypto');
 const { DashPlatformProtocol, JsonSchemaError } = require('@dashevo/wasm-dpp');
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
-const schema = require('../../schema/dashpay.schema.json');
+const schema = require('../../schema/v1/dashpay.schema.json');
 
 const whitepaperMasternodeText = 'Full nodes are servers running on a P2P network that allow peers to use them to receive updates about the events on the network. These nodes utilize significant amounts of traffic and other resources that incur a substantial cost. As a result, a steady decrease in the amount of these nodes has been observed for some time on the Bitcoin network and as a result, block propagation times have been upwards of 40 seconds. Many solutions have been proposed such as a new reward scheme by Microsoft Research and the Bitnodes incentive program';
 const encoded32Chars = '4fafc98bbfe597f7ba2c9f767d52036d';
