@@ -19,10 +19,17 @@ export default function updateNodeFactory(getServiceList, docker) {
 
     return Promise.all(
       lodash.uniqBy(services, 'image')
-        .map(async ({ name, image, title }) => new Promise((resolve, reject) => {
+        .map(async ({ name, image, title }) => new Promise((resolve) => {
           docker.pull(image, (err, stream) => {
             if (err) {
-              reject(err);
+              if (process.env.DEBUG) {
+                // eslint-disable-next-line no-console
+                console.error(`Failed to update ${name} service, image ${image}, error: ${err}`);
+              }
+
+              resolve({
+                name, title, image, updated: false,
+              });
             } else {
               let updated = null;
 
@@ -41,7 +48,16 @@ export default function updateNodeFactory(getServiceList, docker) {
                   updated = true;
                 }
               });
-              stream.on('error', reject);
+              stream.on('error', () => {
+                if (process.env.DEBUG) {
+                  // eslint-disable-next-line no-console
+                  console.error(`Failed to update ${name} service, image ${image}, error: ${err}`);
+                }
+
+                resolve({
+                  name, title, image, updated: false,
+                });
+              });
               stream.on('end', () => resolve({
                 name, title, image, updated,
               }));
