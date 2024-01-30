@@ -53,6 +53,11 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
             validatorSet: {
               llmqType: 6,
             },
+            chainLock: {
+              llmqType: 1,
+              dkgInterval: 24,
+              llmqSize: 50,
+            },
           },
           tenderdash: {
             p2p: {

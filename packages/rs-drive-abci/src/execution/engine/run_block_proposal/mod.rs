@@ -23,6 +23,7 @@ where
     /// # Arguments
     ///
     /// * `block_proposal` - The block proposal to be processed.
+    /// * `known_from_us` - Do we know that we made this block proposal?
     /// * `transaction` - The transaction associated with the block proposal.
     ///
     /// # Returns
@@ -40,6 +41,7 @@ where
     pub fn run_block_proposal(
         &self,
         block_proposal: block_proposal::v0::BlockProposal,
+        known_from_us: bool,
         transaction: &Transaction,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
@@ -57,6 +59,7 @@ where
         {
             0 => self.run_block_proposal_v0(
                 block_proposal,
+                known_from_us,
                 epoch_info.into(),
                 transaction,
                 platform_version,

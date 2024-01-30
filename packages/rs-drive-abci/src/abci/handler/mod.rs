@@ -56,6 +56,7 @@ use tenderdash_abci::proto::abci::{
     ResponseFinalizeBlock, ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal,
     ResponseQuery, TxRecord,
 };
+use tenderdash_abci::proto::types::CoreChainLock;
 
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
@@ -95,7 +96,7 @@ where
         }
 
         let state_app_hash = state_guard
-            .last_block_app_hash()
+            .last_committed_block_app_hash()
             .map(|app_hash| app_hash.to_vec())
             .unwrap_or_default();
 
@@ -104,7 +105,7 @@ where
         let response = proto::ResponseInfo {
             data: "".to_string(),
             app_version: latest_platform_version.protocol_version as u64,
-            last_block_height: state_guard.last_block_height() as i64,
+            last_block_height: state_guard.last_committed_block_height() as i64,
             version: env!("CARGO_PKG_VERSION").to_string(),
             last_block_app_hash: state_app_hash.clone(),
         };
@@ -115,7 +116,7 @@ where
             block_version = request.block_version,
             p2p_version = request.p2p_version,
             app_hash = hex::encode(state_app_hash),
-            height = state_guard.last_block_height(),
+            height = state_guard.last_committed_block_height(),
             "Handshake with consensus engine",
         );
 
@@ -179,9 +180,15 @@ where
         // propose one
         // This is done before all else
 
+        let state = self.platform.state.read().unwrap();
+
+        let last_committed_core_height = state.last_committed_core_height();
+
         let core_chain_lock_update = match self.platform.core_rpc.get_best_chain_lock() {
             Ok(latest_chain_lock) => {
-                if request.core_chain_locked_height < latest_chain_lock.core_block_height {
+                if state.last_committed_block_info().is_none()
+                    || latest_chain_lock.block_height > last_committed_core_height
+                {
                     Some(latest_chain_lock)
                 } else {
                     None
@@ -189,6 +196,8 @@ where
             }
             Err(_) => None,
         };
+
+        drop(state);
 
         // Filter out transactions exceeding max_block_size
         let mut transactions_exceeding_max_block_size = Vec::new();
@@ -217,10 +226,12 @@ where
             // todo: find a way to re-enable this without destroying CI
             tracing::debug!(
                 "propose chain lock update to height {} at block {}",
-                core_chain_lock_update.core_block_height,
+                core_chain_lock_update.block_height,
                 request.height
             );
-            block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
+            block_proposal.core_chain_locked_height = core_chain_lock_update.block_height;
+        } else {
+            block_proposal.core_chain_locked_height = last_committed_core_height;
         }
 
         // Prepare transaction
@@ -245,7 +256,7 @@ where
         // Running the proposal executes all the state transitions for the block
         let run_result = self
             .platform
-            .run_block_proposal(block_proposal, transaction)?;
+            .run_block_proposal(block_proposal, true, transaction)?;
 
         if !run_result.is_valid() {
             // This is a system error, because we are proposing
@@ -319,7 +330,11 @@ where
             tx_results,
             app_hash: app_hash.to_vec(),
             tx_records,
-            core_chain_lock_update,
+            core_chain_lock_update: core_chain_lock_update.map(|chain_lock| CoreChainLock {
+                core_block_hash: chain_lock.block_hash.to_byte_array().to_vec(),
+                core_block_height: chain_lock.block_height,
+                signature: chain_lock.signature.to_bytes().to_vec(),
+            }),
             validator_set_update,
             // TODO: implement consensus param updates
             consensus_param_updates: None,
@@ -362,7 +377,7 @@ where
 
         let mut drop_block_execution_context = false;
         if let Some(block_execution_context) = block_execution_context_guard.as_mut() {
-            // We are already in a block
+            // We are already in a block, or in init chain.
             // This only makes sense if we were the proposer unless we are at a future round
             if block_execution_context.block_state_info().round() != (request.round as u32) {
                 // We were not the proposer, and we should process something new
@@ -501,20 +516,16 @@ where
         };
         let transaction = transaction_guard.as_ref().unwrap();
 
-        // We can take the core chain lock update here because it won't be used anywhere else
-        if let Some(_c) = request.core_chain_lock_update.take() {
-            //todo: if there is a core chain lock update we need to validate it
-        }
-
         // Running the proposal executes all the state transitions for the block
-        let run_result = self
-            .platform
-            .run_block_proposal((&request).try_into()?, transaction)?;
+        let run_result =
+            self.platform
+                .run_block_proposal((&request).try_into()?, false, transaction)?;
 
         if !run_result.is_valid() {
             // This was an error running this proposal, tell tenderdash that the block isn't valid
             let response = ResponseProcessProposal {
                 status: proto::response_process_proposal::ProposalStatus::Reject.into(),
+                app_hash: [0; 32].to_vec(), // we must send 32 bytes
                 ..Default::default()
             };
 
@@ -848,7 +859,7 @@ where
                 key: vec![],
                 value: vec![],
                 proof_ops: None,
-                height: self.platform.state.read().unwrap().height() as i64,
+                height: self.platform.state.read().unwrap().last_committed_height() as i64,
                 codespace: "".to_string(),
             };
 
@@ -884,7 +895,7 @@ where
             key: vec![],
             value: data,
             proof_ops: None,
-            height: self.platform.state.read().unwrap().height() as i64,
+            height: self.platform.state.read().unwrap().last_committed_height() as i64,
             codespace: "".to_string(),
         };
 

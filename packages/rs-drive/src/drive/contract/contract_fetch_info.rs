@@ -10,6 +10,7 @@ use dpp::tests::fixtures::get_dpns_data_contract_fixture;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::tests::fixtures::get_masternode_reward_shares_data_contract_fixture;
 use grovedb_costs::OperationCost;
+use platform_version::version::PlatformVersion;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 /// DataContract and fetch information
@@ -65,11 +66,15 @@ impl DataContractFetchInfo {
 
     /// This should ONLY be used for tests
     pub fn withdrawals_contract_fixture(protocol_version: u32) -> Self {
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected to get version");
+
         let contract = load_system_data_contract(
             data_contracts::SystemDataContract::Withdrawals,
-            protocol_version,
+            platform_version,
         )
         .expect("to load system data contract");
+
         DataContractFetchInfo {
             contract,
             storage_flags: None,

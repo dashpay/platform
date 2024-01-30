@@ -1974,7 +1974,7 @@ mod tests {
     fn setup_family_contract() -> (Drive, DataContract) {
         let tmp_dir = TempDir::new().unwrap();
 
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         let platform_version = PlatformVersion::latest();
 

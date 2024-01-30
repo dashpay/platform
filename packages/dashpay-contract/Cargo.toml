@@ -7,5 +7,7 @@ rust-version = "1.73"
 license = "MIT"
 
 [dependencies]
+platform-version = { path = "../rs-platform-version" }
+thiserror = "1.0.56"
 serde_json = { version = "1.0" }
 platform-value = { path = "../rs-platform-value" }

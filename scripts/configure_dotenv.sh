@@ -50,7 +50,7 @@ NETWORK=regtest" >>"${SDK_ENV_FILE_PATH}"
 #EOF
 
 # DRIVE:
-cp "${DRIVE_PATH}"/.env.example "${DRIVE_PATH}"/.env
+cp "${DRIVE_PATH}"/.env.local "${DRIVE_PATH}"/.env
 
 # WALLET-LIB:
 WALLET_LIB_ENV_FILE_PATH=${WALLET_LIB_PATH}/.env

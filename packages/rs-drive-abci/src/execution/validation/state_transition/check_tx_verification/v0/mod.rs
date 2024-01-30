@@ -146,7 +146,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 let execution_event = ExecutionEvent::create_from_state_transition_action(
                     action,
                     maybe_identity,
-                    platform.state.epoch_ref(),
+                    platform.state.last_committed_block_epoch_ref(),
                     state_transition_execution_context,
                     platform_version,
                 )?;
@@ -206,7 +206,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 let execution_event = ExecutionEvent::create_from_state_transition_action(
                     action,
                     maybe_identity,
-                    platform.state.epoch_ref(),
+                    platform.state.last_committed_block_epoch_ref(),
                     state_transition_execution_context,
                     platform_version,
                 )?;

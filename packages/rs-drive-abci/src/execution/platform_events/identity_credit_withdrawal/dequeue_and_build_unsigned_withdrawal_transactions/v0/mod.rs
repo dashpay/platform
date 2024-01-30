@@ -11,13 +11,12 @@ use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::version::PlatformVersion;
 
 use drive::dpp::system_data_contracts::withdrawals_contract;
-use drive::dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+use drive::dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
 use drive::drive::batch::DriveOperation;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
 use drive::query::TransactionArg;
 
-use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use crate::rpc::core::CoreHeight;
 use crate::{

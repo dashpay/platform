@@ -1,3 +1,4 @@
+use crate::version::contracts::SystemDataContractVersions;
 use crate::version::dpp_versions::{
     ContractVersions, CostVersions, DPPValidationVersions, DPPVersion, DataContractMethodVersions,
     DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions,
@@ -12,9 +13,10 @@ use crate::version::dpp_versions::{
 use crate::version::drive_abci_versions::{
     DriveAbciAssetLockValidationVersions, DriveAbciBlockEndMethodVersions,
     DriveAbciBlockFeeProcessingMethodVersions, DriveAbciBlockStartMethodVersions,
-    DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreSubsidyMethodVersions,
-    DriveAbciDocumentsStateTransitionValidationVersions, DriveAbciEngineMethodVersions,
-    DriveAbciEpochMethodVersions, DriveAbciFeePoolInwardsDistributionMethodVersions,
+    DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreChainLockMethodVersionsAndConstants,
+    DriveAbciCoreSubsidyMethodVersions, DriveAbciDocumentsStateTransitionValidationVersions,
+    DriveAbciEngineMethodVersions, DriveAbciEpochMethodVersions,
+    DriveAbciFeePoolInwardsDistributionMethodVersions,
     DriveAbciFeePoolOutwardsDistributionMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
@@ -501,6 +503,14 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             core_subsidy: DriveAbciCoreSubsidyMethodVersions {
                 epoch_core_reward_credits_for_distribution: 0,
             },
+            core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants {
+                choose_quorum: 0,
+                verify_chain_lock: 0,
+                verify_chain_lock_locally: 0,
+                verify_chain_lock_through_core: 0,
+                make_sure_core_is_synced_to_chain_lock: 0,
+                recent_block_count_amount: 2,
+            },
             fee_pool_inwards_distribution: DriveAbciFeePoolInwardsDistributionMethodVersions {
                 add_distribute_block_fees_into_pools_operations: 0,
                 add_distribute_storage_fee_to_epochs_operations: 0,
@@ -913,5 +923,12 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 random_public_and_private_key_data: 0,
             },
         },
+    },
+    system_data_contracts: SystemDataContractVersions {
+        withdrawals: 1,
+        dpns: 1,
+        dashpay: 1,
+        masternode_reward_shares: 1,
+        feature_flags: 1,
     },
 };

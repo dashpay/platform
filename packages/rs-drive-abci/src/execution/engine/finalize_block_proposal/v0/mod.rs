@@ -166,7 +166,7 @@ where
             // Verify commit
 
             let quorum_public_key = &state_cache.current_validator_set()?.threshold_public_key();
-            let quorum_type = self.config.quorum_type();
+            let quorum_type = self.config.validator_set_quorum_type();
             let commit = Commit::new_from_cleaned(
                 commit_info.clone(),
                 block_id,

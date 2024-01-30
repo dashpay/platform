@@ -3,7 +3,6 @@ use crate::errors::consensus::basic::{
     UnsupportedProtocolVersionErrorWasm, UnsupportedVersionErrorWasm,
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
-use std::ops::Deref;
 
 use crate::errors::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm,

@@ -7,6 +7,8 @@ rust-version = "1.73"
 license = "MIT"
 
 [dependencies]
+thiserror = "1.0.56"
+platform-version = { path = "../rs-platform-version" }
 serde_json = { version = "1.0" }
 withdrawals-contract = { path = "../withdrawals-contract" }
 masternode-reward-shares-contract = { path = "../masternode-reward-shares-contract" }
