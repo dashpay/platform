@@ -5,6 +5,13 @@ import { Platform } from '../../Platform';
 import { signStateTransition } from '../../signStateTransition';
 import { nearestGreaterFibonacci } from '../../../../../utils/fibonacci';
 
+export const STATUSES = {
+  PENDING: 0,
+  POOLED: 1,
+  BROADCASTED: 2,
+  COMPLETED: 3,
+};
+
 // Implement remaining pooling types when they ready on drive side
 const DEFAULT_POOLING = 0;
 
