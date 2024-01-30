@@ -1,6 +1,7 @@
+/* eslint-disable no-console */
 import lodash from 'lodash';
 import { Listr } from 'listr2';
-import {NETWORK_LOCAL} from "../../constants.js";
+import { NETWORK_LOCAL } from '../../constants.js';
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -47,34 +48,36 @@ export default function stopNodeTaskFactory(
             host: await getConnectionHost(config, 'core', 'core.rpc.host'),
           });
 
-          const {result: blockCount} = await rpcClient.getBlockCount();
+          const { result: blockCount } = await rpcClient.getBlockCount();
 
-          const firstWindow = [Math.floor(blockCount / 24) * 24, Math.floor(blockCount / 24) * 24 + 10]
-          const secondWindow = [Math.floor(blockCount / 288) * 288, Math.floor(blockCount / 288) * 288 + 42]
+          const firstWindow = [Math.floor(blockCount / 24) * 24,
+            Math.floor(blockCount / 24) * 24 + 10];
+          const secondWindow = [Math.floor(blockCount / 288) * 288,
+            Math.floor(blockCount / 288) * 288 + 42];
 
-          console.log('BlockCount', blockCount)
-          console.log(`First window [${firstWindow[0]}, ${firstWindow[1]}]`)
-          console.log(`Second window [${secondWindow[0]}, ${secondWindow[1]}]`)
+          console.log('BlockCount', blockCount);
+          console.log(`First window [${firstWindow[0]}, ${firstWindow[1]}]`);
+          console.log(`Second window [${secondWindow[0]}, ${secondWindow[1]}]`);
 
-          const isInFirstWindow = lodash.inRange(blockCount, firstWindow[0], firstWindow[1])
-          const isInSecondWindow = lodash.inRange(blockCount, secondWindow[0], secondWindow[1])
+          const isInFirstWindow = lodash.inRange(blockCount, firstWindow[0], firstWindow[1]);
+          const isInSecondWindow = lodash.inRange(blockCount, secondWindow[0], secondWindow[1]);
 
           if (isInFirstWindow || isInSecondWindow) {
-            console.log(`Is in first window = ${isInFirstWindow}`)
-            console.log(`Is in second window = ${isInSecondWindow}`)
+            console.log(`Is in first window = ${isInFirstWindow}`);
+            console.log(`Is in second window = ${isInSecondWindow}`);
 
             const agreement = await task.prompt({
               type: 'toggle',
               name: 'confirm',
-              header: 'Your node is currently participating in DKG exchange session, restarting may ' +
-                'result in PoSE ban.\n Do you want to proceed?',
+              header: 'Your node is currently participating in DKG exchange session, restarting may '
+                + 'result in PoSE ban.\n Do you want to proceed?',
               message: 'Restart node?',
               enabled: 'Yes',
               disabled: 'No',
             });
 
             if (!agreement) {
-              throw new Error("Node is currently in the DKG window")
+              throw new Error('Node is currently in the DKG window');
             }
           }
         },
