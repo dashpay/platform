@@ -168,15 +168,11 @@ impl Config {
     }
 
     fn default_identity_id() -> Identifier {
-        data_contracts::SystemDataContract::DPNS
-            .source()
-            .expect("data contract source")
-            .owner_id_bytes
-            .into()
+        data_contracts::dpns_contract::OWNER_ID_BYTES.into()
     }
 
     fn default_data_contract_id() -> Identifier {
-        data_contracts::SystemDataContract::DPNS.id()
+        data_contracts::dpns_contract::ID_BYTES.into()
     }
 
     fn default_document_type_name() -> String {

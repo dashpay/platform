@@ -6,7 +6,7 @@ use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::system_data_contracts::withdrawals_contract;
-use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::version::PlatformVersion;
 use std::collections::BTreeMap;
 
@@ -220,7 +220,7 @@ mod tests {
     use dpp::document::DocumentV0Getters;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;
-    use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+    use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
     use dpp::version::PlatformVersion;
     use dpp::withdrawal::Pooling;
     use dpp::{
@@ -358,11 +358,9 @@ mod tests {
             proposer_results: None,
         };
 
-        let data_contract = load_system_data_contract(
-            SystemDataContract::Withdrawals,
-            platform_version.protocol_version,
-        )
-        .expect("to load system data contract");
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, &platform_version)
+                .expect("to load system data contract");
 
         setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 

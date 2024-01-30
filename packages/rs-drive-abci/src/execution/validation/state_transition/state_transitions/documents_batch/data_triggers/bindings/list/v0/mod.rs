@@ -7,8 +7,8 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
 use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBindingV0;
 
 use dpp::errors::ProtocolError;
-use dpp::system_data_contracts::feature_flags_contract::document_types::update_consensus_params;
-use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+use dpp::system_data_contracts::feature_flags_contract::v1::document_types::update_consensus_params;
+use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::system_data_contracts::{dashpay_contract, dpns_contract, SystemDataContract};
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
 

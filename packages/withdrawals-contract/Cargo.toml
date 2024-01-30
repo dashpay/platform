@@ -7,6 +7,8 @@ rust-version = "1.73"
 license = "MIT"
 
 [dependencies]
+thiserror = "1.0.56"
+platform-version = { path = "../rs-platform-version" }
 platform-value = { path = "../rs-platform-value" }
 num_enum = "0.5.7"
 serde = { version = "1.0.152", features = ["derive"] }

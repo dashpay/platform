@@ -1060,7 +1060,9 @@ name = "dashpay-contract"
 version = "1.0.0-dev.3"
 dependencies = [
  "platform-value",
+ "platform-version",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -1072,7 +1074,9 @@ dependencies = [
  "feature-flags-contract",
  "masternode-reward-shares-contract",
  "platform-value",
+ "platform-version",
  "serde_json",
+ "thiserror",
  "withdrawals-contract",
 ]
 
@@ -1159,7 +1163,9 @@ name = "dpns-contract"
 version = "1.0.0-dev.3"
 dependencies = [
  "platform-value",
+ "platform-version",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -1507,7 +1513,9 @@ name = "feature-flags-contract"
 version = "1.0.0-dev.3"
 dependencies = [
  "platform-value",
+ "platform-version",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -2364,7 +2372,9 @@ name = "masternode-reward-shares-contract"
 version = "1.0.0-dev.3"
 dependencies = [
  "platform-value",
+ "platform-version",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -5087,9 +5097,11 @@ version = "1.0.0-dev.3"
 dependencies = [
  "num_enum",
  "platform-value",
+ "platform-version",
  "serde",
  "serde_json",
  "serde_repr",
+ "thiserror",
 ]
 
 [[package]]

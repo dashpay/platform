@@ -5,7 +5,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::Document;
 use dpp::platform_value::Value;
 use dpp::system_data_contracts::withdrawals_contract;
-use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use indexmap::IndexMap;
@@ -193,7 +193,7 @@ mod tests {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
-        use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+        use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::version::PlatformVersion;
         use dpp::withdrawal::Pooling;
@@ -206,11 +206,9 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            let data_contract = load_system_data_contract(
-                SystemDataContract::Withdrawals,
-                platform_version.protocol_version,
-            )
-            .expect("to load system data contract");
+            let data_contract =
+                load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                    .expect("to load system data contract");
 
             setup_system_data_contract(&drive, &data_contract, Some(&transaction));
 
@@ -305,7 +303,7 @@ mod tests {
         use dpp::document::DocumentV0Getters;
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::{platform_value, Bytes32};
-        use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+        use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::version::PlatformVersion;
         use dpp::withdrawal::Pooling;
@@ -320,11 +318,9 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            let data_contract = load_system_data_contract(
-                SystemDataContract::Withdrawals,
-                platform_version.protocol_version,
-            )
-            .expect("to load system data contract");
+            let data_contract =
+                load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                    .expect("to load system data contract");
 
             setup_system_data_contract(&drive, &data_contract, Some(&transaction));
 
