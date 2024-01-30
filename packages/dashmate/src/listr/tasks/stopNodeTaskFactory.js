@@ -38,7 +38,7 @@ export default function stopNodeTaskFactory(
       {
         title: 'Check node is participating in DKG',
         skip: (ctx) => ctx.isForce,
-        task: async () => {
+        task: async (ctx, task) => {
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
             user: config.get('core.rpc.user'),
@@ -62,7 +62,19 @@ export default function stopNodeTaskFactory(
             console.log(`Is in first window = ${isInFirstWindow}`)
             console.log(`Is in second window = ${isInSecondWindow}`)
 
-            throw new Error('Node is currently in the DKG window')
+            const agreement = await task.prompt({
+              type: 'toggle',
+              name: 'confirm',
+              header: 'Your node is currently participating in DKG exchange session, restarting may ' +
+                'result in PoSE ban.\n Do you want to proceed?',
+              message: 'Restart node?',
+              enabled: 'Yes',
+              disabled: 'No',
+            });
+
+            if (!agreement) {
+              throw new Error("Node is currently in the DKG window")
+            }
           }
         },
       },
