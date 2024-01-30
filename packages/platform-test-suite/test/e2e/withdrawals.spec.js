@@ -6,6 +6,10 @@ const {
 } = require('@dashevo/withdrawals-contract/lib/systemIds');
 
 const { contractId: masternodeRewardSharesContractId } = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
+const { ownerId: withdrawalsOwnerId } = require('@dashevo/withdrawals-contract/lib/systemIds');
+const wait = require('@dashevo/dapi-client/lib/utils/wait');
+const { STATUSES: WITHDRAWAL_STATUSES } = require('dash/build/SDK/Client/Platform/methods/identities/creditWithdrawal');
+
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 const generateRandomIdentifier = require('../../lib/test/utils/generateRandomIdentifier');
@@ -13,6 +17,7 @@ const generateRandomIdentifier = require('../../lib/test/utils/generateRandomIde
 describe('Withdrawals', () => {
   let failed = false;
   let client;
+  let identity;
 
   before(async () => {
     client = await createClientWithFundedWallet(
@@ -63,8 +68,6 @@ describe('Withdrawals', () => {
   });
 
   describe('Any Identity', () => {
-    let identity;
-
     before(async () => {
       identity = await client.platform.identities.register(1000000);
 
@@ -72,7 +75,7 @@ describe('Withdrawals', () => {
       await waitForSTPropagated();
     });
 
-    it('should not be able to create withdrawals', async () => {
+    it('should not be able to create withdrawal', async () => {
       const withdrawal = await client.platform.documents.create(
         'withdrawals.withdrawal',
         identity,
@@ -105,6 +108,72 @@ describe('Withdrawals', () => {
       try {
         await client.platform.documents.broadcast({
           create: [withdrawal],
+        }, identity);
+
+        expect.fail('should throw broadcast error');
+      } catch (e) {
+        expect(e.message).to.be.equal('Action is not allowed');
+        expect(e.code).to.equal(4001);
+      }
+    });
+
+    it('should not be able to delete incomplete withdrawal', async () => {
+      const account = await client.getWalletAccount();
+      const withdrawTo = await account.getUnusedAddress();
+
+      await client.platform.identities.withdrawCredits(
+        identity,
+        BigInt(10000),
+        withdrawTo.address,
+      );
+
+      await waitForSTPropagated();
+
+      let withdrawalBroadcasted = false;
+      let withdrawalDocument;
+      // Wait for withdrawal to broadcast, otherwise there's a chance
+      // that test will try update document at the same time with the drive itself
+      while (!withdrawalBroadcasted) {
+        ([withdrawalDocument] = await client.platform
+          .documents.get(
+            'withdrawals.withdrawal',
+            {
+              where: [['$ownerId', '==', identity.getId()]],
+            },
+          ));
+
+        withdrawalBroadcasted = withdrawalDocument.get('status') === WITHDRAWAL_STATUSES.BROADCASTED;
+
+        await wait(1000);
+      }
+
+      try {
+        await client.platform.documents.broadcast({
+          delete: [withdrawalDocument],
+        }, identity);
+
+        expect.fail('should throw broadcast error');
+      } catch (e) {
+        expect(e.message).to.be.equal('withdrawal deletion is allowed only for COMPLETE statuses');
+        expect(e.code).to.equal(4001);
+      }
+    });
+
+    it('should not be able to update withdrawal', async () => {
+      const [withdrawalDocument] = await client.platform
+        .documents.get(
+          'withdrawals.withdrawal',
+          {
+            where: [['$ownerId', '==', identity.getId()]],
+          },
+        );
+
+      withdrawalDocument.set('status', 3);
+      // withdrawalDocument.setRevision(3);
+
+      try {
+        await client.platform.documents.broadcast({
+          replace: [withdrawalDocument],
         }, identity);
 
         expect.fail('should throw broadcast error');
