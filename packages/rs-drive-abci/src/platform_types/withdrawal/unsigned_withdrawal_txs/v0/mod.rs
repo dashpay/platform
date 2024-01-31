@@ -39,7 +39,7 @@ impl UnsignedWithdrawalTxs {
     }
 }
 
-impl<'a> Display for UnsignedWithdrawalTxs {
+impl Display for UnsignedWithdrawalTxs {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("txs:["))?;
         for tx in &self.0 {
