@@ -709,11 +709,11 @@ where
         // Verify that a validator is requesting a signatures
         // for a correct set of withdrawal transactions
 
-        let expected_extensions: Vec<ExtendVoteExtension> = block_execution_context
-            .unsigned_withdrawal_transactions()
-            .into();
+        let expected_withdrawals = block_execution_context.unsigned_withdrawal_transactions();
 
-        if expected_extensions.ne(&vote_extensions) {
+        if expected_withdrawals != &vote_extensions {
+            let expected_extensions: Vec<ExtendVoteExtension> = expected_withdrawals.into();
+
             tracing::error!(
                 received_extensions = ?vote_extensions,
                 ?expected_extensions,

@@ -33,6 +33,10 @@ impl UnsignedWithdrawalTxs {
     pub fn from_vec(transactions: Vec<Transaction>) -> Self {
         Self(transactions)
     }
+
+    pub fn drain(&mut self) -> UnsignedWithdrawalTxs {
+        Self(self.0.drain(..).collect())
+    }
 }
 
 impl<'a> Display for UnsignedWithdrawalTxs {
@@ -62,6 +66,28 @@ impl PartialEq<Vec<VoteExtension>> for UnsignedWithdrawalTxs {
     }
 
     fn ne(&self, other: &Vec<VoteExtension>) -> bool {
+        !self.eq(other)
+    }
+}
+
+impl PartialEq<Vec<ExtendVoteExtension>> for UnsignedWithdrawalTxs {
+    fn eq(&self, other: &Vec<ExtendVoteExtension>) -> bool {
+        if self.0.len() != other.len() {
+            return false;
+        };
+
+        !self
+            .0
+            .iter()
+            .zip(other.iter())
+            .any(|(tx, other_vote_extension)| {
+                let self_vote_extension = tx_to_extend_vote_extension(tx);
+
+                &self_vote_extension != other_vote_extension
+            })
+    }
+
+    fn ne(&self, other: &Vec<ExtendVoteExtension>) -> bool {
         !self.eq(other)
     }
 }

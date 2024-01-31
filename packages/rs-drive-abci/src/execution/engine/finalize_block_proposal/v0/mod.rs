@@ -21,7 +21,9 @@ use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
-use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::execution::types::block_execution_context::v0::{
+    BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
+};
 use crate::execution::types::block_state_info::v0::{
     BlockStateInfoV0Getters, BlockStateInfoV0Methods,
 };
@@ -60,7 +62,7 @@ where
     ///
     pub(super) fn finalize_block_proposal_v0(
         &self,
-        request_finalize_block: FinalizeBlockCleanedRequest,
+        mut request_finalize_block: FinalizeBlockCleanedRequest,
         transaction: &Transaction,
         _platform_version: &PlatformVersion,
     ) -> Result<block_execution_outcome::v0::BlockFinalizationOutcome, Error> {
@@ -85,7 +87,7 @@ where
 
         // Let's decompose the request
         let FinalizeBlockCleanedRequest {
-            commit: commit_info,
+            commit: mut commit_info,
             misbehavior: _,
             hash,
             height,
@@ -148,7 +150,7 @@ where
         let expected_withdrawal_transactions =
             block_execution_context.unsigned_withdrawal_transactions();
 
-        if expected_withdrawal_transactions.ne(&commit_info.threshold_vote_extensions) {
+        if expected_withdrawal_transactions != &commit_info.threshold_vote_extensions {
             validation_result.add_error(AbciError::VoteExtensionMismatchReceived {
                 got: commit_info.threshold_vote_extensions,
                 expected: expected_withdrawal_transactions.into(),
@@ -167,6 +169,7 @@ where
 
             let quorum_public_key = &state_cache.current_validator_set()?.threshold_public_key();
             let quorum_type = self.config.validator_set_quorum_type();
+            // TODO: We already had commit in the function above, why do we need to create it again with clone?
             let commit = Commit::new_from_cleaned(
                 commit_info.clone(),
                 block_id,
@@ -199,17 +202,6 @@ where
         }
         drop(state_cache);
 
-        // Append signatures and broadcast asset unlock transactions to Core
-        self.append_signatures_and_broadcast_withdrawal_transactions(
-            expected_withdrawal_transactions.clone(),
-            commit_info
-                .threshold_vote_extensions
-                .iter()
-                .map(|e| e.signature.clone()) // TODO: clone?
-                .collect(),
-            platform_version,
-        )?;
-
         if height == self.config.abci.genesis_height {
             self.drive
                 .set_genesis_time(block_state_info.block_time_ms());
@@ -220,13 +212,46 @@ where
                 .expect("current epoch info should be in range"),
         );
 
-        // we need to add the block time
         to_commit_block_info.time_ms = block_header.time.to_milis();
 
         to_commit_block_info.core_height = block_header.core_chain_locked_height;
 
-        // At the end we update the state cache
         drop(guarded_block_execution_context);
+
+        // Append signatures and broadcast asset unlock transactions to Core
+
+        // Borrow execution context as mutable
+        let mut mutable_block_execution_context_guard =
+            self.block_execution_context.write().unwrap();
+        let mutable_block_execution_context =
+            mutable_block_execution_context_guard
+                .as_mut()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "block execution context must be set in block begin handler for finalize block proposal",
+                )))?;
+
+        // Drain withdrawal transaction instead of cloning
+        let unsigned_withdrawal_transactions = mutable_block_execution_context
+            .unsigned_withdrawal_transactions_mut()
+            .drain();
+
+        drop(mutable_block_execution_context_guard);
+
+        // Drain signatures instead of cloning
+        let signatures = commit_info
+            .threshold_vote_extensions
+            .drain(..)
+            .into_iter()
+            .map(|e| e.signature)
+            .collect();
+
+        self.append_signatures_and_broadcast_withdrawal_transactions(
+            unsigned_withdrawal_transactions,
+            signatures,
+            platform_version,
+        )?;
+
+        // Update platform (drive abci) state
 
         let extended_block_info = ExtendedBlockInfoV0 {
             basic_info: to_commit_block_info,

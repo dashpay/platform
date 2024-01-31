@@ -107,6 +107,9 @@ pub trait BlockExecutionContextV0MutableGetters {
 
     /// Returns a mutable reference to the proposer_results field.
     fn proposer_results_mut(&mut self) -> Option<&mut ResponsePrepareProposal>;
+
+    /// Returns a mut reference of the withdrawal_transactions field.
+    fn unsigned_withdrawal_transactions_mut(&mut self) -> &mut UnsignedWithdrawalTxs;
 }
 
 /// A trait defining methods for interacting with a BlockExecutionContextV0.
@@ -202,6 +205,10 @@ impl BlockExecutionContextV0MutableGetters for BlockExecutionContextV0 {
     /// Returns a mutable reference to the proposer_results field.
     fn proposer_results_mut(&mut self) -> Option<&mut ResponsePrepareProposal> {
         self.proposer_results.as_mut()
+    }
+
+    fn unsigned_withdrawal_transactions_mut(&mut self) -> &mut UnsignedWithdrawalTxs {
+        &mut self.unsigned_withdrawal_transactions
     }
 }
 
