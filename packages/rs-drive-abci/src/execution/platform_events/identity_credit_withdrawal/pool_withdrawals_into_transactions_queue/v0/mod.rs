@@ -83,7 +83,7 @@ where
                 )));
             };
 
-            let transaction_id = hash::hash_double_to_vec(transaction_bytes);
+            let transaction_id = hash::hash_to_vec(transaction_bytes);
 
             document.set_bytes(
                 withdrawal::properties::TRANSACTION_ID,
@@ -209,6 +209,8 @@ mod tests {
                     current_validator_set_quorum_hash: QuorumHash::all_zeros(),
                     next_validator_set_quorum_hash: None,
                     validator_sets: Default::default(),
+                    chain_lock_validating_quorums: Default::default(),
+                    previous_height_chain_lock_validating_quorums: None,
                     full_masternode_list: Default::default(),
                     hpmn_masternode_list: Default::default(),
                     genesis_block_info: None,

@@ -15,7 +15,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::prelude::Identifier;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::CborCanonicalMap;
-use crate::util::hash::hash_double;
+use crate::util::hash::hash;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 
@@ -133,7 +133,7 @@ impl InstantAssetLockProof {
             .try_into()
             .map_err(|e: io::Error| ProtocolError::EncodingError(e.to_string()))?;
 
-        let hash = hash_double(output_vec);
+        let hash = hash(output_vec);
 
         Ok(Identifier::new(hash))
     }

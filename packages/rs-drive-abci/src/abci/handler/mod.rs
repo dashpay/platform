@@ -52,6 +52,7 @@ use tenderdash_abci::proto::abci::{
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
     ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery, TxRecord,
 };
+use tenderdash_abci::proto::types::CoreChainLock;
 use tenderdash_abci::proto::types::VoteExtensionType;
 
 use super::AbciError;
@@ -95,7 +96,7 @@ where
         }
 
         let state_app_hash = state_guard
-            .last_block_app_hash()
+            .last_committed_block_app_hash()
             .map(|app_hash| app_hash.to_vec())
             .unwrap_or_default();
 
@@ -104,20 +105,19 @@ where
         let response = proto::ResponseInfo {
             data: "".to_string(),
             app_version: latest_platform_version.protocol_version as u64,
-            last_block_height: state_guard.last_block_height() as i64,
+            last_block_height: state_guard.last_committed_block_height() as i64,
             version: env!("CARGO_PKG_VERSION").to_string(),
             last_block_app_hash: state_app_hash.clone(),
         };
 
-        tracing::info!(
+        tracing::debug!(
             protocol_version = latest_platform_version.protocol_version,
             software_version = env!("CARGO_PKG_VERSION"),
             block_version = request.block_version,
             p2p_version = request.p2p_version,
             app_hash = hex::encode(state_app_hash),
-            height = state_guard.last_block_height(),
-            "Consensus engine is started from block {}",
-            state_guard.last_block_height(),
+            height = state_guard.last_committed_block_height(),
+            "Handshake with consensus engine",
         );
 
         if tracing::enabled!(tracing::Level::TRACE) {
@@ -163,7 +163,7 @@ where
         tracing::info!(
             app_hash,
             chain_id,
-            "platform chain initialized, initial state is created"
+            "Platform chain initialized, initial state is created"
         );
 
         Ok(response)
@@ -180,9 +180,15 @@ where
         // propose one
         // This is done before all else
 
+        let state = self.platform.state.read().unwrap();
+
+        let last_committed_core_height = state.last_committed_core_height();
+
         let core_chain_lock_update = match self.platform.core_rpc.get_best_chain_lock() {
             Ok(latest_chain_lock) => {
-                if request.core_chain_locked_height < latest_chain_lock.core_block_height {
+                if state.last_committed_block_info().is_none()
+                    || latest_chain_lock.block_height > last_committed_core_height
+                {
                     Some(latest_chain_lock)
                 } else {
                     None
@@ -190,6 +196,8 @@ where
             }
             Err(_) => None,
         };
+
+        drop(state);
 
         // Filter out transactions exceeding max_block_size
         let mut transactions_exceeding_max_block_size = Vec::new();
@@ -218,10 +226,12 @@ where
             // todo: find a way to re-enable this without destroying CI
             tracing::debug!(
                 "propose chain lock update to height {} at block {}",
-                core_chain_lock_update.core_block_height,
+                core_chain_lock_update.block_height,
                 request.height
             );
-            block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
+            block_proposal.core_chain_locked_height = core_chain_lock_update.block_height;
+        } else {
+            block_proposal.core_chain_locked_height = last_committed_core_height;
         }
 
         // Prepare transaction
@@ -246,7 +256,7 @@ where
         // Running the proposal executes all the state transitions for the block
         let run_result = self
             .platform
-            .run_block_proposal(block_proposal, transaction)?;
+            .run_block_proposal(block_proposal, true, transaction)?;
 
         if !run_result.is_valid() {
             // This is a system error, because we are proposing
@@ -265,9 +275,11 @@ where
 
         // We need to let Tenderdash know about the transactions we should remove from execution
         let valid_tx_count = state_transitions_result.valid_count();
-        let invalid_tx_count = state_transitions_result.invalid_count();
+        let invalid_all_tx_count = state_transitions_result.invalid_count();
         let failed_tx_count = state_transitions_result.failed_count();
         let delayed_tx_count = transactions_exceeding_max_block_size.len();
+        let mut invalid_paid_tx_count = state_transitions_result.invalid_count();
+        let mut invalid_unpaid_tx_count = state_transitions_result.invalid_count();
 
         let mut tx_results = Vec::new();
         let mut tx_records = Vec::new();
@@ -280,13 +292,21 @@ where
             let tx_action = match &state_transition_execution_result {
                 StateTransitionExecutionResult::SuccessfulExecution(_, _) => TxAction::Unmodified,
                 // We have identity to pay for the state transition, so we keep it in the block
-                StateTransitionExecutionResult::PaidConsensusError(_) => TxAction::Unmodified,
+                StateTransitionExecutionResult::PaidConsensusError(_) => {
+                    invalid_paid_tx_count += 1;
+
+                    TxAction::Unmodified
+                }
                 // We don't have any associated identity to pay for the state transition,
                 // so we remove it from the block to prevent spam attacks.
                 // Such state transitions must be invalidated by check tx, but they might
                 // still be added to mempool due to inconsistency between check tx and tx processing
                 // (fees calculation) or malicious proposer.
-                StateTransitionExecutionResult::UnpaidConsensusError(_) => TxAction::Removed,
+                StateTransitionExecutionResult::UnpaidConsensusError(_) => {
+                    invalid_unpaid_tx_count += 1;
+
+                    TxAction::Removed
+                }
                 // We shouldn't include in the block any state transitions that produced an internal error
                 // during execution
                 StateTransitionExecutionResult::DriveAbciError(_) => TxAction::Removed,
@@ -319,7 +339,11 @@ where
             tx_results,
             app_hash: app_hash.to_vec(),
             tx_records,
-            core_chain_lock_update,
+            core_chain_lock_update: core_chain_lock_update.map(|chain_lock| CoreChainLock {
+                core_block_hash: chain_lock.block_hash.to_byte_array().to_vec(),
+                core_block_height: chain_lock.block_height,
+                signature: chain_lock.signature.to_bytes().to_vec(),
+            }),
             validator_set_update,
             // TODO: implement consensus param updates
             consensus_param_updates: None,
@@ -336,12 +360,14 @@ where
         let elapsed_time_ms = timer.elapsed().as_millis();
 
         tracing::info!(
-            invalid_tx_count,
+            invalid_paid_tx_count,
+            invalid_unpaid_tx_count,
             valid_tx_count,
             delayed_tx_count,
             failed_tx_count,
+            invalid_unpaid_tx_count,
             "Prepared proposal with {} transitions for height: {}, round: {} in {} ms",
-            valid_tx_count,
+            valid_tx_count + invalid_paid_tx_count,
             request.height,
             request.round,
             elapsed_time_ms,
@@ -361,7 +387,7 @@ where
 
         let mut drop_block_execution_context = false;
         if let Some(block_execution_context) = block_execution_context_guard.as_mut() {
-            // We are already in a block
+            // We are already in a block, or in init chain.
             // This only makes sense if we were the proposer unless we are at a future round
             if block_execution_context.block_state_info().round() != (request.round as u32) {
                 // We were not the proposer, and we should process something new
@@ -500,20 +526,16 @@ where
         };
         let transaction = transaction_guard.as_ref().unwrap();
 
-        // We can take the core chain lock update here because it won't be used anywhere else
-        if let Some(_c) = request.core_chain_lock_update.take() {
-            //todo: if there is a core chain lock update we need to validate it
-        }
-
         // Running the proposal executes all the state transitions for the block
-        let run_result = self
-            .platform
-            .run_block_proposal((&request).try_into()?, transaction)?;
+        let run_result =
+            self.platform
+                .run_block_proposal((&request).try_into()?, false, transaction)?;
 
         if !run_result.is_valid() {
             // This was an error running this proposal, tell tenderdash that the block isn't valid
             let response = ResponseProcessProposal {
                 status: proto::response_process_proposal::ProposalStatus::Reject.into(),
+                app_hash: [0; 32].to_vec(), // we must send 32 bytes
                 ..Default::default()
             };
 
@@ -571,7 +593,7 @@ where
                 valid_tx_count,
                 elapsed_time_ms,
                 "Processed proposal with {} transactions for height: {}, round: {} in {} ms",
-                valid_tx_count,
+                valid_tx_count + invalid_tx_count,
                 request.height,
                 request.round,
                 elapsed_time_ms,
@@ -644,13 +666,21 @@ where
             ..
         } = request;
 
+        let height: u64 = height as u64;
+        let round: u32 = round as u32;
+
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
-        let block_execution_context =
-            guarded_block_execution_context
-                .as_ref()
-                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "block execution context must be set in block begin handler for verify vote extension",
-                )))?;
+        let Some(block_execution_context) = guarded_block_execution_context.as_ref() else {
+            tracing::warn!(
+                "vote extension for height: {}, round: {} is rejected because we are not in a block execution phase",
+                height,
+                round,
+            );
+
+            return Ok(proto::ResponseVerifyVoteExtension {
+                status: VerifyStatus::Reject.into(),
+            });
+        };
 
         let platform_version = block_execution_context
             .block_platform_state()
@@ -685,6 +715,25 @@ where
         //     });
         // };
 
+        let block_state_info = block_execution_context.block_state_info();
+
+        //// Verification that vote extension is for our current executed block
+        // When receiving the vote extension, we need to make sure that info matches our current block
+
+        if block_state_info.height() != height || block_state_info.round() != round {
+            tracing::warn!(
+                "vote extension for height: {}, round: {} is rejected because we are at height: {} round {}",
+                height,
+                round,
+                block_state_info.height(),
+                block_state_info.round()
+            );
+
+            return Ok(proto::ResponseVerifyVoteExtension {
+                status: VerifyStatus::Reject.into(),
+            });
+        }
+
         let validation_result = self.platform.check_withdrawals(
             &got,
             &expected,
@@ -696,6 +745,12 @@ where
         )?;
 
         if validation_result.is_valid() {
+            tracing::debug!(
+                "vote extension for height: {}, round: {} is successfully verified",
+                height,
+                round,
+            );
+
             Ok(proto::ResponseVerifyVoteExtension {
                 status: VerifyStatus::Accept.into(),
             })
@@ -704,8 +759,10 @@ where
                 ?got,
                 ?expected,
                 ?validation_result.errors,
-                "vote extension mismatch"
+                "vote extension for height: {}, round: {} mismatch",
+                height, round
             );
+
             Ok(proto::ResponseVerifyVoteExtension {
                 status: VerifyStatus::Reject.into(),
             })
@@ -834,7 +891,7 @@ where
                 key: vec![],
                 value: vec![],
                 proof_ops: None,
-                height: self.platform.state.read().unwrap().height() as i64,
+                height: self.platform.state.read().unwrap().last_committed_height() as i64,
                 codespace: "".to_string(),
             };
 
@@ -870,7 +927,7 @@ where
             key: vec![],
             value: data,
             proof_ops: None,
-            height: self.platform.state.read().unwrap().height() as i64,
+            height: self.platform.state.read().unwrap().last_committed_height() as i64,
             codespace: "".to_string(),
         };
 

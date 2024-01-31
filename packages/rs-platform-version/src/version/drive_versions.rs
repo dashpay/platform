@@ -31,6 +31,13 @@ pub struct DriveMethodVersions {
     pub batch_operations: DriveBatchOperationsMethodVersion,
     pub prove: DriveProveMethodVersions,
     pub state_transitions: DriveStateTransitionMethodVersions,
+    pub platform_state: DrivePlatformStateMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DrivePlatformStateMethodVersions {
+    pub fetch_platform_state_bytes: FeatureVersion,
+    pub store_platform_state_bytes: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -217,8 +224,6 @@ pub struct DriveBatchOperationsMethodVersion {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveSystemProtocolVersionMethodVersions {
-    pub fetch_current_protocol_version: FeatureVersion,
-    pub set_current_protocol_version_operations: FeatureVersion,
     pub fetch_next_protocol_version: FeatureVersion,
     pub set_next_protocol_version_operations: FeatureVersion,
 }

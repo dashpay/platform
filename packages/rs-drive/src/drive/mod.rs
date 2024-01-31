@@ -93,6 +93,8 @@ mod open;
 #[cfg(feature = "full")]
 mod operations;
 #[cfg(feature = "full")]
+mod platform_state;
+#[cfg(feature = "full")]
 mod prove;
 #[cfg(feature = "full")]
 mod system_contracts_cache;

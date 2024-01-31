@@ -529,7 +529,6 @@ pub fn create_identity_credit_transfer_transition(
     info!("recipient: {:?}", recipient);
     info!("signer: {:?}", signer);
 
-
     let mut transition: StateTransition = IdentityCreditTransferTransitionV0 {
         identity_id: identity.id(),
         recipient_id: recipient.id(),

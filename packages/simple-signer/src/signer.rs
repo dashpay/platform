@@ -11,6 +11,7 @@ use dpp::state_transition::errors::{
 };
 use dpp::{bls_signatures, ed25519_dalek, ProtocolError};
 use std::collections::HashMap;
+use tracing::info;
 
 /// This simple signer is only to be used in tests
 #[derive(Default, Clone, Debug, PartialEq, Encode, Decode)]

@@ -18,7 +18,7 @@ mod state_transition_types;
 pub mod state_transition_factory;
 
 pub mod errors;
-use crate::util::hash::{hash_double_to_vec, hash_single, ripemd160_sha256};
+use crate::util::hash::{hash_to_vec, hash, ripemd160_sha256};
 
 pub mod proof_result;
 mod serialization;
@@ -260,11 +260,11 @@ impl StateTransition {
         )
     }
 
-    fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
+    pub fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         if skip_signature {
-            Ok(hash_double_to_vec(self.signable_bytes()?))
+            Ok(hash_to_vec(self.signable_bytes()?))
         } else {
-            Ok(hash_double_to_vec(
+            Ok(hash_to_vec(
                 crate::serialization::PlatformSerializable::serialize_to_bytes(self)?,
             ))
         }
@@ -292,7 +292,7 @@ impl StateTransition {
 
     /// The transaction id is a single hash of the data with the signature
     pub fn transaction_id(&self) -> Result<[u8; 32], ProtocolError> {
-        Ok(hash_single(
+        Ok(hash(
             crate::serialization::PlatformSerializable::serialize_to_bytes(self)?,
         ))
     }

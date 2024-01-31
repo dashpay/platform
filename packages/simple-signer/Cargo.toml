@@ -1,6 +1,6 @@
 [package]
 name = "simple-signer"
-version = "0.25.21"
+version = "1.0.0-dev.3"
 edition = "2021"
 rust-version = "1.73"
 
@@ -8,6 +8,7 @@ rust-version = "1.73"
 
 [dependencies]
 anyhow = { version = "1.0.75" }
+tracing = "0.1.4"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = "master" }
 dpp = { path = "../rs-dpp", features = ["abci"] }

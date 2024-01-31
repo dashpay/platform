@@ -90,7 +90,7 @@ where
             // baseBlock must be a chain height and not 0
             None
         } else {
-            let state_core_height = state.core_height();
+            let state_core_height = state.last_committed_core_height();
             if core_block_height == state_core_height {
                 return Ok(update_state_masternode_list_outcome::v0::UpdateStateMasternodeListOutcome::default());
                 // no need to do anything

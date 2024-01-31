@@ -61,6 +61,7 @@ pub struct DriveAbciMethodVersions {
     pub protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions,
     pub block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions,
     pub core_subsidy: DriveAbciCoreSubsidyMethodVersions,
+    pub core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants,
     pub fee_pool_inwards_distribution: DriveAbciFeePoolInwardsDistributionMethodVersions,
     pub fee_pool_outwards_distribution: DriveAbciFeePoolOutwardsDistributionMethodVersions,
     pub identity_credit_withdrawal: DriveAbciIdentityCreditWithdrawalMethodVersions,
@@ -69,6 +70,7 @@ pub struct DriveAbciMethodVersions {
     pub epoch: DriveAbciEpochMethodVersions,
     pub block_start: DriveAbciBlockStartMethodVersions,
     pub block_end: DriveAbciBlockEndMethodVersions,
+    pub platform_state_storage: DriveAbciPlatformStateStorageMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -76,6 +78,12 @@ pub struct DriveAbciValidationVersions {
     pub state_transitions: DriveAbciStateTransitionValidationVersions,
     pub process_state_transition: FeatureVersion,
     pub state_transition_to_execution_event_for_check_tx: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciPlatformStateStorageMethodVersions {
+    pub fetch_platform_state: FeatureVersion,
+    pub store_platform_state: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -197,6 +205,16 @@ pub struct DriveAbciCoreSubsidyMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct DriveAbciCoreChainLockMethodVersionsAndConstants {
+    pub choose_quorum: FeatureVersion,
+    pub verify_chain_lock: FeatureVersion,
+    pub verify_chain_lock_locally: FeatureVersion,
+    pub verify_chain_lock_through_core: FeatureVersion,
+    pub make_sure_core_is_synced_to_chain_lock: FeatureVersion,
+    pub recent_block_count_amount: u32, //what constitutes a recent block, for v0 it's 2.
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciFeePoolInwardsDistributionMethodVersions {
     pub add_distribute_block_fees_into_pools_operations: FeatureVersion,
     pub add_distribute_storage_fee_to_epochs_operations: FeatureVersion,
@@ -223,7 +241,6 @@ pub struct DriveAbciBlockStartMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciBlockEndMethodVersions {
-    pub store_ephemeral_state: FeatureVersion,
     pub update_state_cache: FeatureVersion,
     pub update_drive_cache: FeatureVersion,
     pub validator_set_update: FeatureVersion,

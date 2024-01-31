@@ -3,6 +3,8 @@ const {
     error: {
       InvalidArgumentGrpcError,
       AlreadyExistsGrpcError,
+      ResourceExhaustedGrpcError,
+      UnavailableGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -12,6 +14,7 @@ const {
     BroadcastStateTransitionResponse,
   },
 } = require('@dashevo/dapi-grpc');
+const logger = require('../../../logger');
 
 /**
  * @param {jaysonClient} rpcClient
@@ -37,15 +40,48 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
 
     const tx = Buffer.from(stByteArray).toString('base64');
 
-    const { result, error: jsonRpcError } = await rpcClient.request('broadcast_tx_sync', { tx });
+    let response;
+
+    try {
+      response = await rpcClient.request('broadcast_tx_sync', { tx });
+    } catch (e) {
+      logger.error(`Failed broadcasting state transition: ${e}`);
+
+      if (e.message === 'socket hang up') {
+        throw new UnavailableGrpcError('Tenderdash is not available');
+      }
+
+      throw e;
+    }
+
+    const { result, error: jsonRpcError } = response;
 
     if (jsonRpcError) {
-      if (jsonRpcError.data === 'tx already exists in cache') {
-        throw new AlreadyExistsGrpcError('State transition already in chain');
+      if (typeof jsonRpcError.data === 'string') {
+        if (jsonRpcError.data === 'tx already exists in cache') {
+          throw new AlreadyExistsGrpcError('state transition already in chain');
+        }
+
+        if (jsonRpcError.data.startsWith('Tx too large.')) {
+          const message = jsonRpcError.data.replace('Tx too large. ', '');
+          throw new InvalidArgumentGrpcError(`state transition is too large. ${message}`);
+        }
+
+        if (jsonRpcError.data.startsWith('mempool is full')) {
+          throw new ResourceExhaustedGrpcError(jsonRpcError.data);
+        }
+
+        if (jsonRpcError.data.startsWith('broadcast confirmation not received:')) {
+          logger.error(`Failed broadcasting state transition: ${jsonRpcError.data}`);
+
+          throw new UnavailableGrpcError(jsonRpcError.data);
+        }
       }
 
       const error = new Error();
       Object.assign(error, jsonRpcError);
+
+      logger.error(error, `Unexpected JSON RPC error during broadcasting state transition: ${JSON.stringify(jsonRpcError)}`);
 
       throw error;
     }

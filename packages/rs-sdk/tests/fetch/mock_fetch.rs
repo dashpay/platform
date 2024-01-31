@@ -2,7 +2,7 @@
 //!
 
 use super::common::{mock_data_contract, mock_document_type};
-use dash_platform_sdk::{
+use rs_sdk::{
     platform::{DocumentQuery, Fetch},
     Sdk,
 };

@@ -50,7 +50,7 @@ impl Identity {
     #[cfg(feature = "identity-hashing")]
     /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash_double_to_vec(
+        Ok(hash::hash_to_vec(
             PlatformSerializable::serialize_to_bytes(self)?,
         ))
     }

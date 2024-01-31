@@ -1,5 +1,5 @@
 use crate::{common::setup_logs, config::Config};
-use dash_platform_sdk::platform::FetchMany;
+use rs_sdk::platform::FetchMany;
 use dpp::version::ProtocolVersionVoteCount;
 
 /// Given some existing identity ID, when I fetch the identity keys, I get some of them indexed by key ID.

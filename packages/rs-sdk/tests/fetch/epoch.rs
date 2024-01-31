@@ -5,7 +5,7 @@ use dapi_grpc::platform::{
     v0::{get_identity_request::GetIdentityRequestV0, GetIdentityRequest},
     VersionedGrpcResponse,
 };
-use dash_platform_sdk::{
+use rs_sdk::{
     platform::{
         types::epoch::ExtendedEpochInfoEx, Fetch, FetchMany, LimitQuery, DEFAULT_EPOCH_QUERY_LIMIT,
     },

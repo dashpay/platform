@@ -1,6 +1,6 @@
-//! Configuration helpers for mocking of dash-platform-sdk.
+//! Configuration helpers for mocking of rs-sdk.
 //!
-//! This module contains [Config] struct that can be used to configure dash-platform-sdk.
+//! This module contains [Config] struct that can be used to configure rs-sdk.
 //! It's mainly used for testing.
 
 use dpp::prelude::Identifier;
@@ -18,7 +18,7 @@ const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
 ];
 
 #[derive(Debug, Deserialize)]
-/// Configuration for dash-platform-sdk.
+/// Configuration for rs-sdk.
 ///
 /// Content of this configuration is loaded from environment variables or `${CARGO_MANIFEST_DIR}/.env` file
 /// when the [Config::new()] is called.
@@ -40,9 +40,6 @@ pub struct Config {
     /// Password for Dash Core RPC interface
     #[serde(default)]
     pub core_password: String,
-    /// When true, use SSL for the Dash Platform node grpc interface
-    #[serde(default)]
-    pub platform_ssl: bool,
 
     /// Directory where all generated test vectors will be saved.
     ///
@@ -117,12 +114,7 @@ impl Config {
     #[allow(unused)]
     /// Create list of Platform addresses from the configuration
     pub fn address_list(&self) -> AddressList {
-        let scheme = match self.platform_ssl {
-            true => "https",
-            false => "http",
-        };
-
-        let address: String = format!("{}://{}:{}", scheme, self.platform_host, self.platform_port);
+        let address: String = format!("http://{}:{}", self.platform_host, self.platform_port);
 
         AddressList::from_iter(vec![http::Uri::from_str(&address).expect("valid uri")])
     }
@@ -137,12 +129,12 @@ impl Config {
     /// new test vectors during execution
     /// * `offline-testing` is set - use mock implementation and
     /// load existing test vectors from disk
-    pub async fn setup_api(&self) -> Arc<dash_platform_sdk::Sdk> {
+    pub async fn setup_api(&self) -> Arc<rs_sdk::Sdk> {
         // offline testing takes precedence over network testing
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
             // Dump all traffic to disk
-            let builder = dash_platform_sdk::SdkBuilder::new(self.address_list()).with_core(
+            let builder = rs_sdk::SdkBuilder::new(self.address_list()).with_core(
                 &self.platform_host,
                 self.core_port,
                 &self.core_user,
@@ -158,7 +150,7 @@ impl Config {
         // offline testing takes precedence over network testing
         #[cfg(feature = "offline-testing")]
         let sdk = {
-            let mock_sdk = dash_platform_sdk::SdkBuilder::new_mock()
+            let mut mock_sdk = rs_sdk::SdkBuilder::new_mock()
                 .build()
                 .expect("initialize api");
 
