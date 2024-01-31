@@ -12,13 +12,16 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
         identity_credit_withdrawal: &IdentityCreditWithdrawalTransitionV0,
         creation_time_ms: u64,
     ) -> Self {
+        let mut entropy = Vec::new();
+
+        entropy.extend_from_slice(&identity_credit_withdrawal.revision.to_be_bytes());
+        entropy.extend_from_slice(identity_credit_withdrawal.output_script.as_bytes());
+
         let document_id = Document::generate_document_id_v0(
             &withdrawals_contract::ID,
             &identity_credit_withdrawal.identity_id,
             withdrawal::NAME,
-            // TODO(withdrawals): why? If we withdraw to the same address multiple times,
-            //    we will have the same document_id
-            identity_credit_withdrawal.output_script.as_bytes(),
+            &entropy,
         );
 
         let document_data = platform_value!({
