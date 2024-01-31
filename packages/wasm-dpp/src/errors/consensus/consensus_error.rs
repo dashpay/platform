@@ -186,7 +186,7 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::MissingIdentityPublicKeyIdsError(e) => {
             MissingIdentityPublicKeyIdsErrorWasm::from(e).into()
         }
-        StateError::DataTriggerError(data_trigger_error) => match data_trigger_error.deref() {
+        StateError::DataTriggerError(data_trigger_error) => match data_trigger_error {
             DataTriggerConditionError(e) => DataTriggerConditionErrorWasm::from(e).into(),
             DataTriggerExecutionError(e) => DataTriggerExecutionErrorWasm::from(e).into(),
             DataTriggerInvalidResultError(e) => DataTriggerInvalidResultErrorWasm::from(e).into(),
