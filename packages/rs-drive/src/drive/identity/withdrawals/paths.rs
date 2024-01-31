@@ -4,7 +4,7 @@ use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::{batch::GroveDbOpBatch, RootTree};
 
 /// constant key for transaction counter
-pub const WITHDRAWAL_TRANSACTIONS_INDEX_COUNTER_KEY: [u8; 1] = [0];
+pub const WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY: [u8; 1] = [0];
 /// constant id for subtree containing transactions queue
 pub const WITHDRAWAL_TRANSACTIONS_QUEUE_KEY: [u8; 1] = [1];
 
@@ -12,7 +12,7 @@ pub const WITHDRAWAL_TRANSACTIONS_QUEUE_KEY: [u8; 1] = [1];
 pub fn add_initial_withdrawal_state_structure_operations(batch: &mut GroveDbOpBatch) {
     batch.add_insert(
         vec![vec![RootTree::WithdrawalTransactions as u8]],
-        WITHDRAWAL_TRANSACTIONS_INDEX_COUNTER_KEY.to_vec(),
+        WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY.to_vec(),
         Element::Item(0u64.to_be_bytes().to_vec(), None),
     );
 

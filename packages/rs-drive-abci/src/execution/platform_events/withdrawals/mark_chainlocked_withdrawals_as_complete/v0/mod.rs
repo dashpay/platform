@@ -5,7 +5,6 @@ use dpp::data_contracts::withdrawals_contract::WithdrawalStatus;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::version::PlatformVersion;
 use itertools::Itertools;
@@ -13,7 +12,7 @@ use std::collections::HashSet;
 
 use drive::drive::batch::DriveOperation;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
-use drive::grovedb::Transaction;
+use drive::grovedb::TransactionArg;
 
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
@@ -32,13 +31,13 @@ where
     pub(super) fn mark_chainlocked_withdrawals_as_complete_v0(
         &self,
         block_info: &BlockInfo,
-        transaction: &Transaction,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let mut broadcasted_withdrawal_documents =
             self.drive.fetch_withdrawal_documents_by_status(
                 WithdrawalStatus::BROADCASTED.into(),
-                Some(transaction),
+                transaction,
                 platform_version,
             )?;
 
@@ -137,7 +136,7 @@ where
             drive_operations,
             true,
             &block_info,
-            Some(transaction),
+            transaction,
             platform_version,
         )?;
 
@@ -274,7 +273,7 @@ mod tests {
         platform
             .mark_chainlocked_withdrawals_as_complete_v0(
                 &block_info,
-                &transaction,
+                Some(&transaction),
                 platform_version,
             )
             .expect("to update withdrawal statuses");

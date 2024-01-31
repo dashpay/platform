@@ -43,7 +43,7 @@ where
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
         // Get 16 latest withdrawal transactions from the queue
-        let untied_withdrawal_transactions = self.drive.dequeue_withdrawal_transactions(
+        let untied_withdrawal_transactions = self.drive.dequeue_untied_withdrawal_transactions(
             WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT,
             transaction,
             &mut drive_operations,

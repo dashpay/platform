@@ -129,6 +129,12 @@ impl BlockExecutionContextV0MutableGetters for BlockExecutionContext {
             BlockExecutionContext::V0(v0) => v0.proposer_results_mut(),
         }
     }
+
+    fn unsigned_withdrawal_transactions_mut(&mut self) -> &mut UnsignedWithdrawalTxs {
+        match self {
+            BlockExecutionContext::V0(v0) => v0.unsigned_withdrawal_transactions_mut(),
+        }
+    }
 }
 
 impl BlockExecutionContextV0OwnedGetters for BlockExecutionContext {

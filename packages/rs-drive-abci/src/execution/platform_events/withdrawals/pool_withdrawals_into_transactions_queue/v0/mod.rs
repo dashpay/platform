@@ -5,8 +5,10 @@ use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::version::PlatformVersion;
 
-use drive::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
-use drive::grovedb::Transaction;
+use drive::drive::identity::withdrawals::{
+    WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
+};
+use drive::grovedb::TransactionArg;
 
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
@@ -30,12 +32,12 @@ where
     pub(super) fn pool_withdrawals_into_transactions_queue_v0(
         &self,
         block_info: &BlockInfo,
-        transaction: &Transaction,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let mut documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
-            Some(transaction),
+            transaction,
             platform_version,
         )?;
 
@@ -43,16 +45,17 @@ where
             return Ok(());
         }
 
-        // TODO: we need to pass index to start with and store it
-        //  otherwise we this logic shared between two functions
+        let next_transaction_index = self
+            .drive
+            .fetch_next_withdrawal_transaction_index(transaction)?;
+
         let untied_withdrawal_transactions = self
             .build_untied_withdrawal_transactions_from_documents(
                 &documents,
-                Some(transaction),
+                next_transaction_index,
                 platform_version,
             )?;
 
-        let mut last_transaction_index = None;
         for document in documents.iter_mut() {
             let Some((transaction_index, _)) = untied_withdrawal_transactions.get(&document.id())
             else {
@@ -65,9 +68,6 @@ where
                 withdrawal::properties::TRANSACTION_INDEX,
                 *transaction_index,
             );
-
-            // TODO: Just use number of txs
-            last_transaction_index = Some(*transaction_index);
 
             document.set_u8(
                 withdrawal::properties::STATUS,
@@ -93,13 +93,22 @@ where
         let withdrawal_transactions: Vec<WithdrawalTransactionIndexAndBytes> =
             untied_withdrawal_transactions.into_values().collect();
 
+        let withdrawal_transactions_count = withdrawal_transactions.len();
+
         let mut drive_operations = Vec::new();
 
-        // TODO: It's better consume transactions
-        self.drive.add_enqueue_withdrawal_transaction_operations(
-            &withdrawal_transactions,
-            &mut drive_operations,
-        );
+        self.drive
+            .add_enqueue_untied_withdrawal_transaction_operations(
+                withdrawal_transactions,
+                &mut drive_operations,
+            );
+
+        self.drive
+            .add_update_next_withdrawal_transaction_index_operation(
+                next_transaction_index
+                    + withdrawal_transactions_count as WithdrawalTransactionIndex,
+                &mut drive_operations,
+            );
 
         let cache = self.drive.cache.read().unwrap();
 
@@ -119,17 +128,11 @@ where
             &platform_version.drive,
         )?;
 
-        // TODO: Use number of added transactions
-        if let Some(index) = last_transaction_index {
-            self.drive
-                .add_update_withdrawal_index_counter_operation(index + 1, &mut drive_operations);
-        }
-
         self.drive.apply_drive_operations(
             drive_operations,
             true,
             &block_info,
-            Some(transaction),
+            transaction,
             platform_version,
         )?;
 
@@ -233,7 +236,7 @@ mod tests {
         platform
             .pool_withdrawals_into_transactions_queue_v0(
                 &block_info,
-                &transaction,
+                Some(&transaction),
                 platform_version,
             )
             .expect("to pool withdrawal documents into transactions");

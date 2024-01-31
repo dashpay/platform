@@ -27,7 +27,7 @@ use crate::version::drive_abci_versions::{
     DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion,
     DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions,
     DriveAbciValidationDataTriggerAndBindingVersions, DriveAbciValidationDataTriggerVersions,
-    DriveAbciValidationVersions, DriveAbciVersion, DriveAbciWithdrawalsMethodVersions,
+    DriveAbciValidationVersions, DriveAbciVersion,
 };
 use crate::version::drive_versions::{
     DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
@@ -521,7 +521,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 find_oldest_epoch_needing_payment: 0,
                 fetch_reward_shares_list_for_masternode: 0,
             },
-            identity_credit_withdrawal: DriveAbciIdentityCreditWithdrawalMethodVersions {
+            withdrawals: DriveAbciIdentityCreditWithdrawalMethodVersions {
                 build_untied_withdrawal_transactions_from_documents: 0,
                 dequeue_and_build_unsigned_withdrawal_transactions: 0,
                 fetch_transactions_block_inclusion_status: 0,
@@ -533,9 +533,6 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 execute_event: 0,
                 process_raw_state_transitions: 0,
                 validate_fees_of_event: 0,
-            },
-            withdrawals: DriveAbciWithdrawalsMethodVersions {
-                check_withdrawals: 0,
             },
             epoch: DriveAbciEpochMethodVersions {
                 gather_epoch_info: 0,

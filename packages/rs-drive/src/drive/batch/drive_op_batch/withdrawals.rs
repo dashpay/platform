@@ -8,7 +8,7 @@ use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 use crate::drive::grove_operations::BatchDeleteApplyType;
 use crate::drive::identity::withdrawals::paths::{
     get_withdrawal_root_path_vec, get_withdrawal_transactions_queue_path,
-    get_withdrawal_transactions_queue_path_vec, WITHDRAWAL_TRANSACTIONS_INDEX_COUNTER_KEY,
+    get_withdrawal_transactions_queue_path_vec, WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY,
 };
 use crate::drive::identity::withdrawals::{
     WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
@@ -20,7 +20,7 @@ use super::DriveLowLevelOperationConverter;
 
 /// Operations for Withdrawals
 #[derive(Clone, Debug)]
-pub enum WithdrawalOperationType<'a> {
+pub enum WithdrawalOperationType {
     /// Update index counter
     UpdateIndexCounter {
         /// index counter value
@@ -29,7 +29,7 @@ pub enum WithdrawalOperationType<'a> {
     /// Insert Core Transaction into queue
     InsertTransactions {
         /// transaction id bytes
-        withdrawal_transactions: &'a [WithdrawalTransactionIndexAndBytes], // TODO: consume withdrawals
+        withdrawal_transactions: Vec<WithdrawalTransactionIndexAndBytes>,
     },
     /// Delete withdrawal
     DeleteWithdrawalTransaction {
@@ -38,7 +38,7 @@ pub enum WithdrawalOperationType<'a> {
     },
 }
 
-impl DriveLowLevelOperationConverter for WithdrawalOperationType<'_> {
+impl DriveLowLevelOperationConverter for WithdrawalOperationType {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
@@ -58,7 +58,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType<'_> {
                 drive.batch_insert(
                     PathKeyElementInfo::PathKeyRefElement::<'_, 1>((
                         path,
-                        &WITHDRAWAL_TRANSACTIONS_INDEX_COUNTER_KEY,
+                        &WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY,
                         Element::Item(index.to_be_bytes().to_vec(), None),
                     )),
                     &mut drive_operations,

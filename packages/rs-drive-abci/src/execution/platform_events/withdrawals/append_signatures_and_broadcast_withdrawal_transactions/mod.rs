@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use crate::rpc::core::CoreRPCLike;
+use dpp::dashcore::bls_sig_utils::BLSSignature;
 use dpp::version::PlatformVersion;
 
 mod v0;
@@ -15,13 +16,13 @@ where
     pub(in crate::execution) fn append_signatures_and_broadcast_withdrawal_transactions(
         &self,
         unsigned_withdrawal_transactions: UnsignedWithdrawalTxs,
-        signatures: Vec<Vec<u8>>,
+        signatures: Vec<BLSSignature>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         match platform_version
             .drive_abci
             .methods
-            .identity_credit_withdrawal
+            .withdrawals
             .append_signatures_and_broadcast_withdrawal_transactions
         {
             0 => self.append_signatures_and_broadcast_withdrawal_transactions_v0(
