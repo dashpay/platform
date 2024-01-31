@@ -242,8 +242,18 @@ where
             .threshold_vote_extensions
             .drain(..)
             .into_iter()
-            .map(|e| e.signature)
-            .collect();
+            .map(|vote_extension| {
+                let signature_bytes: [u8; 96] =
+                    vote_extension.signature.try_into().map_err(|e| {
+                        AbciError::BadRequestDataSize(format!(
+                            "invalid vote extension signature size: {}",
+                            hex::encode(e)
+                        ))
+                    })?;
+
+                Ok(BLSSignature::from(signature_bytes))
+            })
+            .collect::<Result<_, AbciError>>()?;
 
         self.append_signatures_and_broadcast_withdrawal_transactions(
             unsigned_withdrawal_transactions,
