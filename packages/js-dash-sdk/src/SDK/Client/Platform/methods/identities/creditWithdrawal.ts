@@ -14,6 +14,7 @@ export const STATUSES = {
 
 // Implement remaining pooling types when they ready on drive side
 const DEFAULT_POOLING = 0;
+const MINIMAL_WITHDRAWAL_AMOUNT = 1000000;
 
 type WithdrawalOptions = {
   // TODO: should we leave it? Core fee expected to be a fibonacci number
@@ -50,6 +51,10 @@ export async function creditWithdrawal(
   const balance = identity.getBalance();
   if (amount > balance) {
     throw new Error(`Withdrawal amount "${amount}" is bigger that identity balance "${balance}"`);
+  }
+
+  if (amount < MINIMAL_WITHDRAWAL_AMOUNT) {
+    throw new Error(`Withdrawal amount "${amount}" is less than minimal allowed withdrawal amount "${MINIMAL_WITHDRAWAL_AMOUNT}"`);
   }
 
   if (!this.client.wallet) {
