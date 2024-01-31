@@ -325,7 +325,7 @@ where
         {
             self.mark_chainlocked_withdrawals_as_complete(
                 &block_info,
-                transaction,
+                Some(transaction),
                 platform_version,
             )?;
         }

@@ -4,7 +4,7 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
-use drive::grovedb::Transaction;
+use drive::grovedb::TransactionArg;
 
 mod v0;
 
@@ -38,7 +38,7 @@ where
     pub fn mark_chainlocked_withdrawals_as_complete(
         &self,
         block_info: &BlockInfo,
-        transaction: &Transaction,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         match platform_version
