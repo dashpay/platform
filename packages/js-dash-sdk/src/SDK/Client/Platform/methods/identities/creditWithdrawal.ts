@@ -19,6 +19,7 @@ const MINIMAL_WITHDRAWAL_AMOUNT = 1000000;
 type WithdrawalOptions = {
   // TODO: should we leave it? Core fee expected to be a fibonacci number
   coreFeePerByte?: number,
+  signingKeyIndex: number
 };
 
 /** Creates platform credits withdrawal request
@@ -32,7 +33,9 @@ export async function creditWithdrawal(
   identity: Identity,
   amount: number,
   to: string,
-  options: WithdrawalOptions = {},
+  options: WithdrawalOptions = {
+    signingKeyIndex: 2,
+  },
 ): Promise<any> {
   await this.initialize();
 
@@ -68,6 +71,10 @@ export async function creditWithdrawal(
   }
   const relayFee = options.coreFeePerByte || minRelayFee;
   const coreFeePerByte = nearestGreaterFibonacci(relayFee);
+  console.log({
+    relayFee,
+    coreFeePerByte,
+  });
 
   const revision = identity.getRevision();
 
@@ -84,9 +91,12 @@ export async function creditWithdrawal(
 
   this.logger.silly('[Identity#creditWithdrawal] Created IdentityCreditWithdrawalTransition');
 
-  const signerKeyIndex = 2;
-
-  await signStateTransition(this, identityCreditWithdrawalTransition, identity, signerKeyIndex);
+  await signStateTransition(
+    this,
+    identityCreditWithdrawalTransition,
+    identity,
+    options.signingKeyIndex,
+  );
 
   await broadcastStateTransition(this, identityCreditWithdrawalTransition, {
     skipValidation: true,

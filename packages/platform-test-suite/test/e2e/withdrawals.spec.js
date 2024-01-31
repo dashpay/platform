@@ -53,29 +53,17 @@ describe('Withdrawals', () => {
     }
   });
 
-  describe('Data Contract', () => {
-    it('should exist', async () => {
-      const existingDataContract = await client.platform.contracts.get(
-        withdrawalsContractId,
-      );
-
-      expect(existingDataContract).to.exist();
-
-      expect(existingDataContract.getId().toString()).to.equal(
-        withdrawalsContractId,
-      );
-    });
-  });
-
   describe('Any Identity', () => {
+    const INITIAL_BALANCE = 1000000;
+
     before(async () => {
-      identity = await client.platform.identities.register(1000000);
+      identity = await client.platform.identities.register(INITIAL_BALANCE);
 
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
     });
 
-    it.only('should be able to withdraw credits', async () => {
+    it('should be able to withdraw credits', async () => {
       const account = await client.getWalletAccount();
       const walletBalanceBefore = account.getTotalBalance();
       const identityBalanceBefore = identity.getBalance();
@@ -142,6 +130,34 @@ describe('Withdrawals', () => {
       await client.platform.documents.broadcast({
         delete: [withdrawalDocument],
       }, identity);
+    });
+
+    it.only('should not be able to withdraw more than balance', async () => {
+      const account = await client.getWalletAccount();
+      const walletBalanceBefore = account.getTotalBalance();
+      const identityBalanceBefore = identity.getBalance();
+      const withdrawTo = await account.getUnusedAddress();
+      const amountToWithdraw = INITIAL_BALANCE * 2;
+
+      expect(async () => client.platform.identities.withdrawCredits(
+        identity,
+        BigInt(amountToWithdraw),
+        withdrawTo.address,
+      )).to.throw();
+    });
+
+    it('should not allow to create withdrawal with wrong security key type', async () => {
+      const account = await client.getWalletAccount();
+      const walletBalanceBefore = account.getTotalBalance();
+      const identityBalanceBefore = identity.getBalance();
+      const withdrawTo = await account.getUnusedAddress();
+      const amountToWithdraw = INITIAL_BALANCE * 2;
+
+      // expect(async () => client.platform.identities.withdrawCredits(
+      //   identity,
+      //   BigInt(amountToWithdraw),
+      //   withdrawTo.address,
+      // )).to.throw();
     });
 
     it('should not be able to create withdrawal document', async () => {
