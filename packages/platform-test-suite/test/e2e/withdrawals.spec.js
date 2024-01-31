@@ -75,7 +75,76 @@ describe('Withdrawals', () => {
       await waitForSTPropagated();
     });
 
-    it('should not be able to create withdrawal', async () => {
+    it.only('should be able to withdraw credits', async () => {
+      const account = await client.getWalletAccount();
+      const walletBalanceBefore = account.getTotalBalance();
+      const identityBalanceBefore = identity.getBalance();
+      const withdrawTo = await account.getUnusedAddress();
+      const amountToWithdraw = 1000000;
+
+      await client.platform.identities.withdrawCredits(
+        identity,
+        BigInt(amountToWithdraw),
+        withdrawTo.address,
+      );
+
+      // Re-fetch identity to obtain latest core chain lock height
+      identity = await client.platform.identities.get(identity.getId());
+      const identityMetadata = identity.getMetadata().toObject();
+      const { coreChainLockedHeight: initialCoreChainLockedHeight } = identityMetadata;
+
+      // Wait for core chain lock update.
+      // After that drive should update document status to completed.
+      // (Wait 2 chainlocks on regtest since they are processed quicker,
+      // and withdrawal might not complete yet)
+      const chainLocksToWait = process.env.NETWORK === 'regtest' ? 2 : 1;
+      const { promise } = await client.platform.identities.utils
+        .waitForCoreChainLockedHeight(initialCoreChainLockedHeight + chainLocksToWait);
+      await promise;
+
+      // Wait for document completion to propagate
+      await waitForSTPropagated();
+
+      // Wait for document status to be changed to COMPLETED.
+      let withdrawalCompleted = false;
+      let withdrawalDocument;
+      for (let i = 0; i < 10; i++) {
+        const withdrawals = await client.platform
+          .documents.get(
+            'withdrawals.withdrawal',
+            {
+              where: [['$ownerId', '==', identity.getId()]],
+            },
+          );
+
+        withdrawalDocument = withdrawals[withdrawals.length - 1];
+        withdrawalCompleted = withdrawalDocument.get('status') === WITHDRAWAL_STATUSES.COMPLETED;
+
+        if (withdrawalCompleted) {
+          break;
+        }
+
+        await waitForSTPropagated();
+      }
+
+      expect(withdrawalCompleted).to.be.true();
+
+      const walletBalanceUpdated = account.getTotalBalance();
+
+      identity = await client.platform.identities.get(identity.getId());
+      const identityBalanceUpdated = identity.getBalance();
+
+      // Should ensure balances are right
+      expect(walletBalanceUpdated).to.be.greaterThan(walletBalanceBefore);
+      expect(identityBalanceUpdated).to.be.lessThan(identityBalanceBefore);
+
+      // Should allow deleting of the withdrawal document
+      await client.platform.documents.broadcast({
+        delete: [withdrawalDocument],
+      }, identity);
+    });
+
+    it('should not be able to create withdrawal document', async () => {
       const withdrawal = await client.platform.documents.create(
         'withdrawals.withdrawal',
         identity,
@@ -117,7 +186,7 @@ describe('Withdrawals', () => {
       }
     });
 
-    it('should not be able to delete incomplete withdrawal', async () => {
+    it('should not be able to delete incomplete withdrawal document', async () => {
       const account = await client.getWalletAccount();
       const withdrawTo = await account.getUnusedAddress();
 
@@ -159,7 +228,7 @@ describe('Withdrawals', () => {
       }
     });
 
-    it('should not be able to update withdrawal', async () => {
+    it('should not be able to update withdrawal document', async () => {
       const [withdrawalDocument] = await client.platform
         .documents.get(
           'withdrawals.withdrawal',
