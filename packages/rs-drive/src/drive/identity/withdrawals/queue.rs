@@ -20,22 +20,22 @@ use super::paths::get_withdrawal_transactions_queue_path_vec;
 
 impl Drive {
     /// Add insert operations for withdrawal transactions to the batch
-    pub fn add_enqueue_withdrawal_transaction_operations<'a>(
+    pub fn add_enqueue_untied_withdrawal_transaction_operations<'a>(
         &self,
-        withdrawals: &'a [WithdrawalTransactionIndexAndBytes],
+        withdrawal_transactions: Vec<WithdrawalTransactionIndexAndBytes>,
         drive_operation_types: &mut Vec<DriveOperation<'a>>,
     ) {
-        if !withdrawals.is_empty() {
+        if !withdrawal_transactions.is_empty() {
             drive_operation_types.push(DriveOperation::WithdrawalOperation(
                 WithdrawalOperationType::InsertTransactions {
-                    withdrawal_transactions: withdrawals,
+                    withdrawal_transactions,
                 },
             ));
         }
     }
 
     /// Get specified amount of withdrawal transactions from the DB
-    pub fn dequeue_withdrawal_transactions(
+    pub fn dequeue_untied_withdrawal_transactions(
         &self,
         max_amount: u16,
         transaction: TransactionArg,
@@ -68,7 +68,7 @@ impl Drive {
             .0
             .to_key_elements();
 
-        let withdrawals = result_items
+        let withdrawal_transactions = result_items
             .into_iter()
             .map(|(index_bytes, element)| match element {
                 Element::Item(bytes, _) => {
@@ -88,15 +88,15 @@ impl Drive {
             })
             .collect::<Result<Vec<WithdrawalTransactionIndexAndBytes>, Error>>()?;
 
-        if !withdrawals.is_empty() {
-            for (index, _) in withdrawals.iter() {
+        if !withdrawal_transactions.is_empty() {
+            for (index, _) in withdrawal_transactions.iter() {
                 drive_operation_types.push(DriveOperation::WithdrawalOperation(
                     WithdrawalOperationType::DeleteWithdrawalTransaction { index: *index },
                 ));
             }
         }
 
-        Ok(withdrawals)
+        Ok(withdrawal_transactions)
     }
 }
 
@@ -134,7 +134,10 @@ mod tests {
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
-        drive.add_enqueue_withdrawal_transaction_operations(&withdrawals, &mut drive_operations);
+        drive.add_enqueue_untied_withdrawal_transaction_operations(
+            &withdrawals,
+            &mut drive_operations,
+        );
 
         drive
             .apply_drive_operations(
@@ -149,7 +152,7 @@ mod tests {
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
         let withdrawals = drive
-            .dequeue_withdrawal_transactions(16, Some(&transaction), &mut drive_operations)
+            .dequeue_untied_withdrawal_transactions(16, Some(&transaction), &mut drive_operations)
             .expect("to dequeue withdrawals");
 
         drive
@@ -167,7 +170,7 @@ mod tests {
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
         let withdrawals = drive
-            .dequeue_withdrawal_transactions(16, Some(&transaction), &mut drive_operations)
+            .dequeue_untied_withdrawal_transactions(16, Some(&transaction), &mut drive_operations)
             .expect("to dequeue withdrawals");
 
         drive
@@ -185,7 +188,7 @@ mod tests {
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
         drive
-            .dequeue_withdrawal_transactions(16, Some(&transaction), &mut drive_operations)
+            .dequeue_untied_withdrawal_transactions(16, Some(&transaction), &mut drive_operations)
             .expect("to dequeue withdrawals");
 
         assert_eq!(drive_operations.len(), 0);

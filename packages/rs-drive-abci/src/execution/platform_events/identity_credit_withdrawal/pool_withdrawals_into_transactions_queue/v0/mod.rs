@@ -95,11 +95,11 @@ where
 
         let mut drive_operations = Vec::new();
 
-        // TODO: It's better consume transactions
-        self.drive.add_enqueue_withdrawal_transaction_operations(
-            &withdrawal_transactions,
-            &mut drive_operations,
-        );
+        self.drive
+            .add_enqueue_untied_withdrawal_transaction_operations(
+                withdrawal_transactions,
+                &mut drive_operations,
+            );
 
         let cache = self.drive.cache.read().unwrap();
 

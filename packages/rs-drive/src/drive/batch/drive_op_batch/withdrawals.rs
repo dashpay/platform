@@ -20,7 +20,7 @@ use super::DriveLowLevelOperationConverter;
 
 /// Operations for Withdrawals
 #[derive(Clone, Debug)]
-pub enum WithdrawalOperationType<'a> {
+pub enum WithdrawalOperationType {
     /// Update index counter
     UpdateIndexCounter {
         /// index counter value
@@ -29,7 +29,7 @@ pub enum WithdrawalOperationType<'a> {
     /// Insert Core Transaction into queue
     InsertTransactions {
         /// transaction id bytes
-        withdrawal_transactions: &'a [WithdrawalTransactionIndexAndBytes], // TODO: consume withdrawals
+        withdrawal_transactions: Vec<WithdrawalTransactionIndexAndBytes>,
     },
     /// Delete withdrawal
     DeleteWithdrawalTransaction {
@@ -38,7 +38,7 @@ pub enum WithdrawalOperationType<'a> {
     },
 }
 
-impl DriveLowLevelOperationConverter for WithdrawalOperationType<'_> {
+impl DriveLowLevelOperationConverter for WithdrawalOperationType {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
