@@ -22,7 +22,7 @@ where
         match platform_version
             .drive_abci
             .methods
-            .identity_credit_withdrawal
+            .withdrawals
             .append_signatures_and_broadcast_withdrawal_transactions
         {
             0 => self.append_signatures_and_broadcast_withdrawal_transactions_v0(

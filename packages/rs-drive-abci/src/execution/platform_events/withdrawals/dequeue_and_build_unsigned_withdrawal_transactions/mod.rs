@@ -39,7 +39,7 @@ where
         match platform_version
             .drive_abci
             .methods
-            .identity_credit_withdrawal
+            .withdrawals
             .dequeue_and_build_unsigned_withdrawal_transactions
         {
             0 => self.dequeue_and_build_unsigned_withdrawal_transactions_v0(

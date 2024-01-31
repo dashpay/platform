@@ -26,7 +26,7 @@ where
     /// # Returns
     ///
     /// * `Result<Vec<String>, Error>` - Returns a Vector of transaction hashes if found, otherwise returns an `Error`.
-    pub(in crate::execution::platform_events::identity_credit_withdrawal) fn fetch_transactions_block_inclusion_status(
+    pub(in crate::execution::platform_events::withdrawals) fn fetch_transactions_block_inclusion_status(
         &self,
         current_chain_locked_core_height: u32,
         withdrawal_indices: &[WithdrawalTransactionIndex],
@@ -35,7 +35,7 @@ where
         match platform_version
             .drive_abci
             .methods
-            .identity_credit_withdrawal
+            .withdrawals
             .fetch_transactions_block_inclusion_status
         {
             0 => self.fetch_transactions_block_inclusion_status_v0(

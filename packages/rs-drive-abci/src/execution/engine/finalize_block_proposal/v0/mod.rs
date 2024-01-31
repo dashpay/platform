@@ -147,6 +147,9 @@ where
         }
 
         // Verify vote extensions
+        // We don't need to verify vote extension signatures once again after tenderdash
+        // here, because we will do it bellow broadcasting withdrawal transactions.
+        // The sendrawtransaction RPC method returns an error if quorum signature is invalid
         let expected_withdrawal_transactions =
             block_execution_context.unsigned_withdrawal_transactions();
 
@@ -184,21 +187,6 @@ where
             if !validation_result.is_valid() {
                 return Ok(validation_result.into());
             }
-
-            // TODO(withdrawals): We verify withdrawal transactions set what we pass for singing to tenderdash
-            //  is correct on verify_vote_extension. Do we need to verify resulting signatures from tenderdash?
-            //  It does make sense only in case if we don't trust to tenderdash.
-            //  Moreover, if signatures aren't correct then Core RPC will fail when we broadcast these transactions
-            //  to Core. Do we need to verify Tenderdash signatures twice, here in Drive and then in Core?
-
-            // if let Err(e) = self.check_withdrawals(
-            //     &received_withdrawals,
-            //     &our_withdrawals,
-            //     Some(quorum_public_key),
-            // ) {
-            //     validation_result.add_error(e);
-            //     return Ok(validation_result.into());
-            // }
         }
         drop(state_cache);
 

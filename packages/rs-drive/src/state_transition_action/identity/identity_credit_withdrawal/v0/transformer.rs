@@ -13,7 +13,6 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
         creation_time_ms: u64,
     ) -> Self {
         let mut entropy = Vec::new();
-
         entropy.extend_from_slice(&identity_credit_withdrawal.revision.to_be_bytes());
         entropy.extend_from_slice(identity_credit_withdrawal.output_script.as_bytes());
 

@@ -34,7 +34,7 @@ where
         match platform_version
             .drive_abci
             .methods
-            .identity_credit_withdrawal
+            .withdrawals
             .pool_withdrawals_into_transactions_queue
         {
             0 => self.pool_withdrawals_into_transactions_queue_v0(

@@ -44,7 +44,7 @@ where
         match platform_version
             .drive_abci
             .methods
-            .identity_credit_withdrawal
+            .withdrawals
             .mark_chainlocked_withdrawals_as_complete
         {
             0 => self.mark_chainlocked_withdrawals_as_complete_v0(
