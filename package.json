@@ -88,8 +88,7 @@
     "ansi-regex": "5.0.1",
     "cacache": "18.0.0",
     "node-gyp": "10.0.1",
-    "follow-redirects": "^1.15.4",
-    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#feat/asset-unlock-transaction"
+    "follow-redirects": "^1.15.4"
   },
   "dependencies": {
     "node-gyp": "^10.0.1"

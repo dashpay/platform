@@ -236,7 +236,7 @@ export default function setupLocalPresetTaskFactory(
                     }
 
                     // TODO: Shall we use trace?
-                    config.set('platform.drive.tenderdash.log.level', 'trace');
+                    config.set('platform.drive.tenderdash.log.level', 'debug');
                   }
 
                   config.set('platform.dpns.masterPublicKey', dpnsDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
