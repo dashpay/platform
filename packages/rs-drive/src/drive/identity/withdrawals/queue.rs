@@ -135,7 +135,7 @@ mod tests {
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
         drive.add_enqueue_untied_withdrawal_transaction_operations(
-            &withdrawals,
+            withdrawals,
             &mut drive_operations,
         );
 

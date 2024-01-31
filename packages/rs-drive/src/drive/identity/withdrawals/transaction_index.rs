@@ -9,11 +9,11 @@ use crate::{
     error::{drive::DriveError, Error},
 };
 
-use super::paths::WITHDRAWAL_TRANSACTIONS_INDEX_COUNTER_KEY;
+use super::paths::WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY;
 
 impl Drive {
-    /// Fetches latest withdrawal index in the transactions queue
-    pub fn fetch_latest_withdrawal_transaction_index(
+    /// Fetches next withdrawal transaction index
+    pub fn fetch_next_withdrawal_transaction_index(
         &self,
         transaction: TransactionArg,
     ) -> Result<WithdrawalTransactionIndex, Error> {
@@ -21,7 +21,7 @@ impl Drive {
             .grove
             .get(
                 &[Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions).as_slice()],
-                &WITHDRAWAL_TRANSACTIONS_INDEX_COUNTER_KEY,
+                &WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY,
                 transaction,
             )
             .unwrap()
@@ -45,14 +45,14 @@ impl Drive {
         Ok(counter)
     }
 
-    /// Add counter update operations to the batch
-    pub fn add_update_withdrawal_index_counter_operation(
+    /// Add next transaction index increment operation to the batch
+    pub fn add_update_next_withdrawal_transaction_index_operation(
         &self,
-        value: WithdrawalTransactionIndex,
+        index: WithdrawalTransactionIndex,
         drive_operation_types: &mut Vec<DriveOperation>,
     ) {
         drive_operation_types.push(DriveOperation::WithdrawalOperation(
-            WithdrawalOperationType::UpdateIndexCounter { index: value },
+            WithdrawalOperationType::UpdateIndexCounter { index },
         ));
     }
 }
@@ -66,7 +66,7 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
     #[test]
-    fn test_withdrawal_transaction_counter() {
+    fn test_next_withdrawal_transaction_index() {
         let drive = setup_drive_with_initial_state_structure();
 
         let platform_version = PlatformVersion::latest();
@@ -84,7 +84,7 @@ mod tests {
 
         let counter: u64 = 42;
 
-        drive.add_update_withdrawal_index_counter_operation(counter, &mut batch);
+        drive.add_update_next_withdrawal_transaction_index_operation(counter, &mut batch);
 
         drive
             .apply_drive_operations(
@@ -97,20 +97,20 @@ mod tests {
             .expect("to apply drive ops");
 
         let stored_counter = drive
-            .fetch_latest_withdrawal_transaction_index(Some(&transaction))
+            .fetch_next_withdrawal_transaction_index(Some(&transaction))
             .expect("to withdraw counter");
 
         assert_eq!(stored_counter, counter);
     }
 
     #[test]
-    fn test_returns_0_if_empty() {
+    fn test_initial_withdrawal_transaction_index() {
         let drive = setup_drive_with_initial_state_structure();
 
         let transaction = drive.grove.start_transaction();
 
         let stored_counter = drive
-            .fetch_latest_withdrawal_transaction_index(Some(&transaction))
+            .fetch_next_withdrawal_transaction_index(Some(&transaction))
             .expect("to withdraw counter");
 
         assert_eq!(stored_counter, 0);

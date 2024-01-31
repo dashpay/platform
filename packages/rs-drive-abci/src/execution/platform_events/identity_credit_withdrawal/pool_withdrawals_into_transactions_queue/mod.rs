@@ -1,11 +1,10 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
-use drive::grovedb::Transaction;
+use drive::grovedb::TransactionArg;
 
 mod v0;
 
@@ -29,7 +28,7 @@ where
     pub(in crate::execution) fn pool_withdrawals_into_transactions_queue(
         &self,
         block_info: &BlockInfo,
-        transaction: &Transaction,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         match platform_version

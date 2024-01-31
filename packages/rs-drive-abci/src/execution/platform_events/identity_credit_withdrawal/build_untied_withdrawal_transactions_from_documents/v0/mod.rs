@@ -13,7 +13,9 @@ use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdr
 
 use drive::dpp::identifier::Identifier;
 use drive::dpp::identity::convert_credits_to_duffs;
-use drive::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
+use drive::drive::identity::withdrawals::{
+    WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
+};
 use drive::{drive::batch::DriveOperation, query::TransactionArg};
 
 use crate::{
@@ -30,14 +32,10 @@ where
     pub(super) fn build_untied_withdrawal_transactions_from_documents_v0(
         &self,
         documents: &[Document],
-        transaction: TransactionArg,
+        start_index: WithdrawalTransactionIndex,
     ) -> Result<HashMap<Identifier, WithdrawalTransactionIndexAndBytes>, Error> {
         let mut withdrawals: HashMap<Identifier, WithdrawalTransactionIndexAndBytes> =
             HashMap::new();
-
-        let latest_withdrawal_index = self
-            .drive
-            .fetch_latest_withdrawal_transaction_index(transaction)?;
 
         for (i, document) in documents.iter().enumerate() {
             let output_script_bytes = document
@@ -67,6 +65,7 @@ where
                     ))
                 })?;
 
+            // TODO: Use constant and double check
             let state_transition_size = 190;
 
             let output_script = ScriptBuf::from_bytes(output_script_bytes);
@@ -76,7 +75,7 @@ where
                 script_pubkey: output_script,
             };
 
-            let transaction_index = latest_withdrawal_index + i as u64;
+            let transaction_index = start_index + i as WithdrawalTransactionIndex;
 
             let withdrawal_transaction = AssetUnlockBaseTransactionInfo {
                 version: 1,
@@ -205,10 +204,7 @@ mod tests {
             let documents = vec![document_1, document_2];
 
             let transactions = platform
-                .build_untied_withdrawal_transactions_from_documents_v0(
-                    &documents,
-                    Some(&transaction),
-                )
+                .build_untied_withdrawal_transactions_from_documents_v0(&documents, 50)
                 .expect("to build transactions from documents");
 
             assert_eq!(
@@ -219,7 +215,7 @@ mod tests {
                     .collect::<Vec<WithdrawalTransactionIndexAndBytes>>(),
                 vec![
                     (
-                        0,
+                        50,
                         vec![
                             1, 0, 9, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 23, 0, 1, 2, 3, 4, 5, 6, 7,
                             8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 0, 0, 0, 0,
@@ -227,7 +223,7 @@ mod tests {
                         ],
                     ),
                     (
-                        1,
+                        51,
                         vec![
                             1, 0, 9, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 23, 0, 1, 2, 3, 4, 5, 6, 7,
                             8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 0, 0, 0, 0,

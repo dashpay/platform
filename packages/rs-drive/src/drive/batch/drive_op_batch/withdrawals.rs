@@ -8,7 +8,7 @@ use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 use crate::drive::grove_operations::BatchDeleteApplyType;
 use crate::drive::identity::withdrawals::paths::{
     get_withdrawal_root_path_vec, get_withdrawal_transactions_queue_path,
-    get_withdrawal_transactions_queue_path_vec, WITHDRAWAL_TRANSACTIONS_INDEX_COUNTER_KEY,
+    get_withdrawal_transactions_queue_path_vec, WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY,
 };
 use crate::drive::identity::withdrawals::{
     WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
@@ -58,7 +58,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType {
                 drive.batch_insert(
                     PathKeyElementInfo::PathKeyRefElement::<'_, 1>((
                         path,
-                        &WITHDRAWAL_TRANSACTIONS_INDEX_COUNTER_KEY,
+                        &WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY,
                         Element::Item(index.to_be_bytes().to_vec(), None),
                     )),
                     &mut drive_operations,

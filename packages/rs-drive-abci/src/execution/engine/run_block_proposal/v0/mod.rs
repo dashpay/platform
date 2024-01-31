@@ -363,7 +363,11 @@ where
 
         // Takes queued withdrawals, creates untiled withdrawal transaction payload, saves them to queue
         // Corresponding withdrawal documents are changed from queued to pooled
-        self.pool_withdrawals_into_transactions_queue(&block_info, transaction, platform_version)?;
+        self.pool_withdrawals_into_transactions_queue(
+            &block_info,
+            Some(transaction),
+            platform_version,
+        )?;
 
         // while we have the state transitions executed, we now need to process the block fees
         let block_fees_v0: BlockFeesV0 = state_transitions_result.aggregated_fees().clone().into();
