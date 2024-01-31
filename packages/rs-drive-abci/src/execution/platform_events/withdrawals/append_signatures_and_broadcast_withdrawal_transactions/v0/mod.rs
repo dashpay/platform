@@ -20,6 +20,12 @@ where
             return Ok(());
         }
 
+        if unsigned_withdrawal_transactions.len() != signatures.len() {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "number of signatures must match number of withdrawal transactions",
+            )));
+        }
+
         tracing::debug!(
             "Broadcasting {} withdrawal transactions",
             unsigned_withdrawal_transactions.len()
