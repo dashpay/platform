@@ -8,13 +8,13 @@ use dpp::consensus::ConsensusError;
 
 use crate::error::Error;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_withdrawal_transition::v0::{
+    MIN_CORE_FEE_PER_BYTE, MIN_WITHDRAWAL_AMOUNT,
+};
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::util::is_fibonacci_number::is_fibonacci_number;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::withdrawal::Pooling;
-
-const MIN_WITHDRAWAL_AMOUNT: u64 = 1000_000;
-const MIN_CORE_FEE_PER_BYTE: u32 = 1000_000;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_credit_withdrawal) trait IdentityCreditWithdrawalStateTransitionStructureValidationV0 {
     fn validate_base_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error>;

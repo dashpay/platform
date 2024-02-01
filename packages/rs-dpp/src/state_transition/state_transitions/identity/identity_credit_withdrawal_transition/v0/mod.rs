@@ -20,6 +20,11 @@ use crate::{
 
 use crate::withdrawal::Pooling;
 
+// TODO: Revisit
+pub const MIN_WITHDRAWAL_AMOUNT: u64 = 1_000_000;
+// TODO: Revisit. Mist be fibonacci number so we can use this constant
+pub const MIN_CORE_FEE_PER_BYTE: u32 = 13;
+
 #[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
