@@ -15,7 +15,7 @@ use tenderdash_abci::proto::{
     abci::ExtendVoteExtension,
     types::{VoteExtension, VoteExtensionType},
 };
-use tenderdash_abci::signatures::SignDigest;
+use tenderdash_abci::signatures::Signable;
 
 const MAX_WITHDRAWAL_TXS: u16 = 16;
 
@@ -39,6 +39,7 @@ impl<'a> WithdrawalTxs<'a> {
                 r#type: VoteExtensionType::ThresholdRecover.into(),
                 extension: v,
                 signature: Default::default(),
+                sign_request_id: None,
             })
             .collect::<Vec<VoteExtension>>();
 
@@ -96,6 +97,7 @@ impl<'a> WithdrawalTxs<'a> {
             .map(|v| ExtendVoteExtension {
                 r#type: v.r#type,
                 extension: v.extension.clone(),
+                sign_request_id: None,
             })
             .collect::<Vec<ExtendVoteExtension>>()
     }
@@ -106,6 +108,7 @@ impl<'a> WithdrawalTxs<'a> {
             .map(|v| ExtendVoteExtension {
                 r#type: v.r#type,
                 extension: v.extension,
+                sign_request_id: None,
             })
             .collect::<Vec<ExtendVoteExtension>>()
     }
@@ -190,6 +193,7 @@ impl<'a> From<Vec<ExtendVoteExtension>> for WithdrawalTxs<'a> {
                     r#type: v.r#type,
                     extension: v.extension,
                     signature: Default::default(),
+                    sign_request_id: None,
                 })
                 .collect::<Vec<VoteExtension>>(),
             drive_operations: Vec::<DriveOperation>::new(),
@@ -261,6 +265,7 @@ mod test {
             .into(),
             signature,
             r#type: VoteExtensionType::ThresholdRecover.into(),
+            sign_request_id: None,
         });
 
         assert!(wt
