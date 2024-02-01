@@ -26,7 +26,7 @@ use strategy_tests::frequency::Frequency;
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use tenderdash_abci::proto::types::{CanonicalVote, SignedMsgType, StateId};
-use tenderdash_abci::signatures::{SignBytes, SignDigest};
+use tenderdash_abci::signatures::{Hashable, Signable};
 
 #[derive(Clone, Debug, Default)]
 pub struct QueryStrategy {
@@ -80,10 +80,11 @@ impl<'a> ProofVerification<'a> {
     /// Implements algorithm described at:
     /// https://github.com/dashpay/tenderdash/blob/v0.12-dev/spec/consensus/signing.md#block-signature-verification-on-light-client
     fn verify_signature(&self, state_id: StateId, round: u32) -> SimpleValidationResult<AbciError> {
-        let state_id_hash = match state_id.sha256(&self.chain_id, self.height, round as i32) {
-            Ok(s) => s,
-            Err(e) => return SimpleValidationResult::new_with_error(AbciError::from(e)),
-        };
+        let state_id_hash =
+            match state_id.calculate_msg_hash(&self.chain_id, self.height, round as i32) {
+                Ok(s) => s,
+                Err(e) => return SimpleValidationResult::new_with_error(AbciError::from(e)),
+            };
 
         let v = CanonicalVote {
             block_id: self.block_hash.to_vec(),

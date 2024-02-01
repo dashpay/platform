@@ -26,8 +26,8 @@ use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use tenderdash_abci::proto::types::{
     Block, BlockId, Data, EvidenceList, Header, PartSetHeader, VoteExtension, VoteExtensionType, StateId, CanonicalVote, SignedMsgType,
 };
-use tenderdash_abci::signatures::SignBytes;
-use tenderdash_abci::{signatures::SignDigest, proto::version::Consensus, Application};
+use tenderdash_abci::signatures::Hashable;
+use tenderdash_abci::{signatures::Signable, proto::version::Consensus, Application};
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
@@ -205,7 +205,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             time: time.to_milis(),
         };
         let state_id_hash = state_id
-            .sha256(CHAIN_ID, height as i64, round as i32)
+            .calculate_msg_hash(CHAIN_ID, height as i64, round as i32)
             .expect("cannot hash state id");
 
         let block_header_hash: [u8; 32] = rng.gen();
@@ -218,7 +218,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             state_id: state_id_hash,
         };
         let block_id_hash = block_id
-            .sha256(CHAIN_ID, height as i64, round as i32)
+            .calculate_msg_hash(CHAIN_ID, height as i64, round as i32)
             .expect("cannot hash block id");
 
         let request_process_proposal = RequestProcessProposal {
@@ -410,6 +410,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                     r#type: VoteExtensionType::ThresholdRecover as i32,
                     extension: tx_id.to_byte_array().to_vec(),
                     signature: vec![], //todo: signature
+                    sign_request_id: None,
                 }
             })
             .collect();
@@ -448,7 +449,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         let quorum_type = self.platform.config.validator_set_quorum_type();
         let state_id_hash = state_id
-            .sha256(CHAIN_ID, height as i64, round as i32)
+            .calculate_msg_hash(CHAIN_ID, height as i64, round as i32)
             .expect("cannot calculate state id hash");
 
         let commit = CanonicalVote {
