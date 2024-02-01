@@ -447,6 +447,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([name, options]) => {
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
             options.core.docker.image = defaultConfig.get('core.docker.image');
+
+            options.platform.drive.tenderdash.docker.image = defaultConfig.get('core.docker.image');
           });
 
         return configFile;

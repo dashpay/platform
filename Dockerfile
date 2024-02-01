@@ -190,7 +190,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-    export TENDERDASH_COMMITISH=a10c82aa3c95020ba01bab7e0f648a4b1cba3cb2 && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
         --profile "$CARGO_BUILD_PROFILE" \

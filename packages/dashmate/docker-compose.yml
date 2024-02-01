@@ -75,7 +75,6 @@ services:
       - platform
 
   drive_tenderdash:
-    platform: linux/amd64
     image: ${PLATFORM_DRIVE_TENDERDASH_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "Drive Tenderdash"

@@ -418,7 +418,6 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                     extension: tx.txid().to_byte_array().to_vec(),
                     sign_request_id,
                     signature: vec![0; 96], //todo: signature
-                    sign_request_id: None,
                 }
             })
             .collect();

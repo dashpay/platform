@@ -66,7 +66,7 @@ where
                 })?;
 
             // TODO: Use constant and double check
-            let state_transition_size = 190;
+            let transaction_bytes_size = 190;
 
             let output_script = ScriptBuf::from_bytes(output_script_bytes);
 
@@ -84,7 +84,7 @@ where
                 base_payload: AssetUnlockBasePayload {
                     version: 1,
                     index: transaction_index,
-                    fee: state_transition_size * core_fee_per_byte,
+                    fee: transaction_bytes_size * core_fee_per_byte,
                 },
             };
 
