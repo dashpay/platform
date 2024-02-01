@@ -105,7 +105,7 @@ impl BroadcastRequestForStateTransition for StateTransition {
     ) -> Result<WaitForStateTransitionResultRequest, Error> {
         Ok(WaitForStateTransitionResultRequest {
             version: Some(Version::V0(WaitForStateTransitionResultRequestV0 {
-                state_transition_hash: self.transaction_id()?.to_vec(),
+                state_transition_hash: self.hash(false)?,
                 prove: true,
             })),
         })
