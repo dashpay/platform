@@ -94,7 +94,7 @@ where
                 .properties()
                 .get_optional_u64(withdrawal::properties::TRANSACTION_SIGN_HEIGHT)?
                 .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
-                    "Can't get transaction index from withdrawal document".to_string(),
+                    "Can't get transaction sign height from withdrawal document".to_string(),
                 )))? as u32;
 
             let withdrawal_transaction_status = withdrawal_transaction_statuses
@@ -240,6 +240,7 @@ mod tests {
                 "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
                 "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
                 "transactionIndex": 1u64,
+                "transactionSignHeight": 1,
             }),
             None,
             platform_version.protocol_version,
@@ -268,6 +269,7 @@ mod tests {
                 "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
                 "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
                 "transactionIndex": 2u64,
+                "transactionSignHeight": 1,
             }),
             None,
             platform_version.protocol_version,
@@ -293,7 +295,7 @@ mod tests {
         let documents = platform
             .drive
             .fetch_withdrawal_documents_by_status(
-                WithdrawalStatus::BROADCASTED.into(),
+                WithdrawalStatus::EXPIRED.into(),
                 Some(&transaction),
                 platform_version,
             )
