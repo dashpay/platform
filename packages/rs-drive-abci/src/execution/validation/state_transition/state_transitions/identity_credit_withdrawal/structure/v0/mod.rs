@@ -48,7 +48,7 @@ impl IdentityCreditWithdrawalStateTransitionStructureValidationV0
         }
 
         // validate core_fee is in fibonacci sequence
-        if !is_fibonacci_number(self.core_fee_per_byte()) {
+        if !is_fibonacci_number(self.core_fee_per_byte() as u64) {
             result.add_error(InvalidIdentityCreditWithdrawalTransitionCoreFeeError::new(
                 self.core_fee_per_byte(),
                 MIN_CORE_FEE_PER_BYTE,
