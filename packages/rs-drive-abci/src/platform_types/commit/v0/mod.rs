@@ -10,7 +10,7 @@ use dpp::validation::{SimpleValidationResult, ValidationResult};
 use tenderdash_abci::proto;
 use tenderdash_abci::proto::abci::CommitInfo;
 use tenderdash_abci::proto::types::BlockId;
-use tenderdash_abci::signatures::SignDigest;
+use tenderdash_abci::signatures::Signable;
 
 /// Represents block commit
 #[derive(Clone, Debug)]
@@ -141,7 +141,7 @@ mod test {
     use dpp::bls_signatures::PublicKey;
 
     use tenderdash_abci::proto::types::{BlockId, PartSetHeader, StateId};
-    use tenderdash_abci::signatures::{SignBytes, SignDigest};
+    use tenderdash_abci::signatures::{Hashable, Signable};
 
     /// Given a commit info and a signature, check that the signature is verified correctly
     #[test]
@@ -178,7 +178,9 @@ mod test {
                     .to_byte_array()
                     .to_vec(),
             }),
-            state_id: state_id.sha256(CHAIN_ID, HEIGHT, ROUND as i32).unwrap(),
+            state_id: state_id
+                .calculate_msg_hash(CHAIN_ID, HEIGHT, ROUND as i32)
+                .unwrap(),
         };
         let pubkey = hex::decode("8d63d603fe858be4d7c14a8f308936bd3447c1f361148ad508a04df92f48cd3b2f2b374ef5d1ee8a75f5aeda2f6f3418").unwrap();
 
@@ -192,27 +194,28 @@ mod test {
             QuorumType::LlmqTest,
             CHAIN_ID,
         );
-        let expect_sign_bytes = hex::decode(
+        let expect_msg = hex::decode(
             "020000003930000000000000020000000000000035117edfe49351da1e81d1b0f2edfa0b984a7508\
             958870337126efb352f1210715e56fe9d267359b4b437a52636174ac64aa9a021671aabc9985023695bc6e3\
             6746573745f636861696e5f6964",
         )
         .unwrap();
-        let expect_sign_id =
+        let expect_msg_hash = sha256::Hash::hash(&expect_msg).to_byte_array().to_vec();
+        let expect_sign_hash =
             hex::decode("58fb34b03f9028e6ac181418c753f33e471ae223bb66b2bef7b46732a15b7eac")
                 .unwrap();
         assert_eq!(
-            expect_sign_bytes,
+            expect_msg_hash,
             commit
                 .inner
-                .sign_bytes(CHAIN_ID, HEIGHT, ROUND as i32)
+                .calculate_msg_hash(CHAIN_ID, HEIGHT, ROUND as i32)
                 .unwrap()
         );
         assert_eq!(
-            expect_sign_id,
+            expect_sign_hash,
             commit
                 .inner
-                .sign_digest(
+                .calculate_sign_hash(
                     CHAIN_ID,
                     QuorumType::LlmqTest as u8,
                     &QUORUM_HASH,

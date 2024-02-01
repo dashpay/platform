@@ -14,7 +14,7 @@ use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::Hash;
 use tenderdash_abci::{
     proto::{serializers::timestamp::ToMilis, types::BlockId as ProtoBlockId},
-    signatures::SignBytes,
+    signatures::Hashable,
 };
 
 use crate::abci::AbciError;
@@ -105,7 +105,7 @@ where
         } = block;
 
         let block_id_hash = Into::<ProtoBlockId>::into(block_id.clone())
-            .sha256(&self.config.abci.chain_id, height as i64, round as i32)
+            .calculate_msg_hash(&self.config.abci.chain_id, height as i64, round as i32)
             .map_err(AbciError::from)?
             .try_into()
             .expect("invalid sha256 length");

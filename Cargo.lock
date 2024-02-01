@@ -4161,8 +4161,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/withdrawals#b02ef2770999cfbc5dedd0de0803c478dc18628d"
+version = "0.14.0-dev.6"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=251386f9e4109c89ca628226c981c489b80aed80#251386f9e4109c89ca628226c981c489b80aed80"
 dependencies = [
  "bytes",
  "futures",
@@ -4182,8 +4182,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/withdrawals#b02ef2770999cfbc5dedd0de0803c478dc18628d"
+version = "0.14.0-dev.6"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=251386f9e4109c89ca628226c981c489b80aed80#251386f9e4109c89ca628226c981c489b80aed80"
 dependencies = [
  "bytes",
  "chrono",
@@ -4200,8 +4200,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto-compiler"
-version = "0.14.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/withdrawals#b02ef2770999cfbc5dedd0de0803c478dc18628d"
+version = "0.14.0-dev.6"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=251386f9e4109c89ca628226c981c489b80aed80#251386f9e4109c89ca628226c981c489b80aed80"
 dependencies = [
  "fs_extra",
  "prost-build 0.12.3",
