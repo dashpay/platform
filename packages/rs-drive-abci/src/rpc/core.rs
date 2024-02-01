@@ -134,6 +134,12 @@ pub struct DefaultCoreRPC {
     inner: Client,
 }
 
+// TODO: Create errors for these error codes in dashcore_rpc
+
+/// TX is invalid due to consensus rules
+pub const CORE_RPC_TX_CONSENSUS_ERROR: i32 = -26;
+/// Tx already broadcasted and included in the chain
+pub const CORE_RPC_TX_ALREADY_IN_CHAIN: i32 = -27;
 /// Client still warming up
 pub const CORE_RPC_ERROR_IN_WARMUP: i32 = -28;
 /// Dash is not connected
@@ -146,6 +152,11 @@ pub const CORE_RPC_PARSE_ERROR: i32 = -32700;
 pub const CORE_RPC_INVALID_ADDRESS_OR_KEY: i32 = -5;
 /// Invalid, missing or duplicate parameter
 pub const CORE_RPC_INVALID_PARAMETER: i32 = -8;
+
+/// Asset Unlock consenus error "bad-assetunlock-not-active-quorum"
+pub const CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM: &str = "bad-assetunlock-not-active-quorum";
+/// Asset Unlock consenus error "bad-assetunlock-not-active-quorum"
+pub const CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED: &str = "bad-assetunlock-too-late";
 
 macro_rules! retry {
     ($action:expr) => {{

@@ -36,8 +36,9 @@ where
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut broadcasted_withdrawal_documents =
-            self.drive.fetch_withdrawal_documents_by_status(
+        let mut broadcasted_withdrawal_documents = self
+            .drive
+            .fetch_up_to_100_oldest_withdrawal_documents_by_status(
                 WithdrawalStatus::BROADCASTED.into(),
                 transaction,
                 platform_version,
@@ -294,7 +295,7 @@ mod tests {
 
         let documents = platform
             .drive
-            .fetch_withdrawal_documents_by_status(
+            .fetch_up_to_100_oldest_withdrawal_documents_by_status(
                 WithdrawalStatus::EXPIRED.into(),
                 Some(&transaction),
                 platform_version,
@@ -309,7 +310,7 @@ mod tests {
 
         let documents = platform
             .drive
-            .fetch_withdrawal_documents_by_status(
+            .fetch_up_to_100_oldest_withdrawal_documents_by_status(
                 WithdrawalStatus::COMPLETE.into(),
                 Some(&transaction),
                 platform_version,
