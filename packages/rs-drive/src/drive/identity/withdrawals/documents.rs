@@ -19,8 +19,8 @@ use crate::{
 };
 
 impl Drive {
-    /// Fetch withdrawal documents by it's status
-    pub fn fetch_withdrawal_documents_by_status(
+    /// Fetch withdrawal documents by it's status ordered by updated_at ascending with limit 100
+    pub fn fetch_up_to_100_oldest_withdrawal_documents_by_status(
         &self,
         status: u8,
         transaction: TransactionArg,
@@ -98,36 +98,17 @@ impl Drive {
         Ok(outcome.documents_owned())
     }
 
-    /// Find documents by it's transactionIndex field
-    pub fn find_withdrawal_documents_by_status_and_transaction_indices(
+    // TODO(withdrawals): Currently it queries only up to 100 documents.
+    //  It works while we don't have pooling
+
+    /// Find up to 100 documents by status and transaction indices
+    pub fn find_up_to_100_withdrawal_documents_by_status_and_transaction_indices(
         &self,
         status: withdrawals_contract::WithdrawalStatus,
         transaction_indices: &[WithdrawalTransactionIndex],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
-        // TODO: Use drive cache system_data_contracts
-        let data_contract_id = withdrawals_contract::ID;
-
-        let contract_fetch_info = self
-            .get_contract_with_fetch_info_and_fee(
-                data_contract_id.to_buffer(),
-                None,
-                true,
-                transaction,
-                platform_version,
-            )?
-            .1
-            .ok_or_else(|| {
-                Error::Drive(DriveError::CorruptedCodeExecution(
-                    "Can't fetch data contract",
-                ))
-            })?;
-
-        let document_type = contract_fetch_info
-            .contract
-            .document_type_for_name(withdrawal::NAME)?;
-
         let mut where_clauses = BTreeMap::new();
 
         where_clauses.insert(
@@ -163,12 +144,15 @@ impl Drive {
             },
         );
 
-        // TODO: Currently it queries only 100 documents
-        //  We need to query all documents. It would be nice to update DriveQuery
-        //  with internal param that will allow us to disable strict limits
+        let cache = self.cache.read().unwrap();
+
+        let document_type = cache
+            .system_data_contracts
+            .withdrawals
+            .document_type_for_name(withdrawal::NAME)?;
 
         let drive_query = DriveQuery {
-            contract: &contract_fetch_info.contract,
+            contract: &cache.system_data_contracts.withdrawals,
             document_type,
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
@@ -206,7 +190,7 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use crate::tests::helpers::setup::{setup_document, setup_system_data_contract};
 
-    mod fetch_withdrawal_documents_by_status {
+    mod fetch_100_oldest_withdrawal_documents_by_status {
         use super::*;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::identity::core_script::CoreScript;
@@ -231,7 +215,7 @@ mod tests {
             setup_system_data_contract(&drive, &data_contract, Some(&transaction));
 
             let documents = drive
-                .fetch_withdrawal_documents_by_status(
+                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::QUEUED.into(),
                     Some(&transaction),
                     platform_version,
@@ -295,7 +279,7 @@ mod tests {
             );
 
             let documents = drive
-                .fetch_withdrawal_documents_by_status(
+                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::QUEUED.into(),
                     Some(&transaction),
                     platform_version,
@@ -305,7 +289,7 @@ mod tests {
             assert_eq!(documents.len(), 1);
 
             let documents = drive
-                .fetch_withdrawal_documents_by_status(
+                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::POOLED.into(),
                     Some(&transaction),
                     platform_version,
@@ -316,7 +300,7 @@ mod tests {
         }
     }
 
-    mod find_withdrawal_documents_by_status_and_transaction_indices {
+    mod find_up_to_100_withdrawal_documents_by_status_and_transaction_indices {
         use crate::drive::identity::withdrawals::WithdrawalTransactionIndex;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::document::DocumentV0Getters;
@@ -376,7 +360,7 @@ mod tests {
             );
 
             let found_document = drive
-                .find_withdrawal_documents_by_status_and_transaction_indices(
+                .find_up_to_100_withdrawal_documents_by_status_and_transaction_indices(
                     withdrawals_contract::WithdrawalStatus::POOLED,
                     &[transaction_index],
                     Some(&transaction),

@@ -35,11 +35,13 @@ where
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut documents = self.drive.fetch_withdrawal_documents_by_status(
-            withdrawals_contract::WithdrawalStatus::QUEUED.into(),
-            transaction,
-            platform_version,
-        )?;
+        let mut documents = self
+            .drive
+            .fetch_up_to_100_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::QUEUED.into(),
+                transaction,
+                platform_version,
+            )?;
 
         if documents.is_empty() {
             return Ok(());
@@ -243,7 +245,7 @@ mod tests {
 
         let updated_documents = platform
             .drive
-            .fetch_withdrawal_documents_by_status(
+            .fetch_up_to_100_oldest_withdrawal_documents_by_status(
                 withdrawals_contract::WithdrawalStatus::POOLED.into(),
                 Some(&transaction),
                 platform_version,

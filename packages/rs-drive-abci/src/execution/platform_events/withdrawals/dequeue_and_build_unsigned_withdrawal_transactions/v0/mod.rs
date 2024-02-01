@@ -117,7 +117,7 @@ where
     ) -> Result<Vec<Document>, Error> {
         let mut documents = self
             .drive
-            .find_withdrawal_documents_by_status_and_transaction_indices(
+            .find_up_to_100_withdrawal_documents_by_status_and_transaction_indices(
                 withdrawals_contract::WithdrawalStatus::POOLED,
                 &transaction_indices,
                 transaction,

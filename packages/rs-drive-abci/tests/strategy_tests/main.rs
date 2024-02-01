@@ -2274,7 +2274,7 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_withdrawal_documents_by_status(
+                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::POOLED.into(),
                     None,
                     platform_version,
@@ -2367,7 +2367,7 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_withdrawal_documents_by_status(
+                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::POOLED.into(),
                     None,
                     platform_version,
@@ -2378,7 +2378,7 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_withdrawal_documents_by_status(
+                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
                     None,
                     platform_version,
@@ -2463,7 +2463,7 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_withdrawal_documents_by_status(
+                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
                     None,
                     platform_version,
@@ -2480,7 +2480,7 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_withdrawal_documents_by_status(
+                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
                     None,
                     platform_version,
@@ -2560,7 +2560,7 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_withdrawal_documents_by_status(
+                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
                     None,
                     platform_version,
@@ -2577,7 +2577,7 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_withdrawal_documents_by_status(
+                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
                     None,
                     platform_version,
