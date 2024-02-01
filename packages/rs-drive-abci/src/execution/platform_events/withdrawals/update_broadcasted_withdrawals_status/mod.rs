@@ -35,7 +35,7 @@ where
     /// * There is an issue interacting with the underlying storage.
     /// * There is an error fetching the withdrawal data contract.
     /// * There is an error getting the transactionId or transactionSignHeight from the withdrawal document.
-    pub fn mark_chainlocked_withdrawals_as_complete(
+    pub fn update_broadcasted_withdrawals_status(
         &self,
         block_info: &BlockInfo,
         transaction: TransactionArg,
@@ -45,9 +45,9 @@ where
             .drive_abci
             .methods
             .withdrawals
-            .mark_chainlocked_withdrawals_as_complete
+            .update_broadcasted_withdrawals_status
         {
-            0 => self.mark_chainlocked_withdrawals_as_complete_v0(
+            0 => self.update_broadcasted_withdrawals_status_v0(
                 block_info,
                 transaction,
                 platform_version,

@@ -39,6 +39,7 @@ pub enum WithdrawalStatus {
     POOLED = 1,
     BROADCASTED = 2,
     COMPLETE = 3,
+    EXPIRED = 4,
 }
 
 pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Value>, Error> {

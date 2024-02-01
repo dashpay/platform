@@ -2406,6 +2406,9 @@ mod tests {
             outcome
         };
 
+        // TODO: Do more Core blocks (>48) after broadcasting to see expired transactions
+        //  and do not include some of them to the Core
+
         // Run block 5
         // Previously broadcasted transactions are settled now,
         // and their corresponding withdrawal statuses should be changed to COMPLETED

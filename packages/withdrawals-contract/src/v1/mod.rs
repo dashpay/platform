@@ -6,6 +6,7 @@ pub mod document_types {
         pub const NAME: &str = "withdrawal";
 
         pub mod properties {
+            pub const TRANSACTION_SIGN_HEIGHT: &str = "transactionSignHeight";
             pub const TRANSACTION_INDEX: &str = "transactionIndex";
             pub const AMOUNT: &str = "amount";
             pub const CORE_FEE_PER_BYTE: &str = "coreFeePerByte";

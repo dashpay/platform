@@ -323,7 +323,7 @@ where
             .core_chain_locked_height()
             != last_block_core_height
         {
-            self.mark_chainlocked_withdrawals_as_complete(
+            self.update_broadcasted_withdrawals_status(
                 &block_info,
                 Some(transaction),
                 platform_version,

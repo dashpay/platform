@@ -23,12 +23,14 @@ use crate::{
     rpc::core::CoreRPCLike,
 };
 
+const NUMBER_OF_BLOCKS_BEFORE_EXPIRED: u32 = 48;
+
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
     /// Update statuses for broadcasted withdrawals
-    pub(super) fn mark_chainlocked_withdrawals_as_complete_v0(
+    pub(super) fn update_broadcasted_withdrawals_status_v0(
         &self,
         block_info: &BlockInfo,
         transaction: TransactionArg,
@@ -88,20 +90,30 @@ where
                     "Can't get transaction index from withdrawal document".to_string(),
                 )))?;
 
+            let transaction_sign_height = document
+                .properties()
+                .get_optional_u64(withdrawal::properties::TRANSACTION_SIGN_HEIGHT)?
+                .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                    "Can't get transaction index from withdrawal document".to_string(),
+                )))? as u32;
+
             let withdrawal_transaction_status = withdrawal_transaction_statuses
                 .get(&withdrawal_index)
                 .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "we should always have a withdrawal status",
                 )))?;
 
-            if withdrawal_transaction_status != &AssetUnlockStatus::Chainlocked {
-                continue;
-            }
+            let block_height_difference = block_info.core_height - transaction_sign_height;
 
-            document.set_u8(
-                withdrawal::properties::STATUS,
-                WithdrawalStatus::COMPLETE.into(),
-            );
+            let status = if withdrawal_transaction_status == &AssetUnlockStatus::Chainlocked {
+                WithdrawalStatus::COMPLETE
+            } else if block_height_difference > NUMBER_OF_BLOCKS_BEFORE_EXPIRED {
+                WithdrawalStatus::EXPIRED
+            } else {
+                continue;
+            };
+
+            document.set_u8(withdrawal::properties::STATUS, status.into());
 
             document.set_u64(withdrawal::properties::UPDATED_AT, block_info.time_ms);
 
@@ -271,7 +283,7 @@ mod tests {
         );
 
         platform
-            .mark_chainlocked_withdrawals_as_complete_v0(
+            .update_broadcasted_withdrawals_status_v0(
                 &block_info,
                 Some(&transaction),
                 platform_version,

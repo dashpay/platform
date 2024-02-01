@@ -132,6 +132,11 @@ where
                     withdrawals_contract::WithdrawalStatus::BROADCASTED as i64,
                 );
 
+                document.set_u64(
+                    withdrawal::properties::TRANSACTION_SIGN_HEIGHT,
+                    block_info.core_height as u64,
+                );
+
                 document.set_i64(
                     withdrawal::properties::UPDATED_AT,
                     block_info.time_ms.try_into().map_err(|_| {
