@@ -2226,43 +2226,50 @@ mod tests {
             },
         }));
 
-        let core_state_to_share = shared_core_state.clone();
-        platform
-            .core_rpc
-            .expect_get_asset_unlock_statuses()
-            .returning(move |indices, _| {
-                Ok(indices
-                    .iter()
-                    .map(|index| {
-                        core_state_to_share
-                            .lock()
-                            .unwrap()
-                            .asset_unlock_statuses
-                            .get(index)
-                            .map(|status| status.clone())
-                            .unwrap()
-                    })
-                    .collect())
-            });
+        // Set up Core RPC responses
+        {
+            let core_state = shared_core_state.clone();
 
-        let core_state_to_share = shared_core_state.clone();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || Ok(core_state_to_share.lock().unwrap().chain_lock.clone()));
+            platform
+                .core_rpc
+                .expect_get_asset_unlock_statuses()
+                .returning(move |indices, _| {
+                    Ok(indices
+                        .iter()
+                        .map(|index| {
+                            core_state
+                                .lock()
+                                .unwrap()
+                                .asset_unlock_statuses
+                                .get(index)
+                                .map(|status| status.clone())
+                                .unwrap()
+                        })
+                        .collect())
+                });
+
+            let core_state = shared_core_state.clone();
+            platform
+                .core_rpc
+                .expect_get_best_chain_lock()
+                .returning(move || Ok(core_state.lock().unwrap().chain_lock.clone()));
+        }
 
         // Run first two blocks:
         // - Block 1: creates identity
         // - Block 2: tops up identity and initiates withdrawals
-        let ChainExecutionOutcome {
-            abci_app,
-            proposers,
-            quorums,
-            current_quorum_hash,
-            current_proposer_versions,
-            end_time_ms,
-            ..
-        } = {
+        let (
+            ChainExecutionOutcome {
+                abci_app,
+                proposers,
+                quorums,
+                current_quorum_hash,
+                current_proposer_versions,
+                end_time_ms,
+                ..
+            },
+            last_block_pooled_withdrawals_amount,
+        ) = {
             let outcome =
                 run_chain_for_strategy(&mut platform, 2, strategy.clone(), config.clone(), 1);
 
@@ -2281,8 +2288,9 @@ mod tests {
                 )
                 .unwrap();
             assert!(withdrawal_documents_pooled.len() > 0);
+            let pooled_withdrawals = withdrawal_documents_pooled.len();
 
-            outcome
+            (outcome, pooled_withdrawals)
         };
 
         // Run block 3
@@ -2315,11 +2323,36 @@ mod tests {
                 StrategyRandomness::SeedEntropy(2),
             );
 
-            assert!(outcome.withdrawals.len() > 0);
+            // Withdrawal documents with pooled status should exist.
+            let withdrawal_documents_broadcasted = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
 
-            // Update core state to return chain locked status for broadcasted transactions
+            // In this block all previously pooled withdrawals should be broadcasted
+            assert_eq!(
+                outcome.withdrawals.len(),
+                last_block_pooled_withdrawals_amount
+            );
+            assert_eq!(
+                withdrawal_documents_broadcasted.len(),
+                last_block_pooled_withdrawals_amount
+            );
+
+            outcome
+        };
+
+        // Update core state before running next block.
+        // Asset unlocks broadcasted in the last block should have Unknown status
+        {
             let mut core_state = shared_core_state.lock().unwrap();
-            outcome.withdrawals.iter().for_each(|(index, _)| {
+            last_block_withdrawals.iter().for_each(|(index, _)| {
                 core_state.asset_unlock_statuses.insert(
                     *index,
                     AssetUnlockStatusResult {
@@ -2328,23 +2361,24 @@ mod tests {
                     },
                 );
             });
-
-            outcome
-        };
+        }
 
         // Run block 4
         // Should change pooled status to broadcasted
-        let mut broadcasted_transactions_amount = last_block_withdrawals.len();
-        let ChainExecutionOutcome {
-            abci_app,
-            proposers,
-            quorums,
-            current_quorum_hash,
-            current_proposer_versions,
-            end_time_ms,
-            withdrawals: last_block_withdrawals,
-            ..
-        } = {
+        let last_block_broadcased_withdrawals_amount = last_block_withdrawals.len();
+        let (
+            ChainExecutionOutcome {
+                abci_app,
+                proposers,
+                quorums,
+                current_quorum_hash,
+                current_proposer_versions,
+                end_time_ms,
+                withdrawals: last_block_withdrawals,
+                ..
+            },
+            last_block_broadcased_withdrawals_amount,
+        ) = {
             let outcome = continue_chain_for_strategy(
                 abci_app,
                 ChainExecutionParameters {
@@ -2385,15 +2419,42 @@ mod tests {
                 )
                 .unwrap();
 
-            // Ensure total amount of withdrawal documents in broadcasted state is correct
+            // In this block we should have new withdrawals pooled
+            assert!(withdrawal_documents_pooled.len() > 0);
+
+            // And extra withdrawals broadcasted
+            let withdrawals_broadcasted_expected =
+                last_block_broadcased_withdrawals_amount + outcome.withdrawals.len();
             assert_eq!(
                 withdrawal_documents_broadcasted.len(),
-                broadcasted_transactions_amount + outcome.withdrawals.len()
+                withdrawals_broadcasted_expected
             );
 
-            // Simulate transactions being added to the core mempool
+            (outcome, withdrawal_documents_broadcasted.len())
+        };
+
+        // Update core state for newly broadcasted transactions
+        {
             let mut core_state = shared_core_state.lock().unwrap();
-            outcome.withdrawals.iter().for_each(|(index, _)| {
+
+            // First, set all previously broadcasted transactions to Chainlocked
+            core_state
+                .asset_unlock_statuses
+                .iter_mut()
+                .for_each(|(index, status_result)| {
+                    // Do not settle yet transactions that were broadcasted in the last block
+                    status_result.index = *index;
+                    status_result.status = AssetUnlockStatus::Chainlocked;
+                });
+
+            // Then increase chainlocked height, so that withdrawals for chainlocked tranasctions
+            // could be completed in the next block
+            // TODO: do we need this var?
+            chain_locked_height += 1;
+            core_state.chain_lock.block_height = chain_locked_height;
+
+            // Then set all newly broadcasted transactions to Unknown
+            last_block_withdrawals.iter().for_each(|(index, _)| {
                 core_state.asset_unlock_statuses.insert(
                     *index,
                     AssetUnlockStatusResult {
@@ -2403,44 +2464,25 @@ mod tests {
                 );
             });
 
-            outcome
-        };
-
-        // TODO: Do more Core blocks (>48) after broadcasting to see expired transactions
-        //  and do not include some of them to the Core
+            drop(core_state);
+        }
 
         // Run block 5
-        // Previously broadcasted transactions are settled now,
-        // and their corresponding withdrawal statuses should be changed to COMPLETED
-        let mut settled_transactions_amount = broadcasted_transactions_amount;
-        broadcasted_transactions_amount = last_block_withdrawals.len();
-        let ChainExecutionOutcome {
-            abci_app,
-            proposers,
-            quorums,
-            current_quorum_hash,
-            current_proposer_versions,
-            end_time_ms,
-            withdrawals: last_block_withdrawals,
-            ..
-        } = {
-            chain_locked_height += 1;
-
-            // Update core state to return chain locked status for broadcasted transactions
-            let mut core_state = shared_core_state.lock().unwrap();
-            core_state
-                .asset_unlock_statuses
-                .iter_mut()
-                .for_each(|(index, status_result)| {
-                    // Do not settle yet transactions that were broadcasted in the last block
-                    if !last_block_withdrawals.contains_key(index) {
-                        status_result.status = AssetUnlockStatus::Chainlocked;
-                    }
-                });
-
-            core_state.chain_lock.block_height = chain_locked_height;
-            drop(core_state);
-
+        // Previously broadcasted transactions should be settled after block 5,
+        // and their corresponding statuses should be changed to COMPLETED
+        let (
+            ChainExecutionOutcome {
+                abci_app,
+                proposers,
+                quorums,
+                current_quorum_hash,
+                current_proposer_versions,
+                end_time_ms,
+                withdrawals: last_block_withdrawals,
+                ..
+            },
+            last_block_withdrawals_completed_amount,
+        ) = {
             let outcome = continue_chain_for_strategy(
                 abci_app,
                 ChainExecutionParameters {
@@ -2459,6 +2501,17 @@ mod tests {
                 StrategyRandomness::SeedEntropy(4),
             );
 
+            let withdrawal_documents_pooled = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
             let withdrawal_documents_broadcasted = outcome
                 .abci_app
                 .platform
@@ -2470,12 +2523,6 @@ mod tests {
                 )
                 .unwrap();
 
-            // Ensure total amount of withdrawal documents in broadcasted state is correct
-            assert_eq!(
-                withdrawal_documents_broadcasted.len(),
-                broadcasted_transactions_amount + outcome.withdrawals.len()
-            );
-
             let withdrawal_documents_completed = outcome
                 .abci_app
                 .platform
@@ -2486,14 +2533,43 @@ mod tests {
                     platform_version,
                 )
                 .unwrap();
+
+            // In this block we should have new withdrawals pooled
+            assert!(withdrawal_documents_pooled.len() > 0);
+
+            // And some withdrawals completed
+            let withdrawals_completed_expected =
+                // Withdrawals issued on {previous_block - 1} considered completed
+                last_block_broadcased_withdrawals_amount - last_block_withdrawals.len();
             assert_eq!(
                 withdrawal_documents_completed.len(),
-                settled_transactions_amount
+                withdrawals_completed_expected
             );
 
+            // And extra withdrawals broadcasted
+            let withdrawals_broadcasted_expected =
+                // Withdrawals issued on previous block + withdrawals from this block are still in broadcasted state
+                last_block_withdrawals.len() + outcome.withdrawals.len();
+
+            assert_eq!(
+                withdrawal_documents_broadcasted.len(),
+                withdrawals_broadcasted_expected
+            );
+
+            (outcome, withdrawal_documents_completed.len())
+        };
+
+        // Update state of the core before proceeding to the next block
+        {
             // Simulate transactions being added to the core mempool
             let mut core_state = shared_core_state.lock().unwrap();
-            outcome.withdrawals.iter().for_each(|(index, _)| {
+
+            let number_of_blocks_before_expiration: u32 = 48;
+            chain_locked_height += number_of_blocks_before_expiration;
+
+            core_state.chain_lock.block_height = chain_locked_height;
+
+            last_block_withdrawals.iter().for_each(|(index, _)| {
                 core_state.asset_unlock_statuses.insert(
                     *index,
                     AssetUnlockStatusResult {
@@ -2502,14 +2578,10 @@ mod tests {
                     },
                 );
             });
+        }
 
-            outcome
-        };
-
-        // Run last block 6
-        // Amount of completed withdrawals should increase
-        settled_transactions_amount += broadcasted_transactions_amount;
-        broadcasted_transactions_amount = last_block_withdrawals.len();
+        // Run block 6.
+        // Tests withdrawal expiration
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -2520,24 +2592,6 @@ mod tests {
             withdrawals,
             ..
         } = {
-            chain_locked_height += 1;
-
-            // Update core state to return chain locked status for broadcasted transactions
-            let mut core_state = shared_core_state.lock().unwrap();
-            core_state
-                .asset_unlock_statuses
-                .iter_mut()
-                .for_each(|(index, status_result)| {
-                    // Do not settle yet transactions that were broadcasted in the last block
-                    if !last_block_withdrawals.contains_key(index) {
-                        status_result.index = *index;
-                        status_result.status = AssetUnlockStatus::Chainlocked;
-                    }
-                });
-
-            core_state.chain_lock.block_height = chain_locked_height;
-            drop(core_state);
-
             let outcome = continue_chain_for_strategy(
                 abci_app,
                 ChainExecutionParameters {
@@ -2551,10 +2605,21 @@ mod tests {
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                 },
-                strategy,
-                config,
+                strategy.clone(),
+                config.clone(),
                 StrategyRandomness::SeedEntropy(5),
             );
+
+            let withdrawal_documents_pooled = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
 
             let withdrawal_documents_broadcasted = outcome
                 .abci_app
@@ -2567,12 +2632,6 @@ mod tests {
                 )
                 .unwrap();
 
-            // Ensure total amount of withdrawal documents in broadcasted state is correct
-            assert_eq!(
-                withdrawal_documents_broadcasted.len(),
-                broadcasted_transactions_amount + outcome.withdrawals.len()
-            );
-
             let withdrawal_documents_completed = outcome
                 .abci_app
                 .platform
@@ -2584,9 +2643,44 @@ mod tests {
                 )
                 .unwrap();
 
+            let withdrawal_documents_expired = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            // In this block we should have new withdrawals pooled
+            assert!(withdrawal_documents_pooled.len() > 0);
+
+            // Amount of completed withdrawals stays the same as in the last block
             assert_eq!(
                 withdrawal_documents_completed.len(),
-                settled_transactions_amount
+                last_block_withdrawals_completed_amount
+            );
+
+            // And some withdrawals got expired
+            let withdrawals_expired_expected =
+                // Withdrawals issued on {previous_block - 1}, but not chainlocked yet, considered expired
+                last_block_broadcased_withdrawals_amount - last_block_withdrawals.len();
+
+            assert_eq!(
+                withdrawal_documents_expired.len(),
+                withdrawals_expired_expected
+            );
+
+            // And extra withdrawals broadcasted
+            let withdrawals_broadcasted_expected =
+                // Withdrawals issued on previous block + withdrawals from this block are still in broadcasted state
+                last_block_withdrawals.len() + outcome.withdrawals.len();
+
+            assert_eq!(
+                withdrawal_documents_broadcasted.len(),
+                withdrawals_broadcasted_expected
             );
 
             outcome
