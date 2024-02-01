@@ -23,6 +23,22 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
     const base = defaultConfigs.get('base');
     const testnet = defaultConfigs.get('testnet');
 
+    /**
+     * @param {string} name
+     * @param {string} group
+     * @return {Config}
+     */
+    function getDefaultConfigByNameOrGroup(name, group) {
+      let baseConfigName = name;
+      if (group !== null && defaultConfigs.has(group)) {
+        baseConfigName = group;
+      } else if (!defaultConfigs.has(baseConfigName)) {
+        baseConfigName = 'base';
+      }
+
+      return defaultConfigs.get(baseConfigName);
+    }
+
     return {
       '0.24.0': (configFile) => {
         Object.entries(configFile.configs)
@@ -422,6 +438,15 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             options.platform.drive.abci.chainLock = defaultConfigs.get(baseConfigName).get('platform.drive.abci.chainLock');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.4': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            options.core.docker.image = defaultConfig.get('core.docker.image');
           });
 
         return configFile;
