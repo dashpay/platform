@@ -10,7 +10,7 @@ const { STATUSES: WITHDRAWAL_STATUSES } = require('dash/build/SDK/Client/Platfor
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 
-describe('Withdrawals', function withdrawals() {
+describe('Withdrawals', function withdrawalsTest() {
   this.bail(true);
   let client;
   let identity;
