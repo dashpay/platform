@@ -5,6 +5,10 @@ pub fn hash_to_vec(payload: impl AsRef<[u8]>) -> Vec<u8> {
     Sha256::digest(payload).to_vec()
 }
 
+pub fn double_hash_to_vec(payload: impl AsRef<[u8]>) -> Vec<u8> {
+    Sha256::digest(Sha256::digest(payload)).to_vec()
+}
+
 pub fn hash(payload: impl AsRef<[u8]>) -> [u8; 32] {
     Sha256::digest(Sha256::digest(payload)).into()
 }

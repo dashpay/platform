@@ -1,4 +1,5 @@
 use crate::document::Document;
+use crate::util::hash::double_hash_to_vec;
 use crate::{prelude::Identifier, util::hash::hash_to_vec};
 
 impl Document {
@@ -16,6 +17,6 @@ impl Document {
         buf.extend_from_slice(document_type_name.as_bytes());
         buf.extend_from_slice(entropy);
 
-        Identifier::from_bytes(&hash_to_vec(&buf)).unwrap()
+        Identifier::from_bytes(&double_hash_to_vec(&buf)).unwrap()
     }
 }
