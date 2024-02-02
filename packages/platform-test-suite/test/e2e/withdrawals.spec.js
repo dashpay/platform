@@ -11,7 +11,7 @@ const createClientWithFundedWallet = require('../../lib/test/createClientWithFun
 const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 
 describe('Withdrawals', () => {
-  let failed = false;
+  this.bail(true);
   let client;
   let identity;
 
@@ -30,17 +30,6 @@ describe('Withdrawals', () => {
       contractId: withdrawalsContractId,
       contract: withdrawalsContract,
     });
-  });
-
-  // Skip test if any prior test in this describe failed
-  beforeEach(function beforeEach() {
-    if (failed) {
-      this.skip();
-    }
-  });
-
-  afterEach(function afterEach() {
-    failed = this.currentTest.state === 'failed';
   });
 
   after(async () => {
@@ -251,7 +240,6 @@ describe('Withdrawals', () => {
         );
 
       withdrawalDocument.set('status', 3);
-      // withdrawalDocument.setRevision(3);
 
       try {
         await client.platform.documents.broadcast({
