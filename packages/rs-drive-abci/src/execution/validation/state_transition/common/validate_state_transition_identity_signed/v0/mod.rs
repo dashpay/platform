@@ -65,7 +65,7 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
         &self,
         drive: &Drive,
         action: Option<&StateTransitionAction>,
-        request_revision: bool,
+        request_identity_revision: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -102,7 +102,7 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
 
         let key_request = IdentityKeysRequest::new_specific_key_query(owner_id.as_bytes(), key_id);
 
-        let maybe_partial_identity = if request_revision {
+        let maybe_partial_identity = if request_identity_revision {
             drive.fetch_identity_balance_with_keys_and_revision(
                 key_request,
                 transaction,

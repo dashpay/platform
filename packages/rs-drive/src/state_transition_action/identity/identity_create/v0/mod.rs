@@ -37,6 +37,7 @@ impl From<IdentityCreateTransitionActionV0> for PartialIdentity {
             loaded_public_keys: Default::default(), //no need to load public keys
             balance: Some(initial_balance_amount),
             revision: None,
+            contract_revisions: Default::default(),
             not_found_public_keys: Default::default(),
         }
     }
@@ -54,6 +55,7 @@ impl From<&IdentityCreateTransitionActionV0> for PartialIdentity {
             loaded_public_keys: Default::default(), //no need to load public keys
             balance: Some(*initial_balance_amount),
             revision: None,
+            contract_revisions: Default::default(),
             not_found_public_keys: Default::default(),
         }
     }

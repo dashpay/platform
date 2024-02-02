@@ -3,12 +3,12 @@ use crate::drive::Drive;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::ApproximateElements;
 use grovedb::EstimatedLayerInformation;
-use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
+use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 impl Drive {
-    pub(super) fn add_estimation_costs_for_contract_info_group_v0(
+    pub(super) fn add_estimation_costs_for_contract_info_group_keys_v0(
         identity_id: &[u8; 32],
         group_id: &[u8],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -22,11 +22,7 @@ impl Drive {
             EstimatedLayerInformation {
                 is_sum_tree: false,
                 estimated_layer_count: ApproximateElements(2),
-                estimated_layer_sizes: Mix {
-                    subtrees_size: Some((1, NoSumTrees, None, 1)),
-                    items_size: Some((1, 1, None, 1)),
-                    references_size: None,
-                },
+                estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
             },
         );
     }

@@ -1,6 +1,4 @@
-mod add_potential_contract_info_for_contract_bounded_key;
-
-use crate::drive::identity::contract_info::insert::DataContractApplyInfo::ContractBased;
+use crate::drive::identity::contract_info::keys::IdentityDataContractKeyApplyInfo::ContractBased;
 use crate::drive::Drive;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
@@ -11,15 +9,16 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::{KeyID, Purpose};
-use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
-pub enum DataContractApplyInfo {
+mod add_potential_contract_info_for_contract_bounded_key;
+
+pub enum IdentityDataContractKeyApplyInfo {
     /// The root_id is either a contract id or an owner id
     /// It is a contract id for in the case of contract bound keys or contract
     /// document bound keys
-    /// In the case
     ContractBased {
         contract_id: Identifier,
         document_type_keys: BTreeMap<String, Vec<(KeyID, Purpose)>>,
@@ -31,7 +30,7 @@ pub enum DataContractApplyInfo {
     // },
 }
 
-impl DataContractApplyInfo {
+impl IdentityDataContractKeyApplyInfo {
     fn root_id(&self) -> [u8; 32] {
         match self {
             ContractBased { contract_id, .. } => contract_id.to_buffer(),

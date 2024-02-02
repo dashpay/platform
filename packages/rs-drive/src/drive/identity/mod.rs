@@ -69,6 +69,7 @@ pub mod update;
 #[cfg(feature = "full")]
 pub use withdrawals::paths::add_initial_withdrawal_state_structure_operations;
 
+use crate::drive::identity::contract_info::ContractInfoStructure;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use fetch::queries::*;
 
@@ -108,6 +109,19 @@ pub fn identity_contract_info_root_path_vec(identity_id: &[u8; 32]) -> Vec<Vec<u
 }
 
 /// The group is either a contract id or on a family of contracts owned by the same identity
+pub fn identity_contract_info_group_path<'a>(
+    identity_id: &'a [u8; 32],
+    group_id: &'a [u8],
+) -> [&'a [u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Identities),
+        identity_id,
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityContractInfo),
+        group_id,
+    ]
+}
+
+/// The group is either a contract id or on a family of contracts owned by the same identity
 pub fn identity_contract_info_group_path_vec(
     identity_id: &[u8; 32],
     group_id: &[u8],
@@ -117,6 +131,20 @@ pub fn identity_contract_info_group_path_vec(
         identity_id.to_vec(),
         vec![IdentityRootStructure::IdentityContractInfo as u8],
         group_id.to_vec(),
+    ]
+}
+
+/// The group is either a contract id or on a family of contracts owned by the same identity
+pub fn identity_contract_info_group_keys_path_vec(
+    identity_id: &[u8; 32],
+    group_id: &[u8],
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityContractInfo as u8],
+        group_id.to_vec(),
+        vec![ContractInfoStructure::ContractInfoKeys as u8],
     ]
 }
 
@@ -132,6 +160,7 @@ pub fn identity_contract_info_group_path_key_purpose_vec(
         identity_id.to_vec(),
         vec![IdentityRootStructure::IdentityContractInfo as u8],
         group_id.to_vec(),
+        vec![ContractInfoStructure::ContractInfoKeys as u8],
         vec![key_purpose as u8],
     ]
 }

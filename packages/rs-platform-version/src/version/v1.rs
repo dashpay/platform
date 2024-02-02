@@ -350,6 +350,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     for_balances: 0,
                     for_contract_info: 0,
                     for_contract_info_group: 0,
+                    for_contract_info_group_keys: 0,
                     for_contract_info_group_key_purpose: 0,
                     for_keys_for_identity_id: 0,
                     for_negative_credit: 0,

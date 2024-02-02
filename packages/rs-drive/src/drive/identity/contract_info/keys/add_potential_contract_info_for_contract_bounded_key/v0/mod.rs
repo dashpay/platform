@@ -1,11 +1,12 @@
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
-use crate::drive::identity::contract_info::insert::DataContractApplyInfo;
+use crate::drive::identity::contract_info::keys::IdentityDataContractKeyApplyInfo;
+use crate::drive::identity::contract_info::ContractInfoStructure::ContractInfoKeys;
 use crate::drive::identity::IdentityRootStructure::IdentityContractInfo;
 use crate::drive::identity::{
-    identity_contract_info_group_path_key_purpose_vec, identity_contract_info_group_path_vec,
-    identity_contract_info_root_path_vec, identity_key_location_within_identity_vec,
-    identity_path_vec,
+    identity_contract_info_group_keys_path_vec, identity_contract_info_group_path_key_purpose_vec,
+    identity_contract_info_group_path_vec, identity_contract_info_root_path_vec,
+    identity_key_location_within_identity_vec, identity_path_vec,
 };
 use crate::drive::object_size_info::{PathKeyElementInfo, PathKeyInfo};
 use crate::drive::Drive;
@@ -29,7 +30,7 @@ use integer_encoding::VarInt;
 use std::collections::HashMap;
 
 impl Drive {
-    pub(super) fn add_potential_contract_info_for_contract_bounded_key_v0(
+    pub(in crate::drive::identity::contract_info) fn add_potential_contract_info_for_contract_bounded_key_v0(
         &self,
         identity_id: [u8; 32],
         identity_key: &IdentityPublicKey,
@@ -43,7 +44,7 @@ impl Drive {
     ) -> Result<(), Error> {
         if let Some(contract_bounds) = &identity_key.contract_bounds() {
             // We need to get the contract
-            let contract_apply_info = DataContractApplyInfo::new_from_single_key(
+            let contract_apply_info = IdentityDataContractKeyApplyInfo::new_from_single_key(
                 identity_key.id(),
                 identity_key.purpose(),
                 contract_bounds,
@@ -71,7 +72,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         epoch: &Epoch,
-        contract_infos: Vec<DataContractApplyInfo>,
+        contract_infos: Vec<IdentityDataContractKeyApplyInfo>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -155,12 +156,32 @@ impl Drive {
                         estimated_costs_only_with_layer_info,
                         &platform_version.drive,
                     )?;
+
+                    Self::add_estimation_costs_for_contract_info_group_keys(
+                        &identity_id,
+                        &root_id,
+                        estimated_costs_only_with_layer_info,
+                        &platform_version.drive,
+                    )?;
                 }
 
                 self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
                     PathKeyInfo::<0>::PathKey((
                         identity_contract_info_root_path_vec(&identity_id),
                         root_id.to_vec(),
+                    )),
+                    None,
+                    apply_type,
+                    transaction,
+                    drive_operations,
+                    &platform_version.drive,
+                )?;
+
+                // We need to insert the keys parent tree
+                self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
+                    PathKeyInfo::<0>::PathKey((
+                        identity_contract_info_group_path_vec(&identity_id, &root_id),
+                        vec![ContractInfoKeys as u8],
                     )),
                     None,
                     apply_type,
@@ -186,7 +207,7 @@ impl Drive {
                 // We need to insert the key type
                 self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
                     PathKeyInfo::<0>::PathKey((
-                        identity_contract_info_group_path_vec(&identity_id, &root_id),
+                        identity_contract_info_group_keys_path_vec(&identity_id, &root_id),
                         vec![purpose as u8],
                     )),
                     None,
@@ -290,7 +311,7 @@ impl Drive {
 
                     self.batch_insert(
                         PathKeyElementInfo::<0>::PathKeyElement((
-                            identity_contract_info_group_path_vec(&identity_id, &root_id),
+                            identity_contract_info_group_keys_path_vec(&identity_id, &root_id),
                             vec![],
                             Element::Reference(sibling_ref_type_path, Some(2), None),
                         )),
@@ -314,6 +335,13 @@ impl Drive {
                         estimated_costs_only_with_layer_info,
                         &platform_version.drive,
                     )?;
+
+                    Self::add_estimation_costs_for_contract_info_group_keys(
+                        &identity_id,
+                        &contract_id_bytes_with_document_type_name,
+                        estimated_costs_only_with_layer_info,
+                        &platform_version.drive,
+                    )?;
                 }
 
                 self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
@@ -327,6 +355,22 @@ impl Drive {
                     drive_operations,
                     &platform_version.drive,
                 )?;
+
+                self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
+                    PathKeyInfo::<0>::PathKey((
+                        identity_contract_info_group_path_vec(
+                            &identity_id,
+                            &contract_id_bytes_with_document_type_name,
+                        ),
+                        vec![ContractInfoKeys as u8],
+                    )),
+                    None,
+                    apply_type,
+                    transaction,
+                    drive_operations,
+                    &platform_version.drive,
+                )?;
+
                 for (key_id, purpose) in document_key_ids {
                     if let Some(estimated_costs_only_with_layer_info) =
                         estimated_costs_only_with_layer_info
@@ -343,7 +387,7 @@ impl Drive {
                     // We need to insert the key type
                     self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
                         PathKeyInfo::<0>::PathKey((
-                            identity_contract_info_group_path_vec(
+                            identity_contract_info_group_keys_path_vec(
                                 &identity_id,
                                 &contract_id_bytes_with_document_type_name,
                             ),
