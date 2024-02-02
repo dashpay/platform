@@ -31,7 +31,8 @@ use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
 use drive_abci::platform_types::epoch_info::v0::EpochInfoV0;
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
-use drive_abci::rpc::core::{CoreRPCLike, MockCoreRPCLike};
+use drive_abci::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
+use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use platform_version::version::PlatformVersion;
 use rand::prelude::{SliceRandom, StdRng};
@@ -824,8 +825,7 @@ pub(crate) fn continue_chain_for_strategy(
 
     let mut current_core_height = core_height_start;
 
-    // let mut total_withdrawals = vec![];
-    let mut total_withdrawals = BTreeMap::new();
+    let mut total_withdrawals = UnsignedWithdrawalTxs::default();
 
     let mut current_quorum_with_test_info =
         quorums.get::<QuorumHash>(&current_quorum_hash).unwrap();
@@ -974,7 +974,7 @@ pub(crate) fn continue_chain_for_strategy(
 
         let platform_version = platform_state.current_platform_version().unwrap();
 
-        total_withdrawals.append(&mut withdrawals_this_block);
+        total_withdrawals.append(withdrawals_this_block);
 
         for finalize_block_operation in finalize_block_operations {
             match finalize_block_operation {

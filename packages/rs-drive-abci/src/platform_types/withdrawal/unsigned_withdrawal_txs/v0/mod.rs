@@ -2,40 +2,46 @@
 use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
-use dpp::dashcore::{Transaction, Txid, VarInt};
+use dpp::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
+use dpp::dashcore::{Transaction, VarInt};
 use std::fmt::Display;
 use tenderdash_abci::proto::types::VoteExtension;
 use tenderdash_abci::proto::{abci::ExtendVoteExtension, types::VoteExtensionType};
-
-type TxIdAndBytes = (Txid, Vec<u8>);
 
 /// Collection of withdrawal transactions processed at some height/round
 #[derive(Debug, Default, Clone)]
 pub struct UnsignedWithdrawalTxs(Vec<Transaction>);
 
 impl UnsignedWithdrawalTxs {
+    /// Returns iterator over borrowed withdrawal transactions
     pub fn iter(&self) -> std::slice::Iter<Transaction> {
         self.0.iter()
     }
-
+    /// Returns iterator over owned withdrawal transactions
     pub fn into_iter(self) -> std::vec::IntoIter<Transaction> {
         self.0.into_iter()
     }
-
+    /// Returns a number of withdrawal transactions
     pub fn len(&self) -> usize {
         self.0.len()
     }
-
+    /// Returns true if there are no withdrawal transactions
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
-
+    /// Creates a new collection of withdrawal transactions for Vec
     pub fn from_vec(transactions: Vec<Transaction>) -> Self {
         Self(transactions)
     }
+    /// Drains all withdrawal transactions from the collection
 
     pub fn drain(&mut self) -> UnsignedWithdrawalTxs {
         Self(self.0.drain(..).collect())
+    }
+
+    /// Appends another collection of unsigned withdrawal transactions
+    pub fn append(&mut self, mut other: Self) {
+        self.0.append(&mut other.0);
     }
 }
 
@@ -64,10 +70,6 @@ impl PartialEq<Vec<VoteExtension>> for UnsignedWithdrawalTxs {
                 || vote_extension.extension != extend_vote_extension.extension
         })
     }
-
-    fn ne(&self, other: &Vec<VoteExtension>) -> bool {
-        !self.eq(other)
-    }
 }
 
 impl PartialEq<Vec<ExtendVoteExtension>> for UnsignedWithdrawalTxs {
@@ -85,10 +87,6 @@ impl PartialEq<Vec<ExtendVoteExtension>> for UnsignedWithdrawalTxs {
 
                 &self_vote_extension != other_vote_extension
             })
-    }
-
-    fn ne(&self, other: &Vec<ExtendVoteExtension>) -> bool {
-        !self.eq(other)
     }
 }
 
@@ -109,7 +107,7 @@ impl Into<Vec<ExtendVoteExtension>> for UnsignedWithdrawalTxs {
 }
 
 fn tx_to_extend_vote_extension(tx: &Transaction) -> ExtendVoteExtension {
-    let request_id = make_extend_vote_request_id(&tx);
+    let request_id = make_extend_vote_request_id(tx);
     let extension = tx.txid().as_byte_array().to_vec();
 
     ExtendVoteExtension {
@@ -119,18 +117,16 @@ fn tx_to_extend_vote_extension(tx: &Transaction) -> ExtendVoteExtension {
     }
 }
 
-pub fn make_extend_vote_request_id(asset_unlock_tx: &Transaction) -> Vec<u8> {
-    let asset_unlock_payload: AssetUnlockPayload = asset_unlock_tx
-        .clone()
-        .special_transaction_payload
-        .unwrap()
-        .to_asset_unlock_payload()
-        .unwrap();
+pub(crate) fn make_extend_vote_request_id(asset_unlock_tx: &Transaction) -> Vec<u8> {
+    let Some(AssetUnlockPayloadType(ref payload)) = asset_unlock_tx.special_transaction_payload
+    else {
+        panic!("expected to get AssetUnlockPayloadType");
+    };
 
     let mut request_id = vec![];
     const ASSET_UNLOCK_REQUEST_ID_PREFIX: &str = "plwdtx";
     let prefix_len = VarInt(ASSET_UNLOCK_REQUEST_ID_PREFIX.len() as u64);
-    let index = asset_unlock_payload.base.index.to_le_bytes();
+    let index = payload.base.index.to_le_bytes();
 
     prefix_len.consensus_encode(&mut request_id).unwrap();
     request_id.extend_from_slice(ASSET_UNLOCK_REQUEST_ID_PREFIX.as_bytes());

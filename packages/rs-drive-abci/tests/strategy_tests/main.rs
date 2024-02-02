@@ -40,6 +40,8 @@ use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
 use strategy_tests::frequency::Frequency;
 
+use dpp::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
+use dpp::dashcore::Transaction;
 use std::collections::BTreeMap;
 
 use strategy::{
@@ -93,6 +95,8 @@ mod tests {
     use dpp::version::PlatformVersion;
     use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
     use drive_abci::config::{ExecutionConfig, PlatformTestConfig};
+    use drive_abci::error::execution::ExecutionError;
+    use drive_abci::error::Error;
     use drive_abci::logging::LogLevel;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
@@ -1119,7 +1123,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "ddd3ae825b191291bc3fbb114dd8988635e37cc364967671d267a2a0187d315f".to_string()
+            "fa6e1d4977b35a5b9d9be63afb65d9cd3cf607e79a733bf743b96bfd6de48eed".to_string()
         )
     }
 
@@ -1675,7 +1679,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "a1948f50e1cb1a02dc3601c1f8e5a531b91478d3c6357488f781521aec1a2e8d".to_string()
+            "301a9e2630e5017a1d45a492a1e23837ab7369049c617d8202db22f924a911f3".to_string()
         )
     }
 
@@ -2352,11 +2356,13 @@ mod tests {
         // Asset unlocks broadcasted in the last block should have Unknown status
         {
             let mut core_state = shared_core_state.lock().unwrap();
-            last_block_withdrawals.iter().for_each(|(index, _)| {
+            last_block_withdrawals.iter().for_each(|tx| {
+                let index = asset_unlock_index(tx);
+
                 core_state.asset_unlock_statuses.insert(
-                    *index,
+                    index,
                     AssetUnlockStatusResult {
-                        index: *index,
+                        index,
                         status: AssetUnlockStatus::Unknown,
                     },
                 );
@@ -2454,11 +2460,13 @@ mod tests {
             core_state.chain_lock.block_height = chain_locked_height;
 
             // Then set all newly broadcasted transactions to Unknown
-            last_block_withdrawals.iter().for_each(|(index, _)| {
+            last_block_withdrawals.iter().for_each(|tx| {
+                let index = asset_unlock_index(tx);
+
                 core_state.asset_unlock_statuses.insert(
-                    *index,
+                    index,
                     AssetUnlockStatusResult {
-                        index: *index,
+                        index,
                         status: AssetUnlockStatus::Unknown,
                     },
                 );
@@ -2569,11 +2577,13 @@ mod tests {
 
             core_state.chain_lock.block_height = chain_locked_height;
 
-            last_block_withdrawals.iter().for_each(|(index, _)| {
+            last_block_withdrawals.iter().for_each(|tx| {
+                let index = asset_unlock_index(tx);
+
                 core_state.asset_unlock_statuses.insert(
-                    *index,
+                    index,
                     AssetUnlockStatusResult {
-                        index: *index,
+                        index,
                         status: AssetUnlockStatus::Unknown,
                     },
                 );
@@ -3341,4 +3351,11 @@ mod tests {
         // Only three out of five transitions should've made to the block
         assert_eq!(state_transitions.len(), 3);
     }
+}
+
+fn asset_unlock_index(tx: &Transaction) -> u64 {
+    let Some(AssetUnlockPayloadType(ref payload)) = tx.special_transaction_payload else {
+        panic!("expected to get AssetUnlockPayloadType");
+    };
+    payload.base.index
 }

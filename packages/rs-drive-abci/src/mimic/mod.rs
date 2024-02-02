@@ -2,40 +2,36 @@ use crate::abci::server::AbciApplication;
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use bytes::Buf;
-use std::collections::BTreeMap;
 
+use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
+use crate::mimic::test_quorum::TestQuorumInfo;
+use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::{
+    make_extend_vote_request_id, UnsignedWithdrawalTxs,
+};
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
-use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo;
-use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::AssetUnlockBaseTransactionInfo;
-use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
-use dashcore_rpc::dashcore::bls_sig_utils::BLSSignature;
-use dashcore_rpc::dashcore::consensus::Decodable;
-use dashcore_rpc::dashcore;
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
-use dpp::dashcore::hashes::Hash;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::hashes::Hash;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
-use tenderdash_abci::proto::abci::{CommitInfo, ExecTxResult, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal, ValidatorSetUpdate};
+use tenderdash_abci::proto::abci::tx_record::TxAction;
+use tenderdash_abci::proto::abci::{
+    CommitInfo, ExecTxResult, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal,
+    RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal,
+    ValidatorSetUpdate,
+};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use tenderdash_abci::proto::types::{
-    Block, BlockId, Data, EvidenceList, Header, PartSetHeader, VoteExtension, VoteExtensionType, StateId, CanonicalVote, SignedMsgType,
+    Block, BlockId, CanonicalVote, Data, EvidenceList, Header, PartSetHeader, SignedMsgType,
+    StateId, VoteExtension, VoteExtensionType,
 };
 use tenderdash_abci::signatures::Hashable;
-use tenderdash_abci::{signatures::Signable, proto::version::Consensus, Application};
-use tenderdash_abci::proto::abci::tx_record::TxAction;
-use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
-use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
-use dpp::dashcore::consensus;
-use dpp::dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::build_asset_unlock_tx;
-use crate::mimic::test_quorum::TestQuorumInfo;
-use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::make_extend_vote_request_id;
+use tenderdash_abci::{proto::version::Consensus, signatures::Signable, Application};
 
 /// Test quorum for mimic block execution
 pub mod test_quorum;
@@ -48,8 +44,7 @@ pub struct MimicExecuteBlockOutcome {
     /// state transaction results
     pub state_transaction_results: Vec<(StateTransition, ExecTxResult)>,
     /// withdrawal transactions
-    // pub withdrawal_transactions: Vec<dashcore_rpc::dashcore::Transaction>,
-    pub withdrawal_transactions: BTreeMap<u64, Vec<u8>>,
+    pub withdrawal_transactions: UnsignedWithdrawalTxs,
     /// The next validators
     pub validator_set_update: Option<ValidatorSetUpdate>,
     /// The next validators hash
@@ -422,21 +417,9 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             })
             .collect();
 
-        //todo: tidy up and fix
-        let withdrawals = block_execution_context
+        let withdrawal_transactions = block_execution_context
             .unsigned_withdrawal_transactions
-            .iter()
-            .map(|tx| {
-                let tx_bytes = consensus::serialize(&tx);
-
-                let Some(AssetUnlockPayloadType(ref payload)) = &tx.special_transaction_payload
-                else {
-                    panic!("expected asset unlock payload");
-                };
-
-                (payload.base.index, tx_bytes)
-            })
-            .collect();
+            .clone();
 
         drop(guarded_block_execution_context);
 
@@ -578,7 +561,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         Ok(MimicExecuteBlockOutcome {
             state_transaction_results,
             app_version: APP_VERSION,
-            withdrawal_transactions: withdrawals,
+            withdrawal_transactions,
             validator_set_update,
             next_validator_set_hash,
             root_app_hash: app_hash
