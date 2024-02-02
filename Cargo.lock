@@ -1290,7 +1290,6 @@ dependencies = [
  "base64 0.20.0",
  "bincode 2.0.0-rc.3",
  "bs58 0.4.0",
- "bytes",
  "chrono",
  "ciborium",
  "clap 4.4.18",
