@@ -1,4 +1,6 @@
-use crate::drive::identity::identity_contract_info_group_path_vec;
+use crate::drive::identity::{
+    identity_contract_info_group_keys_path_vec, identity_contract_info_group_path_vec,
+};
 use crate::drive::Drive;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::ApproximateElements;
@@ -15,7 +17,7 @@ impl Drive {
     ) {
         // we then need to insert for the identity contract info for the contract in question
         estimated_costs_only_with_layer_info.insert(
-            KeyInfoPath::from_known_owned_path(identity_contract_info_group_path_vec(
+            KeyInfoPath::from_known_owned_path(identity_contract_info_group_keys_path_vec(
                 identity_id,
                 group_id,
             )),
