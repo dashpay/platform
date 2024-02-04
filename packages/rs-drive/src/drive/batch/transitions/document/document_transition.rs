@@ -35,6 +35,13 @@ impl DriveHighLevelDocumentOperationConverter for DocumentTransitionAction {
                     platform_version,
                 )
             }
+            DocumentTransitionAction::BumpIdentityDataContractNonce(
+                bump_identity_contract_nonce_action,
+            ) => bump_identity_contract_nonce_action.into_high_level_document_drive_operations(
+                epoch,
+                owner_id,
+                platform_version,
+            ),
         }
     }
 }

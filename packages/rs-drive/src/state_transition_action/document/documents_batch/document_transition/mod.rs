@@ -1,4 +1,6 @@
 mod action_type;
+/// bump_identity_data_contract_nonce_action
+pub mod bump_identity_data_contract_nonce_action;
 /// document_base_transition_action
 pub mod document_base_transition_action;
 /// document_create_transition_action
@@ -11,6 +13,7 @@ pub mod document_replace_transition_action;
 pub use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 
 use derive_more::From;
+use crate::state_transition_action::document::documents_batch::document_transition::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};
@@ -29,15 +32,18 @@ pub enum DocumentTransitionAction {
     ReplaceAction(DocumentReplaceTransitionAction),
     /// delete
     DeleteAction(DocumentDeleteTransitionAction),
+    /// bump identity data contract nonce
+    BumpIdentityDataContractNonce(BumpIdentityDataContractNonceAction),
 }
 
 impl DocumentTransitionAction {
     /// base
-    pub fn base(&self) -> &DocumentBaseTransitionAction {
+    pub fn base(&self) -> Option<&DocumentBaseTransitionAction> {
         match self {
-            DocumentTransitionAction::CreateAction(d) => d.base(),
-            DocumentTransitionAction::DeleteAction(d) => d.base(),
-            DocumentTransitionAction::ReplaceAction(d) => d.base(),
+            DocumentTransitionAction::CreateAction(d) => Some(d.base()),
+            DocumentTransitionAction::DeleteAction(d) => Some(d.base()),
+            DocumentTransitionAction::ReplaceAction(d) => Some(d.base()),
+            DocumentTransitionAction::BumpIdentityDataContractNonce(d) => None,
         }
     }
 }

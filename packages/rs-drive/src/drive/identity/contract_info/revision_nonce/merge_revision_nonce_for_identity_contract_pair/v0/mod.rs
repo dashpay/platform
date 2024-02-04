@@ -2,7 +2,7 @@ use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 use crate::drive::identity::contract_info::ContractInfoStructure::IdentityContractNonceKey;
 use crate::drive::identity::IdentityRootStructure::IdentityContractInfo;
-use crate::drive::identity::{identity_contract_info_group_path, identity_path_vec};
+use crate::drive::identity::{identity_contract_info_group_path, identity_contract_info_root_path, identity_contract_info_root_path_vec, identity_path_vec};
 use crate::drive::object_size_info::{PathKeyElementInfo, PathKeyInfo};
 use crate::drive::Drive;
 use crate::error::Error;
@@ -13,6 +13,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::IdentityContractNonce;
 use crate::drive::identity::contract_info::revision_nonce::merge_revision_nonce_for_identity_contract_pair::MergeIdentityContractNonceResult;
 use crate::drive::identity::contract_info::revision_nonce::merge_revision_nonce_for_identity_contract_pair::MergeIdentityContractNonceResult::{MergeIdentityContractNonceSuccess, NonceAlreadyPresentAtTip, NonceAlreadyPresentInPast, NonceTooFarInFuture, NonceTooFarInPast};
@@ -20,7 +21,8 @@ use crate::error::identity::IdentityError;
 
 const VALUE_FILTER: u64 = 0xFFFFF;
 const MISSING_REVISIONS_FILTER: u64 = 0xFFF00000;
-const MISSING_REVISIONS_MAX_BYTES: u64 = 20;
+const MAX_MISSING_REVISIONS: u64 = 20;
+const MISSING_REVISIONS_MAX_BYTES: u64 = MAX_MISSING_REVISIONS;
 const VALUE_FILTER_MAX_BYTES: u64 = 40;
 
 impl Drive {
@@ -89,6 +91,12 @@ impl Drive {
             ));
         }
 
+        if revision_nonce == 0 {
+            return Err(Error::Identity(
+                IdentityError::IdentityContractRevisionNonceError("revision nonce must not be 0"),
+            ));
+        }
+
         let mut drive_operations = vec![];
 
         let identity_path = identity_path_vec(identity_id.as_slice());
@@ -111,16 +119,44 @@ impl Drive {
             }
         };
 
-        // we insert the contract root tree if it doesn't exist already
-        self.batch_insert_empty_tree_if_not_exists(
-            PathKeyInfo::<0>::PathKey((identity_path, vec![IdentityContractInfo as u8])),
-            None,
-            apply_type,
-            transaction,
-            &mut None,
-            &mut drive_operations,
-            &platform_version.drive,
-        )?;
+        let previous_nonce_is_sure_to_not_exist = if revision_nonce <= MAX_MISSING_REVISIONS {
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                Self::add_estimation_costs_for_contract_info(
+                    &identity_id,
+                    estimated_costs_only_with_layer_info,
+                    &platform_version.drive,
+                )?;
+            }
+
+            // we insert the contract root tree if it doesn't exist already
+            self.batch_insert_empty_tree_if_not_exists(
+                PathKeyInfo::<0>::PathKey((identity_path, vec![IdentityContractInfo as u8])),
+                None,
+                apply_type,
+                transaction,
+                &mut None,
+                &mut drive_operations,
+                &platform_version.drive,
+            )?;
+
+            // we insert the contract root tree if it doesn't exist already
+            let inserted = self.batch_insert_empty_tree_if_not_exists(
+                PathKeyInfo::<0>::PathKey((
+                    identity_contract_info_root_path_vec(&identity_id),
+                    contract_id.to_vec(),
+                )),
+                None,
+                apply_type,
+                transaction,
+                &mut None,
+                &mut drive_operations,
+                &platform_version.drive,
+            )?;
+            inserted
+        } else {
+            false
+        };
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_contract_info_group(
@@ -131,14 +167,18 @@ impl Drive {
             )?;
         }
 
-        let (existing_nonce, fees) = self.fetch_identity_contract_nonce_with_fees(
-            identity_id,
-            contract_id,
-            block_info,
-            estimated_costs_only_with_layer_info.is_none(),
-            transaction,
-            platform_version,
-        )?;
+        let (existing_nonce, fees) = if previous_nonce_is_sure_to_not_exist {
+            (None, FeeResult::default())
+        } else {
+            self.fetch_identity_contract_nonce_with_fees(
+                identity_id,
+                contract_id,
+                block_info,
+                estimated_costs_only_with_layer_info.is_none(),
+                transaction,
+                platform_version,
+            )?
+        };
 
         let nonce_to_set = if let Some(existing_nonce) = existing_nonce {
             let actual_existing_revision = existing_nonce & VALUE_FILTER;

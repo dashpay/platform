@@ -18,6 +18,7 @@ use crate::execution::validation::state_transition::state_transitions::documents
 use crate::execution::validation::state_transition::state_transitions::documents_batch::action_validation::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::documents_batch::action_validation::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use crate::error::execution::ExecutionError;
 use crate::platform_types::platform::PlatformStateRef;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchStateTransitionStructureValidationV0
@@ -86,6 +87,11 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
                     if !result.is_valid() {
                         return Ok(result);
                     }
+                }
+                DocumentTransitionAction::BumpIdentityDataContractNonce(_) => {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "we should not have a bump identity contract nonce at this stage",
+                    )));
                 }
             }
         }

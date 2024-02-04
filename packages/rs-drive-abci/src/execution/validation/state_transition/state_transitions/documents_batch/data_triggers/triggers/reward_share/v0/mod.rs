@@ -47,7 +47,12 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     let mut result = DataTriggerExecutionResult::default();
 
     let is_dry_run = context.state_transition_execution_context.in_dry_run();
-    let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
+    let data_contract_fetch_info = document_transition
+        .base()
+        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "expecting action to have a base",
+        )))?
+        .data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
 
     let document_create_transition = match document_transition {
@@ -56,7 +61,12 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
             return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
                 format!(
                     "the Document Transition {} isn't 'CREATE",
-                    document_transition.base().id()
+                    document_transition
+                        .base()
+                        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "expecting action to have a base"
+                        )))?
+                        .id()
                 ),
             )))
         }
@@ -81,7 +91,12 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
         if !owner_id_in_sml {
             let err = DataTriggerConditionError::new(
                 data_contract.id(),
-                document_transition.base().id(),
+                document_transition
+                    .base()
+                    .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "expecting action to have a base",
+                    )))?
+                    .id(),
                 "Only masternode identities can share rewards".to_string(),
             );
 
@@ -98,7 +113,12 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     if !is_dry_run && maybe_identity.is_none() {
         let err = DataTriggerConditionError::new(
             data_contract.id(),
-            document_transition.base().id(),
+            document_transition
+                .base()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "expecting action to have a base",
+                )))?
+                .id(),
             format!(
                 "Identity '{}' doesn't exist",
                 bs58::encode(pay_to_id).into_string()
@@ -157,7 +177,12 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     if documents.len() >= MAX_DOCUMENTS {
         let err = DataTriggerConditionError::new(
             data_contract.id(),
-            document_transition.base().id(),
+            document_transition
+                .base()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "expecting action to have a base",
+                )))?
+                .id(),
             format!(
                 "Reward shares cannot contain more than {} identities",
                 MAX_DOCUMENTS
@@ -180,7 +205,12 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     if total_percent > MAX_PERCENTAGE {
         let err = DataTriggerConditionError::new(
             data_contract.id(),
-            document_transition.base().id(),
+            document_transition
+                .base()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "expecting action to have a base",
+                )))?
+                .id(),
             format!("Percentage can not be more than {}", MAX_PERCENTAGE),
         );
 

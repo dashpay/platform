@@ -1,3 +1,4 @@
+use std::fs::read;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
@@ -8,6 +9,7 @@ use drive::grovedb::TransactionArg;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
 use crate::error::Error;
+use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
@@ -62,10 +64,16 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                     .validate_state(platform, owner_id, transaction, platform_version)?,
                 DocumentTransitionAction::DeleteAction(delete_action) => delete_action
                     .validate_state(platform, owner_id, transaction, platform_version)?,
+                DocumentTransitionAction::BumpIdentityDataContractNonce(..) => {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "we should never start with a bump identity data contract nonce",
+                    )));
+                }
             };
 
             if !transition_validation_result.is_valid() {
                 validation_result.add_errors(transition_validation_result.errors);
+                validation_result.set_data(state_transition_action.into());
 
                 return Ok(validation_result);
             }

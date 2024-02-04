@@ -37,7 +37,12 @@ pub fn create_contact_request_data_trigger_v0(
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
-    let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
+    let data_contract_fetch_info = document_transition
+        .base()
+        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "expecting action to have a base",
+        )))?
+        .data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
     let mut result = DataTriggerExecutionResult::default();
     let is_dry_run = context.state_transition_execution_context.in_dry_run();
@@ -49,7 +54,12 @@ pub fn create_contact_request_data_trigger_v0(
             return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
                 format!(
                     "the Document Transition {} isn't 'CREATE",
-                    document_transition.base().id()
+                    document_transition
+                        .base()
+                        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "expecting action to have a base"
+                        )))?
+                        .id()
                 ),
             )))
         }
@@ -67,7 +77,12 @@ pub fn create_contact_request_data_trigger_v0(
         if owner_id == &to_user_id {
             let err = DataTriggerConditionError::new(
                 data_contract.id(),
-                document_transition.base().id(),
+                document_transition
+                    .base()
+                    .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "expecting action to have a base",
+                    )))?
+                    .id(),
                 format!("Identity {to_user_id} must not be equal to owner id"),
             );
 

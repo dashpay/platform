@@ -210,26 +210,29 @@ impl SpecializedDocumentFactoryV0 {
 
         let transitions: Vec<_> = documents
             .into_iter()
-            .map(|(action, documents)| match action {
-                DocumentTransitionActionType::Create => {
-                    Self::document_create_transitions(documents, nonce_counter, platform_version)
-                }
-                DocumentTransitionActionType::Delete => Self::document_delete_transitions(
+            .filter_map(|(action, documents)| match action {
+                DocumentTransitionActionType::Create => Some(Self::document_create_transitions(
+                    documents,
+                    nonce_counter,
+                    platform_version,
+                )),
+                DocumentTransitionActionType::Delete => Some(Self::document_delete_transitions(
                     documents
                         .into_iter()
                         .map(|(document, document_type, _)| (document, document_type))
                         .collect(),
                     nonce_counter,
                     platform_version,
-                ),
-                DocumentTransitionActionType::Replace => Self::document_replace_transitions(
+                )),
+                DocumentTransitionActionType::Replace => Some(Self::document_replace_transitions(
                     documents
                         .into_iter()
                         .map(|(document, document_type, _)| (document, document_type))
                         .collect(),
                     nonce_counter,
                     platform_version,
-                ),
+                )),
+                _ => None,
             })
             .collect::<Result<Vec<_>, ProtocolError>>()?
             .into_iter()

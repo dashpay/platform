@@ -81,8 +81,18 @@ impl DocumentsBatchTransitionAction {
         let mut highest_security_level = SecurityLevel::lowest_level();
 
         for transition in self.transitions().iter() {
-            let document_type_name = transition.base().document_type_name();
-            let data_contract_info = transition.base().data_contract_fetch_info();
+            let document_type_name = transition
+                .base()
+                .ok_or(ProtocolError::CorruptedCodeExecution(
+                    "expecting action to have a base".to_string(),
+                ))?
+                .document_type_name();
+            let data_contract_info = transition
+                .base()
+                .ok_or(ProtocolError::CorruptedCodeExecution(
+                    "expecting action to have a base".to_string(),
+                ))?
+                .data_contract_fetch_info();
 
             let document_type = data_contract_info
                 .contract

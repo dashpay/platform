@@ -38,7 +38,12 @@ pub fn delete_withdrawal_data_trigger_v0(
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
-    let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
+    let data_contract_fetch_info = document_transition
+        .base()
+        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "expecting action to have a base",
+        )))?
+        .data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
     let mut result = DataTriggerExecutionResult::default();
 
@@ -46,7 +51,12 @@ pub fn delete_withdrawal_data_trigger_v0(
         return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
             format!(
                 "the Document Transition {} isn't 'DELETE",
-                document_transition.base().id()
+                document_transition
+                    .base()
+                    .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "expecting action to have a base"
+                    )))?
+                    .id()
             ),
         )));
     };
