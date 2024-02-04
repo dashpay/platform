@@ -13,7 +13,7 @@ use dpp::identity::PartialIdentity;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
 
-use crate::execution::types::execution_operation::ExecutionOperation;
+use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
@@ -30,7 +30,7 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         /// the operations that the identity is requesting to perform
         operations: Vec<DriveOperation<'a>>,
         /// the execution operations that we must also pay for
-        execution_operations: Vec<ExecutionOperation>,
+        execution_operations: Vec<ValidationOperation>,
     },
     /// A drive event that is paid from an asset lock
     PaidFromAssetLockDriveEvent {
@@ -41,7 +41,7 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         /// the operations that should be performed
         operations: Vec<DriveOperation<'a>>,
         /// the execution operations that we must also pay for
-        execution_operations: Vec<ExecutionOperation>,
+        execution_operations: Vec<ValidationOperation>,
     },
     /// A drive event that is free
     FreeDriveEvent {

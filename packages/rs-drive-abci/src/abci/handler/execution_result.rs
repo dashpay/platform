@@ -24,7 +24,7 @@ impl TryIntoPlatformVersioned<ExecTxResult> for StateTransitionExecutionResult {
                 }
             }
             StateTransitionExecutionResult::UnpaidConsensusError(error)
-            | StateTransitionExecutionResult::PaidConsensusError(error) => ExecTxResult {
+            | StateTransitionExecutionResult::PaidConsensusError(error, ..) => ExecTxResult {
                 code: HandlerError::from(&error).code(),
                 info: error.response_info_for_version(platform_version)?,
                 // TODO: We need to pass processing fees as well

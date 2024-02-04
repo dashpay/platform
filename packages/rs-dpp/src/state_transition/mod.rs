@@ -270,7 +270,7 @@ impl StateTransition {
     }
 
     /// Returns state transition name
-    pub fn name(&self) -> String {
+    pub fn name(&self) -> &'static str {
         match self {
             Self::DataContractCreate(_) => "DataContractCreate",
             Self::DataContractUpdate(_) => "DataContractUpdate",
@@ -281,7 +281,6 @@ impl StateTransition {
             Self::IdentityUpdate(_) => "IdentityUpdate",
             Self::IdentityCreditTransfer(_) => "IdentityCreditTransfer",
         }
-        .to_string()
     }
 
     /// returns the signature as a byte-array

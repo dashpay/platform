@@ -15,7 +15,7 @@ use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
-use crate::execution::types::execution_operation::ExecutionOperation;
+use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{ValidateStateTransitionIdentitySignature};

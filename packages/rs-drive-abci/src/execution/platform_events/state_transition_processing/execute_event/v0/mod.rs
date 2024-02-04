@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
-use crate::execution::types::execution_operation::{ExecutionOperation, OperationLike};
+use crate::execution::types::execution_operation::{OperationLike, ValidationOperation};
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::event_execution_result::EventExecutionResult::{
     ConsensusExecutionError, SuccessfulFreeExecution, SuccessfulPaidExecution,
@@ -77,7 +77,7 @@ where
                         )
                         .map_err(Error::Drive)?;
 
-                    ExecutionOperation::add_many_to_fee_result(
+                    ValidationOperation::add_many_to_fee_result(
                         &execution_operations,
                         &mut individual_fee_result,
                         &block_info.epoch,

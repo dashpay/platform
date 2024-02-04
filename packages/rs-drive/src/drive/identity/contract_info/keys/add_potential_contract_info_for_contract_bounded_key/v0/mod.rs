@@ -1,7 +1,7 @@
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 use crate::drive::identity::contract_info::keys::IdentityDataContractKeyApplyInfo;
-use crate::drive::identity::contract_info::ContractInfoStructure::ContractInfoKeys;
+use crate::drive::identity::contract_info::ContractInfoStructure::ContractInfoKeysKey;
 use crate::drive::identity::IdentityRootStructure::IdentityContractInfo;
 use crate::drive::identity::{
     identity_contract_info_group_keys_path_vec, identity_contract_info_group_path_key_purpose_vec,
@@ -181,7 +181,7 @@ impl Drive {
                 self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
                     PathKeyInfo::<0>::PathKey((
                         identity_contract_info_group_path_vec(&identity_id, &root_id),
-                        vec![ContractInfoKeys as u8],
+                        vec![ContractInfoKeysKey as u8],
                     )),
                     None,
                     apply_type,
@@ -362,7 +362,7 @@ impl Drive {
                             &identity_id,
                             &contract_id_bytes_with_document_type_name,
                         ),
-                        vec![ContractInfoKeys as u8],
+                        vec![ContractInfoKeysKey as u8],
                     )),
                     None,
                     apply_type,

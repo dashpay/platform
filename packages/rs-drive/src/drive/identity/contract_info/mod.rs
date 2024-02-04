@@ -6,7 +6,7 @@ mod revision_nonce;
 #[derive(Copy, Clone)]
 pub enum ContractInfoStructure {
     /// The identity contract nonce to stop replay attacks
-    IdentityContractNonce = 0,
+    IdentityContractNonceKey = 0,
     /// The contract bound keys
-    ContractInfoKeys = 1,
+    ContractInfoKeysKey = 1,
 }

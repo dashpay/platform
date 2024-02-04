@@ -22,7 +22,7 @@ use drive::state_transition_action::StateTransitionAction;
 use crate::error::execution::ExecutionError;
 use drive::grovedb::TransactionArg;
 
-use crate::execution::types::execution_operation::ExecutionOperation;
+use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
@@ -110,8 +110,8 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
                 ))
             })?;
 
-        execution_context.add_operation(ExecutionOperation::DoubleSha256);
-        execution_context.add_operation(ExecutionOperation::SignatureVerification(
+        execution_context.add_operation(ValidationOperation::DoubleSha256);
+        execution_context.add_operation(ValidationOperation::SignatureVerification(
             SignatureVerificationOperation::new(KeyType::ECDSA_HASH160),
         ));
 

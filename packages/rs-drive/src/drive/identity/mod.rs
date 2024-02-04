@@ -144,7 +144,7 @@ pub fn identity_contract_info_group_keys_path_vec(
         identity_id.to_vec(),
         vec![IdentityRootStructure::IdentityContractInfo as u8],
         group_id.to_vec(),
-        vec![ContractInfoStructure::ContractInfoKeys as u8],
+        vec![ContractInfoStructure::ContractInfoKeysKey as u8],
     ]
 }
 
@@ -160,7 +160,7 @@ pub fn identity_contract_info_group_path_key_purpose_vec(
         identity_id.to_vec(),
         vec![IdentityRootStructure::IdentityContractInfo as u8],
         group_id.to_vec(),
-        vec![ContractInfoStructure::ContractInfoKeys as u8],
+        vec![ContractInfoStructure::ContractInfoKeysKey as u8],
         vec![key_purpose as u8],
     ]
 }

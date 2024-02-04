@@ -8,7 +8,7 @@ use dpp::consensus::signature::{
 use dpp::identity::PartialIdentity;
 
 use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
-use crate::execution::types::execution_operation::ExecutionOperation;
+use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
@@ -164,7 +164,7 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
         }
 
         let operation = SignatureVerificationOperation::new(public_key.key_type());
-        execution_context.add_operation(ExecutionOperation::SignatureVerification(operation));
+        execution_context.add_operation(ValidationOperation::SignatureVerification(operation));
 
         let signature_is_valid = self.verify_signature(public_key, &NativeBlsModule);
 

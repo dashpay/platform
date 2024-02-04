@@ -292,7 +292,7 @@ where
             let tx_action = match &state_transition_execution_result {
                 StateTransitionExecutionResult::SuccessfulExecution(_, _) => TxAction::Unmodified,
                 // We have identity to pay for the state transition, so we keep it in the block
-                StateTransitionExecutionResult::PaidConsensusError(_) => {
+                StateTransitionExecutionResult::PaidConsensusError(..) => {
                     invalid_paid_tx_count += 1;
 
                     TxAction::Unmodified
@@ -569,7 +569,7 @@ where
                     matches!(
                         execution_result,
                         StateTransitionExecutionResult::SuccessfulExecution(_, _)
-                            | StateTransitionExecutionResult::PaidConsensusError(_)
+                            | StateTransitionExecutionResult::PaidConsensusError(..)
                     )
                 })
                 .map(|execution_result| {

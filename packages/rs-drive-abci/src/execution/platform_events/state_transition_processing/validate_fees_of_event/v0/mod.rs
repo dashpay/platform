@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
-use crate::execution::types::execution_operation::{ExecutionOperation, OperationLike};
+use crate::execution::types::execution_operation::{OperationLike, ValidationOperation};
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
@@ -64,7 +64,7 @@ where
                     )
                     .map_err(Error::Drive)?;
 
-                ExecutionOperation::add_many_to_fee_result(
+                ValidationOperation::add_many_to_fee_result(
                     execution_operations,
                     &mut estimated_fee_result,
                     &block_info.epoch,
@@ -110,7 +110,7 @@ where
                     )
                     .map_err(Error::Drive)?;
 
-                ExecutionOperation::add_many_to_fee_result(
+                ValidationOperation::add_many_to_fee_result(
                     execution_operations,
                     &mut estimated_fee_result,
                     &block_info.epoch,

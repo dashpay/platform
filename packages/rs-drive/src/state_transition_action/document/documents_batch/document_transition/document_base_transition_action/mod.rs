@@ -2,6 +2,7 @@ use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::platform_value::Identifier;
 
+use dpp::prelude::IdentityContractNonce;
 use std::sync::Arc;
 
 /// transformer module
@@ -47,6 +48,12 @@ impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
     fn data_contract_fetch_info(&self) -> Arc<DataContractFetchInfo> {
         match self {
             DocumentBaseTransitionAction::V0(v0) => v0.data_contract.clone(),
+        }
+    }
+
+    fn identity_contract_nonce(&self) -> IdentityContractNonce {
+        match self {
+            DocumentBaseTransitionAction::V0(v0) => v0.identity_contract_nonce,
         }
     }
 }

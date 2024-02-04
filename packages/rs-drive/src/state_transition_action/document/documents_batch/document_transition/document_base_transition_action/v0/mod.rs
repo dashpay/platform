@@ -33,4 +33,6 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
     fn data_contract_id(&self) -> Identifier;
     /// Data contract
     fn data_contract_fetch_info(&self) -> Arc<DataContractFetchInfo>;
+    /// Identity contract nonce
+    fn identity_contract_nonce(&self) -> IdentityContractNonce;
 }

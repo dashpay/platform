@@ -4,7 +4,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
-use dpp::prelude::Revision;
+use dpp::prelude::{IdentityContractNonce, Revision};
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -75,6 +75,16 @@ pub enum IdentityOperationType {
         /// The revision we are updating to
         revision: Revision,
     },
+
+    /// Updates an identities nonce for a specific contract.
+    UpdateIdentityContractNonce {
+        /// The revision id
+        identity_id: [u8; 32],
+        /// The contract id
+        contract_id: [u8; 32],
+        /// The nonce we are updating to
+        nonce: IdentityContractNonce,
+    },
 }
 
 impl DriveLowLevelOperationConverter for IdentityOperationType {
@@ -88,7 +98,6 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let _drive_version = &platform_version.drive;
         match self {
             IdentityOperationType::AddNewIdentity {
                 identity,
@@ -167,6 +176,24 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 estimated_costs_only_with_layer_info,
                 platform_version,
             )?]),
+            IdentityOperationType::UpdateIdentityContractNonce {
+                identity_id,
+                contract_id,
+                nonce,
+            } => {
+                let (result, operations) = drive
+                    .merge_revision_nonce_for_identity_contract_pair_operations(
+                        identity_id,
+                        contract_id,
+                        nonce,
+                        block_info,
+                        estimated_costs_only_with_layer_info,
+                        transaction,
+                        platform_version,
+                    )?;
+                result.to_result()?;
+                Ok(operations)
+            }
         }
     }
 }
