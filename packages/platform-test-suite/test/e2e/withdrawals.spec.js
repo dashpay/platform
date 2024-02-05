@@ -1,9 +1,5 @@
 const { expect } = require('chai');
 
-const {
-  contractId: withdrawalsContractId,
-} = require('@dashevo/withdrawals-contract/lib/systemIds');
-
 const wait = require('@dashevo/dapi-client/lib/utils/wait');
 const { STATUSES: WITHDRAWAL_STATUSES } = require('dash/build/SDK/Client/Platform/methods/identities/creditWithdrawal');
 
