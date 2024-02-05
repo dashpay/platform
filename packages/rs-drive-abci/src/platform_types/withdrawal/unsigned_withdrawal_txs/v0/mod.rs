@@ -1,7 +1,6 @@
 //! Withdrawal transactions definitions and processing
 use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
 use dpp::dashcore::{Transaction, VarInt};
 use std::fmt::Display;
@@ -16,10 +15,6 @@ impl UnsignedWithdrawalTxs {
     /// Returns iterator over borrowed withdrawal transactions
     pub fn iter(&self) -> std::slice::Iter<Transaction> {
         self.0.iter()
-    }
-    /// Returns iterator over owned withdrawal transactions
-    pub fn into_iter(self) -> std::vec::IntoIter<Transaction> {
-        self.0.into_iter()
     }
     /// Returns a number of withdrawal transactions
     pub fn len(&self) -> usize {
@@ -43,21 +38,10 @@ impl UnsignedWithdrawalTxs {
     pub fn append(&mut self, mut other: Self) {
         self.0.append(&mut other.0);
     }
-}
 
-impl Display for UnsignedWithdrawalTxs {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("txs:["))?;
-        for tx in &self.0 {
-            f.write_fmt(format_args!("{}", tx.txid().to_hex()))?;
-        }
-        f.write_str("]\n")?;
-        Ok(())
-    }
-}
-
-impl PartialEq<Vec<VoteExtension>> for UnsignedWithdrawalTxs {
-    fn eq(&self, other: &Vec<VoteExtension>) -> bool {
+    /// Verifies that the collection of unsigned withdrawal transactions matches the given vote extensions
+    /// created based on these transactions
+    pub fn are_matching_with_vote_extensions(&self, other: &Vec<VoteExtension>) -> bool {
         if self.0.len() != other.len() {
             return false;
         };
@@ -69,6 +53,26 @@ impl PartialEq<Vec<VoteExtension>> for UnsignedWithdrawalTxs {
                 || vote_extension.sign_request_id != extend_vote_extension.sign_request_id
                 || vote_extension.extension != extend_vote_extension.extension
         })
+    }
+}
+
+impl IntoIterator for UnsignedWithdrawalTxs {
+    type Item = Transaction;
+    type IntoIter = std::vec::IntoIter<Transaction>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl Display for UnsignedWithdrawalTxs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("txs:["))?;
+        for tx in &self.0 {
+            f.write_fmt(format_args!("{}", tx.txid().to_hex()))?;
+        }
+        f.write_str("]\n")?;
+        Ok(())
     }
 }
 
@@ -97,12 +101,6 @@ impl From<&UnsignedWithdrawalTxs> for Vec<ExtendVoteExtension> {
             .iter()
             .map(tx_to_extend_vote_extension)
             .collect::<Vec<_>>()
-    }
-}
-
-impl Into<Vec<ExtendVoteExtension>> for UnsignedWithdrawalTxs {
-    fn into(self) -> Vec<ExtendVoteExtension> {
-        self.0.iter().map(tx_to_extend_vote_extension).collect()
     }
 }
 

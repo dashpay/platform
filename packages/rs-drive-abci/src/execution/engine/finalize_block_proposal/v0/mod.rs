@@ -153,7 +153,9 @@ where
         let expected_withdrawal_transactions =
             block_execution_context.unsigned_withdrawal_transactions();
 
-        if expected_withdrawal_transactions != &commit_info.threshold_vote_extensions {
+        if !expected_withdrawal_transactions
+            .are_matching_with_vote_extensions(&commit_info.threshold_vote_extensions)
+        {
             validation_result.add_error(AbciError::VoteExtensionMismatchReceived {
                 got: commit_info.threshold_vote_extensions,
                 expected: expected_withdrawal_transactions.into(),
