@@ -14,10 +14,19 @@ export const STATUSES = {
 
 // Implement remaining pooling types when they ready on drive side
 const DEFAULT_POOLING = 0;
-const MINIMAL_WITHDRAWAL_AMOUNT = 1000000;
+
+// TODO: add to dashcore-lib
+// Asset unlock TX size is fixed with the default pooling
+// since it has zero inputs and only one output
+const ASSET_UNLOCK_TX_SIZE = 190;
+
+// Minimal accepted core fee per byte to avoid low fee error from core
+const MIN_CORE_FEE_PER_BYTE = 13;
+
+// Minimal withdrawal amount in credits to avoid dust error from core
+const MINIMAL_WITHDRAWAL_AMOUNT = ASSET_UNLOCK_TX_SIZE * MIN_CORE_FEE_PER_BYTE * 1000;
 
 type WithdrawalOptions = {
-  // TODO: should we leave it? Core fee expected to be a fibonacci number
   coreFeePerByte?: number,
   signingKeyIndex: number
 };
@@ -71,6 +80,9 @@ export async function creditWithdrawal(
   }
   const relayFee = options.coreFeePerByte || minRelayFee;
   const coreFeePerByte = nearestGreaterFibonacci(relayFee);
+  if (coreFeePerByte < MIN_CORE_FEE_PER_BYTE) {
+    throw new Error(`Core fee per byte "${coreFeePerByte}" is less than minimal allowed core fee per byte "${MIN_CORE_FEE_PER_BYTE}"`);
+  }
 
   const revision = identity.getRevision();
 

@@ -8,6 +8,7 @@ mod value_conversion;
 mod version;
 
 use bincode::{Decode, Encode};
+use dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE;
 use platform_serialization_derive::PlatformSignable;
 use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
@@ -15,15 +16,16 @@ use serde::{Deserialize, Serialize};
 use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::{Identifier, Revision},
+    withdrawal::Pooling,
     ProtocolError,
 };
 
-use crate::withdrawal::Pooling;
-
-// TODO: Revisit
-pub const MIN_WITHDRAWAL_AMOUNT: u64 = 1_000_000;
 // TODO: Revisit. Mist be fibonacci number so we can use this constant
 pub const MIN_CORE_FEE_PER_BYTE: u32 = 13;
+
+/// Minimal amount in credits (x1000) to avoid "dust" error in Core
+pub const MIN_WITHDRAWAL_AMOUNT: u64 =
+    (ASSET_UNLOCK_TX_SIZE as u64) * (MIN_CORE_FEE_PER_BYTE as u64) * 1000;
 
 #[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]
 #[cfg_attr(
