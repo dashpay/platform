@@ -669,25 +669,6 @@ where
             });
         };
 
-        // TODO: Is it possible to get a message from a fake proposer?
-        // let state = self.platform.state.read().unwrap();
-        //
-        // let quorum = state.current_validator_set()?;
-
-        // let validator_pro_tx_hash = ProTxHash::from_slice(validator_pro_tx_hash.as_slice())
-        //     .map_err(|_| {
-        //         Error::Abci(AbciError::BadRequestDataSize(format!(
-        //             "invalid vote extension protxhash: {}",
-        //             hex::encode(validator_pro_tx_hash.as_slice())
-        //         )))
-        //     })?;
-        //
-        // let Some(validator) = quorum.validator_set.get(&validator_pro_tx_hash) else {
-        //     return Ok(proto::ResponseVerifyVoteExtension {
-        //         status: VerifyStatus::Unknown.into(),
-        //     });
-        // };
-
         // Make sure vote extension is for our currently executing block
 
         let block_state_info = block_execution_context.block_state_info();
