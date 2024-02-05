@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use dashcore_rpc::dashcore::{
-    blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::{
-        AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo,
+    blockdata::transaction::special_transaction::asset_unlock::{
+        qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE,
+        unqualified_asset_unlock::{AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo},
     },
     consensus::Encodable,
     ScriptBuf, TxOut,
@@ -65,9 +66,6 @@ where
                     ))
                 })?;
 
-            // TODO: Use constant and double check
-            let transaction_bytes_size = 190;
-
             let output_script = ScriptBuf::from_bytes(output_script_bytes);
 
             let tx_out = TxOut {
@@ -84,7 +82,7 @@ where
                 base_payload: AssetUnlockBasePayload {
                     version: 1,
                     index: transaction_index,
-                    fee: transaction_bytes_size * core_fee_per_byte,
+                    fee: (ASSET_UNLOCK_TX_SIZE as u32) * core_fee_per_byte,
                 },
             };
 
