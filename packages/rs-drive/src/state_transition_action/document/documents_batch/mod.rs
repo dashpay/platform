@@ -35,10 +35,31 @@ impl DocumentsBatchTransitionAction {
         }
     }
 
+    /// transitions
+    pub fn transitions_mut(&mut self) -> &mut Vec<DocumentTransitionAction> {
+        match self {
+            DocumentsBatchTransitionAction::V0(v0) => &mut v0.transitions,
+        }
+    }
+
+    /// transitions
+    pub fn transitions_take(&mut self) -> Vec<DocumentTransitionAction> {
+        match self {
+            DocumentsBatchTransitionAction::V0(v0) => std::mem::take(&mut v0.transitions),
+        }
+    }
+
     /// transitions owned
     pub fn transitions_owned(self) -> Vec<DocumentTransitionAction> {
         match self {
             DocumentsBatchTransitionAction::V0(v0) => v0.transitions,
+        }
+    }
+
+    /// set transitions
+    pub fn set_transitions(&mut self, transitions: Vec<DocumentTransitionAction>) {
+        match self {
+            DocumentsBatchTransitionAction::V0(v0) => v0.transitions = transitions,
         }
     }
 }

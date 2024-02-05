@@ -46,4 +46,14 @@ impl DocumentTransitionAction {
             DocumentTransitionAction::BumpIdentityDataContractNonce(d) => None,
         }
     }
+
+    /// base owned
+    pub fn base_owned(self) -> Option<DocumentBaseTransitionAction> {
+        match self {
+            DocumentTransitionAction::CreateAction(d) => Some(d.base_owned()),
+            DocumentTransitionAction::DeleteAction(d) => Some(d.base_owned()),
+            DocumentTransitionAction::ReplaceAction(d) => Some(d.base_owned()),
+            DocumentTransitionAction::BumpIdentityDataContractNonce(d) => None,
+        }
+    }
 }

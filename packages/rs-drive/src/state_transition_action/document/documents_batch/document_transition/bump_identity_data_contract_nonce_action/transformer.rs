@@ -20,13 +20,45 @@ impl BumpIdentityDataContractNonceAction {
     }
 
     /// from borrowed base transition
-    pub fn from_borrowed_base_transition_with_contract_lookup(
+    pub fn from_borrowed_base_transition(
         value: &DocumentBaseTransition,
         identity_id: Identifier,
     ) -> Result<Self, ProtocolError> {
         match value {
             DocumentBaseTransition::V0(v0) => Ok(
                 BumpIdentityDataContractNonceActionV0::try_from_borrowed_base_transition(
+                    v0,
+                    identity_id,
+                )?
+                .into(),
+            ),
+        }
+    }
+
+    /// from base transition
+    pub fn from_base_transition_action(
+        value: DocumentBaseTransitionAction,
+        identity_id: Identifier,
+    ) -> Result<Self, ProtocolError> {
+        match value {
+            DocumentBaseTransitionAction::V0(v0) => Ok(
+                BumpIdentityDataContractNonceActionV0::try_from_base_transition_action(
+                    v0,
+                    identity_id,
+                )?
+                .into(),
+            ),
+        }
+    }
+
+    /// from borrowed base transition
+    pub fn from_borrowed_base_transition_action(
+        value: &DocumentBaseTransitionAction,
+        identity_id: Identifier,
+    ) -> Result<Self, ProtocolError> {
+        match value {
+            DocumentBaseTransitionAction::V0(v0) => Ok(
+                BumpIdentityDataContractNonceActionV0::try_from_borrowed_base_transition_action(
                     v0,
                     identity_id,
                 )?

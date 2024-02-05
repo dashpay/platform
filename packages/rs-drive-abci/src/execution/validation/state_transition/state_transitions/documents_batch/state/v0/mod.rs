@@ -8,6 +8,7 @@ use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::bump_identity_data_contract_nonce_action::{BumpIdentityDataContractNonceAction, BumpIdentityDataContractNonceActionV0};
 use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
@@ -43,7 +44,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
 impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition {
     fn validate_state_v0(
         &self,
-        state_transition_action: DocumentsBatchTransitionAction,
+        mut state_transition_action: DocumentsBatchTransitionAction,
         platform: &PlatformStateRef,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -55,9 +56,11 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
 
         let owner_id = state_transition_action.owner_id();
 
+        let mut validated_transitions = vec![];
+
         // Next we need to validate the structure of all actions (this means with the data contract)
-        for transition in state_transition_action.transitions() {
-            let transition_validation_result = match transition {
+        for transition in state_transition_action.transitions_take() {
+            let transition_validation_result = match &transition {
                 DocumentTransitionAction::CreateAction(create_action) => create_action
                     .validate_state(platform, owner_id, transaction, platform_version)?,
                 DocumentTransitionAction::ReplaceAction(replace_action) => replace_action
@@ -72,12 +75,26 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
             };
 
             if !transition_validation_result.is_valid() {
+                // If a state transition isn't valid we still need to bump the identity data contract nonce
                 validation_result.add_errors(transition_validation_result.errors);
-                validation_result.set_data(state_transition_action.into());
-
-                return Ok(validation_result);
+                validated_transitions.push(
+                    DocumentTransitionAction::BumpIdentityDataContractNonce(
+                        BumpIdentityDataContractNonceAction::from_base_transition_action(
+                            transition.base_owned().ok_or(Error::Execution(
+                                ExecutionError::CorruptedCodeExecution(
+                                    "base should always exist on transition",
+                                ),
+                            ))?,
+                            owner_id,
+                        )?,
+                    ),
+                );
+            } else {
+                validated_transitions.push(transition);
             }
         }
+
+        state_transition_action.set_transitions(validated_transitions);
 
         let data_trigger_execution_context = DataTriggerExecutionContext {
             platform,
