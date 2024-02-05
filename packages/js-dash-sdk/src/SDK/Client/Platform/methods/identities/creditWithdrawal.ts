@@ -21,13 +21,12 @@ const DEFAULT_POOLING = 0;
 const ASSET_UNLOCK_TX_SIZE = 190;
 
 // Minimal accepted core fee per byte to avoid low fee error from core
-const MIN_CORE_FEE_PER_BYTE = 13;
+const MIN_ASSET_UNLOCK_CORE_FEE_PER_BYTE = 5;
 
 // Minimal withdrawal amount in credits to avoid dust error from core
-const MINIMAL_WITHDRAWAL_AMOUNT = ASSET_UNLOCK_TX_SIZE * MIN_CORE_FEE_PER_BYTE * 1000;
+const MINIMAL_WITHDRAWAL_AMOUNT = ASSET_UNLOCK_TX_SIZE * MIN_ASSET_UNLOCK_CORE_FEE_PER_BYTE * 1000;
 
 type WithdrawalOptions = {
-  coreFeePerByte?: number,
   signingKeyIndex: number
 };
 
@@ -73,16 +72,11 @@ export async function creditWithdrawal(
     throw new Error('Wallet is not initialized');
   }
 
-  const { minRelay: minRelayFee } = this.client.wallet.storage
-    .getDefaultChainStore().state.fees;
-  if (options.coreFeePerByte && options.coreFeePerByte < minRelayFee) {
-    throw new Error(`Provided core fee per byte "${options.coreFeePerByte}" is less than minimal network relay fee "${minRelayFee}"`);
-  }
-  const relayFee = options.coreFeePerByte || minRelayFee;
-  const coreFeePerByte = nearestGreaterFibonacci(relayFee);
-  if (coreFeePerByte < MIN_CORE_FEE_PER_BYTE) {
-    throw new Error(`Core fee per byte "${coreFeePerByte}" is less than minimal allowed core fee per byte "${MIN_CORE_FEE_PER_BYTE}"`);
-  }
+  const minRelayFeePerByte = Math.ceil(this.client.wallet.storage
+    .getDefaultChainStore().state.fees.minRelay / 1000);
+
+  const coreFeePerByte = minRelayFeePerByte > MIN_ASSET_UNLOCK_CORE_FEE_PER_BYTE
+    ? nearestGreaterFibonacci(minRelayFeePerByte) : MIN_ASSET_UNLOCK_CORE_FEE_PER_BYTE;
 
   const revision = identity.getRevision();
 

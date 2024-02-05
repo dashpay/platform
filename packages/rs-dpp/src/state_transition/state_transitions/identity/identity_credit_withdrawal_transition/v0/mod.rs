@@ -20,8 +20,8 @@ use crate::{
     ProtocolError,
 };
 
-// TODO: Revisit. Mist be fibonacci number so we can use this constant
-pub const MIN_CORE_FEE_PER_BYTE: u32 = 13;
+/// Minimal core per byte. Must be a fibonacci number
+pub const MIN_CORE_FEE_PER_BYTE: u32 = 5;
 
 /// Minimal amount in credits (x1000) to avoid "dust" error in Core
 pub const MIN_WITHDRAWAL_AMOUNT: u64 =
