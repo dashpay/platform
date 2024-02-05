@@ -322,66 +322,6 @@ describe('Platform', () => {
       });
     });
 
-    describe.only('Credits withdrawal', () => {
-      const INITIAL_BALANCE = 10000000;
-
-      let newIdentity;
-      before(async () => {
-        const account = await client.getWalletAccount();
-        let balance = account.getTotalBalance();
-        console.log(`Wallet initial balance ${balance}`);
-        newIdentity = await client.platform.identities.register(INITIAL_BALANCE);
-        balance = account.getTotalBalance();
-        const identityBalance = newIdentity.getBalance();
-        console.log(`Wallet balance after identity registration ${balance}`);
-        console.log(`Identity balance ${identityBalance / 1000}`);
-
-        // Additional wait time to mitigate testnet latency
-        await waitForSTPropagated();
-      });
-
-      it('should withdraw credits', async () => {
-        const account = await client.getWalletAccount();
-        const withdrawTo = await account.getUnusedAddress();
-
-        const identityBalanceBefore = newIdentity.getBalance();
-        const walletBalanceBefore = account.getTotalBalance();
-
-        const metadata = newIdentity.getMetadata().toObject();
-        const initialCoreChainLockedHeight = metadata.coreChainLockedHeight;
-        const amountToWithdraw = identityBalanceBefore / 2;
-        await client.platform.identities.withdrawCredits(
-          newIdentity,
-          BigInt(amountToWithdraw),
-          withdrawTo.address,
-        );
-        console.log(`Withdrawing ${amountToWithdraw / 1000} to ${withdrawTo.address}`);
-
-        let coreChainLockUpdates = 0;
-        let walletBalanceUpdated = 0;
-        while (coreChainLockUpdates < 1 && walletBalanceUpdated <= walletBalanceBefore) {
-          const identity = await client.platform.identities.get(newIdentity.getId());
-          walletBalanceUpdated = account.getTotalBalance();
-
-          console.log('\nIdentity balance', identity.getBalance() / 1000);
-          console.log('Wallet balance', walletBalanceUpdated);
-          const metadata = identity.getMetadata().toObject();
-
-          // console.log('Identity metadata', {
-          //   platformBlockHeight: metadata.blockHeight,
-          //   coreChainLockedHeight: metadata.coreChainLockedHeight,
-          // });
-
-          coreChainLockUpdates = metadata.coreChainLockedHeight - initialCoreChainLockedHeight;
-
-          console.log('Update in 3 second...');
-          await new Promise((resolve) => setTimeout(resolve, 3000));
-        }
-
-        expect(walletBalanceUpdated).to.be.greaterThan(walletBalanceBefore);
-      });
-    });
-
     describe('Credits', () => {
       let dataContractFixture;
 

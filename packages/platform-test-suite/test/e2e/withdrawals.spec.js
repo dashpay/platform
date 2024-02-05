@@ -1,21 +1,17 @@
 const { expect } = require('chai');
-const { Identifier } = require('@dashevo/wasm-dpp');
 
 const {
   contractId: withdrawalsContractId,
 } = require('@dashevo/withdrawals-contract/lib/systemIds');
 
-const { contractId: masternodeRewardSharesContractId } = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
-const { ownerId: withdrawalsOwnerId } = require('@dashevo/withdrawals-contract/lib/systemIds');
 const wait = require('@dashevo/dapi-client/lib/utils/wait');
 const { STATUSES: WITHDRAWAL_STATUSES } = require('dash/build/SDK/Client/Platform/methods/identities/creditWithdrawal');
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const waitForSTPropagated = require('../../lib/waitForSTPropagated');
-const generateRandomIdentifier = require('../../lib/test/utils/generateRandomIdentifier');
 
-describe('Withdrawals', () => {
-  let failed = false;
+describe('Withdrawals', function withdrawalsTest() {
+  this.bail(true);
   let client;
   let identity;
 
@@ -34,17 +30,6 @@ describe('Withdrawals', () => {
       contractId: withdrawalsContractId,
       contract: withdrawalsContract,
     });
-  });
-
-  // Skip test if any prior test in this describe failed
-  beforeEach(function beforeEach() {
-    if (failed) {
-      this.skip();
-    }
-  });
-
-  afterEach(function afterEach() {
-    failed = this.currentTest.state === 'failed';
   });
 
   after(async () => {
@@ -132,32 +117,33 @@ describe('Withdrawals', () => {
       }, identity);
     });
 
-    it.only('should not be able to withdraw more than balance', async () => {
+    it('should not be able to withdraw more than balance available', async () => {
       const account = await client.getWalletAccount();
-      const walletBalanceBefore = account.getTotalBalance();
       const identityBalanceBefore = identity.getBalance();
       const withdrawTo = await account.getUnusedAddress();
-      const amountToWithdraw = INITIAL_BALANCE * 2;
+      const amountToWithdraw = identityBalanceBefore * 2;
 
-      expect(async () => client.platform.identities.withdrawCredits(
+      await expect(client.platform.identities.withdrawCredits(
         identity,
         BigInt(amountToWithdraw),
         withdrawTo.address,
-      )).to.throw();
+      )).to.be.rejectedWith(`Withdrawal amount "${amountToWithdraw}" is bigger that identity balance "${identityBalanceBefore}"`);
     });
 
     it('should not allow to create withdrawal with wrong security key type', async () => {
       const account = await client.getWalletAccount();
-      const walletBalanceBefore = account.getTotalBalance();
       const identityBalanceBefore = identity.getBalance();
       const withdrawTo = await account.getUnusedAddress();
-      const amountToWithdraw = INITIAL_BALANCE * 2;
+      const amountToWithdraw = identityBalanceBefore / 2;
 
-      // expect(async () => client.platform.identities.withdrawCredits(
-      //   identity,
-      //   BigInt(amountToWithdraw),
-      //   withdrawTo.address,
-      // )).to.throw();
+      await expect(client.platform.identities.withdrawCredits(
+        identity,
+        BigInt(amountToWithdraw),
+        withdrawTo.address,
+        {
+          signingKeyIndex: 1,
+        },
+      )).to.be.rejectedWith('Error conversion not implemented: Invalid public key security level HIGH. The state transition requires one of CRITICAL');
     });
 
     it('should not be able to create withdrawal document', async () => {
@@ -208,7 +194,7 @@ describe('Withdrawals', () => {
 
       await client.platform.identities.withdrawCredits(
         identity,
-        BigInt(10000),
+        BigInt(1000000),
         withdrawTo.address,
       );
 
@@ -254,7 +240,6 @@ describe('Withdrawals', () => {
         );
 
       withdrawalDocument.set('status', 3);
-      // withdrawalDocument.setRevision(3);
 
       try {
         await client.platform.documents.broadcast({

@@ -71,10 +71,6 @@ export async function creditWithdrawal(
   }
   const relayFee = options.coreFeePerByte || minRelayFee;
   const coreFeePerByte = nearestGreaterFibonacci(relayFee);
-  console.log({
-    relayFee,
-    coreFeePerByte,
-  });
 
   const revision = identity.getRevision();
 
