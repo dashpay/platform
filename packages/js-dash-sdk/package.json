@@ -48,6 +48,7 @@
     "@dashevo/masternode-reward-shares-contract": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
+    "@dashevo/withdrawals-contract": "workspace:*",
     "bs58": "^4.0.1",
     "node-inspect-extracted": "^1.0.8",
     "winston": "^3.2.1"

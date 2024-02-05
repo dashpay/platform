@@ -21,15 +21,6 @@ describe('Withdrawals', function withdrawalsTest() {
     );
 
     await client.platform.initialize();
-
-    const withdrawalsContract = await client.platform.contracts.get(
-      withdrawalsContractId,
-    );
-
-    client.getApps().set('withdrawals', {
-      contractId: withdrawalsContractId,
-      contract: withdrawalsContract,
-    });
   });
 
   after(async () => {

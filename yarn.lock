@@ -6490,6 +6490,7 @@ __metadata:
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
+    "@dashevo/withdrawals-contract": "workspace:*"
     "@types/chai": "npm:^4.2.12"
     "@types/dirty-chai": "npm:^2.0.2"
     "@types/mocha": "npm:^8.0.3"
