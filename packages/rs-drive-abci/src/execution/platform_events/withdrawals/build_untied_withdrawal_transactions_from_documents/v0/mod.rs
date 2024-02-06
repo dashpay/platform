@@ -17,7 +17,6 @@ use drive::dpp::identity::convert_credits_to_duffs;
 use drive::drive::identity::withdrawals::{
     WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
 };
-use drive::{drive::batch::DriveOperation, query::TransactionArg};
 
 use crate::{
     error::{execution::ExecutionError, Error},
@@ -82,7 +81,7 @@ where
                 base_payload: AssetUnlockBasePayload {
                     version: 1,
                     index: transaction_index,
-                    fee: (ASSET_UNLOCK_TX_SIZE as u32) * core_fee_per_byte,
+                    fee: ASSET_UNLOCK_TX_SIZE as u32 * core_fee_per_byte,
                 },
             };
 
@@ -113,8 +112,6 @@ mod tests {
     use drive::tests::helpers::setup::setup_document;
 
     mod build_withdrawal_transactions_from_documents {
-        use dpp::block::block_info::BlockInfo;
-
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
         use dpp::identity::core_script::CoreScript;
@@ -140,7 +137,7 @@ mod tests {
             let transaction = platform.drive.grove.start_transaction();
 
             let data_contract =
-                load_system_data_contract(SystemDataContract::Withdrawals, &platform_version)
+                load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
                     .expect("to load system data contract");
 
             setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
