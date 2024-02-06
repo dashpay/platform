@@ -21,6 +21,7 @@ use crate::{
     ProtocolError,
 };
 
+// TODO: unsafe - we must use actual relay fee from core
 /// Minimal core per byte. Must be a fibonacci number
 pub const MIN_CORE_FEE_PER_BYTE: u32 = 5;
 

@@ -12,7 +12,7 @@ use std::collections::HashSet;
 
 use drive::drive::batch::DriveOperation;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
-use drive::grovedb::TransactionArg;
+use drive::grovedb::Transaction;
 
 use crate::{
     error::{execution::ExecutionError, Error},
@@ -30,14 +30,14 @@ where
     pub(super) fn update_broadcasted_withdrawal_statuses_v0(
         &self,
         block_info: &BlockInfo,
-        transaction: TransactionArg,
+        transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let broadcasted_withdrawal_documents = self
             .drive
             .fetch_up_to_100_oldest_withdrawal_documents_by_status(
                 WithdrawalStatus::BROADCASTED.into(),
-                transaction,
+                transaction.into(),
                 platform_version,
             )?;
 
@@ -149,7 +149,7 @@ where
             drive_operations,
             true,
             block_info,
-            transaction,
+            transaction.into(),
             platform_version,
         )?;
 

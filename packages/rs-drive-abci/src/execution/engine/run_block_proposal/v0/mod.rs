@@ -325,7 +325,7 @@ where
         {
             self.update_broadcasted_withdrawal_statuses(
                 &block_info,
-                Some(transaction),
+                transaction,
                 platform_version,
             )?;
         }
