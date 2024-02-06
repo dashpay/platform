@@ -153,7 +153,11 @@ impl Drive {
                 &mut drive_operations,
                 &platform_version.drive,
             )?;
-            inserted
+            if estimated_costs_only_with_layer_info.is_none() {
+                inserted
+            } else {
+                false //in the case of fee estimation it might exist
+            }
         } else {
             false
         };
@@ -180,7 +184,10 @@ impl Drive {
             )?
         };
 
-        let nonce_to_set = if let Some(existing_nonce) = existing_nonce {
+        let nonce_to_set = if estimated_costs_only_with_layer_info.is_some() {
+            // we are just getting estimated costs
+            revision_nonce
+        } else if let Some(existing_nonce) = existing_nonce {
             let actual_existing_revision = existing_nonce & VALUE_FILTER;
             if actual_existing_revision == revision_nonce {
                 // we were not able to update the revision as it is the same as we already had
@@ -228,6 +235,8 @@ impl Drive {
 
         let identity_contract_nonce_bytes = nonce_to_set.to_be_bytes().to_vec();
         let identity_contract_nonce_element = Element::new_item(identity_contract_nonce_bytes);
+
+        let identity_contract_path = identity_contract_info_group_path(&identity_id, &contract_id);
 
         self.batch_insert(
             PathKeyElementInfo::PathFixedSizeKeyRefElement((

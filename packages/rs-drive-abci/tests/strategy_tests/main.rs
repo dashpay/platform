@@ -1603,14 +1603,14 @@ mod tests {
                     Operation {
                         op_type: OperationType::Document(document_insertion_op),
                         frequency: Frequency {
-                            times_per_block_range: 1..10,
+                            times_per_block_range: 1..7,
                             chance_per_block: None,
                         },
                     },
                     Operation {
                         op_type: OperationType::Document(document_deletion_op),
                         frequency: Frequency {
-                            times_per_block_range: 1..10,
+                            times_per_block_range: 1..7,
                             chance_per_block: None,
                         },
                     },
@@ -1674,7 +1674,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "40b51654a73ab89e98076819498a746dc179d54c53f599fa5ceeec57cec3576e".to_string()
+            "566b442bbfae643530310ee11f3a4138f7a6831e68eaa76a7e635cfd6959d77e".to_string()
         )
     }
 

@@ -348,7 +348,6 @@ mod test {
             .into_btree_string_map()
             .unwrap();
 
-        println!("{:?}", object_transition);
         let v0 = object_transition.get("V0").expect("to get V0");
         let right_id = Identifier::from_bytes(&id).unwrap();
         let right_data_contract_id = Identifier::from_bytes(&data_contract_id).unwrap();
