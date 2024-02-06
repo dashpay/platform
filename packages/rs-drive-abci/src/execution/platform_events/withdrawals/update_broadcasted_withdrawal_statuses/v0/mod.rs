@@ -88,9 +88,14 @@ where
 
             let withdrawal_transaction_status = withdrawal_transaction_statuses
                 .get(&withdrawal_index)
-                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "we should always have a withdrawal status",
-                )))?;
+                .unwrap_or_else(|| {
+                    tracing::warn!(
+                        "Withdrawal transaction with index {} is not found in Core",
+                        withdrawal_index
+                    );
+
+                    &AssetUnlockStatus::Unknown
+                });
 
             let block_height_difference = block_info.core_height - transaction_sign_height;
 
