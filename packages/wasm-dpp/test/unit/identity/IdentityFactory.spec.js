@@ -1,6 +1,8 @@
 const getInstantAssetLockProofFixture = require('../../../lib/test/fixtures/getInstantAssetLockProofFixture');
 const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
+const getIdentityCreditWithdrawalTransitionFixture = require('../../../lib/test/fixtures/getIdentityCreditWithdrawalTransitionFixture');
+
 const {
   Identity, IdentityFactory,
   InstantAssetLockProof, ChainAssetLockProof, IdentityUpdateTransition,
@@ -247,6 +249,26 @@ describe('IdentityFactory', () => {
         .to.deep.equal(addPublicKeys.map((k) => k.toObject()));
       expect(stateTransition.getPublicKeyIdsToDisable()).to.deep.equal([0]);
       expect(stateTransition.getPublicKeysDisabledAt()).to.deep.equal(new Date());
+    });
+  });
+
+  describe('createIdentityCreditWithdrawalTransition', () => {
+    it('should create IdentityCreditWithdrawalTransition', () => {
+      const stateTransitionFixture = getIdentityCreditWithdrawalTransitionFixture();
+      const stateTransition = factory
+        .createIdentityCreditWithdrawalTransition(
+          stateTransitionFixture.getIdentityId(),
+          stateTransitionFixture.getAmount(),
+          stateTransitionFixture.getCoreFeePerByte(),
+          stateTransitionFixture.getPooling(),
+          stateTransitionFixture.getOutputScript(),
+          stateTransitionFixture.getRevision(),
+        );
+
+      expect(stateTransition.toObject())
+        .to.deep.equal(
+          stateTransitionFixture.toObject(),
+        );
     });
   });
 });

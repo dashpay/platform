@@ -104,13 +104,11 @@ pub fn delete_withdrawal_data_trigger_v0(
         .get_integer("status")
         .map_err(ProtocolError::ValueError)?;
 
-    if status != withdrawals_contract::WithdrawalStatus::COMPLETE as u8
-        || status != withdrawals_contract::WithdrawalStatus::EXPIRED as u8
-    {
+    if status != withdrawals_contract::WithdrawalStatus::COMPLETE as u8 {
         let err = DataTriggerConditionError::new(
             data_contract.id(),
             dt_delete.base().id(),
-            "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses".to_string(),
+            "withdrawal deletion is allowed only for COMPLETE statuses".to_string(),
         );
 
         result.add_error(err);
@@ -221,7 +219,6 @@ mod tests {
                 "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
                 "transactionIndex": 1u64,
                 "transactionSignHeight": 93u64,
-                "transactionId": Bytes32::new([1;32]),
             }),
             None,
             platform_version.protocol_version,
@@ -275,7 +272,6 @@ mod tests {
                 "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
                 "transactionIndex": 1u64,
                 "transactionSignHeight": 93u64,
-                "transactionId": Bytes32::new([1;32]),
             }),
             None,
             platform_version.protocol_version,
@@ -332,7 +328,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses"
+            "withdrawal deletion is allowed only for COMPLETE statuses"
         );
     }
 }

@@ -27,7 +27,7 @@ use crate::version::drive_abci_versions::{
     DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion,
     DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions,
     DriveAbciValidationDataTriggerAndBindingVersions, DriveAbciValidationDataTriggerVersions,
-    DriveAbciValidationVersions, DriveAbciVersion, DriveAbciWithdrawalsMethodVersions,
+    DriveAbciValidationVersions, DriveAbciVersion,
 };
 use crate::version::drive_versions::{
     DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
@@ -52,14 +52,18 @@ use crate::version::drive_versions::{
     DriveIdentityKeysInsertMethodVersions, DriveIdentityKeysMethodVersions,
     DriveIdentityKeysProveMethodVersions, DriveIdentityMethodVersions,
     DriveIdentityProveMethodVersions, DriveIdentityUpdateMethodVersions,
-    DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
-    DrivePlatformStateMethodVersions, DrivePlatformSystemMethodVersions,
-    DriveProtocolUpgradeVersions, DriveProveMethodVersions, DriveStateTransitionMethodVersions,
-    DriveStateTransitionOperationMethodVersions, DriveStructureVersion,
-    DriveSystemEstimationCostsMethodVersions, DriveSystemProtocolVersionMethodVersions,
-    DriveVerifyContractMethodVersions, DriveVerifyDocumentMethodVersions,
-    DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
-    DriveVerifySingleDocumentMethodVersions, DriveVerifySystemMethodVersions, DriveVersion,
+    DriveIdentityWithdrawalDocumentMethodVersions, DriveIdentityWithdrawalMethodVersions,
+    DriveIdentityWithdrawalTransactionIndexMethodVersions,
+    DriveIdentityWithdrawalTransactionMethodVersions,
+    DriveIdentityWithdrawalTransactionQueueMethodVersions, DriveInitializationMethodVersions,
+    DriveMethodVersions, DriveOperationsMethodVersion, DrivePlatformStateMethodVersions,
+    DrivePlatformSystemMethodVersions, DriveProtocolUpgradeVersions, DriveProveMethodVersions,
+    DriveStateTransitionMethodVersions, DriveStateTransitionOperationMethodVersions,
+    DriveStructureVersion, DriveSystemEstimationCostsMethodVersions,
+    DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
+    DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
+    DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions,
+    DriveVerifySystemMethodVersions, DriveVersion,
 };
 use crate::version::mocks::TEST_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
@@ -369,6 +373,22 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     for_root_key_reference_tree: 0,
                     for_update_revision: 0,
                 },
+                withdrawals: DriveIdentityWithdrawalMethodVersions {
+                    document: DriveIdentityWithdrawalDocumentMethodVersions {
+                        fetch_oldest_withdrawal_documents_by_status: 0,
+                        find_up_to_100_withdrawal_documents_by_status_and_transaction_indices: 0,
+                    },
+                    transaction: DriveIdentityWithdrawalTransactionMethodVersions {
+                        index: DriveIdentityWithdrawalTransactionIndexMethodVersions {
+                            fetch_next_withdrawal_transaction_index: 0,
+                            add_update_next_withdrawal_transaction_index_operation: 0,
+                        },
+                        queue: DriveIdentityWithdrawalTransactionQueueMethodVersions {
+                            add_enqueue_untied_withdrawal_transaction_operations: 0,
+                            dequeue_untied_withdrawal_transactions: 0,
+                        },
+                    },
+                },
             },
             platform_system: DrivePlatformSystemMethodVersions {
                 protocol_version: DriveSystemProtocolVersionMethodVersions {
@@ -521,20 +541,18 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 find_oldest_epoch_needing_payment: 0,
                 fetch_reward_shares_list_for_masternode: 0,
             },
-            identity_credit_withdrawal: DriveAbciIdentityCreditWithdrawalMethodVersions {
-                build_withdrawal_transactions_from_documents: 0,
-                fetch_and_prepare_unsigned_withdrawal_transactions: 0,
+            withdrawals: DriveAbciIdentityCreditWithdrawalMethodVersions {
+                build_untied_withdrawal_transactions_from_documents: 0,
+                dequeue_and_build_unsigned_withdrawal_transactions: 0,
                 fetch_transactions_block_inclusion_status: 0,
                 pool_withdrawals_into_transactions_queue: 0,
-                update_broadcasted_withdrawal_transaction_statuses: 0,
+                update_broadcasted_withdrawal_statuses: 0,
+                append_signatures_and_broadcast_withdrawal_transactions: 0,
             },
             state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
                 execute_event: 0,
                 process_raw_state_transitions: 0,
                 validate_fees_of_event: 0,
-            },
-            withdrawals: DriveAbciWithdrawalsMethodVersions {
-                check_withdrawals: 0,
             },
             epoch: DriveAbciEpochMethodVersions {
                 gather_epoch_info: 0,
