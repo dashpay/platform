@@ -659,7 +659,7 @@ where
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
         let Some(block_execution_context) = guarded_block_execution_context.as_ref() else {
             tracing::warn!(
-                "vote extension for height: {}, round: {} is rejected because we are not in a block execution phase",
+                "vote extensions for height: {}, round: {} are rejected because we are not in a block execution phase",
                 height,
                 round,
             );
@@ -673,13 +673,16 @@ where
 
         let block_state_info = block_execution_context.block_state_info();
 
-        if block_state_info.height() != height || block_state_info.round() != round {
+        // We might get vote extension to verify for previous (in case if other node is behind)
+        // or future round (in case if the current node is behind), so we make sure that only height
+        // is matching. It's fine because withdrawal transactions to sign are the same for any round
+        // of the same height
+        if block_state_info.height() != height {
             tracing::warn!(
-                "vote extension for height: {}, round: {} is rejected because we are at height: {} round {}",
+                "vote extensions for height: {}, round: {} are rejected because we are at height: {}",
                 height,
                 round,
                 block_state_info.height(),
-                block_state_info.round()
             );
 
             return Ok(proto::ResponseVerifyVoteExtension {
@@ -698,7 +701,7 @@ where
             tracing::error!(
                 received_extensions = ?vote_extensions,
                 ?expected_extensions,
-                "vote extension for height: {}, round: {} mismatch",
+                "vote extensions for height: {}, round: {} mismatch",
                 height, round
             );
 
@@ -708,7 +711,7 @@ where
         }
 
         tracing::debug!(
-            "vote extension for height: {}, round: {} is successfully verified",
+            "vote extensions for height: {}, round: {} are successfully verified",
             height,
             round,
         );
