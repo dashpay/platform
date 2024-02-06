@@ -26,7 +26,7 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
         let document_data = platform_value!({
             withdrawal::properties::AMOUNT: identity_credit_withdrawal.amount,
             withdrawal::properties::CORE_FEE_PER_BYTE: identity_credit_withdrawal.core_fee_per_byte,
-            // TODO(withdrawals): replace with actual value from state transition once poling is done
+            // TODO(withdrawals): replace with actual value from state transition once pooling is done
             withdrawal::properties::POOLING: Pooling::Never,
             withdrawal::properties::OUTPUT_SCRIPT: identity_credit_withdrawal.output_script.as_bytes(),
             withdrawal::properties::STATUS: withdrawals_contract::WithdrawalStatus::QUEUED,
