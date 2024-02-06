@@ -13,6 +13,7 @@ use platform_serialization_derive::PlatformSignable;
 use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
 
+use crate::balances::credits::CREDITS_PER_DUFF;
 use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::{Identifier, Revision},
@@ -25,7 +26,7 @@ pub const MIN_CORE_FEE_PER_BYTE: u32 = 5;
 
 /// Minimal amount in credits (x1000) to avoid "dust" error in Core
 pub const MIN_WITHDRAWAL_AMOUNT: u64 =
-    (ASSET_UNLOCK_TX_SIZE as u64) * (MIN_CORE_FEE_PER_BYTE as u64) * 1000;
+    (ASSET_UNLOCK_TX_SIZE as u64) * (MIN_CORE_FEE_PER_BYTE as u64) * CREDITS_PER_DUFF;
 
 #[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]
 #[cfg_attr(

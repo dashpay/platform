@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 
 use dpp::consensus::state::identity::invalid_asset_lock_proof_value::InvalidAssetLockProofValueError;
@@ -162,7 +163,10 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
             ));
         }
 
-        match IdentityCreateTransitionAction::try_from_borrowed(self, tx_out.value * 1000) {
+        match IdentityCreateTransitionAction::try_from_borrowed(
+            self,
+            tx_out.value * CREDITS_PER_DUFF,
+        ) {
             Ok(action) => {
                 validation_result.set_data(action.into());
             }
