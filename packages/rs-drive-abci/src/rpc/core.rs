@@ -33,12 +33,6 @@ pub trait CoreRPCLike {
     /// Get transaction
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
 
-    /// Get transaction finalization status
-    fn get_transactions_are_chain_locked(
-        &self,
-        tx_ids: Vec<Txid>,
-    ) -> Result<Vec<Option<GetTransactionLockedResult>>, Error>;
-
     /// Get asset unlock statuses
     fn get_asset_unlock_statuses(
         &self,
@@ -230,13 +224,6 @@ impl CoreRPCLike for DefaultCoreRPC {
 
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error> {
         retry!(self.inner.get_raw_transaction(tx_id, None))
-    }
-
-    fn get_transactions_are_chain_locked(
-        &self,
-        tx_ids: Vec<Txid>,
-    ) -> Result<Vec<Option<GetTransactionLockedResult>>, Error> {
-        retry!(self.inner.get_transaction_are_locked(&tx_ids))
     }
 
     fn get_transaction_extended_info(

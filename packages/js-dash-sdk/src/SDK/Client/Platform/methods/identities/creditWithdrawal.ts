@@ -72,6 +72,8 @@ export async function creditWithdrawal(
     throw new Error('Wallet is not initialized');
   }
 
+  // Divide by 1000 as stated in policy for GetDustThreshold
+  // https://github.com/dashpay/dash/blob/master/src/policy/policy.cpp#L23
   const minRelayFeePerByte = Math.ceil(this.client.wallet.storage
     .getDefaultChainStore().state.fees.minRelay / 1000);
 
