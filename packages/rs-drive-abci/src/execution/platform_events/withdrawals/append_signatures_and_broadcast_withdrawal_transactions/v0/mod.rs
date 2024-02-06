@@ -19,7 +19,7 @@ where
     pub(super) fn append_signatures_and_broadcast_withdrawal_transactions_v0(
         &self,
         unsigned_withdrawal_transactions: UnsignedWithdrawalTxs,
-        mut signatures: Vec<BLSSignature>,
+        signatures: Vec<BLSSignature>,
     ) -> Result<(), Error> {
         if unsigned_withdrawal_transactions.is_empty() {
             return Ok(());
@@ -36,7 +36,9 @@ where
             unsigned_withdrawal_transactions.len()
         );
 
-        for (i, mut transaction) in unsigned_withdrawal_transactions.into_iter().enumerate() {
+        for (mut transaction, signature) in
+            unsigned_withdrawal_transactions.into_iter().zip(signatures)
+        {
             let Some(AssetUnlockPayloadType(mut payload)) = transaction.special_transaction_payload
             else {
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -44,7 +46,7 @@ where
                 )));
             };
 
-            payload.quorum_sig = signatures.remove(i);
+            payload.quorum_sig = signature;
 
             let index = payload.base.index;
 
