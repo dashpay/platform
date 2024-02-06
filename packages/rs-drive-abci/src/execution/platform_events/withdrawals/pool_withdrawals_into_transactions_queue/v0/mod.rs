@@ -13,11 +13,6 @@ use drive::grovedb::TransactionArg;
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
-use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
-use crate::execution::types::block_state_info::v0::{
-    BlockStateInfoV0Getters, BlockStateInfoV0Methods,
-};
-use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform_types::platform::Platform,
@@ -49,7 +44,7 @@ where
 
         let next_transaction_index = self
             .drive
-            .fetch_next_withdrawal_transaction_index(transaction)?;
+            .fetch_next_withdrawal_transaction_index(transaction, platform_version)?;
 
         let untied_withdrawal_transactions = self
             .build_untied_withdrawal_transactions_from_documents(
@@ -103,14 +98,16 @@ where
             .add_enqueue_untied_withdrawal_transaction_operations(
                 withdrawal_transactions,
                 &mut drive_operations,
-            );
+                platform_version,
+            )?;
 
         self.drive
             .add_update_next_withdrawal_transaction_index_operation(
                 next_transaction_index
                     + withdrawal_transactions_count as WithdrawalTransactionIndex,
                 &mut drive_operations,
-            );
+                platform_version,
+            )?;
 
         let cache = self.drive.cache.read().unwrap();
 
@@ -133,7 +130,7 @@ where
         self.drive.apply_drive_operations(
             drive_operations,
             true,
-            &block_info,
+            block_info,
             transaction,
             platform_version,
         )?;
@@ -176,7 +173,7 @@ mod tests {
         };
 
         let data_contract =
-            load_system_data_contract(SystemDataContract::Withdrawals, &platform_version)
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
                 .expect("to load system data contract");
 
         setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));

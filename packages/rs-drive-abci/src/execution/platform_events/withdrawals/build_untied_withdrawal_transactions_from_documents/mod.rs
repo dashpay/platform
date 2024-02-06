@@ -5,11 +5,9 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::DriveOperation;
 use drive::drive::identity::withdrawals::{
     WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
 };
-use drive::grovedb::TransactionArg;
 use std::collections::HashMap;
 
 mod v0;

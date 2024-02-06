@@ -52,14 +52,18 @@ use crate::version::drive_versions::{
     DriveIdentityKeysInsertMethodVersions, DriveIdentityKeysMethodVersions,
     DriveIdentityKeysProveMethodVersions, DriveIdentityMethodVersions,
     DriveIdentityProveMethodVersions, DriveIdentityUpdateMethodVersions,
-    DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
-    DrivePlatformStateMethodVersions, DrivePlatformSystemMethodVersions,
-    DriveProtocolUpgradeVersions, DriveProveMethodVersions, DriveStateTransitionMethodVersions,
-    DriveStateTransitionOperationMethodVersions, DriveStructureVersion,
-    DriveSystemEstimationCostsMethodVersions, DriveSystemProtocolVersionMethodVersions,
-    DriveVerifyContractMethodVersions, DriveVerifyDocumentMethodVersions,
-    DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
-    DriveVerifySingleDocumentMethodVersions, DriveVerifySystemMethodVersions, DriveVersion,
+    DriveIdentityWithdrawalDocumentMethodVersions, DriveIdentityWithdrawalMethodVersions,
+    DriveIdentityWithdrawalTransactionIndexMethodVersions,
+    DriveIdentityWithdrawalTransactionMethodVersions,
+    DriveIdentityWithdrawalTransactionQueueMethodVersions, DriveInitializationMethodVersions,
+    DriveMethodVersions, DriveOperationsMethodVersion, DrivePlatformStateMethodVersions,
+    DrivePlatformSystemMethodVersions, DriveProtocolUpgradeVersions, DriveProveMethodVersions,
+    DriveStateTransitionMethodVersions, DriveStateTransitionOperationMethodVersions,
+    DriveStructureVersion, DriveSystemEstimationCostsMethodVersions,
+    DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
+    DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
+    DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions,
+    DriveVerifySystemMethodVersions, DriveVersion,
 };
 use crate::version::mocks::TEST_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
@@ -368,6 +372,22 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     for_purpose_in_key_reference_tree: 0,
                     for_root_key_reference_tree: 0,
                     for_update_revision: 0,
+                },
+                withdrawals: DriveIdentityWithdrawalMethodVersions {
+                    document: DriveIdentityWithdrawalDocumentMethodVersions {
+                        fetch_up_to_100_oldest_withdrawal_documents_by_status: 0,
+                        find_up_to_100_withdrawal_documents_by_status_and_transaction_indices: 0,
+                    },
+                    transaction: DriveIdentityWithdrawalTransactionMethodVersions {
+                        index: DriveIdentityWithdrawalTransactionIndexMethodVersions {
+                            fetch_next_withdrawal_transaction_index: 0,
+                            add_update_next_withdrawal_transaction_index_operation: 0,
+                        },
+                        queue: DriveIdentityWithdrawalTransactionQueueMethodVersions {
+                            add_enqueue_untied_withdrawal_transaction_operations: 0,
+                            dequeue_untied_withdrawal_transactions: 0,
+                        },
+                    },
                 },
             },
             platform_system: DrivePlatformSystemMethodVersions {

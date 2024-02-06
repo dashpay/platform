@@ -7,7 +7,7 @@ use dpp::dashcore::transaction::special_transaction::asset_unlock::qualified_ass
 use dpp::dashcore::Transaction;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::document_methods::DocumentMethodsV0;
-use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+use dpp::document::{Document, DocumentV0Setters};
 use dpp::version::PlatformVersion;
 
 use drive::dpp::system_data_contracts::withdrawals_contract;
@@ -47,6 +47,7 @@ where
             WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT,
             transaction,
             &mut drive_operations,
+            platform_version,
         )?;
 
         if untied_withdrawal_transactions.is_empty() {
@@ -60,7 +61,7 @@ where
 
         let documents = self.fetch_and_modify_withdrawal_documents_to_broadcasted_by_indices(
             &transaction_indices,
-            &block_info,
+            block_info,
             transaction,
             platform_version,
         )?;
@@ -98,7 +99,7 @@ where
         self.drive.apply_drive_operations(
             drive_operations,
             true,
-            &block_info,
+            block_info,
             transaction,
             platform_version,
         )?;
@@ -115,11 +116,11 @@ where
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
-        let mut documents = self
+        let documents = self
             .drive
             .find_up_to_100_withdrawal_documents_by_status_and_transaction_indices(
                 withdrawals_contract::WithdrawalStatus::POOLED,
-                &transaction_indices,
+                transaction_indices,
                 transaction,
                 platform_version,
             )?;
