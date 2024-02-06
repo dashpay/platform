@@ -54,6 +54,8 @@ where
 
             let tx_bytes = consensus::serialize(&transaction);
 
+            // TODO: We need to broadcast all or none of the transactions (in case of error)
+            //  will be fixed in upcoming PR
             match self.core_rpc.send_raw_transaction(&tx_bytes) {
                 Ok(_) => {
                     tracing::debug!(
