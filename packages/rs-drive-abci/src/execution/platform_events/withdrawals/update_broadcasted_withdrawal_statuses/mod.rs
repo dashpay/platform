@@ -4,7 +4,7 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
-use drive::grovedb::TransactionArg;
+use drive::grovedb::Transaction;
 
 mod v0;
 
@@ -38,7 +38,7 @@ where
     pub fn update_broadcasted_withdrawal_statuses(
         &self,
         block_info: &BlockInfo,
-        transaction: TransactionArg,
+        transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         match platform_version

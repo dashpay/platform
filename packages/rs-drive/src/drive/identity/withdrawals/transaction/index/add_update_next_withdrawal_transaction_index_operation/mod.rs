@@ -22,7 +22,7 @@ impl Drive {
             .withdrawals
             .transaction
             .index
-            .fetch_next_withdrawal_transaction_index
+            .add_update_next_withdrawal_transaction_index_operation
         {
             0 => {
                 self.add_update_next_withdrawal_transaction_index_operation_v0(
