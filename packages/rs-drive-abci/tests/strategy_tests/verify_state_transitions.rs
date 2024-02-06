@@ -578,6 +578,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             None,
                         ),
                         false,
+                        false,
+                        false,
                         platform_version,
                     )
                     .expect("expected to verify identity keys");
