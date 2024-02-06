@@ -79,7 +79,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType {
                         PathKeyElementInfo::PathKeyElement::<'_, 1>((
                             path.clone(),
                             index.to_be_bytes().to_vec(),
-                            Element::Item(bytes.clone(), None),
+                            Element::Item(bytes, None),
                         )),
                         &mut drive_operations,
                         &platform_version.drive,
