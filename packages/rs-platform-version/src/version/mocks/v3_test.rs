@@ -526,7 +526,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 dequeue_and_build_unsigned_withdrawal_transactions: 0,
                 fetch_transactions_block_inclusion_status: 0,
                 pool_withdrawals_into_transactions_queue: 0,
-                update_broadcasted_withdrawals_status: 0,
+                update_broadcasted_withdrawal_statuses: 0,
                 append_signatures_and_broadcast_withdrawal_transactions: 0,
             },
             state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {

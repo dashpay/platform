@@ -35,7 +35,7 @@ where
     /// * There is an issue interacting with the underlying storage.
     /// * There is an error fetching the withdrawal data contract.
     /// * There is an error getting the transactionId or transactionSignHeight from the withdrawal document.
-    pub fn update_broadcasted_withdrawals_status(
+    pub fn update_broadcasted_withdrawal_statuses(
         &self,
         block_info: &BlockInfo,
         transaction: TransactionArg,
@@ -45,15 +45,15 @@ where
             .drive_abci
             .methods
             .withdrawals
-            .update_broadcasted_withdrawals_status
+            .update_broadcasted_withdrawal_statuses
         {
-            0 => self.update_broadcasted_withdrawals_status_v0(
+            0 => self.update_broadcasted_withdrawal_statuses_v0(
                 block_info,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "mark_chainlocked_withdrawals_as_complete".to_string(),
+                method: "update_broadcasted_withdrawal_statuses".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

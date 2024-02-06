@@ -251,7 +251,7 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
     pub dequeue_and_build_unsigned_withdrawal_transactions: FeatureVersion,
     pub fetch_transactions_block_inclusion_status: FeatureVersion,
     pub pool_withdrawals_into_transactions_queue: FeatureVersion,
-    pub update_broadcasted_withdrawals_status: FeatureVersion,
+    pub update_broadcasted_withdrawal_statuses: FeatureVersion,
     pub append_signatures_and_broadcast_withdrawal_transactions: FeatureVersion,
 }
 

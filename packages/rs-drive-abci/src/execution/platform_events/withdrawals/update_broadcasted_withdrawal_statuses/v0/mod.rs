@@ -14,9 +14,6 @@ use drive::drive::batch::DriveOperation;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
 use drive::grovedb::TransactionArg;
 
-use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
-use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
-use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform_types::platform::Platform,
@@ -30,13 +27,13 @@ where
     C: CoreRPCLike,
 {
     /// Update statuses for broadcasted withdrawals
-    pub(super) fn update_broadcasted_withdrawals_status_v0(
+    pub(super) fn update_broadcasted_withdrawal_statuses_v0(
         &self,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut broadcasted_withdrawal_documents = self
+        let broadcasted_withdrawal_documents = self
             .drive
             .fetch_up_to_100_oldest_withdrawal_documents_by_status(
                 WithdrawalStatus::BROADCASTED.into(),
@@ -148,7 +145,7 @@ where
         self.drive.apply_drive_operations(
             drive_operations,
             true,
-            &block_info,
+            block_info,
             transaction,
             platform_version,
         )?;
@@ -163,7 +160,6 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dashcore_rpc::json::{AssetUnlockStatus, AssetUnlockStatusResult};
-    use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::document::DocumentV0Getters;
     use dpp::identity::core_script::CoreScript;
@@ -180,8 +176,6 @@ mod tests {
     };
     use drive::tests::helpers::setup::setup_document;
     use drive::tests::helpers::setup::setup_system_data_contract;
-    use serde_json::json;
-    use std::str::FromStr;
 
     #[test]
     fn test_statuses_are_updated() {
@@ -194,9 +188,9 @@ mod tests {
 
         mock_rpc_client
             .expect_get_asset_unlock_statuses()
-            .returning(move |indices: &[u64], core_chain_locked_height| {
+            .returning(move |indices: &[u64], _core_chain_locked_height| {
                 Ok(indices
-                    .into_iter()
+                    .iter()
                     .map(|index| {
                         let status = if index == &1 {
                             AssetUnlockStatus::Chainlocked
@@ -286,7 +280,7 @@ mod tests {
         );
 
         platform
-            .update_broadcasted_withdrawals_status_v0(
+            .update_broadcasted_withdrawal_statuses_v0(
                 &block_info,
                 Some(&transaction),
                 platform_version,
@@ -304,7 +298,7 @@ mod tests {
 
         assert_eq!(documents.len(), 1);
         assert_eq!(
-            documents.get(0).unwrap().id().to_vec(),
+            documents.first().unwrap().id().to_vec(),
             document_2.id().to_vec()
         );
 
@@ -319,7 +313,7 @@ mod tests {
 
         assert_eq!(documents.len(), 1);
         assert_eq!(
-            documents.get(0).unwrap().id().to_vec(),
+            documents.first().unwrap().id().to_vec(),
             document_1.id().to_vec()
         );
     }
