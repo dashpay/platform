@@ -66,15 +66,6 @@ where
             platform_version,
         )?;
 
-        println!(
-            "[Withdrawals] withdrawal_indices: {:?}",
-            &broadcasted_withdrawal_indices
-        );
-        println!(
-            "[Withdrawals] core_transactions_statuses: {:?}",
-            &withdrawal_transaction_statuses
-        );
-
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
         // Collecting only documents that have been updated
@@ -104,8 +95,20 @@ where
             let block_height_difference = block_info.core_height - transaction_sign_height;
 
             let status = if withdrawal_transaction_status == &AssetUnlockStatus::Chainlocked {
+                tracing::debug!(
+                    transaction_sign_height,
+                    "Withdrawal with transaction index {} is marked as complete",
+                    withdrawal_index
+                );
+
                 WithdrawalStatus::COMPLETE
             } else if block_height_difference > NUMBER_OF_BLOCKS_BEFORE_EXPIRED {
+                tracing::debug!(
+                    transaction_sign_height,
+                    "Withdrawal with transaction index {} is marked as expired",
+                    withdrawal_index
+                );
+
                 WithdrawalStatus::EXPIRED
             } else {
                 continue;

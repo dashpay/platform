@@ -42,14 +42,14 @@ where
             return Ok(());
         }
 
-        let next_transaction_index = self
+        let start_transaction_index = self
             .drive
             .fetch_next_withdrawal_transaction_index(transaction, platform_version)?;
 
         let untied_withdrawal_transactions = self
             .build_untied_withdrawal_transactions_from_documents(
                 &documents,
-                next_transaction_index,
+                start_transaction_index,
                 platform_version,
             )?;
 
@@ -101,13 +101,22 @@ where
                 platform_version,
             )?;
 
+        let end_transaction_index = start_transaction_index + withdrawal_transactions_count as u64;
+
         self.drive
             .add_update_next_withdrawal_transaction_index_operation(
-                next_transaction_index
-                    + withdrawal_transactions_count as WithdrawalTransactionIndex,
+                end_transaction_index,
                 &mut drive_operations,
                 platform_version,
             )?;
+
+        tracing::debug!(
+            "Pooled {} withdrawal documents into {} transactions with indices from {} to {}",
+            documents.len(),
+            withdrawal_transactions_count,
+            start_transaction_index,
+            end_transaction_index,
+        );
 
         let cache = self.drive.cache.read().unwrap();
 

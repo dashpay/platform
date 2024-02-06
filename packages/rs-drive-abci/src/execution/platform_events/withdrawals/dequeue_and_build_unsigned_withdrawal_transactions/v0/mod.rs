@@ -66,6 +66,13 @@ where
             platform_version,
         )?;
 
+        tracing::debug!(
+            "Deque {} unsigned withdrawal transactions for signing with indices from {} to {}",
+            documents.len(),
+            transaction_indices.first().expect("must be present"),
+            transaction_indices.last().expect("must be present")
+        );
+
         let cache = self.drive.cache.read().unwrap();
 
         self.drive.add_update_multiple_documents_operations(
@@ -88,7 +95,7 @@ where
         let unsigned_withdrawal_transactions = untied_withdrawal_transactions
             .into_iter()
             .map(|(_, untied_transaction_bytes)| {
-                build_transaction_with_quorum_hash_and_core_height(
+                build_unsigned_transaction(
                     untied_transaction_bytes,
                     validator_set_quorum_hash,
                     block_info.core_height,
@@ -159,7 +166,7 @@ where
     }
 }
 
-fn build_transaction_with_quorum_hash_and_core_height(
+fn build_unsigned_transaction(
     untied_transaction_bytes: Vec<u8>,
     mut validator_set_quorum_hash: [u8; 32],
     core_chain_locked_height: CoreHeight,

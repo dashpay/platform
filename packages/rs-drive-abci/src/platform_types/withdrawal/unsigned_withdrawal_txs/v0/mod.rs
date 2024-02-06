@@ -20,6 +20,14 @@ impl UnsignedWithdrawalTxs {
     pub fn len(&self) -> usize {
         self.0.len()
     }
+    /// Returns a reference to the first withdrawal transaction
+    pub fn first(&self) -> Option<&Transaction> {
+        self.0.first()
+    }
+    /// Returns a reference to the last withdrawal transaction
+    pub fn last(&self) -> Option<&Transaction> {
+        self.0.last()
+    }
     /// Returns true if there are no withdrawal transactions
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()

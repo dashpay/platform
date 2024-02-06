@@ -33,7 +33,7 @@ where
 
         tracing::debug!(
             "Broadcasting {} withdrawal transactions",
-            unsigned_withdrawal_transactions.len()
+            unsigned_withdrawal_transactions.len(),
         );
 
         for (mut transaction, signature) in
@@ -59,9 +59,9 @@ where
             match self.core_rpc.send_raw_transaction(&tx_bytes) {
                 Ok(_) => {
                     tracing::debug!(
-                        tx_id = transaction.txid().to_string(),
+                        tx_id = transaction.txid().to_hex(),
                         index,
-                        "Successfully broadcasted asset unlock transaction {}",
+                        "Successfully broadcasted withdrawal transaction with index {}",
                         index
                     );
                 }
