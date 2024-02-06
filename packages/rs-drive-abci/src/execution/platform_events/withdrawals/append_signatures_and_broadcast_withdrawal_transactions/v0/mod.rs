@@ -9,7 +9,7 @@ use crate::rpc::core::{
 use dashcore_rpc::jsonrpc;
 use dashcore_rpc::Error as CoreRPCError;
 use dpp::dashcore::bls_sig_utils::BLSSignature;
-use dpp::dashcore::consensus::Encodable;
+use dpp::dashcore::consensus;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
 
 impl<C> Platform<C>
@@ -36,8 +36,9 @@ where
             unsigned_withdrawal_transactions.len()
         );
 
-        for (i, mut tx) in unsigned_withdrawal_transactions.into_iter().enumerate() {
-            let Some(AssetUnlockPayloadType(mut payload)) = tx.special_transaction_payload else {
+        for (i, mut transaction) in unsigned_withdrawal_transactions.into_iter().enumerate() {
+            let Some(AssetUnlockPayloadType(mut payload)) = transaction.special_transaction_payload
+            else {
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "withdrawal transaction payload must be AssetUnlockPayloadType",
                 )));
@@ -47,15 +48,14 @@ where
 
             let index = payload.base.index;
 
-            tx.special_transaction_payload = Some(AssetUnlockPayloadType(payload));
+            transaction.special_transaction_payload = Some(AssetUnlockPayloadType(payload));
 
-            let mut tx_bytes = Vec::new();
-            tx.consensus_encode(&mut tx_bytes).unwrap();
+            let tx_bytes = consensus::serialize(&transaction);
 
             match self.core_rpc.send_raw_transaction(&tx_bytes) {
                 Ok(_) => {
                     tracing::debug!(
-                        tx_id = tx.txid().to_string(),
+                        tx_id = transaction.txid().to_string(),
                         index,
                         "Successfully broadcasted asset unlock transaction {}",
                         index
@@ -70,7 +70,7 @@ where
                 // Errors that can happen if we created invalid tx or Core isn't responding
                 Err(e) => {
                     tracing::error!(
-                        tx_id = tx.txid().to_string(),
+                        tx_id = transaction.txid().to_string(),
                         index,
                         "Failed to broadcast asset unlock transaction {}: {}",
                         index,
