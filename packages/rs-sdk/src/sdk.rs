@@ -222,39 +222,6 @@ impl Sdk {
         guard.deref_mut().replace(Box::new(context_provider));
     }
 
-    /// Save quorum public key to disk.
-    ///
-    /// Files are named: `quorum_pubkey-<int_quorum_type>-<hex_quorum_hash>.json`
-    ///
-    /// Note that this will overwrite files with the same quorum type and quorum hash.
-    ///
-    /// Any errors are logged on `warn` level and ignored.
-    #[cfg(feature = "mocks")]
-    fn dump_quorum_public_key(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32],
-        _core_chain_locked_height: u32,
-        public_key: &[u8],
-    ) {
-        let path = match &self.dump_dir {
-            Some(p) => p,
-            None => return,
-        };
-
-        let encoded = serde_json::to_vec(public_key).expect("encode quorum hash to json");
-
-        let file = path.join(format!(
-            "quorum_pubkey-{}-{}.json",
-            quorum_type,
-            quorum_hash.encode_hex::<String>()
-        ));
-
-        if let Err(e) = std::fs::write(file, encoded) {
-            tracing::warn!("Unable to write dump file {:?}: {}", path, e);
-        }
-    }
-
     /// Returns a future that resolves when the Sdk is cancelled (eg. shutdown was requested).
     pub fn cancelled(&self) -> WaitForCancellationFuture {
         self.cancel_token.cancelled()
@@ -263,48 +230,6 @@ impl Sdk {
     /// Request shutdown of the Sdk and all related operation.
     pub fn shutdown(&self) {
         self.cancel_token.cancel();
-    }
-}
-
-impl ContextProvider for Sdk {
-    fn get_quorum_public_key(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32],
-        core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], ContextProviderError> {
-        let guard = self
-            .context_provider
-            .lock()
-            .expect("context provider lock poisoned");
-        let provider = guard.as_ref().ok_or(ContextProviderError::Config(
-            "context provider not configured in sdk, use SdkBuilder::with_context_provider()"
-                .to_string(),
-        ))?;
-
-        let key: [u8; 48] =
-            provider.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)?;
-
-        #[cfg(feature = "mocks")]
-        self.dump_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height, &key);
-
-        Ok(key)
-    }
-
-    fn get_data_contract(
-        &self,
-        data_contract_id: &Identifier,
-    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        let guard = self
-            .context_provider
-            .lock()
-            .expect("context provider lock poisoned");
-        let provider = guard.as_ref().ok_or(ContextProviderError::Config(
-            "context provider not configured in sdk, use SdkBuilder::with_context_provider()"
-                .to_string(),
-        ))?;
-
-        provider.get_data_contract(data_contract_id)
     }
 }
 
@@ -526,10 +451,6 @@ impl SdkBuilder {
         self
     }
 
-    fn is_mock(&self) -> bool {
-        self.addresses.is_none()
-    }
-
     /// Build the Sdk instance.
     ///
     /// This method will create the Sdk instance based on the configuration provided to the builder.
@@ -559,18 +480,23 @@ impl SdkBuilder {
 
                 // if context provider is not set correctly (is None), it means we need to fallback to core wallet
                 let mut ctx_guard = sdk.context_provider.lock().expect("lock poisoned");
-                if  ctx_guard.is_none() { if !self.core_ip.is_empty() {
-                    tracing::warn!("ContextProvider not set; mocking with Dash Core. \
-                    Please provide your own ContextProvider with SdkBuilder::with_context_provider().");
+                if  ctx_guard.is_none() {
+                    if !self.core_ip.is_empty() {
+                        tracing::warn!("ContextProvider not set; mocking with Dash Core. \
+                        Please provide your own ContextProvider with SdkBuilder::with_context_provider().");
 
-                    let context_provider = GrpcContextProvider::new(Some(Arc::clone(&sdk)),
-                    &self.core_ip, self.core_port, &self.core_user, &self.core_password,
-                    self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
-                    ctx_guard.replace(Box::new(context_provider));
-                } else{
-                    tracing::warn!(
-                        "Configure ContextProvider with Sdk::with_context_provider(); otherwise Sdk will fail"
-                            );
+                        let mut context_provider = GrpcContextProvider::new(Some(Arc::clone(&sdk)),
+                        &self.core_ip, self.core_port, &self.core_user, &self.core_password,
+                        self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
+                        #[cfg(feature = "mocks")]
+                        if sdk.dump_dir.is_some() {
+                            context_provider.set_dump_dir(sdk.dump_dir.clone());
+                        }
+
+                        ctx_guard.replace(Box::new(context_provider));
+                    } else{
+                        tracing::warn!(
+                            "Configure ContextProvider with Sdk::with_context_provider(); otherwise Sdk will fail");
                 }
             };
             drop(ctx_guard);

@@ -37,6 +37,12 @@ pub struct GrpcContextProvider {
     ///
     /// Users can insert new quorum public keys into the cache using [`Cache::put`].
     pub quorum_public_keys_cache: Cache<([u8; 32], u32), [u8; 48]>,
+
+    /// Directory where to store dumped data.
+    ///
+    /// This is used to store data that is fetched from the platform and can be used for testing purposes.
+    #[cfg(feature = "mocks")]
+    pub dump_dir: Option<std::path::PathBuf>,
 }
 
 impl GrpcContextProvider {
@@ -62,6 +68,8 @@ impl GrpcContextProvider {
             sdk,
             data_contracts_cache: Cache::new(data_contracts_cache_size),
             quorum_public_keys_cache: Cache::new(quorum_public_keys_cache_size),
+            #[cfg(feature = "mocks")]
+            dump_dir: None,
         })
     }
 
@@ -72,6 +80,48 @@ impl GrpcContextProvider {
     /// values set by the user in the caches: `data_contracts_cache`, `quorum_public_keys_cache`.
     pub fn set_sdk(&mut self, sdk: Option<Arc<Sdk>>) {
         self.sdk = sdk;
+    }
+    /// Set the directory where to store dumped data.
+    ///
+    /// When set, the context provider will store data fetched from the platform into this directory.
+    #[cfg(feature = "mocks")]
+    pub fn set_dump_dir(&mut self, dump_dir: Option<std::path::PathBuf>) {
+        self.dump_dir = dump_dir;
+    }
+
+    /// Save quorum public key to disk.
+    ///
+    /// Files are named: `quorum_pubkey-<int_quorum_type>-<hex_quorum_hash>.json`
+    ///
+    /// Note that this will overwrite files with the same quorum type and quorum hash.
+    ///
+    /// Any errors are logged on `warn` level and ignored.
+    #[cfg(feature = "mocks")]
+    fn dump_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        _core_chain_locked_height: u32,
+        public_key: &[u8],
+    ) {
+        use hex::ToHex;
+
+        let path = match &self.dump_dir {
+            Some(p) => p,
+            None => return,
+        };
+
+        let encoded = serde_json::to_vec(public_key).expect("encode quorum hash to json");
+
+        let file = path.join(format!(
+            "quorum_pubkey-{}-{}.json",
+            quorum_type,
+            quorum_hash.encode_hex::<String>()
+        ));
+
+        if let Err(e) = std::fs::write(file, encoded) {
+            tracing::warn!("Unable to write dump file {:?}: {}", path, e);
+        }
     }
 }
 
@@ -95,6 +145,9 @@ impl ContextProvider for GrpcContextProvider {
 
         self.quorum_public_keys_cache
             .put((quorum_hash, quorum_type), key);
+
+        #[cfg(feature = "mocks")]
+        self.dump_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height, &key);
 
         Ok(key)
     }
