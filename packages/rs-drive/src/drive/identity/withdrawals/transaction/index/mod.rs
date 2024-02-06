@@ -49,7 +49,7 @@ mod tests {
             .expect("to apply drive ops");
 
         let stored_counter = drive
-            .fetch_next_withdrawal_transaction_index(Some(&transaction))
+            .fetch_next_withdrawal_transaction_index(Some(&transaction), platform_version)
             .expect("to withdraw counter");
 
         assert_eq!(stored_counter, counter);
