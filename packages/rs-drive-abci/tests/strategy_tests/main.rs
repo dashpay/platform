@@ -93,6 +93,7 @@ mod tests {
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
+    use drive::drive::config::DEFAULT_QUERY_LIMIT;
     use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
     use drive_abci::config::{ExecutionConfig, PlatformTestConfig};
     use drive_abci::error::execution::ExecutionError;
@@ -2285,8 +2286,9 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
+                .fetch_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    DEFAULT_QUERY_LIMIT,
                     None,
                     platform_version,
                 )
@@ -2332,8 +2334,9 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
+                .fetch_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    DEFAULT_QUERY_LIMIT,
                     None,
                     platform_version,
                 )
@@ -2407,8 +2410,9 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
+                .fetch_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    DEFAULT_QUERY_LIMIT,
                     None,
                     platform_version,
                 )
@@ -2418,8 +2422,9 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
+                .fetch_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    DEFAULT_QUERY_LIMIT,
                     None,
                     platform_version,
                 )
@@ -2513,8 +2518,9 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
+                .fetch_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    DEFAULT_QUERY_LIMIT,
                     None,
                     platform_version,
                 )
@@ -2524,8 +2530,9 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
+                .fetch_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    DEFAULT_QUERY_LIMIT,
                     None,
                     platform_version,
                 )
@@ -2535,8 +2542,9 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
+                .fetch_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
+                    DEFAULT_QUERY_LIMIT,
                     None,
                     platform_version,
                 )
@@ -2624,8 +2632,9 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
+                .fetch_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    DEFAULT_QUERY_LIMIT,
                     None,
                     platform_version,
                 )
@@ -2635,8 +2644,9 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
+                .fetch_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    DEFAULT_QUERY_LIMIT,
                     None,
                     platform_version,
                 )
@@ -2646,8 +2656,9 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
+                .fetch_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
+                    DEFAULT_QUERY_LIMIT,
                     None,
                     platform_version,
                 )
@@ -2657,8 +2668,9 @@ mod tests {
                 .abci_app
                 .platform
                 .drive
-                .fetch_up_to_100_oldest_withdrawal_documents_by_status(
+                .fetch_oldest_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
+                    DEFAULT_QUERY_LIMIT,
                     None,
                     platform_version,
                 )

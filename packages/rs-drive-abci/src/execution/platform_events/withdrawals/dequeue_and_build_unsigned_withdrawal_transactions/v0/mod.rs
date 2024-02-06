@@ -25,6 +25,7 @@ use crate::{
     rpc::core::CoreRPCLike,
 };
 use dpp::errors::ProtocolError;
+use drive::drive::config::DEFAULT_QUERY_LIMIT;
 
 const WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT: u16 = 16;
 
@@ -125,9 +126,10 @@ where
     ) -> Result<Vec<Document>, Error> {
         let documents = self
             .drive
-            .find_up_to_100_withdrawal_documents_by_status_and_transaction_indices(
+            .find_withdrawal_documents_by_status_and_transaction_indices(
                 withdrawals_contract::WithdrawalStatus::POOLED,
                 transaction_indices,
+                DEFAULT_QUERY_LIMIT,
                 transaction,
                 platform_version,
             )?;

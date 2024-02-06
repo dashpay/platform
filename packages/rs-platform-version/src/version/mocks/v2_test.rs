@@ -367,7 +367,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 },
                 withdrawals: DriveIdentityWithdrawalMethodVersions {
                     document: DriveIdentityWithdrawalDocumentMethodVersions {
-                        fetch_up_to_100_oldest_withdrawal_documents_by_status: 0,
+                        fetch_oldest_withdrawal_documents_by_status: 0,
                         find_up_to_100_withdrawal_documents_by_status_and_transaction_indices: 0,
                     },
                     transaction: DriveIdentityWithdrawalTransactionMethodVersions {

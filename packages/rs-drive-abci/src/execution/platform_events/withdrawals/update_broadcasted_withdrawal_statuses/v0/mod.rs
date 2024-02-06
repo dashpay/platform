@@ -11,6 +11,7 @@ use itertools::Itertools;
 use std::collections::HashSet;
 
 use drive::drive::batch::DriveOperation;
+use drive::drive::config::DEFAULT_QUERY_LIMIT;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
 use drive::grovedb::Transaction;
 
@@ -33,10 +34,10 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let broadcasted_withdrawal_documents = self
-            .drive
-            .fetch_up_to_100_oldest_withdrawal_documents_by_status(
+        let broadcasted_withdrawal_documents =
+            self.drive.fetch_oldest_withdrawal_documents_by_status(
                 WithdrawalStatus::BROADCASTED.into(),
+                DEFAULT_QUERY_LIMIT,
                 transaction.into(),
                 platform_version,
             )?;
@@ -288,17 +289,14 @@ mod tests {
         );
 
         platform
-            .update_broadcasted_withdrawal_statuses_v0(
-                &block_info,
-                Some(&transaction),
-                platform_version,
-            )
+            .update_broadcasted_withdrawal_statuses_v0(&block_info, &transaction, platform_version)
             .expect("to update withdrawal statuses");
 
         let documents = platform
             .drive
-            .fetch_up_to_100_oldest_withdrawal_documents_by_status(
+            .fetch_oldest_withdrawal_documents_by_status(
                 WithdrawalStatus::EXPIRED.into(),
+                DEFAULT_QUERY_LIMIT,
                 Some(&transaction),
                 platform_version,
             )
@@ -312,8 +310,9 @@ mod tests {
 
         let documents = platform
             .drive
-            .fetch_up_to_100_oldest_withdrawal_documents_by_status(
+            .fetch_oldest_withdrawal_documents_by_status(
                 WithdrawalStatus::COMPLETE.into(),
+                DEFAULT_QUERY_LIMIT,
                 Some(&transaction),
                 platform_version,
             )

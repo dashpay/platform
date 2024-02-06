@@ -1,20 +1,18 @@
-mod v0;
-
-use crate::drive::identity::withdrawals::WithdrawalTransactionIndex;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::data_contracts::withdrawals_contract;
 use dpp::document::Document;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
+mod v0;
+
 impl Drive {
-    /// Find up to 100 documents by status and transaction indices
-    pub fn find_up_to_100_withdrawal_documents_by_status_and_transaction_indices(
+    /// Fetch withdrawal documents by it's status ordered by updated_at ascending
+    pub fn fetch_oldest_withdrawal_documents_by_status(
         &self,
-        status: withdrawals_contract::WithdrawalStatus,
-        transaction_indices: &[WithdrawalTransactionIndex],
+        status: u8,
+        limit: u16,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
@@ -24,17 +22,16 @@ impl Drive {
             .identity
             .withdrawals
             .document
-            .find_up_to_100_withdrawal_documents_by_status_and_transaction_indices
+            .fetch_oldest_withdrawal_documents_by_status
         {
-            0 => self.find_up_to_100_withdrawal_documents_by_status_and_transaction_indices_v0(
+            0 => self.fetch_oldest_withdrawal_documents_by_status_v0(
                 status,
-                transaction_indices,
+                limit,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "find_up_to_100_withdrawal_documents_by_status_and_transaction_indices"
-                    .to_string(),
+                method: "fetch_up_to_100_oldest_withdrawal_documents_by_status".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

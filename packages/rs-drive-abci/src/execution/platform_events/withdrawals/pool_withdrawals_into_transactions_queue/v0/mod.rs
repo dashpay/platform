@@ -12,6 +12,8 @@ use drive::grovedb::TransactionArg;
 
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
+use drive::drive::config::DEFAULT_QUERY_LIMIT;
+use drive::query::DriveQuery;
 
 use crate::{
     error::{execution::ExecutionError, Error},
@@ -30,13 +32,12 @@ where
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut documents = self
-            .drive
-            .fetch_up_to_100_oldest_withdrawal_documents_by_status(
-                withdrawals_contract::WithdrawalStatus::QUEUED.into(),
-                transaction,
-                platform_version,
-            )?;
+        let mut documents = self.drive.fetch_oldest_withdrawal_documents_by_status(
+            withdrawals_contract::WithdrawalStatus::QUEUED.into(),
+            DEFAULT_QUERY_LIMIT,
+            transaction,
+            platform_version,
+        )?;
 
         if documents.is_empty() {
             return Ok(());
@@ -251,8 +252,9 @@ mod tests {
 
         let updated_documents = platform
             .drive
-            .fetch_up_to_100_oldest_withdrawal_documents_by_status(
+            .fetch_oldest_withdrawal_documents_by_status(
                 withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                DEFAULT_QUERY_LIMIT,
                 Some(&transaction),
                 platform_version,
             )
