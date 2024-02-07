@@ -520,20 +520,18 @@ pub fn create_identity_withdrawal_transition(
 /// - If the sender's identity does not have a suitable authentication key available for signing.
 /// - If there's an error during the signing process.
 pub fn create_identity_credit_transfer_transition(
-    identity: &Identity,
+    identity: &mut Identity,
     recipient: &Identity,
     signer: &mut SimpleSigner,
     amount: u64,
 ) -> StateTransition {
-    info!("identity: {:?}", identity);
-    info!("recipient: {:?}", recipient);
-    info!("signer: {:?}", signer);
+    identity.bump_revision();
 
     let mut transition: StateTransition = IdentityCreditTransferTransitionV0 {
         identity_id: identity.id(),
         recipient_id: recipient.id(),
         amount,
-        revision: identity.revision() + 1,
+        revision: identity.revision(),
         signature_public_key_id: 0,
         signature: Default::default(),
     }
@@ -547,8 +545,6 @@ pub fn create_identity_credit_transfer_transition(
         )
         .expect("expected to get a signing key");
 
-    info!("identity_public_key: {:?}", identity_public_key);
-
     transition
         .sign_external(
             identity_public_key,
@@ -556,8 +552,6 @@ pub fn create_identity_credit_transfer_transition(
             None::<GetDataContractSecurityLevelRequirementFn>,
         )
         .expect("expected to sign transfer");
-
-    info!("transition: {:?}", transition);
 
     transition
 }
