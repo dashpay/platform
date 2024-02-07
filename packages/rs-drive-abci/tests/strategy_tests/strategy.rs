@@ -226,6 +226,7 @@ pub struct NetworkStrategy {
     pub max_tx_bytes_per_block: u64,
     pub independent_process_proposal_verification: bool,
     pub sign_chain_locks: bool,
+    pub identity_contract_nonce_gaps : Option<Frequency>,
 }
 
 impl Default for NetworkStrategy {
@@ -247,6 +248,7 @@ impl Default for NetworkStrategy {
             max_tx_bytes_per_block: 44800,
             independent_process_proposal_verification: false,
             sign_chain_locks: false,
+            identity_contract_nonce_gaps: None,
         }
     }
 }

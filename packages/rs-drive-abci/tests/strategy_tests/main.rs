@@ -1684,7 +1684,128 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "566b442bbfae643530310ee11f3a4138f7a6831e68eaa76a7e635cfd6959d77e".to_string()
+            "84435c7bee5ab7c217b5ea7e808d5aac9f2ee8d95d1813090ffde9d90e8dc714".to_string()
+        )
+    }
+
+
+    #[test]
+    fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_nonce_gaps_with_epoch_change(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let created_contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
+            platform_version,
+        )
+            .expect("expected to get contract from a json document");
+
+        let contract = created_contract.data_contract();
+
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let document_deletion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionDelete,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..7,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_deletion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..7,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            identity_contract_nonce_gaps: Some(Frequency {
+                times_per_block_range: 1..3,
+                chance_per_block: Some(0.5),
+            }),
+            ..Default::default()
+        };
+        let day_in_ms = 1000 * 60 * 60 * 24;
+        let config = PlatformConfig {
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_rotation_block_count: 100,
+                ..Default::default()
+            },
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+
+        let block_count = 120;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        assert_eq!(outcome.identities.len() as u64, block_count);
+        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        let all_have_balances = outcome
+            .masternode_identity_balances
+            .iter()
+            .all(|(_, balance)| *balance != 0);
+        assert!(all_have_balances, "all masternodes should have a balance");
+        assert_eq!(
+            hex::encode(
+                outcome
+                    .abci_app
+                    .platform
+                    .drive
+                    .grove
+                    .root_hash(None)
+                    .unwrap()
+                    .unwrap()
+            ),
+            "84435c7bee5ab7c217b5ea7e808d5aac9f2ee8d95d1813090ffde9d90e8dc714".to_string()
         )
     }
 
@@ -2275,6 +2396,7 @@ mod tests {
                 current_quorum_hash,
                 current_proposer_versions,
                 end_time_ms,
+                identity_contract_nonce_counter,
                 ..
             },
             last_block_pooled_withdrawals_amount,
@@ -2313,6 +2435,7 @@ mod tests {
             current_proposer_versions,
             end_time_ms,
             withdrawals: last_block_withdrawals,
+            identity_contract_nonce_counter,
             ..
         } = {
             let outcome = continue_chain_for_strategy(
@@ -2325,6 +2448,7 @@ mod tests {
                     quorums,
                     current_quorum_hash,
                     current_proposer_versions: Some(current_proposer_versions),
+                    current_identity_nonce_counter: identity_contract_nonce_counter,
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms,
                 },
@@ -2388,6 +2512,7 @@ mod tests {
                 current_proposer_versions,
                 end_time_ms,
                 withdrawals: last_block_withdrawals,
+                identity_contract_nonce_counter,
                 ..
             },
             last_block_broadcased_withdrawals_amount,
@@ -2402,6 +2527,7 @@ mod tests {
                     quorums,
                     current_quorum_hash,
                     current_proposer_versions: Some(current_proposer_versions),
+                    current_identity_nonce_counter: identity_contract_nonce_counter,
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                 },
@@ -2496,6 +2622,7 @@ mod tests {
                 current_proposer_versions,
                 end_time_ms,
                 withdrawals: last_block_withdrawals,
+                identity_contract_nonce_counter,
                 ..
             },
             last_block_withdrawals_completed_amount,
@@ -2510,6 +2637,7 @@ mod tests {
                     quorums,
                     current_quorum_hash,
                     current_proposer_versions: Some(current_proposer_versions),
+                    current_identity_nonce_counter: identity_contract_nonce_counter,
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                 },
@@ -2612,6 +2740,7 @@ mod tests {
             current_proposer_versions,
             end_time_ms,
             withdrawals,
+            identity_contract_nonce_counter,
             ..
         } = {
             let outcome = continue_chain_for_strategy(
@@ -2624,6 +2753,7 @@ mod tests {
                     quorums,
                     current_quorum_hash,
                     current_proposer_versions: Some(current_proposer_versions),
+                    current_identity_nonce_counter: identity_contract_nonce_counter,
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                 },
