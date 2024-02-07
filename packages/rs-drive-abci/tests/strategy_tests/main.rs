@@ -40,6 +40,8 @@ use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
 use strategy_tests::frequency::Frequency;
 
+use dpp::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
+use dpp::dashcore::Transaction;
 use std::collections::BTreeMap;
 
 use strategy::{
@@ -47,6 +49,7 @@ use strategy::{
 };
 use strategy_tests::Strategy;
 
+mod chain_lock_update;
 mod core_update_tests;
 mod execution;
 mod failures;
@@ -62,33 +65,43 @@ pub type BlockHeight = u64;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
+    use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy, GENESIS_TIME_MS};
     use crate::query::QueryStrategy;
     use crate::strategy::{FailureStrategy, MasternodeListChangesStrategy};
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
-    use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
+    use dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, ExtendedQuorumDetails};
+    use dashcore_rpc::json::AssetUnlockStatusResult;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+    use std::sync::{Arc, Mutex};
     use strategy_tests::operations::DocumentAction::DocumentActionReplace;
     use strategy_tests::operations::{
         DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
     };
 
+    use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
+    use dpp::dashcore::bls_sig_utils::BLSSignature;
+    use dpp::dashcore::ChainLock;
+    use dpp::dashcore::Txid;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
     };
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::system_data_contracts::withdrawals_contract;
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
+    use drive::drive::config::DEFAULT_QUERY_LIMIT;
+    use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
     use drive_abci::config::{ExecutionConfig, PlatformTestConfig};
+    use drive_abci::error::execution::ExecutionError;
+    use drive_abci::error::Error;
     use drive_abci::logging::LogLevel;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
     use itertools::Itertools;
-    use rand::distributions::uniform::SampleBorrow;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
     use tenderdash_abci::proto::types::CoreChainLock;
     use tenderdash_abci::Application;
@@ -131,12 +144,9 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -145,10 +155,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -159,16 +171,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
         run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
     }
 
@@ -187,12 +189,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -201,10 +201,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -215,16 +217,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
         run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
     }
 
@@ -243,12 +235,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -257,10 +247,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -273,17 +265,6 @@ mod tests {
         } = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
 
         let ChainExecutionOutcome {
             abci_app,
@@ -312,7 +293,7 @@ mod tests {
 
         abci_app
             .platform
-            .recreate_state(platform_version)
+            .reload_state_from_storage(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {
@@ -379,12 +360,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: Some(FailureStrategy {
@@ -399,10 +378,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -415,17 +396,6 @@ mod tests {
         } = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
 
         let ChainExecutionOutcome {
             abci_app,
@@ -454,7 +424,7 @@ mod tests {
 
         abci_app
             .platform
-            .recreate_state(platform_version)
+            .reload_state_from_storage(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {
@@ -522,12 +492,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -536,10 +504,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -549,16 +519,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
 
         let balance = outcome
@@ -573,7 +534,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99869074420)
+        assert_eq!(balance, 99868861500)
     }
 
     #[test]
@@ -591,12 +552,13 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.01),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -605,10 +567,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -619,16 +583,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
         run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
     }
 
@@ -647,12 +601,13 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.5),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -662,10 +617,12 @@ mod tests {
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+                validator_set_rotation_block_count: 100,
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
@@ -676,16 +633,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -710,12 +658,13 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.5),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -726,10 +675,12 @@ mod tests {
         let hour_in_s = 60 * 60;
         let three_mins_in_ms = 1000 * 60 * 3;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+                validator_set_rotation_block_count: 100,
                 epoch_time_length_s: hour_in_s,
                 ..Default::default()
             },
@@ -741,16 +692,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -778,12 +720,13 @@ mod tests {
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 5..6,
                 chance_per_block: Some(0.5),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: true,
             failure_testing: None,
@@ -792,10 +735,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 10,
+            validator_set_quorum_size: 10,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 300,
@@ -806,16 +751,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
         let ChainExecutionOutcome { abci_app, .. } =
             run_chain_for_strategy(&mut platform, 2000, strategy, config, 40);
 
@@ -862,12 +797,13 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: Some(0.2),
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Frequency {
                     times_per_block_range: 1..3,
@@ -882,10 +818,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 10,
+            validator_set_quorum_size: 10,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 300,
@@ -896,16 +834,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
         let ChainExecutionOutcome { abci_app, .. } =
             run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
 
@@ -933,12 +861,13 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: Some(0.2),
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Frequency {
                     times_per_block_range: 1..3,
@@ -957,10 +886,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 10,
+            validator_set_quorum_size: 10,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 300,
@@ -971,16 +902,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
         let ChainExecutionOutcome { abci_app, .. } =
             run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
 
@@ -1007,12 +928,13 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: Some(0.2),
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 updated_hpmns: Frequency {
                     times_per_block_range: 1..3,
@@ -1027,10 +949,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 10,
+            validator_set_quorum_size: 10,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 300,
@@ -1041,16 +965,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -1108,12 +1022,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1127,10 +1039,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1140,16 +1054,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
 
         assert_eq!(outcome.identities.len(), 100);
@@ -1170,12 +1075,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1185,10 +1088,12 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+                validator_set_rotation_block_count: 100,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
@@ -1199,16 +1104,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 150, strategy, config, 15);
         assert_eq!(outcome.identities.len(), 150);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
@@ -1228,7 +1124,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "7185a9b987f4fe7290f048ccdb2935d92446c240b9361be46a20f956164a9378".to_string()
+            "fa6e1d4977b35a5b9d9be63afb65d9cd3cf607e79a733bf743b96bfd6de48eed".to_string()
         )
     }
 
@@ -1255,12 +1151,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1269,10 +1163,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1282,16 +1178,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15);
 
         outcome
@@ -1367,12 +1254,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1381,10 +1266,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1394,16 +1281,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
         outcome
@@ -1474,12 +1352,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1488,10 +1364,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1501,16 +1379,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
     }
 
@@ -1557,12 +1426,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1572,10 +1439,12 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+                validator_set_rotation_block_count: 100,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
@@ -1586,16 +1455,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
@@ -1668,12 +1528,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1683,10 +1541,12 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+                validator_set_rotation_block_count: 100,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
@@ -1697,16 +1557,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
@@ -1779,12 +1630,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1794,10 +1643,12 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+                validator_set_rotation_block_count: 100,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
@@ -1809,16 +1660,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
@@ -1838,7 +1680,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "5dfc31d164388c22154e10629030edb5557620c5fcd5c87ffeff5f4e81bdb657".to_string()
+            "301a9e2630e5017a1d45a492a1e23837ab7369049c617d8202db22f924a911f3".to_string()
         )
     }
 
@@ -1904,12 +1746,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1921,10 +1761,12 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
 
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+                validator_set_rotation_block_count: 100,
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
@@ -1936,16 +1778,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, 421);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
@@ -2035,12 +1868,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2052,10 +1883,12 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
 
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+                validator_set_rotation_block_count: 100,
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
@@ -2067,16 +1900,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, 86);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
@@ -2111,12 +1935,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2125,10 +1947,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -2138,16 +1962,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
         let max_initial_balance = 100000000000u64; // TODO: some centralized way for random test data (`arbitrary` maybe?)
@@ -2193,12 +2008,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2209,10 +2022,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -2222,16 +2037,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
         let state = outcome.abci_app.platform.state.read().unwrap();
         let protocol_version = state.current_protocol_version_in_consensus();
@@ -2282,12 +2088,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2298,10 +2102,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -2311,16 +2117,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
         let identities = outcome
@@ -2350,6 +2147,7 @@ mod tests {
 
     #[test]
     fn run_chain_top_up_and_withdraw_from_identities() {
+        let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 contracts_with_updates: vec![],
@@ -2378,12 +2176,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2394,33 +2190,523 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
+
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
         platform
             .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+            .expect_send_raw_transaction()
+            .returning(move |_| Ok(Txid::all_zeros()));
 
-        assert_eq!(outcome.identities.len(), 10);
-        assert_eq!(outcome.withdrawals.len(), 18);
+        struct CoreState {
+            asset_unlock_statuses: BTreeMap<WithdrawalTransactionIndex, AssetUnlockStatusResult>,
+            chain_lock: ChainLock,
+        }
+
+        let mut chain_locked_height = 1;
+
+        // Have to go with a complicated shared object for the core state because we need to change
+        // rpc response along the way but we can't mutate `platform.core_rpc` later
+        // because platform reference is moved into the AbciApplication.
+        let shared_core_state = Arc::new(Mutex::new(CoreState {
+            asset_unlock_statuses: BTreeMap::new(),
+            chain_lock: ChainLock {
+                block_height: chain_locked_height,
+                block_hash: BlockHash::from_byte_array([1; 32]),
+                signature: BLSSignature::from([2; 96]),
+            },
+        }));
+
+        // Set up Core RPC responses
+        {
+            let core_state = shared_core_state.clone();
+
+            platform
+                .core_rpc
+                .expect_get_asset_unlock_statuses()
+                .returning(move |indices, _| {
+                    Ok(indices
+                        .iter()
+                        .map(|index| {
+                            core_state
+                                .lock()
+                                .unwrap()
+                                .asset_unlock_statuses
+                                .get(index)
+                                .map(|status| status.clone())
+                                .unwrap()
+                        })
+                        .collect())
+                });
+
+            let core_state = shared_core_state.clone();
+            platform
+                .core_rpc
+                .expect_get_best_chain_lock()
+                .returning(move || Ok(core_state.lock().unwrap().chain_lock.clone()));
+        }
+
+        // Run first two blocks:
+        // - Block 1: creates identity
+        // - Block 2: tops up identity and initiates withdrawals
+        let (
+            ChainExecutionOutcome {
+                abci_app,
+                proposers,
+                quorums,
+                current_quorum_hash,
+                current_proposer_versions,
+                end_time_ms,
+                ..
+            },
+            last_block_pooled_withdrawals_amount,
+        ) = {
+            let outcome =
+                run_chain_for_strategy(&mut platform, 2, strategy.clone(), config.clone(), 1);
+
+            // Withdrawal transactions are not populated to block execution context yet
+            assert_eq!(outcome.withdrawals.len(), 0);
+
+            // Withdrawal documents with pooled status should exist.
+            let withdrawal_documents_pooled = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+            assert!(withdrawal_documents_pooled.len() > 0);
+            let pooled_withdrawals = withdrawal_documents_pooled.len();
+
+            (outcome, pooled_withdrawals)
+        };
+
+        // Run block 3
+        // Should broadcast previously pooled withdrawals to core
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            withdrawals: last_block_withdrawals,
+            ..
+        } = {
+            let outcome = continue_chain_for_strategy(
+                abci_app,
+                ChainExecutionParameters {
+                    block_start: 3,
+                    core_height_start: 1,
+                    block_count: 1,
+                    proposers,
+                    quorums,
+                    current_quorum_hash,
+                    current_proposer_versions: Some(current_proposer_versions),
+                    start_time_ms: GENESIS_TIME_MS,
+                    current_time_ms: end_time_ms,
+                },
+                strategy.clone(),
+                config.clone(),
+                StrategyRandomness::SeedEntropy(2),
+            );
+
+            // Withdrawal documents with pooled status should exist.
+            let withdrawal_documents_broadcasted = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            // In this block all previously pooled withdrawals should be broadcasted
+            assert_eq!(
+                outcome.withdrawals.len(),
+                last_block_pooled_withdrawals_amount
+            );
+            assert_eq!(
+                withdrawal_documents_broadcasted.len(),
+                last_block_pooled_withdrawals_amount
+            );
+
+            outcome
+        };
+
+        // Update core state before running next block.
+        // Asset unlocks broadcasted in the last block should have Unknown status
+        {
+            let mut core_state = shared_core_state.lock().unwrap();
+            last_block_withdrawals.iter().for_each(|tx| {
+                let index = asset_unlock_index(tx);
+
+                core_state.asset_unlock_statuses.insert(
+                    index,
+                    AssetUnlockStatusResult {
+                        index,
+                        status: AssetUnlockStatus::Unknown,
+                    },
+                );
+            });
+        }
+
+        // Run block 4
+        // Should change pooled status to broadcasted
+        let last_block_broadcased_withdrawals_amount = last_block_withdrawals.len();
+        let (
+            ChainExecutionOutcome {
+                abci_app,
+                proposers,
+                quorums,
+                current_quorum_hash,
+                current_proposer_versions,
+                end_time_ms,
+                withdrawals: last_block_withdrawals,
+                ..
+            },
+            last_block_broadcased_withdrawals_amount,
+        ) = {
+            let outcome = continue_chain_for_strategy(
+                abci_app,
+                ChainExecutionParameters {
+                    block_start: 4,
+                    core_height_start: 1,
+                    block_count: 1,
+                    proposers,
+                    quorums,
+                    current_quorum_hash,
+                    current_proposer_versions: Some(current_proposer_versions),
+                    start_time_ms: GENESIS_TIME_MS,
+                    current_time_ms: end_time_ms + 1000,
+                },
+                strategy.clone(),
+                config.clone(),
+                StrategyRandomness::SeedEntropy(3),
+            );
+
+            let withdrawal_documents_pooled = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let withdrawal_documents_broadcasted = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            // In this block we should have new withdrawals pooled
+            assert!(withdrawal_documents_pooled.len() > 0);
+
+            // And extra withdrawals broadcasted
+            let withdrawals_broadcasted_expected =
+                last_block_broadcased_withdrawals_amount + outcome.withdrawals.len();
+            assert_eq!(
+                withdrawal_documents_broadcasted.len(),
+                withdrawals_broadcasted_expected
+            );
+
+            (outcome, withdrawal_documents_broadcasted.len())
+        };
+
+        // Update core state for newly broadcasted transactions
+        {
+            let mut core_state = shared_core_state.lock().unwrap();
+
+            // First, set all previously broadcasted transactions to Chainlocked
+            core_state
+                .asset_unlock_statuses
+                .iter_mut()
+                .for_each(|(index, status_result)| {
+                    // Do not settle yet transactions that were broadcasted in the last block
+                    status_result.index = *index;
+                    status_result.status = AssetUnlockStatus::Chainlocked;
+                });
+
+            // Then increase chainlocked height, so that withdrawals for chainlocked tranasctions
+            // could be completed in the next block
+            // TODO: do we need this var?
+            chain_locked_height += 1;
+            core_state.chain_lock.block_height = chain_locked_height;
+
+            // Then set all newly broadcasted transactions to Unknown
+            last_block_withdrawals.iter().for_each(|tx| {
+                let index = asset_unlock_index(tx);
+
+                core_state.asset_unlock_statuses.insert(
+                    index,
+                    AssetUnlockStatusResult {
+                        index,
+                        status: AssetUnlockStatus::Unknown,
+                    },
+                );
+            });
+
+            drop(core_state);
+        }
+
+        // Run block 5
+        // Previously broadcasted transactions should be settled after block 5,
+        // and their corresponding statuses should be changed to COMPLETED
+        let (
+            ChainExecutionOutcome {
+                abci_app,
+                proposers,
+                quorums,
+                current_quorum_hash,
+                current_proposer_versions,
+                end_time_ms,
+                withdrawals: last_block_withdrawals,
+                ..
+            },
+            last_block_withdrawals_completed_amount,
+        ) = {
+            let outcome = continue_chain_for_strategy(
+                abci_app,
+                ChainExecutionParameters {
+                    block_start: 5,
+                    core_height_start: 1,
+                    block_count: 1,
+                    proposers,
+                    quorums,
+                    current_quorum_hash,
+                    current_proposer_versions: Some(current_proposer_versions),
+                    start_time_ms: GENESIS_TIME_MS,
+                    current_time_ms: end_time_ms + 1000,
+                },
+                strategy.clone(),
+                config.clone(),
+                StrategyRandomness::SeedEntropy(4),
+            );
+
+            let withdrawal_documents_pooled = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let withdrawal_documents_broadcasted = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let withdrawal_documents_completed = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            // In this block we should have new withdrawals pooled
+            assert!(withdrawal_documents_pooled.len() > 0);
+
+            // And some withdrawals completed
+            let withdrawals_completed_expected =
+                // Withdrawals issued on {previous_block - 1} considered completed
+                last_block_broadcased_withdrawals_amount - last_block_withdrawals.len();
+            assert_eq!(
+                withdrawal_documents_completed.len(),
+                withdrawals_completed_expected
+            );
+
+            // And extra withdrawals broadcasted
+            let withdrawals_broadcasted_expected =
+                // Withdrawals issued on previous block + withdrawals from this block are still in broadcasted state
+                last_block_withdrawals.len() + outcome.withdrawals.len();
+
+            assert_eq!(
+                withdrawal_documents_broadcasted.len(),
+                withdrawals_broadcasted_expected
+            );
+
+            (outcome, withdrawal_documents_completed.len())
+        };
+
+        // Update state of the core before proceeding to the next block
+        {
+            // Simulate transactions being added to the core mempool
+            let mut core_state = shared_core_state.lock().unwrap();
+
+            let number_of_blocks_before_expiration: u32 = 48;
+            chain_locked_height += number_of_blocks_before_expiration;
+
+            core_state.chain_lock.block_height = chain_locked_height;
+
+            last_block_withdrawals.iter().for_each(|tx| {
+                let index = asset_unlock_index(tx);
+
+                core_state.asset_unlock_statuses.insert(
+                    index,
+                    AssetUnlockStatusResult {
+                        index,
+                        status: AssetUnlockStatus::Unknown,
+                    },
+                );
+            });
+        }
+
+        // Run block 6.
+        // Tests withdrawal expiration
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            withdrawals,
+            ..
+        } = {
+            let outcome = continue_chain_for_strategy(
+                abci_app,
+                ChainExecutionParameters {
+                    block_start: 6,
+                    core_height_start: 1,
+                    block_count: 1,
+                    proposers,
+                    quorums,
+                    current_quorum_hash,
+                    current_proposer_versions: Some(current_proposer_versions),
+                    start_time_ms: GENESIS_TIME_MS,
+                    current_time_ms: end_time_ms + 1000,
+                },
+                strategy.clone(),
+                config.clone(),
+                StrategyRandomness::SeedEntropy(5),
+            );
+
+            let withdrawal_documents_pooled = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let withdrawal_documents_broadcasted = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let withdrawal_documents_completed = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let withdrawal_documents_expired = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            // In this block we should have new withdrawals pooled
+            assert!(withdrawal_documents_pooled.len() > 0);
+
+            // Amount of completed withdrawals stays the same as in the last block
+            assert_eq!(
+                withdrawal_documents_completed.len(),
+                last_block_withdrawals_completed_amount
+            );
+
+            // And some withdrawals got expired
+            let withdrawals_expired_expected =
+                // Withdrawals issued on {previous_block - 1}, but not chainlocked yet, considered expired
+                last_block_broadcased_withdrawals_amount - last_block_withdrawals.len();
+
+            assert_eq!(
+                withdrawal_documents_expired.len(),
+                withdrawals_expired_expected
+            );
+
+            // And extra withdrawals broadcasted
+            let withdrawals_broadcasted_expected =
+                // Withdrawals issued on previous block + withdrawals from this block are still in broadcasted state
+                last_block_withdrawals.len() + outcome.withdrawals.len();
+
+            assert_eq!(
+                withdrawal_documents_broadcasted.len(),
+                withdrawals_broadcasted_expected
+            );
+
+            outcome
+        };
     }
 
     #[test]
@@ -2439,12 +2725,12 @@ mod tests {
             },
             total_hpmns: 50,
             extra_normal_mns: 0,
-            quorum_count: 10,
+            validator_quorum_count: 10,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: true,
             failure_testing: None,
@@ -2454,10 +2740,12 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 3,
+            validator_set_quorum_size: 3,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 1,
+                validator_set_rotation_block_count: 1,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
@@ -2480,10 +2768,10 @@ mod tests {
                 .core_rpc
                 .expect_get_best_chain_lock()
                 .returning(move || {
-                    Ok(CoreChainLock {
-                        core_block_height: 10,
-                        core_block_hash: [1; 32].to_vec(),
-                        signature: [2; 96].to_vec(),
+                    Ok(ChainLock {
+                        block_height: 10,
+                        block_hash: BlockHash::from_byte_array([1; 32]),
+                        signature: [2; 96].into(),
                     })
                 });
 
@@ -2596,12 +2884,12 @@ mod tests {
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
-            quorum_count: 100,
+            validator_quorum_count: 100,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: true,
             failure_testing: None,
@@ -2611,10 +2899,12 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 3,
+            validator_set_quorum_size: 3,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 1,
+                validator_set_rotation_block_count: 1,
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
@@ -2632,20 +2922,20 @@ mod tests {
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
+                Ok(ChainLock {
+                    block_height: 10,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: [2; 96].into(),
                 })
             });
         platform_b
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
+                Ok(ChainLock {
+                    block_height: 10,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: [2; 96].into(),
                 })
             });
 
@@ -2665,7 +2955,7 @@ mod tests {
         );
         assert_eq!(
             masternodes_fingerprint_a,
-            "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
+            "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
         let masternodes_fingerprint_b = hash_to_hex_string(
             outcome_b
@@ -2676,7 +2966,7 @@ mod tests {
         );
         assert_eq!(
             masternodes_fingerprint_b,
-            "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
+            "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
 
         let last_app_hash_a = outcome_a
@@ -2724,12 +3014,12 @@ mod tests {
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
-            quorum_count: 100,
+            validator_quorum_count: 100,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: true,
             failure_testing: None,
@@ -2739,10 +3029,12 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 3,
+            validator_set_quorum_size: 3,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 1,
+                validator_set_rotation_block_count: 1,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
@@ -2759,20 +3051,20 @@ mod tests {
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
+                Ok(ChainLock {
+                    block_height: 10,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: [2; 96].into(),
                 })
             });
         platform_b
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
+                Ok(ChainLock {
+                    block_height: 10,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: [2; 96].into(),
                 })
             });
 
@@ -2792,7 +3084,7 @@ mod tests {
         );
         assert_eq!(
             masternodes_fingerprint_a,
-            "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
+            "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
         let masternodes_fingerprint_b = hash_to_hex_string(
             outcome_b
@@ -2803,7 +3095,7 @@ mod tests {
         );
         assert_eq!(
             masternodes_fingerprint_b,
-            "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
+            "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
 
         let last_app_hash_a = outcome_a
@@ -2831,8 +3123,8 @@ mod tests {
             .into_iter()
             .filter(|(_, balance)| *balance != 0)
             .count();
-        // we have a maximum 90 quorums, that could have been used, 4 were used twice
-        assert_eq!(balance_count, 86);
+        // we have a maximum 90 quorums, that could have been used, 6 were used twice
+        assert_eq!(balance_count, 84);
     }
 
     #[test]
@@ -2852,12 +3144,9 @@ mod tests {
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
-            quorum_count: 100,
+            validator_quorum_count: 100,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2867,10 +3156,12 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 3,
+            validator_set_quorum_size: 3,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 1,
+                validator_set_rotation_block_count: 1,
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
@@ -2884,17 +3175,6 @@ mod tests {
         } = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
 
         let ChainExecutionOutcome {
             abci_app,
@@ -2921,7 +3201,7 @@ mod tests {
 
         abci_app
             .platform
-            .recreate_state(platform_version)
+            .reload_state_from_storage(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {
@@ -2994,12 +3274,10 @@ mod tests {
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -3009,10 +3287,12 @@ mod tests {
         };
 
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -3023,16 +3303,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
+
         let outcome = run_chain_for_strategy(&mut platform, 15, strategy, config, 15);
 
         let balances = &outcome
@@ -3067,10 +3338,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -3080,16 +3353,6 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
 
         let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15);
         let state_transitions = outcome
@@ -3100,4 +3363,11 @@ mod tests {
         // Only three out of five transitions should've made to the block
         assert_eq!(state_transitions.len(), 3);
     }
+}
+
+fn asset_unlock_index(tx: &Transaction) -> u64 {
+    let Some(AssetUnlockPayloadType(ref payload)) = tx.special_transaction_payload else {
+        panic!("expected to get AssetUnlockPayloadType");
+    };
+    payload.base.index
 }

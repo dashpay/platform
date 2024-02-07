@@ -1,7 +1,7 @@
 use std::{num::NonZeroUsize, str::FromStr, sync::Arc};
 
 use clap::Parser;
-use dash_platform_sdk::{mock::provider::GrpcContextProvider, platform::Fetch, Sdk, SdkBuilder};
+use rs_sdk::{mock::provider::GrpcContextProvider, platform::Fetch, Sdk, SdkBuilder};
 use dpp::prelude::{DataContract, Identifier};
 use rs_dapi_client::AddressList;
 

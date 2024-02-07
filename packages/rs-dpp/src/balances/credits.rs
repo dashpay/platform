@@ -25,6 +25,8 @@ pub type SignedCredits = i64;
 
 pub const MAX_CREDITS: Credits = 9223372036854775807 as Credits; //i64 Max
 
+pub const CREDITS_PER_DUFF: Credits = 1000;
+
 /// Trait for signed and unsigned credits
 
 pub trait Creditable {

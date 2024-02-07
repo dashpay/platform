@@ -219,6 +219,3 @@ process.on('SIGINT', () => {
 
   process.exit();
 });
-
-// Tell PM2 that process ready to receive connections
-process.send('ready');

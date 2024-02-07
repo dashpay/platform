@@ -68,6 +68,23 @@ impl IdentityCreateTransition {
             }),
         }
     }
+
+    pub fn get_minimal_asset_lock_value(
+        platform_version: &PlatformVersion,
+    ) -> Result<u64, ProtocolError> {
+        match platform_version
+            .dpp
+            .state_transitions
+            .identities
+            .asset_locks
+            .minimal_asset_lock_value
+        {
+            0 => Ok(MinimalAssetLockValue::V0 as u64),
+            v => Err(ProtocolError::UnknownVersionError(format!(
+                "Unknown IdentityCreateTransition version for minimal_asset_lock_value {v}"
+            ))),
+        }
+    }
 }
 
 impl StateTransitionFieldTypes for IdentityCreateTransition {
@@ -82,4 +99,9 @@ impl StateTransitionFieldTypes for IdentityCreateTransition {
     fn binary_property_paths() -> Vec<&'static str> {
         vec![]
     }
+}
+
+#[repr(u64)]
+pub enum MinimalAssetLockValue {
+    V0 = 120000,
 }

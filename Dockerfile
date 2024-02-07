@@ -236,7 +236,7 @@ RUN mkdir -p /var/log/dash \
     /var/lib/dash/rs-drive-abci/db
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
-COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.example /var/lib/dash/rs-drive-abci/.env
+COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
 
 # Create a volume
 VOLUME /var/lib/dash/rs-drive-abci/db
@@ -392,9 +392,6 @@ LABEL description="DAPI Node.JS"
 # Install ZMQ shared library
 RUN apk add --no-cache zeromq-dev
 
-# Install pm2
-RUN npm install -g pm2
-
 WORKDIR /platform/packages/dapi
 
 COPY --from=build-dapi /platform/.yarn /platform/.yarn
@@ -411,5 +408,3 @@ RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 
 EXPOSE 2500 2501 2510
 USER node
-
-ENTRYPOINT ["yarn", "node", "/usr/local/bin/pm2-runtime", "pm2.yml"]

@@ -8,12 +8,13 @@ use dpp::consensus::ConsensusError;
 
 use crate::error::Error;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_withdrawal_transition::v0::{
+    MIN_CORE_FEE_PER_BYTE, MIN_WITHDRAWAL_AMOUNT,
+};
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::util::is_fibonacci_number::is_fibonacci_number;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::withdrawal::Pooling;
-
-const MIN_WITHDRAWAL_AMOUNT: u64 = 1000;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_credit_withdrawal) trait IdentityCreditWithdrawalStateTransitionStructureValidationV0 {
     fn validate_base_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error>;
@@ -47,10 +48,20 @@ impl IdentityCreditWithdrawalStateTransitionStructureValidationV0
         }
 
         // validate core_fee is in fibonacci sequence
-
-        if !is_fibonacci_number(self.core_fee_per_byte()) {
+        if !is_fibonacci_number(self.core_fee_per_byte() as u64) {
             result.add_error(InvalidIdentityCreditWithdrawalTransitionCoreFeeError::new(
                 self.core_fee_per_byte(),
+                MIN_CORE_FEE_PER_BYTE,
+            ));
+
+            return Ok(result);
+        }
+
+        // validate core_fee is in not less than minimal relay fee
+        if self.core_fee_per_byte() < MIN_CORE_FEE_PER_BYTE {
+            result.add_error(InvalidIdentityCreditWithdrawalTransitionCoreFeeError::new(
+                self.core_fee_per_byte(),
+                MIN_CORE_FEE_PER_BYTE,
             ));
 
             return Ok(result);

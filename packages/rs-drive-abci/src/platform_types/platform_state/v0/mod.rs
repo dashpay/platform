@@ -17,7 +17,9 @@ use crate::platform_types::masternode::Masternode;
 use crate::platform_types::validator_set::ValidatorSet;
 use dpp::block::block_info::{BlockInfo, DEFAULT_BLOCK_INFO};
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+use dpp::bls_signatures::PublicKey as ThresholdBlsPublicKey;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
+use drive::grovedb::batch::Op;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 
@@ -25,7 +27,7 @@ use std::fmt::{Debug, Formatter};
 #[derive(Clone)]
 pub struct PlatformStateV0 {
     /// Information about the genesis block
-    pub genesis_block_info: Option<BlockInfo>,
+    pub genesis_block_info: Option<BlockInfo>, // TODO: we already have it in epoch 0
     /// Information about the last block
     pub last_committed_block_info: Option<ExtendedBlockInfo>,
     /// Current Version
@@ -41,6 +43,25 @@ pub struct PlatformStateV0 {
     /// all members
     pub validator_sets: IndexMap<QuorumHash, ValidatorSet>,
 
+    /// The current quorums used for validating chain locks (400 60 for mainnet)
+    pub chain_lock_validating_quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+
+    /// The slightly old quorums used for validating chain locks, it's important to keep
+    /// these because validation of signatures happens for the quorums that are 8 blocks before the
+    /// height written in the chain lock  (400 60 for mainnet)
+    /// The first u32 is the core height at which these chain lock validating quorums were last active
+    /// The second u32 is the core height we are changing at.
+    /// The third u32 is the core height the previous chain lock validating quorums became active.
+    /// Keeping all three is important for verifying the chain locks, as we can detect edge cases where we
+    /// must check a chain lock with both the previous height chain lock validating quorums and the
+    /// current ones
+    pub previous_height_chain_lock_validating_quorums: Option<(
+        u32,
+        u32,
+        Option<u32>,
+        BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    )>,
+
     /// current full masternode list
     pub full_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
 
@@ -51,6 +72,7 @@ pub struct PlatformStateV0 {
 impl Debug for PlatformStateV0 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PlatformStateV0")
+            .field("genesis_block_info", &self.genesis_block_info)
             .field("last_committed_block_info", &self.last_committed_block_info)
             .field(
                 "current_protocol_version_in_consensus",
@@ -111,6 +133,15 @@ pub(super) struct PlatformStateForSavingV0 {
     #[bincode(with_serde)]
     pub validator_sets: Vec<(Bytes32, ValidatorSet)>,
 
+    /// The 400 60 quorums used for validating chain locks
+    #[bincode(with_serde)]
+    pub chain_lock_validating_quorums: Vec<(Bytes32, ThresholdBlsPublicKey)>,
+
+    /// The quorums used for validating chain locks from a slightly previous height.
+    #[bincode(with_serde)]
+    pub previous_height_chain_lock_validating_quorums:
+        Option<(u32, u32, Option<u32>, Vec<(Bytes32, ThresholdBlsPublicKey)>)>,
+
     /// current full masternode list
     pub full_masternode_list: BTreeMap<Bytes32, Masternode>,
 
@@ -140,6 +171,31 @@ impl TryFrom<PlatformStateV0> for PlatformStateForSavingV0 {
                 .into_iter()
                 .map(|(k, v)| (k.to_byte_array().into(), v))
                 .collect(),
+            chain_lock_validating_quorums: value
+                .chain_lock_validating_quorums
+                .into_iter()
+                .map(|(k, v)| (k.to_byte_array().into(), v))
+                .collect(),
+            previous_height_chain_lock_validating_quorums: value
+                .previous_height_chain_lock_validating_quorums
+                .map(
+                    |(
+                        previous_height,
+                        change_height,
+                        previous_quorums_change_height,
+                        inner_value,
+                    )| {
+                        (
+                            previous_height,
+                            change_height,
+                            previous_quorums_change_height,
+                            inner_value
+                                .into_iter()
+                                .map(|(k, v)| (k.to_byte_array().into(), v))
+                                .collect(),
+                        )
+                    },
+                ),
             full_masternode_list: value
                 .full_masternode_list
                 .into_iter()
@@ -182,6 +238,31 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
                 .into_iter()
                 .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v))
                 .collect(),
+            chain_lock_validating_quorums: value
+                .chain_lock_validating_quorums
+                .into_iter()
+                .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v))
+                .collect(),
+            previous_height_chain_lock_validating_quorums: value
+                .previous_height_chain_lock_validating_quorums
+                .map(
+                    |(
+                        previous_height,
+                        change_height,
+                        previous_quorums_change_height,
+                        inner_value,
+                    )| {
+                        (
+                            previous_height,
+                            change_height,
+                            previous_quorums_change_height,
+                            inner_value
+                                .into_iter()
+                                .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v))
+                                .collect(),
+                        )
+                    },
+                ),
             full_masternode_list: value
                 .full_masternode_list
                 .into_iter()
@@ -209,6 +290,8 @@ impl PlatformStateV0 {
             current_validator_set_quorum_hash: QuorumHash::all_zeros(),
             next_validator_set_quorum_hash: None,
             validator_sets: Default::default(),
+            chain_lock_validating_quorums: Default::default(),
+            previous_height_chain_lock_validating_quorums: None,
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),
             genesis_block_info: None,
@@ -219,27 +302,27 @@ impl PlatformStateV0 {
 /// Platform state methods introduced in version 0 of Platform State Struct
 pub trait PlatformStateV0Methods {
     /// The height of the platform, only committed blocks increase height
-    fn height(&self) -> u64;
+    fn last_committed_height(&self) -> u64;
     /// The height of the platform, only committed blocks increase height
-    fn known_height_or(&self, default: u64) -> u64;
+    fn last_committed_known_height_or(&self, default: u64) -> u64;
     /// The height of the core blockchain that Platform knows about through chain locks
-    fn core_height(&self) -> u32;
+    fn last_committed_core_height(&self) -> u32;
     /// The height of the core blockchain that Platform knows about through chain locks
-    fn known_core_height_or(&self, default: u32) -> u32;
+    fn last_committed_known_core_height_or(&self, default: u32) -> u32;
     /// The last block time in milliseconds
-    fn last_block_time_ms(&self) -> Option<u64>;
+    fn last_committed_block_time_ms(&self) -> Option<u64>;
     /// The last quorum hash
-    fn last_quorum_hash(&self) -> [u8; 32];
+    fn last_committed_quorum_hash(&self) -> [u8; 32];
     /// The last block signature
-    fn last_block_signature(&self) -> [u8; 96];
+    fn last_committed_block_signature(&self) -> [u8; 96];
     /// The last block app hash
-    fn last_block_app_hash(&self) -> Option<[u8; 32]>;
+    fn last_committed_block_app_hash(&self) -> Option<[u8; 32]>;
     /// The last block height or 0 for genesis
-    fn last_block_height(&self) -> u64;
+    fn last_committed_block_height(&self) -> u64;
     /// The last block round
-    fn last_block_round(&self) -> u32;
+    fn last_committed_block_round(&self) -> u32;
     /// The current epoch
-    fn epoch(&self) -> Epoch;
+    fn last_committed_block_epoch(&self) -> Epoch;
     /// HPMN list len
     fn hpmn_list_len(&self) -> usize;
     /// Get the current quorum
@@ -263,6 +346,9 @@ pub trait PlatformStateV0Methods {
 
     /// Returns the current validator sets.
     fn validator_sets(&self) -> &IndexMap<QuorumHash, ValidatorSet>;
+
+    /// Returns the current 400 60 quorums used to validate chain locks.
+    fn chain_lock_validating_quorums(&self) -> &BTreeMap<QuorumHash, ThresholdBlsPublicKey>;
 
     /// Returns the full list of masternodes.
     fn full_masternode_list(&self) -> &BTreeMap<ProTxHash, MasternodeListItem>;
@@ -294,6 +380,27 @@ pub trait PlatformStateV0Methods {
     /// Sets the current validator sets.
     fn set_validator_sets(&mut self, sets: IndexMap<QuorumHash, ValidatorSet>);
 
+    /// Sets the current chain lock validating quorums.
+    fn set_chain_lock_validating_quorums(
+        &mut self,
+        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    );
+
+    /// Sets the current chain lock validating quorums and returns the old value.
+    fn replace_chain_lock_validating_quorums(
+        &mut self,
+        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    ) -> BTreeMap<QuorumHash, ThresholdBlsPublicKey>;
+
+    /// Sets the previous chain lock validating quorums.
+    fn set_previous_chain_lock_validating_quorums(
+        &mut self,
+        previous_core_height: u32,
+        change_core_height: u32,
+        previous_quorums_change_height: Option<u32>,
+        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    );
+
     /// Sets the full masternode list.
     fn set_full_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>);
 
@@ -320,6 +427,21 @@ pub trait PlatformStateV0Methods {
     /// Returns a mutable reference to the current validator sets.
     fn validator_sets_mut(&mut self) -> &mut IndexMap<QuorumHash, ValidatorSet>;
 
+    /// Returns a mutable reference to the current chain lock validating quorums.
+    fn chain_lock_validating_quorums_mut(
+        &mut self,
+    ) -> &mut BTreeMap<QuorumHash, ThresholdBlsPublicKey>;
+
+    /// Returns a mutable reference to the previous chain lock validating quorums.
+    fn previous_height_chain_lock_validating_quorums_mut(
+        &mut self,
+    ) -> &mut Option<(
+        u32,
+        u32,
+        Option<u32>,
+        BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    )>;
+
     /// Returns a mutable reference to the full masternode list.
     fn full_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem>;
 
@@ -327,14 +449,24 @@ pub trait PlatformStateV0Methods {
     fn hpmn_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem>;
 
     /// The epoch ref
-    fn epoch_ref(&self) -> &Epoch;
+    fn last_committed_block_epoch_ref(&self) -> &Epoch;
     /// The last block id hash
-    fn last_block_id_hash(&self) -> [u8; 32];
+    fn last_committed_block_id_hash(&self) -> [u8; 32];
+
+    /// The previous height chain lock validating quorums
+    fn previous_height_chain_lock_validating_quorums(
+        &self,
+    ) -> Option<&(
+        u32,
+        u32,
+        Option<u32>,
+        BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    )>;
 }
 
 impl PlatformStateV0Methods for PlatformStateV0 {
     /// The height of the platform, only committed blocks increase height
-    fn height(&self) -> u64 {
+    fn last_committed_height(&self) -> u64 {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| block_info.basic_info().height)
@@ -342,7 +474,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     }
 
     /// The height of the platform, only committed blocks increase height
-    fn known_height_or(&self, default: u64) -> u64 {
+    fn last_committed_known_height_or(&self, default: u64) -> u64 {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| block_info.basic_info().height)
@@ -350,7 +482,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     }
 
     /// The height of the core blockchain that Platform knows about through chain locks
-    fn core_height(&self) -> u32 {
+    fn last_committed_core_height(&self) -> u32 {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| block_info.basic_info().core_height)
@@ -363,7 +495,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     }
 
     /// The height of the core blockchain that Platform knows about through chain locks
-    fn known_core_height_or(&self, default: u32) -> u32 {
+    fn last_committed_known_core_height_or(&self, default: u32) -> u32 {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| block_info.basic_info().core_height)
@@ -376,14 +508,14 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     }
 
     /// The last block time in milliseconds
-    fn last_block_time_ms(&self) -> Option<u64> {
+    fn last_committed_block_time_ms(&self) -> Option<u64> {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| block_info.basic_info().time_ms)
     }
 
     /// The last quorum hash
-    fn last_quorum_hash(&self) -> [u8; 32] {
+    fn last_committed_quorum_hash(&self) -> [u8; 32] {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| *block_info.quorum_hash())
@@ -391,7 +523,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     }
 
     /// The last block id hash
-    fn last_block_id_hash(&self) -> [u8; 32] {
+    fn last_committed_block_id_hash(&self) -> [u8; 32] {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| *block_info.block_id_hash())
@@ -399,7 +531,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     }
 
     /// The last block signature
-    fn last_block_signature(&self) -> [u8; 96] {
+    fn last_committed_block_signature(&self) -> [u8; 96] {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| *block_info.signature())
@@ -407,14 +539,14 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     }
 
     /// The last block app hash
-    fn last_block_app_hash(&self) -> Option<[u8; 32]> {
+    fn last_committed_block_app_hash(&self) -> Option<[u8; 32]> {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| *block_info.app_hash())
     }
 
     /// The last block height or 0 for genesis
-    fn last_block_height(&self) -> u64 {
+    fn last_committed_block_height(&self) -> u64 {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| block_info.basic_info().height)
@@ -422,7 +554,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     }
 
     /// The last block round
-    fn last_block_round(&self) -> u32 {
+    fn last_committed_block_round(&self) -> u32 {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| block_info.round())
@@ -430,14 +562,14 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     }
 
     /// The current epoch
-    fn epoch(&self) -> Epoch {
+    fn last_committed_block_epoch(&self) -> Epoch {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| block_info.basic_info().epoch)
             .unwrap_or_default()
     }
 
-    fn epoch_ref(&self) -> &Epoch {
+    fn last_committed_block_epoch_ref(&self) -> &Epoch {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| &block_info.basic_info().epoch)
@@ -486,6 +618,11 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     /// Returns the current validator sets.
     fn validator_sets(&self) -> &IndexMap<QuorumHash, ValidatorSet> {
         &self.validator_sets
+    }
+
+    /// Returns the current 400 60 quorums used to validate chain locks.
+    fn chain_lock_validating_quorums(&self) -> &BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
+        &self.chain_lock_validating_quorums
     }
 
     /// Returns the full list of masternodes.
@@ -538,6 +675,38 @@ impl PlatformStateV0Methods for PlatformStateV0 {
         self.validator_sets = sets;
     }
 
+    /// Sets the current chain lock validating quorums.
+    fn set_chain_lock_validating_quorums(
+        &mut self,
+        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    ) {
+        self.chain_lock_validating_quorums = quorums;
+    }
+
+    /// Swaps the current chain lock validating quorums and returns the old one
+    fn replace_chain_lock_validating_quorums(
+        &mut self,
+        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    ) -> BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
+        std::mem::replace(&mut self.chain_lock_validating_quorums, quorums)
+    }
+
+    /// Sets the previous chain lock validating quorums.
+    fn set_previous_chain_lock_validating_quorums(
+        &mut self,
+        previous_core_height: u32,
+        change_core_height: u32,
+        previous_quorums_change_height: Option<u32>,
+        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    ) {
+        self.previous_height_chain_lock_validating_quorums = Some((
+            previous_core_height,
+            change_core_height,
+            previous_quorums_change_height,
+            quorums,
+        ));
+    }
+
     /// Sets the full masternode list.
     fn set_full_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>) {
         self.full_masternode_list = list;
@@ -575,6 +744,34 @@ impl PlatformStateV0Methods for PlatformStateV0 {
 
     fn validator_sets_mut(&mut self) -> &mut IndexMap<QuorumHash, ValidatorSet> {
         &mut self.validator_sets
+    }
+
+    fn chain_lock_validating_quorums_mut(
+        &mut self,
+    ) -> &mut BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
+        &mut self.chain_lock_validating_quorums
+    }
+
+    fn previous_height_chain_lock_validating_quorums(
+        &self,
+    ) -> Option<&(
+        u32,
+        u32,
+        Option<u32>,
+        BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    )> {
+        self.previous_height_chain_lock_validating_quorums.as_ref()
+    }
+
+    fn previous_height_chain_lock_validating_quorums_mut(
+        &mut self,
+    ) -> &mut Option<(
+        u32,
+        u32,
+        Option<u32>,
+        BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    )> {
+        &mut self.previous_height_chain_lock_validating_quorums
     }
 
     fn full_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem> {

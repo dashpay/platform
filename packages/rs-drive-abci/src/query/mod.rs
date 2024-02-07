@@ -186,7 +186,7 @@ mod tests {
         use dapi_grpc::platform::v0::{
             get_identity_request, get_identity_response, GetIdentityRequest, GetIdentityResponse,
         };
-        use prost::Message;
+        use dapi_grpc::Message;
 
         const QUERY_PATH: &str = "/identity";
 
@@ -271,7 +271,7 @@ mod tests {
             get_identities_request, get_identities_response, GetIdentitiesRequest,
             GetIdentitiesResponse,
         };
-        use prost::Message;
+        use dapi_grpc::Message;
 
         const QUERY_PATH: &str = "/identities";
 
@@ -375,7 +375,7 @@ mod tests {
         use dapi_grpc::platform::v0::{
             get_identity_balance_response, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
         };
-        use prost::Message;
+        use dapi_grpc::Message;
 
         const QUERY_PATH: &str = "/identity/balance";
 
@@ -466,7 +466,7 @@ mod tests {
             get_identity_balance_and_revision_response, GetIdentityBalanceAndRevisionRequest,
             GetIdentityBalanceAndRevisionResponse,
         };
-        use prost::Message;
+        use dapi_grpc::Message;
 
         const QUERY_PATH: &str = "/identity/balanceAndRevision";
 
@@ -553,7 +553,7 @@ mod tests {
             GetIdentityKeysResponse, KeyRequestType, SearchKey, SecurityLevelMap,
         };
         use drive::error::query::QuerySyntaxError;
-        use prost::Message;
+        use dapi_grpc::Message;
 
         const QUERY_PATH: &str = "/identity/keys";
 
@@ -834,7 +834,7 @@ mod tests {
         use dapi_grpc::platform::v0::{
             get_data_contract_response, GetDataContractRequest, GetDataContractResponse,
         };
-        use prost::Message;
+        use dapi_grpc::Message;
 
         const QUERY_PATH: &str = "/dataContract";
 
@@ -921,7 +921,7 @@ mod tests {
         use dapi_grpc::platform::v0::{
             get_data_contracts_response, GetDataContractsRequest, GetDataContractsResponse,
         };
-        use prost::Message;
+        use dapi_grpc::Message;
 
         const QUERY_PATH: &str = "/dataContracts";
 
@@ -1021,7 +1021,7 @@ mod tests {
             get_data_contract_history_response, GetDataContractHistoryRequest,
             GetDataContractHistoryResponse,
         };
-        use prost::Message;
+        use dapi_grpc::Message;
 
         const QUERY_PATH: &str = "/dataContractHistory";
 
@@ -1174,7 +1174,7 @@ mod tests {
         use dpp::platform_value::string_encoding::Encoding;
         use dpp::tests::fixtures::get_data_contract_fixture;
         use drive::error::query::QuerySyntaxError;
-        use prost::Message;
+        use dapi_grpc::Message;
 
         const QUERY_PATH: &str = "/documents";
 
@@ -1533,7 +1533,7 @@ mod tests {
             get_identity_by_public_key_hash_response, GetIdentityByPublicKeyHashRequest,
             GetIdentityByPublicKeyHashResponse,
         };
-        use prost::Message;
+        use dapi_grpc::Message;
 
         const PATH: &str = "/identity/by-public-key-hash";
 
@@ -1621,7 +1621,7 @@ mod tests {
             get_identities_by_public_key_hashes_response, GetIdentitiesByPublicKeyHashesRequest,
             GetIdentitiesByPublicKeyHashesResponse,
         };
-        use prost::Message;
+        use dapi_grpc::Message;
 
         const PATH: &str = "/identities/by-public-key-hash";
 
@@ -1713,7 +1713,7 @@ mod tests {
         use dapi_grpc::platform::v0::get_proofs_request::{GetProofsRequestV0, Version};
         use dapi_grpc::platform::v0::{GetProofsRequest, GetProofsResponse};
         use dapi_grpc::platform::VersionedGrpcResponse;
-        use prost::Message;
+        use dapi_grpc::Message;
 
         const PATH: &str = "/proofs";
 
@@ -1885,7 +1885,7 @@ mod tests {
         use drive::grovedb::{Element, PathQuery, Query, QueryItem};
         use drive::query::GroveDb;
         use integer_encoding::VarInt;
-        use prost::Message;
+        use dapi_grpc::Message;
         use rand::rngs::StdRng;
         use rand::{Rng, SeedableRng};
         use std::ops::RangeFull;
@@ -2248,7 +2248,7 @@ mod tests {
         use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery};
         use drive::query::GroveDb;
         use integer_encoding::VarInt;
-        use prost::Message;
+        use dapi_grpc::Message;
         use rand::rngs::StdRng;
         use rand::{Rng, SeedableRng};
 
@@ -2624,7 +2624,7 @@ mod tests {
         use dapi_grpc::platform::v0::{
             get_epochs_info_response, GetEpochsInfoRequest, GetEpochsInfoResponse,
         };
-        use prost::Message;
+        use dapi_grpc::Message;
 
         const PATH: &str = "/epochInfos";
 

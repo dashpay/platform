@@ -340,21 +340,24 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
                 .purpose_map
                 .iter()
                 .map(|(k, v)| {
-                    let v=  v.security_level_map
+                     let v = v.security_level_map
                             .iter()
                             .map(|(level, kind)| {
-                                let kt = match GrpcKeyKind::try_from(*kind).map_err(|e| Error::RequestDecodeError {
-                                    error: format!("invalid key kind: {}", e),
-                                })? {
-                                    GrpcKeyKind::CurrentKeyOfKindRequest => {
-                                        KeyKindRequestType::CurrentKeyOfKindRequest
+                                let kt = match GrpcKeyKind::from_i32(*kind) {
+                                    Some(GrpcKeyKind::CurrentKeyOfKindRequest) => {
+                                        Ok(KeyKindRequestType::CurrentKeyOfKindRequest)
                                     }
-                                    GrpcKeyKind::AllKeysOfKindRequest => {
-                                        KeyKindRequestType::AllKeysOfKindRequest
+                                    Some(GrpcKeyKind::AllKeysOfKindRequest) => {
+                                        Ok(KeyKindRequestType::AllKeysOfKindRequest)
                                     }
+                                    None => Err(Error::RequestDecodeError {
+                                        error: format!("missing requested key type: {}", *kind),
+                                    }),
                                 };
-
-                                Ok((*level as u8, kt))
+                                match kt  {
+                                    Err(e) => Err(e),
+                                    Ok(d) => Ok((*level as u8, d))
+                                }
                             })
                             .collect::<Result<BTreeMap<SecurityLevelU8,KeyKindRequestType>,Error>>();
 

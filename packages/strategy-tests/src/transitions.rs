@@ -21,7 +21,9 @@ use dpp::state_transition::identity_create_transition::methods::IdentityCreateTr
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 
-use dpp::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+use dpp::state_transition::identity_credit_withdrawal_transition::v0::{
+    IdentityCreditWithdrawalTransitionV0, MIN_CORE_FEE_PER_BYTE,
+};
 
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
@@ -458,7 +460,7 @@ pub fn create_identity_withdrawal_transition(
     let mut withdrawal: StateTransition = IdentityCreditWithdrawalTransitionV0 {
         identity_id: identity.id(),
         amount: 100000000, // 0.001 Dash
-        core_fee_per_byte: 1,
+        core_fee_per_byte: MIN_CORE_FEE_PER_BYTE,
         pooling: Pooling::Never,
         output_script: CoreScript::random_p2sh(rng),
         revision: identity.revision(),

@@ -31,6 +31,13 @@ pub struct DriveMethodVersions {
     pub batch_operations: DriveBatchOperationsMethodVersion,
     pub prove: DriveProveMethodVersions,
     pub state_transitions: DriveStateTransitionMethodVersions,
+    pub platform_state: DrivePlatformStateMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DrivePlatformStateMethodVersions {
+    pub fetch_platform_state_bytes: FeatureVersion,
+    pub store_platform_state_bytes: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -217,8 +224,6 @@ pub struct DriveBatchOperationsMethodVersion {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveSystemProtocolVersionMethodVersions {
-    pub fetch_current_protocol_version: FeatureVersion,
-    pub set_current_protocol_version_operations: FeatureVersion,
     pub fetch_next_protocol_version: FeatureVersion,
     pub set_next_protocol_version_operations: FeatureVersion,
 }
@@ -417,6 +422,37 @@ pub struct DriveIdentityMethodVersions {
     pub insert: DriveIdentityInsertMethodVersions,
     pub contract_info: DriveIdentityContractInfoMethodVersions,
     pub cost_estimation: DriveIdentityCostEstimationMethodVersions,
+    pub withdrawals: DriveIdentityWithdrawalMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityWithdrawalMethodVersions {
+    pub document: DriveIdentityWithdrawalDocumentMethodVersions,
+    pub transaction: DriveIdentityWithdrawalTransactionMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityWithdrawalDocumentMethodVersions {
+    pub fetch_oldest_withdrawal_documents_by_status: FeatureVersion,
+    pub find_up_to_100_withdrawal_documents_by_status_and_transaction_indices: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityWithdrawalTransactionMethodVersions {
+    pub index: DriveIdentityWithdrawalTransactionIndexMethodVersions,
+    pub queue: DriveIdentityWithdrawalTransactionQueueMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityWithdrawalTransactionIndexMethodVersions {
+    pub fetch_next_withdrawal_transaction_index: FeatureVersion,
+    pub add_update_next_withdrawal_transaction_index_operation: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityWithdrawalTransactionQueueMethodVersions {
+    pub add_enqueue_untied_withdrawal_transaction_operations: FeatureVersion,
+    pub dequeue_untied_withdrawal_transactions: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

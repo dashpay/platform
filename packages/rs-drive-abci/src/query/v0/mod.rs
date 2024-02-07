@@ -81,7 +81,7 @@ mod test {
         use dpp::validation::ValidationResult;
         use dpp::version::PlatformVersion;
         use drive::drive::Drive;
-        use prost::Message;
+        use dapi_grpc::Message;
 
         fn default_request_v0() -> GetDataContractHistoryRequestV0 {
             GetDataContractHistoryRequestV0 {

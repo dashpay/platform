@@ -10,7 +10,8 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::system_data_contracts::feature_flags_contract;
-use dpp::system_data_contracts::feature_flags_contract::document_types::update_consensus_params::properties::PROPERTY_ENABLE_AT_HEIGHT;
+use dpp::system_data_contracts::feature_flags_contract::v1::document_types::update_consensus_params::properties
+::PROPERTY_ENABLE_AT_HEIGHT;
 use dpp::version::PlatformVersion;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -60,7 +61,7 @@ pub fn create_feature_flag_data_trigger_v0(
         )))
     })?;
 
-    let latest_block_height = context.platform.state.height();
+    let latest_block_height = context.platform.state.last_committed_height();
 
     if enable_at_height < latest_block_height {
         let err = DataTriggerConditionError::new(

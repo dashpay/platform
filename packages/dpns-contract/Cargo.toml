@@ -1,11 +1,13 @@
 [package]
 name = "dpns-contract"
 description = "DPNS data contract schema and tools"
-version = "0.25.21"
+version = "1.0.0-dev.3"
 edition = "2021"
 rust-version = "1.73"
 license = "MIT"
 
 [dependencies]
+thiserror = "1.0.56"
+platform-version = { path = "../rs-platform-version" }
 serde_json = { version = "1.0" }
 platform-value = { path = "../rs-platform-value" }

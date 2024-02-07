@@ -6,7 +6,7 @@ mod online {
         wait_for_state_transition_result_request::WaitForStateTransitionResultRequestV0,
         WaitForStateTransitionResultRequest,
     };
-    use dash_platform_sdk::Sdk;
+    use rs_sdk::Sdk;
     use rs_dapi_client::{DapiRequest, RequestSettings};
     use std::time::Duration;
 

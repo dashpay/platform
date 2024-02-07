@@ -9,7 +9,7 @@ use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 
 use dpp::version::PlatformVersion;
-use prost::Message;
+use dapi_grpc::Message;
 
 mod v0;
 

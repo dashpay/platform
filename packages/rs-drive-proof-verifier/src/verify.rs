@@ -3,7 +3,7 @@ use dpp::bls_signatures;
 pub use drive::drive::verify::RootHash;
 use tenderdash_abci::{
     proto::types::{CanonicalVote, SignedMsgType, StateId},
-    signatures::{SignBytes, SignDigest},
+    signatures::{Hashable, Signable},
 };
 
 use crate::Error;
@@ -61,7 +61,7 @@ pub(crate) fn verify_tenderdash_proof(
     };
 
     let state_id_hash = state_id
-        .sha256(&chain_id, mtd.height as i64, proof.round as i32)
+        .calculate_msg_hash(&chain_id, mtd.height as i64, proof.round as i32)
         .expect("failed to calculate state id hash");
 
     let commit = CanonicalVote {

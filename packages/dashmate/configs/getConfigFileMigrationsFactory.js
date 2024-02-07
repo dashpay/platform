@@ -23,6 +23,22 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
     const base = defaultConfigs.get('base');
     const testnet = defaultConfigs.get('testnet');
 
+    /**
+     * @param {string} name
+     * @param {string} group
+     * @return {Config}
+     */
+    function getDefaultConfigByNameOrGroup(name, group) {
+      let baseConfigName = name;
+      if (group !== null && defaultConfigs.has(group)) {
+        baseConfigName = group;
+      } else if (!defaultConfigs.has(baseConfigName)) {
+        baseConfigName = 'base';
+      }
+
+      return defaultConfigs.get(baseConfigName);
+    }
+
     return {
       '0.24.0': (configFile) => {
         Object.entries(configFile.configs)
@@ -402,6 +418,37 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.platform.drive.tenderdash.mempool = base.get('platform.drive.tenderdash.mempool');
             options.platform.drive.tenderdash.consensus.peer = base.get('platform.drive.tenderdash.consensus.peer');
             options.platform.drive.tenderdash.consensus.unsafeOverride = base.get('platform.drive.tenderdash.consensus.unsafeOverride');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.2': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (defaultConfigs.has(name)) {
+              options.platform.drive.tenderdash.genesis = defaultConfigs.get(name).get('platform.drive.tenderdash.genesis');
+            }
+            options.platform.dapi.api.docker.deploy = base.get('platform.dapi.api.docker.deploy');
+
+            let baseConfigName = name;
+            if (options.group !== null && defaultConfigs.has(options.group)) {
+              baseConfigName = options.group;
+            } else if (!defaultConfigs.has(baseConfigName)) {
+              baseConfigName = 'testnet';
+            }
+
+            options.platform.drive.abci.chainLock = defaultConfigs.get(baseConfigName).get('platform.drive.abci.chainLock');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.4': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            options.core.docker.image = defaultConfig.get('core.docker.image');
+
+            options.platform.drive.tenderdash.docker.image = defaultConfig.get('platform.drive.tenderdash.docker.image');
           });
 
         return configFile;

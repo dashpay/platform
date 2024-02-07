@@ -26,6 +26,7 @@ describe('DAPIClient', () => {
         blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
         loggerOptions: {
           identifier: '',
+          level: undefined,
         },
       });
 
@@ -51,6 +52,7 @@ describe('DAPIClient', () => {
         blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
         loggerOptions: {
           identifier: '',
+          level: undefined,
         },
       });
 
@@ -82,6 +84,7 @@ describe('DAPIClient', () => {
         blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
         loggerOptions: {
           identifier: '',
+          level: undefined,
         },
       });
 
@@ -109,6 +112,7 @@ describe('DAPIClient', () => {
         blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
         loggerOptions: {
           identifier: '',
+          level: undefined,
         },
       });
 

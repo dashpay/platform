@@ -137,12 +137,12 @@ impl Config {
     /// new test vectors during execution
     /// * `offline-testing` is set - use mock implementation and
     /// load existing test vectors from disk
-    pub async fn setup_api(&self) -> Arc<dash_platform_sdk::Sdk> {
+    pub async fn setup_api(&self) -> Arc<rs_sdk::Sdk> {
         // offline testing takes precedence over network testing
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
             // Dump all traffic to disk
-            let builder = dash_platform_sdk::SdkBuilder::new(self.address_list()).with_core(
+            let builder = rs_sdk::SdkBuilder::new(self.address_list()).with_core(
                 &self.platform_host,
                 self.core_port,
                 &self.core_user,
@@ -158,7 +158,7 @@ impl Config {
         // offline testing takes precedence over network testing
         #[cfg(feature = "offline-testing")]
         let sdk = {
-            let mock_sdk = dash_platform_sdk::SdkBuilder::new_mock()
+            let mock_sdk = rs_sdk::SdkBuilder::new_mock()
                 .build()
                 .expect("initialize api");
 
@@ -176,15 +176,11 @@ impl Config {
     }
 
     fn default_identity_id() -> Identifier {
-        data_contracts::SystemDataContract::DPNS
-            .source()
-            .expect("data contract source")
-            .owner_id_bytes
-            .into()
+        data_contracts::dpns_contract::OWNER_ID_BYTES.into()
     }
 
     fn default_data_contract_id() -> Identifier {
-        data_contracts::SystemDataContract::DPNS.id()
+        data_contracts::dpns_contract::ID_BYTES.into()
     }
 
     fn default_document_type_name() -> String {

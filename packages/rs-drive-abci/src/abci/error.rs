@@ -1,4 +1,6 @@
 use dpp::bls_signatures::BlsError;
+use tenderdash_abci::proto::abci::ExtendVoteExtension;
+use tenderdash_abci::proto::types::VoteExtension;
 
 // @append_only
 /// Error returned within ABCI server
@@ -10,10 +12,13 @@ pub enum AbciError {
     /// Request does not match currently processed block
     #[error("request does not match current block: {0}")]
     RequestForWrongBlockReceived(String),
-    /// Withdrawal transactions mismatch
+    /// Withdrawal vote extensions mismatch
     #[error("vote extensions mismatch: got {got:?}, expected {expected:?}")]
     #[allow(missing_docs)]
-    VoteExtensionMismatchReceived { got: String, expected: String },
+    VoteExtensionMismatchReceived {
+        got: Vec<VoteExtension>,
+        expected: Vec<ExtendVoteExtension>,
+    },
     /// Vote extensions signature is invalid
     #[error("one of vote extension signatures is invalid")]
     VoteExtensionsSignatureInvalid,
@@ -44,6 +49,14 @@ pub enum AbciError {
     /// Bad commit signature from Tenderdash
     #[error("bad commit signature: {0}")]
     BadCommitSignature(String),
+
+    /// The chain lock received was invalid
+    #[error("invalid chain lock: {0}")]
+    InvalidChainLock(String),
+
+    /// The chain lock received was invalid
+    #[error("chain lock is for a block not known by core: {0}")]
+    ChainLockedBlockNotKnownByCore(String),
 
     /// Error returned by Tenderdash-abci library
     #[error("tenderdash: {0}")]

@@ -21,6 +21,7 @@ use dpp::version::PlatformVersion;
 use drive::drive::document::query::{QueryDocumentsOutcomeV0Methods};
 use std::collections::BTreeMap;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contracts::SystemDataContract;
 use crate::execution::platform_events::fee_pool_outwards_distribution::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
 
 impl<C> Platform<C> {
@@ -31,14 +32,15 @@ impl<C> Platform<C> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
-        let document_type = self
-            .drive
-            .system_contracts
-            .masternode_rewards
-            .document_type_for_name(MN_REWARD_SHARES_DOCUMENT_TYPE)?;
+        let cache = self.drive.cache.read().unwrap();
+
+        let masternode_rewards_contract = &cache.system_data_contracts.masternode_reward_shares;
+
+        let document_type =
+            masternode_rewards_contract.document_type_for_name(MN_REWARD_SHARES_DOCUMENT_TYPE)?;
 
         let drive_query = DriveQuery {
-            contract: &self.drive.system_contracts.masternode_rewards,
+            contract: masternode_rewards_contract,
             document_type,
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,

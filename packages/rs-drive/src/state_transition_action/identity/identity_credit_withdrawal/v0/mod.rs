@@ -16,4 +16,6 @@ pub struct IdentityCreditWithdrawalTransitionActionV0 {
     pub revision: Revision,
     /// prepared withdrawal document
     pub prepared_withdrawal_document: Document,
+    /// amount
+    pub amount: u64,
 }

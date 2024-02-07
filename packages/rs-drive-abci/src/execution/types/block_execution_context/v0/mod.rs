@@ -31,12 +31,13 @@ use crate::execution::types::block_state_info::BlockStateInfo;
 
 use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use dashcore_rpc::dashcore::Txid;
 use std::collections::BTreeMap;
 use tenderdash_abci::proto::abci::ResponsePrepareProposal;
 
 /// V0 of the Block execution context
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockExecutionContextV0 {
     /// Block info
     pub block_state_info: BlockStateInfo,
@@ -44,8 +45,8 @@ pub struct BlockExecutionContextV0 {
     pub epoch_info: EpochInfo,
     /// Total hpmn count
     pub hpmn_count: u32,
-    /// Current withdrawal transactions hash -> Transaction
-    pub withdrawal_transactions: BTreeMap<Txid, Vec<u8>>,
+    /// Unsigned withdrawal transactions to be available for extend and verify vote handlers
+    pub unsigned_withdrawal_transactions: UnsignedWithdrawalTxs,
     /// Block state
     pub block_platform_state: PlatformState,
     /// The response prepare proposal if proposed by us
@@ -63,7 +64,7 @@ pub trait BlockExecutionContextV0Getters {
     fn hpmn_count(&self) -> u32;
 
     /// Returns a reference of the withdrawal_transactions field.
-    fn withdrawal_transactions(&self) -> &BTreeMap<Txid, Vec<u8>>;
+    fn unsigned_withdrawal_transactions(&self) -> &UnsignedWithdrawalTxs;
 
     /// Returns a reference of the block_platform_state field.
     fn block_platform_state(&self) -> &PlatformState;
@@ -84,7 +85,7 @@ pub trait BlockExecutionContextV0Setters {
     fn set_hpmn_count(&mut self, count: u32);
 
     /// Sets the withdrawal_transactions field.
-    fn set_withdrawal_transactions(&mut self, transactions: BTreeMap<Txid, Vec<u8>>);
+    fn set_unsigned_withdrawal_transactions(&mut self, transactions: UnsignedWithdrawalTxs);
 
     /// Sets the block_platform_state field.
     fn set_block_platform_state(&mut self, state: PlatformState);
@@ -101,14 +102,14 @@ pub trait BlockExecutionContextV0MutableGetters {
     /// Returns a mutable reference to the epoch_info field.
     fn epoch_info_mut(&mut self) -> &mut EpochInfo;
 
-    /// Returns a mutable reference to the withdrawal_transactions field.
-    fn withdrawal_transactions_mut(&mut self) -> &mut BTreeMap<Txid, Vec<u8>>;
-
     /// Returns a mutable reference to the block_platform_state field.
     fn block_platform_state_mut(&mut self) -> &mut PlatformState;
 
     /// Returns a mutable reference to the proposer_results field.
     fn proposer_results_mut(&mut self) -> Option<&mut ResponsePrepareProposal>;
+
+    /// Returns a mut reference of the withdrawal_transactions field.
+    fn unsigned_withdrawal_transactions_mut(&mut self) -> &mut UnsignedWithdrawalTxs;
 }
 
 /// A trait defining methods for interacting with a BlockExecutionContextV0.
@@ -118,9 +119,6 @@ pub trait BlockExecutionContextV0OwnedGetters {
 
     /// Consumes the BlockExecutionContextV0 and returns the epoch_info field.
     fn epoch_info_owned(self) -> EpochInfo;
-
-    /// Consumes the BlockExecutionContextV0 and returns the withdrawal_transactions field.
-    fn withdrawal_transactions_owned(self) -> BTreeMap<Txid, Vec<u8>>;
 
     /// Consumes the BlockExecutionContextV0 and returns the block_platform_state field.
     fn block_platform_state_owned(self) -> PlatformState;
@@ -145,9 +143,9 @@ impl BlockExecutionContextV0Getters for BlockExecutionContextV0 {
         self.hpmn_count
     }
 
-    /// Returns a reference to the withdrawal_transactions field.
-    fn withdrawal_transactions(&self) -> &BTreeMap<Txid, Vec<u8>> {
-        &self.withdrawal_transactions
+    /// Returns a reference to the unsigned withdrawal transactions
+    fn unsigned_withdrawal_transactions(&self) -> &UnsignedWithdrawalTxs {
+        &self.unsigned_withdrawal_transactions
     }
 
     /// Returns a reference to the block_platform_state field.
@@ -175,8 +173,8 @@ impl BlockExecutionContextV0Setters for BlockExecutionContextV0 {
         self.hpmn_count = count;
     }
     /// Sets the withdrawal_transactions field.
-    fn set_withdrawal_transactions(&mut self, transactions: BTreeMap<Txid, Vec<u8>>) {
-        self.withdrawal_transactions = transactions;
+    fn set_unsigned_withdrawal_transactions(&mut self, transactions: UnsignedWithdrawalTxs) {
+        self.unsigned_withdrawal_transactions = transactions;
     }
     /// Sets the block_platform_state field.
     fn set_block_platform_state(&mut self, state: PlatformState) {
@@ -199,11 +197,6 @@ impl BlockExecutionContextV0MutableGetters for BlockExecutionContextV0 {
         &mut self.epoch_info
     }
 
-    /// Returns a mutable reference to the withdrawal_transactions field.
-    fn withdrawal_transactions_mut(&mut self) -> &mut BTreeMap<Txid, Vec<u8>> {
-        &mut self.withdrawal_transactions
-    }
-
     /// Returns a mutable reference to the block_platform_state field.
     fn block_platform_state_mut(&mut self) -> &mut PlatformState {
         &mut self.block_platform_state
@@ -212,6 +205,10 @@ impl BlockExecutionContextV0MutableGetters for BlockExecutionContextV0 {
     /// Returns a mutable reference to the proposer_results field.
     fn proposer_results_mut(&mut self) -> Option<&mut ResponsePrepareProposal> {
         self.proposer_results.as_mut()
+    }
+
+    fn unsigned_withdrawal_transactions_mut(&mut self) -> &mut UnsignedWithdrawalTxs {
+        &mut self.unsigned_withdrawal_transactions
     }
 }
 
@@ -224,11 +221,6 @@ impl BlockExecutionContextV0OwnedGetters for BlockExecutionContextV0 {
     /// Consumes the object and returns the owned `EpochInfo`.
     fn epoch_info_owned(self) -> EpochInfo {
         self.epoch_info
-    }
-
-    /// Consumes the object and returns the owned `BTreeMap` of withdrawal transactions.
-    fn withdrawal_transactions_owned(self) -> BTreeMap<Txid, Vec<u8>> {
-        self.withdrawal_transactions
     }
 
     /// Consumes the object and returns the owned `PlatformState`.
