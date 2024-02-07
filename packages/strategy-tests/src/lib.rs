@@ -24,9 +24,9 @@ use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
-use rand::prelude::{IteratorRandom, StdRng};
+use rand::prelude::StdRng;
 use rand::Rng;
-use tracing::{error, info};
+use tracing::error;
 use std::collections::{BTreeMap, HashSet, HashMap};
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -98,6 +98,7 @@ pub struct Strategy {
 #[derive(Clone, Debug, PartialEq)]
 pub struct StrategyConfig {
     pub start_block_height: u64,
+    pub number_of_blocks: u64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -271,65 +272,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
     }
 }
 
-impl Strategy {
-    // // REMOVED - Document operations should only use known_contracts
-    // // Returns a vector of state transitions for registering the contracts used for Document ops.
-    // // For every Document op in the strategy, a new contract is registered on initial block.
-    // pub fn generate_document_contract_state_transitions(
-    //     &mut self,
-    //     current_identities: &Vec<Identity>,
-    //     signer: &SimpleSigner,
-    //     rng: &mut StdRng,
-    //     platform_version: &PlatformVersion,
-    // ) -> Vec<StateTransition> {
-    //     self.operations.iter_mut().filter_map(|op| {
-    //         if let OperationType::Document(doc_op) = &mut op.op_type {
-    //             // Find a matching identity for the signer
-    //             let matching_identity = current_identities.iter().find(|identity| {
-    //                 identity.public_keys().values().any(|public_key| {
-    //                     signer.private_keys.contains_key(&public_key) || signer.private_keys_in_creation.contains_key(&public_key)
-    //                 })
-    //             });
-    //             if let Some(identity) = matching_identity {
-    //                 let identity_info = identity.clone().into_partial_identity_info();
-    //                 let entropy = Bytes32::random_with_rng(rng);
-    
-    //                 let contract = &mut doc_op.contract;
-    //                 let document_type = &mut doc_op.document_type;
-    
-    //                 // Update contract's owner ID and ID based on the selected identity
-    //                 contract.set_owner_id(identity_info.id);
-    //                 let new_id = DataContract::generate_data_contract_id_v0(identity_info.id, entropy);
-    //                 contract.set_id(new_id);
-
-    //                 match document_type {
-    //                     DocumentType::V0(ref mut doc_type_v0) => {
-    //                         doc_type_v0.set_data_contract_id(new_id);
-    //                     },
-    //                 }
-                    
-    //                 // Create a data contract create transition and wrap it as StateTransition
-    //                 let data_contract_create_transition = DataContractCreateTransition::new_from_data_contract(
-    //                     contract.clone(),
-    //                     entropy,
-    //                     &identity_info,
-    //                     2, // key id 1 should always be a high or critical auth key in these tests
-    //                     signer,
-    //                     platform_version,
-    //                     None,
-    //                 );
-
-    //                 data_contract_create_transition.ok()
-
-    //             } else {
-    //                 None
-    //             }
-    //         } else {
-    //             None
-    //         }
-    //     }).collect()
-    // }
-    
+impl Strategy {    
     /// Creates state transitions based on the `identities_inserts` and `start_identities` fields.
     /// 
     /// This method creates a list of state transitions associated with identities. If the block height
@@ -624,7 +567,9 @@ impl Strategy {
 
         // Loop through the operations and generate state transitions based on frequency and type
         for op in &self.operations {
+            // Check if the op frequency hits for this block
             if op.frequency.check_hit(rng) {
+                // Get times_per_block
                 let count = rng.gen_range(op.frequency.times_per_block_range.clone());
                 match &op.op_type {
                     // Generate state transition for document insert operation with random data
@@ -645,6 +590,7 @@ impl Strategy {
                                 platform_version,
                             )
                             .expect("expected random_documents_with_params");
+
                         documents
                             .into_iter()
                             .for_each(|(document, identity, entropy)| {
@@ -1031,14 +977,11 @@ impl Strategy {
 
                     // Generate state transition for identity top-up operation
                     OperationType::IdentityTopUp if !current_identities.is_empty() => {
-                        let indices: Vec<usize> =
-                            (0..current_identities.len()).choose_multiple(rng, count as usize);
-                        let random_identities: Vec<&Identity> = indices
-                            .into_iter()
-                            .map(|index| &current_identities[index])
-                            .collect();
+                        // Use a cyclic iterator over the identities to ensure we can create 'count' transitions
+                        let cyclic_identities = current_identities.iter().cycle();
 
-                        for random_identity in random_identities {
+                        // Iterate 'count' times to create the required number of state transitions.
+                        for random_identity in cyclic_identities.take(count.into()) {
                             match crate::transitions::create_identity_top_up_transition(
                                 random_identity,
                                 create_asset_lock,
@@ -1047,59 +990,64 @@ impl Strategy {
                                 Ok(transition) => operations.push(transition),
                                 Err(_) => {
                                     tracing::error!("Error creating asset lock proof for identity top up transition");
+                                    continue;
                                 }
                             }
                         }
                     }
 
-                    // Generate state transition for identity update operation
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
-                        let indices: Vec<usize> =
-                            (0..current_identities.len()).choose_multiple(rng, count as usize);
-                        for index in indices {
-                            let random_identity = current_identities.get_mut(index).unwrap();
-                            match update_op {
-                                IdentityUpdateOp::IdentityUpdateAddKeys(count) => {
-                                    let (state_transition, keys_to_add_at_end_block) =
-                                        crate::transitions::create_identity_update_transition_add_keys(
-                                            random_identity,
-                                            *count,
-                                            identity_nonce_counter,
-                                            signer,
-                                            rng,
-                                            platform_version,
-                                        );
-                                    operations.push(state_transition);
-                                    finalize_block_operations.push(IdentityAddKeys(
-                                        keys_to_add_at_end_block.0,
-                                        keys_to_add_at_end_block.1,
-                                    ))
-                                }
-                                IdentityUpdateOp::IdentityUpdateDisableKey(count) => {
-                                    let state_transition =
-                                        crate::transitions::create_identity_update_transition_disable_keys(
-                                            random_identity,
-                                            *count,
-                                            block_info.time_ms,
-                                            identity_nonce_counter,
-                                            signer,
-                                            rng,
-                                            platform_version,
-                                        );
-                                    if let Some(state_transition) = state_transition {
+                        match update_op {
+                            IdentityUpdateOp::IdentityUpdateAddKeys(keys_count) => {
+                                (0..count).for_each(|_| {
+                                    current_identities.iter_mut().enumerate().for_each(|(i, random_identity)| {
+                                        if i >= count.into() { return; } // Ensure we do not exceed the count
+                    
+                                        let (state_transition, keys_to_add_at_end_block) =
+                                            crate::transitions::create_identity_update_transition_add_keys(
+                                                random_identity,
+                                                *keys_count,
+                                                identity_nonce_counter,
+                                                signer,
+                                                rng,
+                                                platform_version,
+                                            );
                                         operations.push(state_transition);
-                                    }
-                                }
-                            }
+                                        finalize_block_operations.push(IdentityAddKeys(
+                                            keys_to_add_at_end_block.0,
+                                            keys_to_add_at_end_block.1,
+                                        ));
+                                    });
+                                });
+                            },
+                            IdentityUpdateOp::IdentityUpdateDisableKey(keys_count) => {
+                                (0..count).for_each(|_| {
+                                    current_identities.iter_mut().enumerate().for_each(|(i, random_identity)| {
+                                        if i >= count.into() { return; } // Ensure we do not exceed the count
+                    
+                                        if let Some(state_transition) =
+                                            crate::transitions::create_identity_update_transition_disable_keys(
+                                                random_identity,
+                                                *keys_count,
+                                                identity_nonce_counter,
+                                                block_info.time_ms,
+                                                signer,
+                                                rng,
+                                                platform_version,
+                                            ) {
+                                                operations.push(state_transition);
+                                        }
+                                    });
+                                });
+                            },
                         }
-                    }
+                    }                    
 
                     // Generate state transition for identity withdrawal operation
                     OperationType::IdentityWithdrawal if !current_identities.is_empty() => {
-                        let indices: Vec<usize> =
-                            (0..current_identities.len()).choose_multiple(rng, count as usize);
-                        for index in indices {
-                            let random_identity = current_identities.get_mut(index).unwrap();
+                        for i in 0..count {
+                            let index = (i as usize) % current_identities.len(); // Ensure index is usize
+                            let random_identity = &mut current_identities[index];
                             let state_transition =
                                 crate::transitions::create_identity_withdrawal_transition(
                                     random_identity,
@@ -1110,28 +1058,24 @@ impl Strategy {
                             operations.push(state_transition);
                         }
                     }
-
+                    
                     // Generate state transition for identity transfer operation
                     OperationType::IdentityTransfer if current_identities.len() > 1 => {
-                        // choose 2 last identities
-                        let indices: Vec<usize> =
-                            vec![current_identities.len() - 2, current_identities.len() - 1];
-
-                        let owner = current_identities.get(indices[0]).unwrap();
-                        let recipient = current_identities.get(indices[1]).unwrap();
-
-                        info!("owner: {:?}", owner);
-                        info!("recipient: {:?}", recipient);
-
-                        let state_transition =
-                            crate::transitions::create_identity_credit_transfer_transition(
-                                owner,
-                                recipient,
-                                identity_nonce_counter,
-                                signer,
-                                100,
+                        let identities_clone = current_identities.clone();
+                        // Sender is the first in the list, which should be loaded_identity
+                        let owner = &mut current_identities[0];
+                        // Recipient is the second in the list
+                        let recipient = &identities_clone[1];
+                        for _ in 0..count {
+                            let state_transition = crate::transitions::create_identity_credit_transfer_transition(
+                                owner, 
+                                &recipient,
+                                identity_nonce_counter
+                                signer, 
+                                1000,
                             );
-                        operations.push(state_transition);
+                            operations.push(state_transition); 
+                        }
                     }
                     // OperationType::ContractCreate(new_fields_optional_count_range, new_fields_required_count_range, new_index_count_range, document_type_count)
                     // if !current_identities.is_empty() => {
@@ -1220,14 +1164,8 @@ impl Strategy {
             let mut contract_state_transitions =
                 self.contract_state_transitions(current_identities, signer, rng, platform_version);
             state_transitions.append(&mut contract_state_transitions);
-
-            // // REMOVED - Document operations should only use known_contracts
-            // // Add contracts for document operations on first block of strategy
-            // let mut doc_op_contract_state_transitions = 
-            //     self.generate_document_contract_state_transitions(current_identities, signer, rng, platform_version);
-            // state_transitions.append(&mut doc_op_contract_state_transitions);
         } else {
-            // do operations
+            // Do operations
             let (mut document_state_transitions, mut add_to_finalize_block_operations) = self
                 .state_transitions_for_block(
                     document_query_callback,
@@ -1244,7 +1182,7 @@ impl Strategy {
             finalize_block_operations.append(&mut add_to_finalize_block_operations);
             state_transitions.append(&mut document_state_transitions);
 
-            // do contract updates for contracts_with_updates
+            // Do contract updates for contracts_with_updates
             let mut contract_update_state_transitions = self.contract_update_state_transitions(
                 current_identities,
                 block_info.height,
@@ -1256,59 +1194,8 @@ impl Strategy {
             state_transitions.append(&mut contract_update_state_transitions);
         }
 
-        current_identities.append(&mut new_identities);
-
         (state_transitions, finalize_block_operations)
     }
-
-    // / // This function is completely unused
-    // / Adds strategy contracts from the current operations into a specified Drive.
-    // /
-    // / This method iterates over the operations present in the current strategy and for each operation
-    // / of type `Document`, it serializes the associated contract and applies it to the provided drive.
-    // /
-    // / # Parameters
-    // / - `drive`: The Drive where contracts should be added.
-    // / - `platform_version`: The current Platform version used for serializing the contract.
-    // /
-    // / # Panics
-    // / This method may panic in the following situations:
-    // / - If serialization of a contract fails.
-    // / - If applying a contract with serialization to the drive fails.
-    // /
-    // / # Examples
-    // / ```ignore
-    // / // Assuming `strategy` is an instance of `Strategy`
-    // / // and `drive` and `platform_version` are appropriately initialized.
-    // / strategy.add_strategy_contracts_into_drive(&drive, &platform_version);
-    // / ```
-    // TODO: This belongs to `DocumentOp`
-    // pub fn add_strategy_contracts_into_drive(
-    //     &mut self,
-    //     drive: &Drive,
-    //     platform_version: &PlatformVersion,
-    //     initial_block_info: &BlockInfo,
-    // ) {
-    //     for op in &self.operations {
-    //         if let OperationType::Document(doc_op) = &op.op_type {
-    //             let serialize = doc_op
-    //                 .contract
-    //                 .serialize_to_bytes_with_platform_version(platform_version)
-    //                 .expect("expected to serialize");
-    //             drive
-    //                 .apply_contract_with_serialization(
-    //                     &doc_op.contract,
-    //                     serialize,
-    //                     initial_block_info.clone(),
-    //                     true,
-    //                     Some(Cow::Owned(SingleEpoch(0))),
-    //                     None,
-    //                     platform_version,
-    //                 )
-    //                 .expect("expected to be able to add contract");
-    //         }
-    //     }
-    // }
 }
 
 #[cfg(test)]

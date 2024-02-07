@@ -534,7 +534,7 @@ pub fn create_identity_withdrawal_transition(
 /// - If the sender's identity does not have a suitable authentication key available for signing.
 /// - If there's an error during the signing process.
 pub fn create_identity_credit_transfer_transition(
-    identity: &Identity,
+    identity: &mut Identity,
     recipient: &Identity,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     signer: &mut SimpleSigner,
