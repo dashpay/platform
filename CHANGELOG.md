@@ -1,3 +1,29 @@
+## [1.0.0-dev.4](https://github.com/dashpay/platform/compare/v1.0.0-dev.3...v1.0.0-dev.4) (2024-02-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* chainlock optimized verification (#1621)
+
+### Features
+
+* chainlock optimized verification ([#1621](https://github.com/dashpay/platform/issues/1621))
+* **drive:** validate asset lock proof minimal value ([#1667](https://github.com/dashpay/platform/issues/1667))
+* **drive:** withdrawals finalization ([#1601](https://github.com/dashpay/platform/issues/1601))
+
+
+### Bug Fixes
+
+* **dashmate:** service status when tenderdash is syncing ([#1682](https://github.com/dashpay/platform/issues/1682))
+* **drive:** invalid protocol version is using to deserialize state ([#1679](https://github.com/dashpay/platform/issues/1679))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update to core v20.1.0-devpr5806.a1814ce2 ([#1665](https://github.com/dashpay/platform/issues/1665))
+* system data contracts versioning ([#1676](https://github.com/dashpay/platform/issues/1676))
+* update rs-tenderdash-abci to v0.14.0-dev.6 and tenderdash to v0.14.0-dev.2 ([#1686](https://github.com/dashpay/platform/issues/1686))
+
 ## [1.0.0-dev.3](https://github.com/dashpay/platform/compare/v1.0.0-dev.2...v1.0.0-dev.3) (2024-01-16)
 
 
