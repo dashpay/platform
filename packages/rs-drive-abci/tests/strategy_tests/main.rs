@@ -140,6 +140,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -185,6 +186,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -231,6 +233,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -358,6 +361,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -492,6 +496,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -552,6 +557,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -601,6 +607,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -658,6 +665,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -720,6 +728,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 500,
@@ -797,6 +806,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -861,6 +871,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -928,6 +939,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -1022,6 +1034,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -1075,6 +1088,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -1151,6 +1165,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -1254,6 +1269,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -1352,6 +1368,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -1426,6 +1443,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -1528,6 +1546,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -1630,6 +1649,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -1688,7 +1708,6 @@ mod tests {
         )
     }
 
-
     #[test]
     fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_nonce_gaps_with_epoch_change(
     ) {
@@ -1698,7 +1717,7 @@ mod tests {
             true,
             platform_version,
         )
-            .expect("expected to get contract from a json document");
+        .expect("expected to get contract from a json document");
 
         let contract = created_contract.data_contract();
 
@@ -1747,6 +1766,10 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: Some(Frequency {
+                    times_per_block_range: 1..3,
+                    chance_per_block: Some(0.5),
+                }),
                 signer: None,
             },
             total_hpmns: 100,
@@ -1760,10 +1783,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            identity_contract_nonce_gaps: Some(Frequency {
-                times_per_block_range: 1..3,
-                chance_per_block: Some(0.5),
-            }),
             ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -1805,7 +1824,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "84435c7bee5ab7c217b5ea7e808d5aac9f2ee8d95d1813090ffde9d90e8dc714".to_string()
+            "35f310c338d97cf91abb9889fff14cc273571062373e6f024d2235428b77df95".to_string()
         )
     }
 
@@ -1867,6 +1886,7 @@ mod tests {
                     times_per_block_range: 1..30,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -1989,6 +2009,7 @@ mod tests {
                     times_per_block_range: 1..6,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -2056,6 +2077,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -2129,6 +2151,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -2209,6 +2232,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -2297,6 +2321,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -2855,6 +2880,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 50,
@@ -3014,6 +3040,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 500,
@@ -3144,6 +3171,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 500,
@@ -3274,6 +3302,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 500,
@@ -3406,6 +3435,7 @@ mod tests {
                     times_per_block_range: 6..10,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,

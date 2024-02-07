@@ -195,11 +195,18 @@ impl Drive {
                     // we are too far away from the actual revision
                     return Ok((NonceTooFarInFuture, drive_operations));
                 } else {
-                    let missing_amount_of_revisions = revision_nonce - actual_existing_revision;
+                    let missing_amount_of_revisions = revision_nonce - actual_existing_revision - 1;
                     let new_previous_missing_revisions = (existing_nonce
                         & MISSING_IDENTITY_CONTRACT_REVISIONS_FILTER)
-                        << missing_amount_of_revisions;
-                    new_previous_missing_revisions | revision_nonce
+                        << (missing_amount_of_revisions + 1);
+                    // the missing_revisions_bytes are the amount of bytes to put in the missing area
+                    let missing_revisions_bytes = if missing_amount_of_revisions > 0 {
+                        ((1 << missing_amount_of_revisions) - 1)
+                            << IDENTITY_CONTRACT_NONCE_VALUE_FILTER_MAX_BYTES
+                    } else {
+                        0
+                    };
+                    new_previous_missing_revisions | revision_nonce | missing_revisions_bytes
                 }
             } else {
                 let previous_revision_position_from_top = actual_existing_revision - revision_nonce;
@@ -211,17 +218,17 @@ impl Drive {
                 } else {
                     let old_missing_revisions =
                         (existing_nonce & MISSING_IDENTITY_CONTRACT_REVISIONS_FILTER);
-                    let byte_to_set = 1
+                    let byte_to_unset = 1
                         << (previous_revision_position_from_top
                             + IDENTITY_CONTRACT_NONCE_VALUE_FILTER_MAX_BYTES);
-                    let old_revision_already_set = (old_missing_revisions & byte_to_set) > 0;
+                    let old_revision_already_set = (old_missing_revisions & !byte_to_unset) > 0;
                     if old_revision_already_set {
                         return Ok((
                             NonceAlreadyPresentInPast(previous_revision_position_from_top),
                             drive_operations,
                         ));
                     } else {
-                        existing_nonce & byte_to_set
+                        existing_nonce & !byte_to_unset
                     }
                 }
             }
@@ -233,11 +240,23 @@ impl Drive {
             // todo: this will only work if we have at most one document per state transition
             //  when we change batch state transitions back to multiple we need to check existing
             //  operations.
-            revision_nonce
+
+            let missing_amount_of_revisions = revision_nonce - 1;
+            // the missing_revisions_bytes are the amount of bytes to put in the missing area
+            let missing_revisions_bytes = if missing_amount_of_revisions > 0 {
+                ((1 << missing_amount_of_revisions) - 1)
+                    << IDENTITY_CONTRACT_NONCE_VALUE_FILTER_MAX_BYTES
+            } else {
+                0
+            };
+
+            missing_revisions_bytes | revision_nonce
         };
 
         let identity_contract_nonce_bytes = nonce_to_set.to_be_bytes().to_vec();
         let identity_contract_nonce_element = Element::new_item(identity_contract_nonce_bytes);
+
+        //println!("{} is {:b}, existing was {:?}", nonce_to_set,  nonce_to_set, existing_nonce);
 
         self.batch_insert(
             PathKeyElementInfo::PathFixedSizeKeyRefElement((

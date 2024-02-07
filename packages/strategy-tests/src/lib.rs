@@ -92,6 +92,7 @@ pub struct Strategy {
     pub operations: Vec<Operation>,
     pub start_identities: Vec<(Identity, StateTransition)>,
     pub identities_inserts: Frequency,
+    pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
 }
 
@@ -102,6 +103,7 @@ impl Default for Strategy {
             operations: vec![],
             start_identities: vec![],
             identities_inserts: Frequency::default(),
+            identity_contract_nonce_gaps: None,
             signer: None,
         }
     }
@@ -113,6 +115,7 @@ struct StrategyInSerializationFormat {
     pub operations: Vec<Vec<u8>>,
     pub start_identities: Vec<(Identity, StateTransition)>,
     pub identities_inserts: Frequency,
+    pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
 }
 
@@ -136,6 +139,7 @@ impl PlatformSerializableWithPlatformVersion for Strategy {
             operations,
             start_identities,
             identities_inserts,
+            identity_contract_nonce_gaps,
             signer,
         } = self;
 
@@ -174,6 +178,7 @@ impl PlatformSerializableWithPlatformVersion for Strategy {
             operations: operations_in_serialization_format,
             start_identities,
             identities_inserts,
+            identity_contract_nonce_gaps,
             signer,
         };
 
@@ -209,6 +214,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
             operations,
             start_identities,
             identities_inserts,
+            identity_contract_nonce_gaps,
             signer,
         } = strategy;
 
@@ -257,6 +263,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
             operations,
             start_identities,
             identities_inserts,
+            identity_contract_nonce_gaps,
             signer,
         })
     }
@@ -610,7 +617,12 @@ impl Strategy {
                                 let identity_contract_nonce = contract_nonce_counter
                                     .entry((identity.id(), contract.id()))
                                     .or_default();
-                                *identity_contract_nonce += 1;
+                                let gap = self
+                                    .identity_contract_nonce_gaps
+                                    .as_ref()
+                                    .map_or(0, |gap_amount| gap_amount.events_if_hit(rng))
+                                    as u64;
+                                *identity_contract_nonce += 1 + gap;
 
                                 let document_create_transition: DocumentCreateTransition =
                                     DocumentCreateTransitionV0 {
@@ -1301,6 +1313,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            identity_contract_nonce_gaps: None,
             signer: Some(simple_signer),
         };
 

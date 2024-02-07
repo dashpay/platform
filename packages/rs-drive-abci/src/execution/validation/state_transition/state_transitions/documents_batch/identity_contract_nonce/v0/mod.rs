@@ -108,10 +108,10 @@ impl DocumentsBatchStateTransitionIdentityContractNonceV0 for DocumentsBatchTran
                     } else {
                         let old_missing_revisions =
                             (existing_nonce & MISSING_IDENTITY_CONTRACT_REVISIONS_FILTER);
-                        let byte_to_set = 1
+                        let byte_to_unset = 1
                             << (previous_revision_position_from_top
                                 + IDENTITY_CONTRACT_NONCE_VALUE_FILTER_MAX_BYTES);
-                        let old_revision_already_set = (old_missing_revisions & byte_to_set) > 0;
+                        let old_revision_already_set = (old_missing_revisions & !byte_to_unset) > 0;
                         if old_revision_already_set {
                             return Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(StateError::InvalidIdentityContractNonceError(InvalidIdentityContractNonceError{
                                 identity_id,
