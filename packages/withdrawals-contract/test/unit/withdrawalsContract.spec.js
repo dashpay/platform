@@ -4,7 +4,7 @@ const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/gener
 
 const { expect } = require('chai');
 const crypto = require('crypto');
-const withdrawalContractDocumentsSchema = require('../../schema/withdrawals-documents.json');
+const withdrawalContractDocumentsSchema = require('../../schema/v1/withdrawals-documents.json');
 
 const expectJsonSchemaError = (validationResult, errorCount = 1) => {
   const errors = validationResult.getErrors();
@@ -42,7 +42,6 @@ describe('Withdrawals contract', () => {
 
       beforeEach(() => {
         rawWithdrawalDocument = {
-          transactionId: Buffer.alloc(32, 1),
           transactionIndex: 42,
           amount: 1000,
           coreFeePerByte: 1,
@@ -50,63 +49,6 @@ describe('Withdrawals contract', () => {
           outputScript: Buffer.alloc(23, 2),
           status: 0,
         };
-      });
-
-      it('should have at least five properties', () => {
-        rawWithdrawalDocument = {};
-
-        const document = dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
-        const validationResult = document.validate(dpp.protocolVersion);
-        const error = expectJsonSchemaError(validationResult, 5);
-
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('amount');
-      });
-
-      it('should not have additional properties', async () => {
-        rawWithdrawalDocument.someOtherProperty = 42;
-
-        const document = dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
-        const validationResult = document.validate(dpp.protocolVersion);
-        const error = expectJsonSchemaError(validationResult);
-
-        expect(error.keyword).to.equal('additionalProperties');
-        expect(error.params.additionalProperties).to.deep.equal(['someOtherProperty']);
-      });
-
-      describe('transactionId', () => {
-        it('should be byte array', () => {
-          rawWithdrawalDocument.transactionId = 1;
-
-          const document = dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
-          const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
-
-          expect(error.keyword).to.equal('type');
-          expect(error.params.type).to.equal('array');
-        });
-
-        it('should be not less then 32 bytes long', () => {
-          rawWithdrawalDocument.transactionId = [0];
-
-          const document = dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
-          const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
-
-          expect(error.keyword).to.equal('minItems');
-          expect(error.params.minItems).to.equal(32);
-        });
-
-        it('should be not more then 32 bytes long', () => {
-          rawWithdrawalDocument.transactionId = Buffer.alloc(33);
-
-          const document = dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
-          const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
-
-          expect(error.keyword).to.equal('maxItems');
-          expect(error.params.maxItems).to.equal(32);
-        });
       });
 
       describe('amount', () => {

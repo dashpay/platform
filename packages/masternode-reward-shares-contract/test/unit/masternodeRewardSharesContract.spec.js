@@ -4,7 +4,7 @@ const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/gener
 
 const { expect } = require('chai');
 const crypto = require('crypto');
-const rewardSharingContractSchema = require('../../schema/masternode-reward-shares-documents.json');
+const rewardSharingContractSchema = require('../../schema/v1/masternode-reward-shares-documents.json');
 
 const expectJsonSchemaError = (validationResult, errorCount = 1) => {
   const errors = validationResult.getErrors();

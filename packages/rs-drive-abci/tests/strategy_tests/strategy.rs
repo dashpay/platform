@@ -52,6 +52,7 @@ use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
+use drive_abci::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 
 use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;
 use simple_signer::signer::SimpleSigner;
@@ -542,7 +543,7 @@ pub struct ChainExecutionOutcome<'a> {
     pub end_epoch_index: u16,
     pub end_time_ms: u64,
     pub strategy: NetworkStrategy,
-    pub withdrawals: Vec<dashcore::Transaction>,
+    pub withdrawals: UnsignedWithdrawalTxs,
     /// height to the validator set update at that height
     pub validator_set_updates: BTreeMap<u64, ValidatorSetUpdate>,
     pub state_transition_results_per_block: BTreeMap<u64, Vec<(StateTransition, ExecTxResult)>>,

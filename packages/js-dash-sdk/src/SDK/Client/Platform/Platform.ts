@@ -21,6 +21,7 @@ import getIdentity from './methods/identities/get';
 import registerIdentity from './methods/identities/register';
 import topUpIdentity from './methods/identities/topUp';
 import creditTransferIdentity from './methods/identities/creditTransfer';
+import creditWithdrawal from './methods/identities/creditWithdrawal';
 import updateIdentity from './methods/identities/update';
 import createIdentityCreateTransition from './methods/identities/internal/createIdentityCreateTransition';
 import createIdentityTopUpTransition from './methods/identities/internal/createIdentityTopUpTransition';
@@ -77,6 +78,7 @@ interface Identities {
   register: Function,
   topUp: Function,
   creditTransfer: Function,
+  withdrawCredits: Function,
   update: Function,
   utils: {
     createAssetLockTransaction: Function
@@ -181,6 +183,7 @@ export class Platform {
       topUp: topUpIdentity.bind(this),
       creditTransfer: creditTransferIdentity.bind(this),
       update: updateIdentity.bind(this),
+      withdrawCredits: creditWithdrawal.bind(this),
       utils: {
         createAssetLockProof: createAssetLockProof.bind(this),
         createAssetLockTransaction: createAssetLockTransaction.bind(this),

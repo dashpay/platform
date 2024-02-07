@@ -7,7 +7,7 @@ use std::fmt::{Debug, Formatter};
 
 #[cfg(any(feature = "mocks", test))]
 use crate::rpc::core::MockCoreRPCLike;
-use drive::drive::defaults::PROTOCOL_VERSION;
+use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::RwLock;
@@ -176,9 +176,10 @@ impl<C> Platform<C> {
     {
         let config = config.unwrap_or(PlatformConfig::default_testnet());
 
-        let drive = Drive::open(path, Some(config.drive.clone())).map_err(Error::Drive)?;
+        let (drive, current_protocol_version) =
+            Drive::open(path, Some(config.drive.clone())).map_err(Error::Drive)?;
 
-        if let Some(protocol_version) = drive.fetch_current_protocol_version(None)? {
+        if let Some(protocol_version) = current_protocol_version {
             let platform_version = PlatformVersion::get(protocol_version)?;
 
             let Some(execution_state) =
@@ -201,8 +202,8 @@ impl<C> Platform<C> {
             drive,
             core_rpc,
             config,
-            PROTOCOL_VERSION,
-            PROTOCOL_VERSION,
+            INITIAL_PROTOCOL_VERSION,
+            INITIAL_PROTOCOL_VERSION,
         )
     }
 

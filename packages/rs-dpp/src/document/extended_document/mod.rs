@@ -410,8 +410,7 @@ mod test {
     fn test_document_json_deserialize() -> Result<()> {
         init();
         let platform_version = PlatformVersion::latest();
-        let dpns_contract =
-            load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)?;
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
         let doc =
             ExtendedDocument::from_json_string(&document_json, dpns_contract, platform_version)?;
@@ -489,11 +488,8 @@ mod test {
     #[test]
     fn test_to_object() {
         init();
-        let dpns_contract = load_system_data_contract(
-            SystemDataContract::DPNS,
-            LATEST_PLATFORM_VERSION.protocol_version,
-        )
-        .unwrap();
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, LATEST_PLATFORM_VERSION).unwrap();
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
         let document = ExtendedDocument::from_json_string(
             &document_json,
@@ -517,10 +513,8 @@ mod test {
     fn test_json_serialize() -> Result<()> {
         init();
 
-        let dpns_contract = load_system_data_contract(
-            SystemDataContract::DPNS,
-            LATEST_PLATFORM_VERSION.protocol_version,
-        )?;
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, LATEST_PLATFORM_VERSION)?;
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
         let document = ExtendedDocument::from_json_string(
             &document_json,
@@ -542,11 +536,8 @@ mod test {
         init();
 
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        let dpns_contract = load_system_data_contract(
-            SystemDataContract::DPNS,
-            LATEST_PLATFORM_VERSION.protocol_version,
-        )
-        .unwrap();
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, LATEST_PLATFORM_VERSION).unwrap();
         ExtendedDocument::from_json_string(&document_json, dpns_contract, LATEST_PLATFORM_VERSION)
             .expect("expected extended document");
         Ok(())

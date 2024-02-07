@@ -6,7 +6,7 @@ const {
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
 const { expect } = require('chai');
-const dpnsContractDocumentsSchema = require('../../schema/dpns-contract-documents.json');
+const dpnsContractDocumentsSchema = require('../../schema/v1/dpns-contract-documents.json');
 
 const expectJsonSchemaError = (validationResult, errorCount = 1) => {
   const errors = validationResult.getErrors();
