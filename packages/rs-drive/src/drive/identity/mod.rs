@@ -52,7 +52,7 @@ use integer_encoding::VarInt;
 #[cfg(any(feature = "full", feature = "verify"))]
 mod balance;
 #[cfg(feature = "full")]
-mod contract_info;
+pub(crate) mod contract_info;
 #[cfg(feature = "full")]
 mod estimation_costs;
 #[cfg(any(feature = "full", feature = "verify"))]

@@ -10,6 +10,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use crate::drive::identity::contract_info::revision_nonce::merge_revision_nonce_for_identity_contract_pair::MergeIdentityContractNonceResultToResult;
 
 /// Operations on Identities
 #[derive(Clone, Debug)]

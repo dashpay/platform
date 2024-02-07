@@ -23,7 +23,7 @@ use crate::platform_types::platform::PlatformStateRef;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchStateTransitionStructureValidationV0
 {
-    fn validate_structure_v0(
+    fn validate_advanced_structure_from_state_v0(
         &self,
         platform: &PlatformStateRef,
         action: &DocumentsBatchTransitionAction,
@@ -32,21 +32,12 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
 }
 
 impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransition {
-    fn validate_structure_v0(
+    fn validate_advanced_structure_from_state_v0(
         &self,
         platform: &PlatformStateRef,
         action: &DocumentsBatchTransitionAction,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        // First we should validate the base structure
-        let result = self
-            .validate_base_structure(platform_version)
-            .map_err(Error::Protocol)?;
-
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
         // We should validate that all newly created documents have valid ids
         for transition in self.transitions() {
             if let DocumentTransition::Create(create_transition) = transition {

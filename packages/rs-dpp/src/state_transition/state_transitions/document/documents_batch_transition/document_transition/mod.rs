@@ -4,7 +4,7 @@ use bincode::{Decode, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 
-use crate::prelude::Identifier;
+use crate::prelude::{Identifier, IdentityContractNonce};
 use document_base_transition::DocumentBaseTransition;
 
 pub mod action_type;
@@ -51,6 +51,9 @@ pub trait DocumentTransitionV0Methods {
     fn data(&self) -> Option<&BTreeMap<String, Value>>;
     /// get the revision of transition if exits
     fn revision(&self) -> Option<Revision>;
+
+    /// get the identity contract nonce
+    fn identity_contract_nonce(&self) -> IdentityContractNonce;
     #[cfg(test)]
     /// Inserts the dynamic property into the document
     fn insert_dynamic_property(&mut self, property_name: String, value: Value);
@@ -332,6 +335,14 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Create(t) => Some(t.data_mut()),
             DocumentTransition::Replace(t) => Some(t.data_mut()),
             DocumentTransition::Delete(_) => None,
+        }
+    }
+
+    fn identity_contract_nonce(&self) -> IdentityContractNonce {
+        match self {
+            DocumentTransition::Create(t) => t.base().identity_contract_nonce(),
+            DocumentTransition::Replace(t) => t.base().identity_contract_nonce(),
+            DocumentTransition::Delete(t) => t.base().identity_contract_nonce(),
         }
     }
 }

@@ -1,8 +1,7 @@
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
+use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::identity::contract_info::ContractInfoStructure::IdentityContractNonceKey;
 use crate::drive::identity::IdentityRootStructure::IdentityContractInfo;
-use crate::drive::identity::{identity_contract_info_group_path, identity_contract_info_root_path, identity_contract_info_root_path_vec, identity_path_vec};
+use crate::drive::identity::{identity_contract_info_group_path, identity_contract_info_root_path_vec, identity_path_vec};
 use crate::drive::object_size_info::{PathKeyElementInfo, PathKeyInfo};
 use crate::drive::Drive;
 use crate::error::Error;
@@ -14,16 +13,11 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
+use dpp::identity::identity_contract_nonce::{IDENTITY_CONTRACT_NONCE_VALUE_FILTER, IDENTITY_CONTRACT_NONCE_VALUE_FILTER_MAX_BYTES, MAX_MISSING_IDENTITY_CONTRACT_REVISIONS, MISSING_IDENTITY_CONTRACT_REVISIONS_FILTER, MISSING_IDENTITY_CONTRACT_REVISIONS_MAX_BYTES};
 use dpp::prelude::IdentityContractNonce;
 use crate::drive::identity::contract_info::revision_nonce::merge_revision_nonce_for_identity_contract_pair::MergeIdentityContractNonceResult;
 use crate::drive::identity::contract_info::revision_nonce::merge_revision_nonce_for_identity_contract_pair::MergeIdentityContractNonceResult::{MergeIdentityContractNonceSuccess, NonceAlreadyPresentAtTip, NonceAlreadyPresentInPast, NonceTooFarInFuture, NonceTooFarInPast};
 use crate::error::identity::IdentityError;
-
-const VALUE_FILTER: u64 = 0xFFFFF;
-const MISSING_REVISIONS_FILTER: u64 = 0xFFF00000;
-const MAX_MISSING_REVISIONS: u64 = 20;
-const MISSING_REVISIONS_MAX_BYTES: u64 = MAX_MISSING_REVISIONS;
-const VALUE_FILTER_MAX_BYTES: u64 = 40;
 
 impl Drive {
     pub(in crate::drive::identity::contract_info) fn merge_revision_nonce_for_identity_contract_pair_v0(
@@ -83,7 +77,7 @@ impl Drive {
         ),
         Error,
     > {
-        if revision_nonce & MISSING_REVISIONS_FILTER > 0 {
+        if revision_nonce & MISSING_IDENTITY_CONTRACT_REVISIONS_FILTER > 0 {
             return Err(Error::Identity(
                 IdentityError::IdentityContractRevisionNonceError(
                     "revision nonce was set too high or with missing revision bytes",
@@ -119,7 +113,9 @@ impl Drive {
             }
         };
 
-        let previous_nonce_is_sure_to_not_exist = if revision_nonce <= MAX_MISSING_REVISIONS {
+        let previous_nonce_is_sure_to_not_exist = if revision_nonce
+            <= MAX_MISSING_IDENTITY_CONTRACT_REVISIONS
+        {
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
                 Self::add_estimation_costs_for_contract_info(
@@ -188,29 +184,36 @@ impl Drive {
             // we are just getting estimated costs
             revision_nonce
         } else if let Some(existing_nonce) = existing_nonce {
-            let actual_existing_revision = existing_nonce & VALUE_FILTER;
+            let actual_existing_revision = existing_nonce & IDENTITY_CONTRACT_NONCE_VALUE_FILTER;
             if actual_existing_revision == revision_nonce {
                 // we were not able to update the revision as it is the same as we already had
                 return Ok((NonceAlreadyPresentAtTip, drive_operations));
             } else if actual_existing_revision < revision_nonce {
-                if revision_nonce - actual_existing_revision >= MISSING_REVISIONS_MAX_BYTES {
+                if revision_nonce - actual_existing_revision
+                    >= MISSING_IDENTITY_CONTRACT_REVISIONS_MAX_BYTES
+                {
                     // we are too far away from the actual revision
                     return Ok((NonceTooFarInFuture, drive_operations));
                 } else {
                     let missing_amount_of_revisions = revision_nonce - actual_existing_revision;
-                    let new_previous_missing_revisions =
-                        (existing_nonce & MISSING_REVISIONS_FILTER) << missing_amount_of_revisions;
+                    let new_previous_missing_revisions = (existing_nonce
+                        & MISSING_IDENTITY_CONTRACT_REVISIONS_FILTER)
+                        << missing_amount_of_revisions;
                     new_previous_missing_revisions | revision_nonce
                 }
             } else {
                 let previous_revision_position_from_top = actual_existing_revision - revision_nonce;
-                if previous_revision_position_from_top >= MISSING_REVISIONS_MAX_BYTES {
+                if previous_revision_position_from_top
+                    >= MISSING_IDENTITY_CONTRACT_REVISIONS_MAX_BYTES
+                {
                     // we are too far away from the actual revision
                     return Ok((NonceTooFarInPast, drive_operations));
                 } else {
-                    let old_missing_revisions = (existing_nonce & MISSING_REVISIONS_FILTER);
-                    let byte_to_set =
-                        1 << (previous_revision_position_from_top + VALUE_FILTER_MAX_BYTES);
+                    let old_missing_revisions =
+                        (existing_nonce & MISSING_IDENTITY_CONTRACT_REVISIONS_FILTER);
+                    let byte_to_set = 1
+                        << (previous_revision_position_from_top
+                            + IDENTITY_CONTRACT_NONCE_VALUE_FILTER_MAX_BYTES);
                     let old_revision_already_set = (old_missing_revisions & byte_to_set) > 0;
                     if old_revision_already_set {
                         return Ok((
@@ -222,7 +225,7 @@ impl Drive {
                     }
                 }
             }
-        } else if revision_nonce >= MISSING_REVISIONS_MAX_BYTES {
+        } else if revision_nonce >= MISSING_IDENTITY_CONTRACT_REVISIONS_MAX_BYTES {
             // we are too far away from the actual revision
             return Ok((NonceTooFarInFuture, drive_operations));
         } else {
@@ -235,8 +238,6 @@ impl Drive {
 
         let identity_contract_nonce_bytes = nonce_to_set.to_be_bytes().to_vec();
         let identity_contract_nonce_element = Element::new_item(identity_contract_nonce_bytes);
-
-        let identity_contract_path = identity_contract_info_group_path(&identity_id, &contract_id);
 
         self.batch_insert(
             PathKeyElementInfo::PathFixedSizeKeyRefElement((

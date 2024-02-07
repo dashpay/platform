@@ -74,7 +74,7 @@ where
         let state = self.state.read().expect("expected to get state");
         let platform_version = state.current_platform_version()?;
         match platform_version.drive_abci.methods.engine.check_tx {
-            0 => self.check_tx_v0(raw_tx, check_tx_level),
+            0 => self.check_tx_v0(raw_tx, check_tx_level, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "check_tx".to_string(),
                 known_versions: vec![0],

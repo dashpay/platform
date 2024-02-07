@@ -4,6 +4,7 @@ use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::identity::identity_contract_nonce::MergeIdentityContractNonceResult;
 use dpp::prelude::IdentityContractNonce;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -12,37 +13,19 @@ use std::collections::HashMap;
 
 mod v0;
 
-/// The result of the merge of the identity contract nonce
-pub enum MergeIdentityContractNonceResult {
-    /// The nonce is too far in the future
-    NonceTooFarInFuture,
-    /// The nonce is too far in the past
-    NonceTooFarInPast,
-    /// The nonce is already present at the tip
-    NonceAlreadyPresentAtTip,
-    /// The nonce is already present in the past
-    NonceAlreadyPresentInPast(u64),
-    /// The merge is a success
-    MergeIdentityContractNonceSuccess(IdentityContractNonce),
+pub(crate) trait MergeIdentityContractNonceResultToResult {
+    fn to_result(self) -> Result<(), Error>;
 }
 
-impl MergeIdentityContractNonceResult {
+impl MergeIdentityContractNonceResultToResult for MergeIdentityContractNonceResult {
     /// Gives a result from the enum
-    pub fn to_result(self) -> Result<(), Error> {
-        match self {
-            MergeIdentityContractNonceResult::NonceTooFarInFuture => Err(Error::Identity(
-                IdentityError::IdentityContractRevisionNonceError("nonce too far in future"),
-            )),
-            MergeIdentityContractNonceResult::NonceTooFarInPast => Err(Error::Identity(
-                IdentityError::IdentityContractRevisionNonceError("nonce too far in past"),
-            )),
-            MergeIdentityContractNonceResult::NonceAlreadyPresentAtTip => Err(Error::Identity(
-                IdentityError::IdentityContractRevisionNonceError("nonce already present at tip"),
-            )),
-            MergeIdentityContractNonceResult::NonceAlreadyPresentInPast(_) => Err(Error::Identity(
-                IdentityError::IdentityContractRevisionNonceError("nonce already present in past"),
-            )),
-            MergeIdentityContractNonceResult::MergeIdentityContractNonceSuccess(_) => Ok(()),
+    fn to_result(self) -> Result<(), Error> {
+        if let Some(error_message) = self.error_message() {
+            Err(Error::Identity(
+                IdentityError::IdentityContractRevisionNonceError(error_message),
+            ))
+        } else {
+            Ok(())
         }
     }
 }

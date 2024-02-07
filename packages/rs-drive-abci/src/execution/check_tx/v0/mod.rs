@@ -20,6 +20,7 @@ use dpp::state_transition::StateTransition;
 #[cfg(test)]
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::validation::ValidationResult;
+use dpp::version::PlatformVersion;
 #[cfg(test)]
 use drive::grovedb::Transaction;
 
@@ -79,6 +80,7 @@ where
         &self,
         raw_tx: &[u8],
         check_tx_level: CheckTxLevel,
+        platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<Option<FeeResult>, ConsensusError>, Error> {
         let state_transition = match StateTransition::deserialize_from_bytes(raw_tx) {
             Ok(state_transition) => state_transition,
@@ -103,8 +105,6 @@ where
             core_rpc: &self.core_rpc,
             block_info,
         };
-
-        let platform_version = platform_ref.state.current_platform_version()?;
 
         let execution_event = state_transition_to_execution_event_for_check_tx(
             &platform_ref,

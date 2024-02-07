@@ -284,10 +284,6 @@ where
         let mut tx_results = Vec::new();
         let mut tx_records = Vec::new();
 
-        if invalid_all_tx_count > 0 || failed_tx_count > 0 || delayed_tx_count > 0 {
-            println!("here");
-        }
-
         for (state_transition_execution_result, raw_state_transition) in state_transitions_result
             .into_execution_results()
             .into_iter()

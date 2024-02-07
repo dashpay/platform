@@ -1,5 +1,5 @@
 pub mod keys;
-mod revision_nonce;
+pub(crate) mod revision_nonce;
 
 /// The sub elements in the contract space for each identity.
 #[repr(u8)]

@@ -20,6 +20,7 @@ pub mod signer;
 pub mod accessors;
 pub(crate) mod conversion;
 mod fields;
+pub mod identity_contract_nonce;
 #[cfg(feature = "client")]
 mod identity_facade;
 #[cfg(feature = "factories")]

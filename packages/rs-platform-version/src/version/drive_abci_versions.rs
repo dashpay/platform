@@ -88,7 +88,9 @@ pub struct DriveAbciPlatformStateStorageMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciDocumentsStateTransitionValidationVersions {
-    pub structure: FeatureVersion,
+    pub basic_structure: FeatureVersion,
+    pub advance_structure: FeatureVersion,
+    pub revision: FeatureVersion,
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,
     pub data_triggers: DriveAbciValidationDataTriggerAndBindingVersions,
@@ -119,7 +121,8 @@ pub struct DriveAbciValidationDataTriggerVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciStateTransitionValidationVersion {
-    pub structure: FeatureVersion,
+    pub base_structure: FeatureVersion,
+    pub advanced_structure: OptionalFeatureVersion,
     pub identity_signatures: OptionalFeatureVersion,
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,

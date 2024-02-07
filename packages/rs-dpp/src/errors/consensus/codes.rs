@@ -170,14 +170,15 @@ impl ErrorWithCode for StateError {
             Self::IdentityPublicKeyIsReadOnlyError { .. } => 4017,
             Self::InvalidIdentityPublicKeyIdError { .. } => 4018,
             Self::InvalidIdentityRevisionError { .. } => 4019,
-            Self::MaxIdentityPublicKeyLimitReachedError { .. } => 4020,
-            Self::DuplicatedIdentityPublicKeyStateError { .. } => 4021,
-            Self::DuplicatedIdentityPublicKeyIdStateError { .. } => 4022,
-            Self::IdentityPublicKeyIsDisabledError { .. } => 4023,
-            Self::MissingIdentityPublicKeyIdsError { .. } => 4024,
+            Self::InvalidIdentityContractNonceError(_) => 4020,
+            Self::MaxIdentityPublicKeyLimitReachedError { .. } => 4021,
+            Self::DuplicatedIdentityPublicKeyStateError { .. } => 4022,
+            Self::DuplicatedIdentityPublicKeyIdStateError { .. } => 4023,
+            Self::IdentityPublicKeyIsDisabledError { .. } => 4024,
+            Self::MissingIdentityPublicKeyIdsError { .. } => 4025,
             Self::IdentityInsufficientBalanceError(_) => 4026,
-            Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 4027,
-            Self::InvalidAssetLockProofValueError(_) => 4028,
+            Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 4028,
+            Self::InvalidAssetLockProofValueError(_) => 4029,
         }
     }
 }

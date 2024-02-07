@@ -19,7 +19,8 @@ use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionStateValidationV0, StateTransitionStructureValidationV0,
+    StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0,
+    StateTransitionStructureKnownInStateValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -51,24 +52,22 @@ impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
     }
 }
 
-impl StateTransitionStructureValidationV0 for DataContractCreateTransition {
-    fn validate_structure(
+impl StateTransitionBasicStructureValidationV0 for DataContractCreateTransition {
+    fn validate_basic_structure(
         &self,
         _platform: &PlatformStateRef,
-        _action: Option<&StateTransitionAction>,
-        protocol_version: u32,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let platform_version = PlatformVersion::get(protocol_version)?;
         match platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
             .contract_create_state_transition
-            .structure
+            .base_structure
         {
             0 => self.validate_base_structure_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "data contract create transition: validate_structure".to_string(),
+                method: "data contract create transition: validate_basic_structure".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

@@ -17,7 +17,8 @@ use crate::rpc::core::CoreRPCLike;
 use crate::execution::validation::state_transition::identity_credit_transfer::state::v0::IdentityCreditTransferStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::identity_credit_transfer::structure::v0::IdentityCreditTransferStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionStateValidationV0, StateTransitionStructureValidationV0,
+    StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0,
+    StateTransitionStructureKnownInStateValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -49,20 +50,18 @@ impl StateTransitionActionTransformerV0 for IdentityCreditTransferTransition {
     }
 }
 
-impl StateTransitionStructureValidationV0 for IdentityCreditTransferTransition {
-    fn validate_structure(
+impl StateTransitionBasicStructureValidationV0 for IdentityCreditTransferTransition {
+    fn validate_basic_structure(
         &self,
         _platform: &PlatformStateRef,
-        _action: Option<&StateTransitionAction>,
-        protocol_version: u32,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let platform_version = PlatformVersion::get(protocol_version)?;
         match platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
             .identity_credit_transfer_state_transition
-            .structure
+            .base_structure
         {
             0 => self.validate_base_structure_v0(),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {

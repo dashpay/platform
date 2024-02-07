@@ -4,6 +4,7 @@ use crate::execution::validation::state_transition::transformer::StateTransition
 use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
 use dpp::identity::{KeyType, PartialIdentity};
 use dpp::prelude::ConsensusValidationResult;
 
@@ -32,7 +33,18 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let mut state_transition_execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
-    let action = if state_transition.requires_state_to_validate_structure() {
+    // We start with basic structure validation, this is structure validation that does not require
+    // state.
+    let consensus_result =
+        state_transition.validate_basic_structure(&platform.into(), platform_version)?;
+
+    if !consensus_result.is_valid() {
+        return Ok(
+            ConsensusValidationResult::<ExecutionEvent>::new_with_errors(consensus_result.errors),
+        );
+    }
+
+    let action = if state_transition.requires_advance_structure_validation() {
         let state_transition_action_result = state_transition.transform_into_action(
             platform,
             true,
@@ -52,10 +64,10 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     };
 
     // Validating structure
-    let result = state_transition.validate_structure(
+    let result = state_transition.validate_advanced_structure_from_state(
         &platform.into(),
         action.as_ref(),
-        platform.state.current_protocol_version_in_consensus(),
+        platform_version,
     )?;
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
@@ -151,26 +163,66 @@ pub(crate) trait StateTransitionSignatureValidationV0 {
 }
 
 /// A trait for validating state transitions within a blockchain.
-pub(crate) trait StateTransitionStructureValidationV0 {
+pub(crate) trait StateTransitionBasicStructureValidationV0 {
     /// Validates the structure of a transaction by checking its basic elements.
     ///
     /// # Arguments
     ///
-    /// * `drive` - A reference to the drive containing the transaction data.
-    /// * `tx` - The transaction argument to be checked.
+    /// * `platform` - A reference to the platform state ref.
+    /// * `platform_version` - The platform version.
     ///
     /// # Returns
     ///
     /// * `Result<SimpleConsensusValidationResult, Error>` - A result with either a SimpleConsensusValidationResult or an Error.
-    fn validate_structure(
+    fn validate_basic_structure(
+        &self,
+        platform: &PlatformStateRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error>;
+}
+
+/// A trait for validating state transitions within a blockchain.
+pub(crate) trait StateTransitionRevisionValidationV0 {
+    /// Validates the structure of a transaction by checking its basic elements.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform_version` - The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<SimpleConsensusValidationResult, Error>` - A result with either a SimpleConsensusValidationResult or an Error.
+    fn validate_identity_contract_nonces(
+        &self,
+        platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error>;
+}
+
+/// A trait for validating state transitions within a blockchain.
+pub(crate) trait StateTransitionStructureKnownInStateValidationV0 {
+    /// Validates the structure of a transaction by checking its basic elements.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform` - A reference to the platform state ref.
+    /// * `action` - An optional reference to the state transition action.
+    /// * `platform_version` - The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<SimpleConsensusValidationResult, Error>` - A result with either a SimpleConsensusValidationResult or an Error.
+    fn validate_advanced_structure_from_state(
         &self,
         platform: &PlatformStateRef,
         action: Option<&StateTransitionAction>,
-        protocol_version: u32,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
     /// This means we should transform into the action before validation of the structure
-    fn requires_state_to_validate_structure(&self) -> bool {
+    fn requires_advance_structure_validation(&self) -> bool {
         false
     }
 }
@@ -202,43 +254,75 @@ pub(crate) trait StateTransitionStateValidationV0:
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
-impl StateTransitionStructureValidationV0 for StateTransition {
-    fn validate_structure(
+impl StateTransitionBasicStructureValidationV0 for StateTransition {
+    fn validate_basic_structure(
         &self,
         platform: &PlatformStateRef,
-        action: Option<&StateTransitionAction>,
-        protocol_version: u32,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
             StateTransition::DataContractCreate(st) => {
-                st.validate_structure(platform, action, protocol_version)
+                st.validate_basic_structure(platform, platform_version)
             }
             StateTransition::DataContractUpdate(st) => {
-                st.validate_structure(platform, action, protocol_version)
+                st.validate_basic_structure(platform, platform_version)
             }
             StateTransition::IdentityCreate(st) => {
-                st.validate_structure(platform, action, protocol_version)
+                st.validate_basic_structure(platform, platform_version)
             }
             StateTransition::IdentityUpdate(st) => {
-                st.validate_structure(platform, action, protocol_version)
+                st.validate_basic_structure(platform, platform_version)
             }
             StateTransition::IdentityTopUp(st) => {
-                st.validate_structure(platform, action, protocol_version)
+                st.validate_basic_structure(platform, platform_version)
             }
             StateTransition::IdentityCreditWithdrawal(st) => {
-                st.validate_structure(platform, action, protocol_version)
+                st.validate_basic_structure(platform, platform_version)
             }
             StateTransition::DocumentsBatch(st) => {
-                st.validate_structure(platform, action, protocol_version)
+                st.validate_basic_structure(platform, platform_version)
             }
             StateTransition::IdentityCreditTransfer(st) => {
-                st.validate_structure(platform, action, protocol_version)
+                st.validate_basic_structure(platform, platform_version)
             }
+        }
+    }
+}
+
+impl StateTransitionRevisionValidationV0 for StateTransition {
+    fn validate_identity_contract_nonces(
+        &self,
+        platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        match self {
+            StateTransition::DocumentsBatch(st) => {
+                st.validate_identity_contract_nonces(platform, block_info, tx, platform_version)
+            }
+            _ => Ok(SimpleConsensusValidationResult::new()),
+        }
+    }
+}
+
+impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
+    fn validate_advanced_structure_from_state(
+        &self,
+        platform: &PlatformStateRef,
+        action: Option<&StateTransitionAction>,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        match self {
+            StateTransition::DocumentsBatch(st) => {
+                st.validate_advanced_structure_from_state(platform, action, platform_version)
+            }
+            _ => Ok(SimpleConsensusValidationResult::new()),
         }
     }
 
     /// This means we should transform into the action before validation of the structure
-    fn requires_state_to_validate_structure(&self) -> bool {
+    fn requires_advance_structure_validation(&self) -> bool {
         matches!(self, StateTransition::DocumentsBatch(_))
     }
 }
