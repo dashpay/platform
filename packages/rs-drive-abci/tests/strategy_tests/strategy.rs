@@ -927,12 +927,12 @@ impl NetworkStrategy {
                         }
                     }
                     OperationType::IdentityTransfer if current_identities.len() > 1 => {
-                        // chose 2 last identities
-                        let indices: Vec<usize> =
-                            vec![current_identities.len() - 2, current_identities.len() - 1];
+                        let identities_clone = current_identities.clone();
 
-                        let owner = current_identities.get(indices[0]).unwrap();
-                        let recipient = current_identities.get(indices[1]).unwrap();
+                        // Sender is the first in the list, which should be loaded_identity
+                        let owner = &mut current_identities[0];
+                        // Recipient is the second in the list
+                        let recipient = &identities_clone[1];
 
                         let fetched_owner_balance = platform
                             .drive
