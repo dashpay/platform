@@ -3,7 +3,10 @@
 
 ### ⚠ BREAKING CHANGES
 
-* chainlock optimized verification (#1621)
+* The state now contains information about chain lock quorums (#1621)
+* Minimal asset lock amount is introduced that makes previous data invalid (#1667)
+* The initial state is changed (#1601)
+
 
 ### Features
 
