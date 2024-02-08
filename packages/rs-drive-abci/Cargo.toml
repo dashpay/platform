@@ -1,6 +1,6 @@
 [package]
 name = "drive-abci"
-version = "0.25.21"
+version = "1.0.0-dev.4"
 authors = [
     "Samuel Westrich <sam@dash.org>",
     "Ivan Shumkov <ivan@shumkov.ru>",
@@ -11,8 +11,6 @@ authors = [
 edition = "2021"
 rust-version = "1.73"
 license = "MIT"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
