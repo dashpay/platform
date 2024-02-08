@@ -1,4 +1,3 @@
-pub use crate::drive::cache::system_contracts_cache::SystemDataContracts;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
@@ -19,6 +18,9 @@ use std::sync::Arc;
 
 #[cfg(feature = "full")]
 mod system_contracts_cache;
+
+#[cfg(feature = "full")]
+pub use system_contracts_cache::SystemDataContracts;
 
 /// Drive cache struct
 #[cfg(feature = "full")]

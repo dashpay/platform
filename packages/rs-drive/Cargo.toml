@@ -25,7 +25,7 @@ sqlparser = { version = "0.38.0" }
 thiserror = { version = "1.0.30" }
 moka = { version = "0.11.1", features = ["future", "futures-util"] }
 nohash-hasher = { version = "0.2.0" }
-dpp = { path = "../rs-dpp", features = ["drive", "cbor"] }
+dpp = { path = "../rs-dpp", features = ["drive", "cbor", "random-public-keys"] }
 derive_more = "0.99.17"
 tracing = { version = "0.1.37", default-features = false, features = [] }
 

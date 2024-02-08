@@ -4,12 +4,7 @@ version = "1.0.0-dev.4"
 edition = "2021"
 
 [dependencies]
-dpp = { path = "../rs-dpp", features = [
-    "client",
-    "validation",
-    "identity-value-conversion",
-    "state-transition-signing",
-] }
+dpp = { path = "../rs-dpp", features = ["all_features"] }
 dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
@@ -17,8 +12,6 @@ drive = { path = "../rs-drive", default-features = false, features = [
 ] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
-# drive-abci is only needed for core rpc; TODO remove once we have correct core rpc impl
-drive-abci = { path = "../rs-drive-abci", default-features = false }
 
 bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
 thiserror = "1.0.47"
