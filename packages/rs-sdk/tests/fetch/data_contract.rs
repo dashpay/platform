@@ -1,6 +1,6 @@
-use crate::config::Config;
-use rs_sdk::platform::{Fetch, FetchMany};
+use super::config::Config;
 use dpp::prelude::{DataContract, Identifier};
+use rs_sdk::platform::{Fetch, FetchMany};
 
 /// Given some dummy data contract ID, when I fetch data contract, I get None because it doesn't exist.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]

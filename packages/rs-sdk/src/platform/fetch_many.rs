@@ -5,9 +5,9 @@
 //! ## Traits
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from the platform.
 
-use crate::mock::MockResponse;
 use crate::{
     error::Error,
+    mock::MockResponse,
     platform::{document_query::DocumentQuery, query::Query},
     Sdk,
 };

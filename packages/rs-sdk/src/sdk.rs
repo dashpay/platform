@@ -1,25 +1,17 @@
 //! [Sdk] entrypoint to Dash Platform.
 
+use std::sync::Arc;
 use std::{fmt::Debug, num::NonZeroUsize, ops::DerefMut};
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
 
 use crate::error::Error;
-use crate::mock::provider::GrpcContextProvider;
-#[cfg(feature = "mocks")]
-use crate::mock::MockDashPlatformSdk;
 use crate::mock::MockResponse;
+#[cfg(feature = "mocks")]
+use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use dapi_grpc::mock::Mockable;
-use dpp::prelude::{DataContract, Identifier};
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
-use drive_proof_verifier::error::ContextProviderError;
+#[cfg(feature = "mocks")]
 use drive_proof_verifier::MockContextProvider;
-#[cfg(feature = "mocks")]
 use drive_proof_verifier::{ContextProvider, FromProof};
-#[cfg(feature = "mocks")]
-use hex::ToHex;
 pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
@@ -29,6 +21,9 @@ use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
     DapiClient, DapiClientError, DapiRequestExecutor,
 };
+#[cfg(feature = "mocks")]
+use std::path::{Path, PathBuf};
+#[cfg(feature = "mocks")]
 use tokio::sync::Mutex;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 
@@ -114,6 +109,7 @@ enum SdkInstance {
         version: &'static PlatformVersion,
     },
     /// Mock SDK
+    #[cfg(feature = "mocks")]
     Mock {
         /// Mock DAPI client used to communicate with Dash Platform.
         ///
@@ -481,6 +477,7 @@ impl SdkBuilder {
                 // if context provider is not set correctly (is None), it means we need to fallback to core wallet
                 let mut ctx_guard = sdk.context_provider.lock().expect("lock poisoned");
                 if  ctx_guard.is_none() {
+                    #[cfg(feature = "mocks")]
                     if !self.core_ip.is_empty() {
                         tracing::warn!("ContextProvider not set; mocking with Dash Core. \
                         Please provide your own ContextProvider with SdkBuilder::with_context_provider().");
@@ -497,37 +494,38 @@ impl SdkBuilder {
                     } else{
                         tracing::warn!(
                             "Configure ContextProvider with Sdk::with_context_provider(); otherwise Sdk will fail");
-                }
-            };
-            drop(ctx_guard);
+                    }
+                    #[cfg(not(feature = "mocks"))]
+                    tracing::warn!(
+                        "Configure ContextProvider with Sdk::with_context_provider(); otherwise Sdk will fail");
+                };
+                drop(ctx_guard);
 
-
-            sdk
+                Ok(sdk)
             },
             #[cfg(feature = "mocks")]
             // mock mode
-            None =>{ let dapi =Arc::new(tokio::sync::Mutex::new(  MockDapiClient::new()));
+            None => {
+                let dapi =Arc::new(tokio::sync::Mutex::new(  MockDapiClient::new()));
                 // We create mock context provider that will use the mock DAPI client to retrieve data contracts.
                 let  context_provider = self.context_provider.unwrap_or(Box::new(MockContextProvider::new()));
 
-          let sdk= Sdk{
-                inner:SdkInstance::Mock {
-                    mock: std::sync::Mutex::new( MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs)),
-                    dapi,
-                },
-                dump_dir: self.dump_dir,
-                proofs:self.proofs,
-                context_provider:  std::sync:: Mutex::new( Some(context_provider)),
-                cancel_token: self.cancel_token,
-            };
-            Arc::new(sdk)
-        },
+                let sdk = Sdk {
+                    inner:SdkInstance::Mock {
+                        mock: std::sync::Mutex::new( MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs)),
+                        dapi,
+                    },
+                    dump_dir: self.dump_dir,
+                    proofs:self.proofs,
+                    context_provider:  std::sync:: Mutex::new( Some(context_provider)),
+                    cancel_token: self.cancel_token,
+                };
+                Ok(Arc::new(sdk))
+            },
             #[cfg(not(feature = "mocks"))]
-            None => Err(Error::Config(
-                "Mock mode is not available. Please enable `mocks` feature or provide address list.".to_string(),
-            )),
+            None => Err(Error::Config("Mock mode is not available. Please enable `mocks` feature or provide address list.".to_string())),
         };
 
-        Ok(sdk)
+        sdk
     }
 }

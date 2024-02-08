@@ -5,6 +5,7 @@ compile_error!("tests require `mocks` feature to be enabled");
 #[cfg(not(any(feature = "network-testing", feature = "offline-testing")))]
 compile_error!("network-testing or offline-testing must be enabled for tests");
 
+#[cfg(feature = "mocks")]
 mod broadcast;
 mod common;
 mod config;

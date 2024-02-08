@@ -4,8 +4,8 @@
 //! into dash-platform-sdk.
 
 use dashcore_rpc::{
-    dashcore::{address::NetworkUnchecked, hashes::Hash, Amount, QuorumHash},
-    dashcore_rpc_json as json, Auth, Client, RawTx, RpcApi,
+    dashcore::{hashes::Hash, Amount, QuorumHash},
+    dashcore_rpc_json as json, Auth, Client, RpcApi,
 };
 use drive_proof_verifier::error::ContextProviderError;
 use std::{fmt::Debug, sync::Mutex};

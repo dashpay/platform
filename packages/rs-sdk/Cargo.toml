@@ -93,3 +93,9 @@ network-testing = ["mocks"]
 # dump all requests and responses to `tests/vectors/`,
 # so that they can be used later for `offline-testing`.
 generate-test-vectors = ["network-testing"]
+
+
+[[example]]
+
+name = "read_contract"
+required-features = ["mocks"]
