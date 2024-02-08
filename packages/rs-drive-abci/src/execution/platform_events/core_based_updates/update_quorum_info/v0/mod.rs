@@ -177,10 +177,7 @@ where
                     .validator_sets()
                     .iter()
                     .map(|(quorum_hash, validator_set)| {
-                        (
-                            quorum_hash.clone(),
-                            validator_set.threshold_public_key().clone(),
-                        )
+                        (*quorum_hash, validator_set.threshold_public_key().clone())
                     })
                     .collect();
                 let previous_quorums = block_platform_state

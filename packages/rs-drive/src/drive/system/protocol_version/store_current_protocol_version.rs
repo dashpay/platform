@@ -1,4 +1,3 @@
-use crate::drive::grove_operations::BatchInsertApplyType;
 use crate::drive::object_size_info::PathKeyElementInfo;
 use crate::drive::system::misc_path;
 use crate::drive::system::misc_tree_constants::PROTOCOL_VERSION_STORAGE_KEY;

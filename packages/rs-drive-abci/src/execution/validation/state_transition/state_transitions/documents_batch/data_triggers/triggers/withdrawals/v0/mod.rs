@@ -87,7 +87,7 @@ pub fn delete_withdrawal_data_trigger_v0(
         )?
         .documents_owned();
 
-    let Some(withdrawal) = withdrawals.get(0) else {
+    let Some(withdrawal) = withdrawals.first() else {
         let err = DataTriggerConditionError::new(
             data_contract.id(),
             dt_delete.base().id(),

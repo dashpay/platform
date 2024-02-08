@@ -134,7 +134,7 @@ mod tests {
         let index = query
             .find_best_index(platform_version)
             .expect("expected to find index");
-        assert_eq!(index, document_type.indices().get(0).unwrap());
+        assert_eq!(index, document_type.indices().first().unwrap());
     }
 
     #[test]

@@ -1,14 +1,10 @@
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::rpc::signature::CoreSignatureVerification;
-use dpp::consensus::basic::identity::{
-    IdentityAssetLockTransactionOutPointAlreadyExistsError,
-    InvalidInstantAssetLockProofSignatureError,
-};
+use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
-use dpp::platform_value::Bytes36;
+
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;

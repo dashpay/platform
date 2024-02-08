@@ -19,7 +19,7 @@ use dpp::block::block_info::{BlockInfo, DEFAULT_BLOCK_INFO};
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::bls_signatures::PublicKey as ThresholdBlsPublicKey;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
-use drive::grovedb::batch::Op;
+
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 
