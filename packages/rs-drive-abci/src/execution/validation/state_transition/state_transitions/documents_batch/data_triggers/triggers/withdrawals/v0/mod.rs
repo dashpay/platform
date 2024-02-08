@@ -201,7 +201,7 @@ mod tests {
         let platform_version = PlatformVersion::first();
 
         let data_contract =
-            load_system_data_contract(SystemDataContract::Withdrawals, &platform_version)
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
                 .expect("to load system data contract");
         let owner_id = data_contract.owner_id();
 
@@ -253,7 +253,7 @@ mod tests {
             .expect("should return a platform version");
 
         let data_contract =
-            load_system_data_contract(SystemDataContract::Withdrawals, &platform_version)
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
                 .expect("to load system data contract");
         let owner_id = data_contract.owner_id();
 

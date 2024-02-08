@@ -90,7 +90,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use crate::platform_types::platform::Platform;
-    use crate::rpc::core::{CoreRPCLike, MockCoreRPCLike};
+    use crate::rpc::core::MockCoreRPCLike;
     use dashcore_rpc::dashcore_rpc_json::QuorumType;
     use dpp::bls_signatures::PublicKey as BlsPublicKey;
     use dpp::dashcore::hashes::Hash;

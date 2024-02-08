@@ -486,7 +486,7 @@ mod tests {
                 StateError::DataContractConfigUpdateError,
                 1
             );
-            let error = errors.get(0).expect("to have an error");
+            let error = errors.first().expect("to have an error");
             assert_eq!(
                 error.additional_message(),
                 "contract can not change whether it keeps history: changing from true to false"

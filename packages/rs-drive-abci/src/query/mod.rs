@@ -368,7 +368,7 @@ mod tests {
 
     mod identity_balance {
         use crate::error::query::QueryError;
-        use bs58::encode;
+
         use dapi_grpc::platform::v0::get_identity_balance_request::{
             GetIdentityBalanceRequestV0, Version,
         };
@@ -1710,7 +1710,7 @@ mod tests {
             ContractRequest, DocumentRequest, IdentityRequest,
         };
         use dapi_grpc::platform::v0::get_proofs_request::{GetProofsRequestV0, Version};
-        use dapi_grpc::platform::v0::{get_proofs_response, GetProofsRequest, GetProofsResponse};
+        use dapi_grpc::platform::v0::{GetProofsRequest, GetProofsResponse};
         use dapi_grpc::platform::VersionedGrpcResponse;
         use prost::Message;
 

@@ -50,7 +50,7 @@ impl Drive {
         );
         match result {
             Ok(_) => Ok(contract_proof),
-            Err(Error::GroveDB(grovedb::Error::WrongElementType(s))) if s == "expected an item" => {
+            Err(Error::GroveDB(grovedb::Error::WrongElementType("expected an item"))) => {
                 // In this case we are trying to prove a historical type contract
                 let contract_query =
                     Self::fetch_contract_with_history_latest_query(contract_id, true);
