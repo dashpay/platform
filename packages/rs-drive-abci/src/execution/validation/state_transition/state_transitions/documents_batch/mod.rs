@@ -62,7 +62,6 @@ impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
 impl StateTransitionBasicStructureValidationV0 for DocumentsBatchTransition {
     fn validate_basic_structure(
         &self,
-        platform: &PlatformStateRef,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version

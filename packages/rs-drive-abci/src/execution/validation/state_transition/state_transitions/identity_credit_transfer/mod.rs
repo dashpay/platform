@@ -53,7 +53,6 @@ impl StateTransitionActionTransformerV0 for IdentityCreditTransferTransition {
 impl StateTransitionBasicStructureValidationV0 for IdentityCreditTransferTransition {
     fn validate_basic_structure(
         &self,
-        _platform: &PlatformStateRef,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version

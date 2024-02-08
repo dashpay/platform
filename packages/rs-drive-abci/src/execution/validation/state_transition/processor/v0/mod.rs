@@ -35,8 +35,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
 
     // We start with basic structure validation, this is structure validation that does not require
     // state.
-    let consensus_result =
-        state_transition.validate_basic_structure(&platform.into(), platform_version)?;
+    let consensus_result = state_transition.validate_basic_structure(platform_version)?;
 
     if !consensus_result.is_valid() {
         return Ok(
@@ -176,7 +175,6 @@ pub(crate) trait StateTransitionBasicStructureValidationV0 {
     /// * `Result<SimpleConsensusValidationResult, Error>` - A result with either a SimpleConsensusValidationResult or an Error.
     fn validate_basic_structure(
         &self,
-        platform: &PlatformStateRef,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
@@ -257,33 +255,24 @@ pub(crate) trait StateTransitionStateValidationV0:
 impl StateTransitionBasicStructureValidationV0 for StateTransition {
     fn validate_basic_structure(
         &self,
-        platform: &PlatformStateRef,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
             StateTransition::DataContractCreate(st) => {
-                st.validate_basic_structure(platform, platform_version)
+                st.validate_basic_structure(platform_version)
             }
             StateTransition::DataContractUpdate(st) => {
-                st.validate_basic_structure(platform, platform_version)
+                st.validate_basic_structure(platform_version)
             }
-            StateTransition::IdentityCreate(st) => {
-                st.validate_basic_structure(platform, platform_version)
-            }
-            StateTransition::IdentityUpdate(st) => {
-                st.validate_basic_structure(platform, platform_version)
-            }
-            StateTransition::IdentityTopUp(st) => {
-                st.validate_basic_structure(platform, platform_version)
-            }
+            StateTransition::IdentityCreate(st) => st.validate_basic_structure(platform_version),
+            StateTransition::IdentityUpdate(st) => st.validate_basic_structure(platform_version),
+            StateTransition::IdentityTopUp(st) => st.validate_basic_structure(platform_version),
             StateTransition::IdentityCreditWithdrawal(st) => {
-                st.validate_basic_structure(platform, platform_version)
+                st.validate_basic_structure(platform_version)
             }
-            StateTransition::DocumentsBatch(st) => {
-                st.validate_basic_structure(platform, platform_version)
-            }
+            StateTransition::DocumentsBatch(st) => st.validate_basic_structure(platform_version),
             StateTransition::IdentityCreditTransfer(st) => {
-                st.validate_basic_structure(platform, platform_version)
+                st.validate_basic_structure(platform_version)
             }
         }
     }

@@ -13,7 +13,7 @@ use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::processor::process_state_transition;
-use crate::execution::validation::state_transition::processor::v0::{StateTransitionBasicStructureValidationV0, StateTransitionSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0};
+use crate::execution::validation::state_transition::processor::v0::{StateTransitionBasicStructureValidationV0, StateTransitionRevisionValidationV0, StateTransitionSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0};
 
 /// A trait for validating state transitions within a blockchain.
 pub(crate) trait StateTransitionCheckTxValidationV0 {
@@ -48,8 +48,22 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     )?;
 
                 // First we validate the basic structure
-                let result = state_transition
-                    .validate_basic_structure(&platform.into(), platform_version)?;
+                let result = state_transition.validate_basic_structure(platform_version)?;
+
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+
+                let result = state_transition.validate_identity_contract_nonces(
+                    &platform.into(),
+                    platform.block_info,
+                    None,
+                    platform_version,
+                )?;
 
                 if !result.is_valid() {
                     return Ok(
@@ -93,6 +107,8 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 } else {
                     None
                 };
+
+                // We want to validate the signature before we check that the signature security level is good.
 
                 let action = if state_transition
                     .requires_state_to_validate_identity_and_signatures()

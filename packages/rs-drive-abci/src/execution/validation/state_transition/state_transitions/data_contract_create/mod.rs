@@ -55,7 +55,6 @@ impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
 impl StateTransitionBasicStructureValidationV0 for DataContractCreateTransition {
     fn validate_basic_structure(
         &self,
-        _platform: &PlatformStateRef,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
