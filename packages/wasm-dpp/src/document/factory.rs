@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 
 use dpp::document::document_factory::DocumentFactory;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use wasm_bindgen::prelude::*;
 
@@ -13,6 +13,7 @@ use dpp::document::Document;
 
 use dpp::prelude::ExtendedDocument;
 
+use dpp::identifier::Identifier;
 use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 use dpp::version::PlatformVersion;
 use std::convert::TryFrom;
@@ -107,12 +108,47 @@ impl DocumentFactoryWASM {
     pub fn create_state_transition(
         &self,
         documents: &JsValue,
-        nonce_counter_value: &JsValue, //IdentityID/ContractID -> nonce
+        nonce_counter_value: &js_sys::Object, //IdentityID/ContractID -> nonce
     ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
-        // todo transform nonce counter
         let mut nonce_counter = BTreeMap::new();
+        let mut contract_ids_to_check = HashSet::<&Identifier>::new();
+
+        // TODO: move to a function and handle errors instead of doing unwraps
+        {
+            js_sys::Object::entries(nonce_counter_value)
+                .iter()
+                .for_each(|entry| {
+                    let key_value = js_sys::Array::try_from(entry.clone()).unwrap();
+                    let identity_id = identifier_from_js_value(&key_value.get(0)).unwrap();
+                    let contract_ids = key_value.get(1);
+                    let contract_ids = js_sys::Object::try_from(&contract_ids).unwrap();
+
+                    js_sys::Object::entries(&contract_ids)
+                        .iter()
+                        .for_each(|entry| {
+                            let key_value = js_sys::Array::try_from(entry.clone()).unwrap();
+                            let contract_id = identifier_from_js_value(&key_value.get(0)).unwrap();
+                            let nonce = key_value.get(1).as_f64().unwrap() as u64;
+                            nonce_counter.insert((identity_id, contract_id), nonce);
+                        });
+                });
+        }
+
+        nonce_counter.iter().for_each(|((_, contract_id), _)| {
+            contract_ids_to_check.insert(contract_id);
+        });
 
         let documents_by_action = extract_documents_by_action(documents)?;
+
+        for (_, documents) in documents_by_action.iter() {
+            for document in documents.iter() {
+                if !contract_ids_to_check.contains(&document.data_contract().id()) {
+                    return Err(JsValue::from_str(
+                        "Document's data contract is not in the nonce counter",
+                    ));
+                }
+            }
+        }
 
         let documents: Vec<(
             DocumentTransitionActionType,
