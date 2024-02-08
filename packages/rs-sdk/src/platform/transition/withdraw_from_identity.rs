@@ -10,7 +10,6 @@ use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCredit
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::{Error, Sdk};
 use dpp::state_transition::identity_credit_withdrawal_transition::methods::IdentityCreditWithdrawalTransitionMethodsV0;
-use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::withdrawal::Pooling;
 use drive::drive::Drive;

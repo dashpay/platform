@@ -2,14 +2,13 @@
 
 use std::sync::Arc;
 
-use crate::common::setup_logs;
-use crate::config::Config;
-use rs_sdk::platform::{DocumentQuery, Fetch, FetchMany};
+use super::{common::setup_logs, config::Config};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::{DataContract, Identifier};
 use drive::query::DriveQuery;
+use rs_sdk::platform::{DocumentQuery, Fetch, FetchMany};
 
 /// Given some data contract ID, document type and document ID, when I fetch it, then I get it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]

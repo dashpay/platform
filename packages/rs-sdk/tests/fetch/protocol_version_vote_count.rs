@@ -1,6 +1,6 @@
-use crate::{common::setup_logs, config::Config};
-use rs_sdk::platform::FetchMany;
+use super::{common::setup_logs, config::Config};
 use dpp::version::ProtocolVersionVoteCount;
+use rs_sdk::platform::FetchMany;
 
 /// Given some existing identity ID, when I fetch the identity keys, I get some of them indexed by key ID.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]

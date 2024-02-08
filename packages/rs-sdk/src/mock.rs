@@ -32,6 +32,12 @@ pub mod sdk;
 // Otherwise  dapi_grpc_macros::Mockable fails.
 // TODO: move Mockable to some crate that can be shared between dapi-grpc, rs-dapi-client, and dash-sdk
 pub use dapi_grpc::mock::Mockable;
+
+// MockResponse is needed even if mocks feature is disabled - it just does nothing.
+#[cfg(not(feature = "mocks"))]
+pub use noop::MockResponse;
+#[cfg(feature = "mocks")]
+pub use requests::MockResponse;
 #[cfg(feature = "mocks")]
 pub use requests::*;
 #[cfg(feature = "mocks")]

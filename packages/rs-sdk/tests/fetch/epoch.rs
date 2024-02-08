@@ -1,20 +1,20 @@
 use std::collections::BTreeMap;
 
-use crate::{common::setup_logs, config::Config};
+use super::{common::setup_logs, config::Config};
 use dapi_grpc::platform::{
     v0::{get_identity_request::GetIdentityRequestV0, GetIdentityRequest},
     VersionedGrpcResponse,
 };
+use dpp::block::epoch::EpochIndex;
+use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
+use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 use rs_sdk::{
     platform::{
         types::epoch::ExtendedEpochInfoEx, Fetch, FetchMany, LimitQuery, DEFAULT_EPOCH_QUERY_LIMIT,
     },
     Sdk,
 };
-use dpp::block::epoch::EpochIndex;
-use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
-use dpp::block::extended_epoch_info::ExtendedEpochInfo;
-use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 
 /// Get current epoch index from DAPI response metadata
 async fn get_current_epoch(sdk: &Sdk, cfg: &Config) -> EpochIndex {
