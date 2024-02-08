@@ -6,7 +6,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::Document;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::PartialIdentity;
+
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;

@@ -1,17 +1,17 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
-use crate::execution::types::execution_operation::{ExecutionOperation, OperationLike};
+use crate::execution::types::execution_operation::ExecutionOperation;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::fee::fee_result::FeeResult;
-use dpp::fee::Credits;
+
 use dpp::prelude::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use dpp::ProtocolError;
+
 use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C>

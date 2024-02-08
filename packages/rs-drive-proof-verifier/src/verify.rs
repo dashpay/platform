@@ -1,6 +1,6 @@
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::bls_signatures;
-pub use drive::drive::verify::RootHash;
+
 use tenderdash_abci::{
     proto::types::{CanonicalVote, SignedMsgType, StateId},
     signatures::{Hashable, Signable},

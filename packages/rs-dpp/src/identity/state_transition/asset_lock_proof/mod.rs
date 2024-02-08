@@ -5,7 +5,7 @@ use dashcore::{OutPoint, Transaction};
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub use bincode::{Decode, Encode};
-pub use chain::*;
+
 pub use instant::*;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;

@@ -458,7 +458,6 @@ mod tests {
 
     mod identity_balance_and_revision {
         use crate::error::query::QueryError;
-
         use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::{
             GetIdentityBalanceAndRevisionRequestV0, Version,
         };

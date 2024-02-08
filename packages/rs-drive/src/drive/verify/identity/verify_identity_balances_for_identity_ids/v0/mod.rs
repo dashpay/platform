@@ -6,8 +6,6 @@ use dpp::fee::Credits;
 
 use crate::drive::verify::RootHash;
 
-pub use dpp::prelude::{Identity, Revision};
-
 use grovedb::GroveDb;
 
 impl Drive {

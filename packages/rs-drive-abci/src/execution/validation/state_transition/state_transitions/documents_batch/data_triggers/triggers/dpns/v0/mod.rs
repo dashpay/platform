@@ -416,7 +416,7 @@ mod test {
             DocumentTransitionActionType::Create,
             vec![(document, document_type, Bytes32::default())],
         )]);
-        let first_transition = transitions.get(0).expect("transition should be present");
+        let first_transition = transitions.first().expect("transition should be present");
 
         let document_create_transition = first_transition
             .as_transition_create()

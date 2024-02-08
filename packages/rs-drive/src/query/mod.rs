@@ -214,7 +214,7 @@ impl InternalClauses {
             0 => Ok(None),
             1 => Ok(Some(
                 primary_key_equal_clauses_array
-                    .get(0)
+                    .first()
                     .expect("there must be a value")
                     .clone(),
             )),
@@ -229,7 +229,7 @@ impl InternalClauses {
             0 => Ok(None),
             1 => Ok(Some(
                 primary_key_in_clauses_array
-                    .get(0)
+                    .first()
                     .expect("there must be a value")
                     .clone(),
             )),
@@ -652,7 +652,7 @@ impl<'a> DriveQuery<'a> {
         // Should ideally iterate over each statement
         let first_statement =
             statements
-                .get(0)
+                .first()
                 .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
                     "Issue parsing sql getting first statement".to_string(),
                 )))?;
@@ -722,13 +722,13 @@ impl<'a> DriveQuery<'a> {
         // Get the document type from the 'from' section
         let document_type_name = match &select
             .from
-            .get(0)
+            .first()
             .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
                 "Invalid query: missing from section".to_string(),
             )))?
             .relation
         {
-            Table { name, .. } => name.0.get(0).as_ref().map(|identifier| &identifier.value),
+            Table { name, .. } => name.0.first().as_ref().map(|identifier| &identifier.value),
             _ => None,
         }
         .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(

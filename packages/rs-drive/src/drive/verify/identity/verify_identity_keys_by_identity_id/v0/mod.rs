@@ -10,7 +10,7 @@ use crate::drive::verify::RootHash;
 use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
-pub use dpp::prelude::{Identity, Revision};
+
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
 use grovedb::{GroveDb, PathQuery};

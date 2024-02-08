@@ -389,7 +389,7 @@ impl<'a> WhereClause {
         }
 
         let field_value = clause_components
-            .get(0)
+            .first()
             .expect("check above enforces it exists");
         let field_ref = field_value.as_text().ok_or(Error::Query(
             QuerySyntaxError::InvalidWhereClauseComponents(
@@ -438,7 +438,7 @@ impl<'a> WhereClause {
             .collect::<Vec<&&WhereClause>>();
         match lower_range_clauses.len() {
             0 => Ok(None),
-            1 => Ok(Some(lower_range_clauses.get(0).unwrap())),
+            1 => Ok(Some(lower_range_clauses.first().unwrap())),
             _ => Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
                 "there can only at most one range clause with a lower bound",
             ))),
@@ -452,7 +452,7 @@ impl<'a> WhereClause {
             .collect::<Vec<&&WhereClause>>();
         match upper_range_clauses.len() {
             0 => Ok(None),
-            1 => Ok(Some(upper_range_clauses.get(0).unwrap())),
+            1 => Ok(Some(upper_range_clauses.first().unwrap())),
             _ => Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
                 "there can only at most one range clause with a lower bound",
             ))),
@@ -507,7 +507,7 @@ impl<'a> WhereClause {
         let in_clause = match in_clauses_array.len() {
             0 => Ok(None),
             1 => {
-                let clause = in_clauses_array.get(0).expect("there must be a value");
+                let clause = in_clauses_array.first().expect("there must be a value");
                 if known_fields.contains(&clause.field) {
                     Err(Error::Query(
                         QuerySyntaxError::DuplicateNonGroupableClauseSameField(
@@ -637,7 +637,7 @@ impl<'a> WhereClause {
                     }
                 }
             } else if non_groupable_range_clauses.len() == 1 && groupable_range_clauses.is_empty() {
-                let where_clause = *non_groupable_range_clauses.get(0).unwrap();
+                let where_clause = *non_groupable_range_clauses.first().unwrap();
                 if where_clause.operator == StartsWith {
                     // Starts with must null be against an empty string
                     if let Value::Text(text) = &where_clause.value {
@@ -689,7 +689,7 @@ impl<'a> WhereClause {
         }
         let left_key = document_type.serialize_value_for_key(
             self.field.as_str(),
-            in_values.get(0).unwrap(),
+            in_values.first().unwrap(),
             platform_version,
         )?;
         let right_key = document_type.serialize_value_for_key(
@@ -1309,7 +1309,7 @@ mod tests {
             let where_clauses = vec![
                 WhereClause {
                     field: "a".to_string(),
-                    operator: *query_pair.get(0).unwrap(),
+                    operator: *query_pair.first().unwrap(),
                     value: Value::Float(0.0),
                 },
                 WhereClause {
@@ -1335,7 +1335,7 @@ mod tests {
             let where_clauses = vec![
                 WhereClause {
                     field: "a".to_string(),
-                    operator: *query_pair.get(0).unwrap(),
+                    operator: *query_pair.first().unwrap(),
                     value: Value::Float(1.0),
                 },
                 WhereClause {
@@ -1357,7 +1357,7 @@ mod tests {
             let where_clauses = vec![
                 WhereClause {
                     field: "a".to_string(),
-                    operator: *query_pair.get(0).unwrap(),
+                    operator: *query_pair.first().unwrap(),
                     value: Value::Float(1.0),
                 },
                 WhereClause {
@@ -1408,7 +1408,7 @@ mod tests {
             let where_clauses = vec![
                 WhereClause {
                     field: "a".to_string(),
-                    operator: *query_pair.get(0).unwrap(),
+                    operator: *query_pair.first().unwrap(),
                     value: Value::Float(0.0),
                 },
                 WhereClause {

@@ -3,7 +3,7 @@ mod instant;
 
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
-use crate::rpc::core::CoreRPCLike;
+
 use dpp::prelude::AssetLockProof;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;

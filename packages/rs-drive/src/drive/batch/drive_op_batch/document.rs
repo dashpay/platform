@@ -16,7 +16,6 @@ use dpp::prelude::Identifier;
 
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
-use dpp::data_contracts::SystemDataContract;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
