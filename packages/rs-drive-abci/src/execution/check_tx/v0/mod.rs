@@ -14,6 +14,8 @@ use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 
+#[cfg(test)]
+use crate::execution::validation::state_transition::processor::process_state_transition;
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;

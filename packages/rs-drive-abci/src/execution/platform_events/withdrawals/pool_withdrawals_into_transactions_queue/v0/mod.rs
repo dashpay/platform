@@ -149,6 +149,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::block::epoch::Epoch;
 
     use dpp::data_contracts::SystemDataContract;
     use dpp::identifier::Identifier;
