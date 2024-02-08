@@ -9,7 +9,6 @@ use crate::error::Error;
 use crate::drive::verify::RootHash;
 
 use dpp::identity::PartialIdentity;
-pub use dpp::prelude::{Identity, Revision};
 
 use dpp::version::PlatformVersion;
 

@@ -1,15 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use dpp::dashcore::hashes::Hash;
-    use dpp::dashcore::{BlockHash, ChainLock};
-    use tenderdash_abci::proto::types::CoreChainLock;
 
     use crate::execution::run_chain_for_strategy;
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
     use crate::strategy::{MasternodeListChangesStrategy, NetworkStrategy};
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
-    use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use drive_abci::platform_types::validator_set::v0::ValidatorSetV0Getters;
+
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::Strategy;

@@ -14,6 +14,12 @@ use bincode::{Decode, Encode};
 #[platform_serialize(unversioned)]
 pub struct InvalidIdentityUpdateTransitionEmptyError;
 
+impl Default for InvalidIdentityUpdateTransitionEmptyError {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InvalidIdentityUpdateTransitionEmptyError {
     pub fn new() -> Self {
         Self {}

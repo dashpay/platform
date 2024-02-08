@@ -188,7 +188,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
     fn top_level_indices(&self) -> Vec<&IndexProperty> {
         let mut index_properties: Vec<&IndexProperty> = Vec::with_capacity(self.indices.len());
         for index in &self.indices {
-            if let Some(property) = index.properties.get(0) {
+            if let Some(property) = index.properties.first() {
                 index_properties.push(property);
             }
         }

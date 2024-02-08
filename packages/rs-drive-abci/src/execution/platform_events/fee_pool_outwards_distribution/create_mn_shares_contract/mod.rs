@@ -21,7 +21,7 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> DataContract {
         let contract =
-            load_system_data_contract(SystemDataContract::MasternodeRewards, &platform_version)
+            load_system_data_contract(SystemDataContract::MasternodeRewards, platform_version)
                 .expect("should load masternode reward contract");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));

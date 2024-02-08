@@ -1,19 +1,16 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
+
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::version::PlatformVersion;
 
-use drive::drive::identity::withdrawals::{
-    WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
-};
+use drive::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
 use drive::grovedb::TransactionArg;
 
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use drive::drive::config::DEFAULT_QUERY_LIMIT;
-use drive::query::DriveQuery;
 
 use crate::{
     error::{execution::ExecutionError, Error},
@@ -152,6 +149,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::block::epoch::Epoch;
 
     use dpp::data_contracts::SystemDataContract;
     use dpp::identifier::Identifier;

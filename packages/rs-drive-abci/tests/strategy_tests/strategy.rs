@@ -1,7 +1,7 @@
 use crate::masternodes::MasternodeListItemWithUpdates;
 use crate::query::QueryStrategy;
 use crate::BlockHeight;
-use dashcore_rpc::dashcore;
+
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::block::block_info::BlockInfo;
 
@@ -197,7 +197,7 @@ impl CoreHeightIncrease {
             }
             CoreHeightIncrease::KnownCoreHeightIncreases(values) => {
                 if values.len() == 1 {
-                    *values.get(0).unwrap()
+                    *values.first().unwrap()
                 } else {
                     values.pop().unwrap()
                 }
