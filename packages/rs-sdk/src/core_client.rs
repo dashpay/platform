@@ -106,7 +106,6 @@ impl CoreClient {
         &self,
         quorum_type: u32,
         quorum_hash: [u8; 32],
-        _core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
         let quorum_hash = QuorumHash::from_slice(&quorum_hash)
             .map_err(|e| ContextProviderError::InvalidQuorum(e.to_string()))?;

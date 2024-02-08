@@ -139,9 +139,7 @@ impl ContextProvider for GrpcContextProvider {
             return Ok(*key);
         };
 
-        let key =
-            self.core
-                .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)?;
+        let key = self.core.get_quorum_public_key(quorum_type, quorum_hash)?;
 
         self.quorum_public_keys_cache
             .put((quorum_hash, quorum_type), key);

@@ -9,7 +9,6 @@ mod delegate;
 mod document_query;
 mod fetch;
 mod fetch_many;
-pub mod put;
 mod query;
 pub mod transition;
 pub mod types;
