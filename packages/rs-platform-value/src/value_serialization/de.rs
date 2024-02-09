@@ -134,7 +134,7 @@ impl<'de> de::Visitor<'de> for Visitor {
             }
             fn visit_seq<A: de::SeqAccess<'de>>(self, mut acc: A) -> Result<Self::Value, A::Error> {
                 match acc.size_hint() {
-                    Some(size) if size == 1 => {
+                    Some(1) => {
                         let tag: u8 = acc
                             .next_element()?
                             .ok_or_else(|| de::Error::custom("expected tag"))?;
