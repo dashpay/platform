@@ -8,6 +8,7 @@ use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::St
 use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV0;
 use dapi_grpc::platform::v0::get_documents_response::GetDocumentsResponseV0;
 use dapi_grpc::platform::v0::{get_documents_response, GetDocumentsResponse, Proof};
+use dapi_grpc::Message;
 use dpp::check_validation_result_with_data;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identifier::Identifier;
@@ -16,7 +17,6 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
 use drive::query::DriveQuery;
-use dapi_grpc::Message;
 
 impl<C> Platform<C> {
     pub(super) fn query_documents_v0(

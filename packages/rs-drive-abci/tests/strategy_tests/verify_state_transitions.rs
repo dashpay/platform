@@ -7,6 +7,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::Document;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
+use dapi_grpc::Message;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
@@ -19,7 +20,6 @@ use drive_abci::execution::validation::state_transition::transformer::StateTrans
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::MockCoreRPCLike;
-use dapi_grpc::Message;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;

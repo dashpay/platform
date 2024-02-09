@@ -7,12 +7,12 @@ use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identities_request::GetIdentitiesRequestV0;
 use dapi_grpc::platform::v0::get_identities_response::{GetIdentitiesResponseV0, IdentityEntry};
 use dapi_grpc::platform::v0::{get_identities_response, GetIdentitiesResponse, Proof};
+use dapi_grpc::Message;
 use dpp::platform_value::Bytes32;
 use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::{check_validation_result_with_data, ProtocolError};
-use dapi_grpc::Message;
 
 impl<C> Platform<C> {
     pub(super) fn query_identities_v0(

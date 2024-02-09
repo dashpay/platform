@@ -7,6 +7,7 @@ use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_proofs_request::GetProofsRequestV0;
 use dapi_grpc::platform::v0::get_proofs_response::GetProofsResponseV0;
 use dapi_grpc::platform::v0::{get_proofs_response, GetProofsResponse, Proof};
+use dapi_grpc::Message;
 use dpp::check_validation_result_with_data;
 use dpp::platform_value::Bytes32;
 use dpp::prelude::Identifier;
@@ -14,7 +15,6 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
 use drive::query::SingleDocumentDriveQuery;
-use dapi_grpc::Message;
 
 impl<C> Platform<C> {
     pub(super) fn query_proofs_v0(

@@ -551,8 +551,8 @@ mod tests {
             get_identity_keys_response, key_request_type::Request, AllKeys, GetIdentityKeysRequest,
             GetIdentityKeysResponse, KeyRequestType, SearchKey, SecurityLevelMap,
         };
-        use drive::error::query::QuerySyntaxError;
         use dapi_grpc::Message;
+        use drive::error::query::QuerySyntaxError;
 
         const QUERY_PATH: &str = "/identity/keys";
 
@@ -1169,11 +1169,11 @@ mod tests {
 
         use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
         use dapi_grpc::platform::v0::get_documents_request::{GetDocumentsRequestV0, Version};
+        use dapi_grpc::Message;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::platform_value::string_encoding::Encoding;
         use dpp::tests::fixtures::get_data_contract_fixture;
         use drive::error::query::QuerySyntaxError;
-        use dapi_grpc::Message;
 
         const QUERY_PATH: &str = "/documents";
 
@@ -1875,6 +1875,7 @@ mod tests {
             get_protocol_version_upgrade_state_response, GetProtocolVersionUpgradeStateRequest,
             GetProtocolVersionUpgradeStateResponse,
         };
+        use dapi_grpc::Message;
         use drive::drive::grove_operations::BatchInsertApplyType;
         use drive::drive::object_size_info::PathKeyElementInfo;
         use drive::drive::protocol_upgrade::{
@@ -1884,7 +1885,6 @@ mod tests {
         use drive::grovedb::{Element, PathQuery, Query, QueryItem};
         use drive::query::GroveDb;
         use integer_encoding::VarInt;
-        use dapi_grpc::Message;
         use rand::rngs::StdRng;
         use rand::{Rng, SeedableRng};
         use std::ops::RangeFull;
@@ -2237,6 +2237,7 @@ mod tests {
             GetProtocolVersionUpgradeVoteStatusRequest,
             GetProtocolVersionUpgradeVoteStatusResponse,
         };
+        use dapi_grpc::Message;
         use drive::drive::grove_operations::BatchInsertApplyType;
         use drive::drive::object_size_info::PathKeyElementInfo;
         use drive::drive::protocol_upgrade::{
@@ -2247,7 +2248,6 @@ mod tests {
         use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery};
         use drive::query::GroveDb;
         use integer_encoding::VarInt;
-        use dapi_grpc::Message;
         use rand::rngs::StdRng;
         use rand::{Rng, SeedableRng};
 

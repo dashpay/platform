@@ -72,6 +72,7 @@ mod test {
         use dapi_grpc::platform::v0::get_data_contract_history_response::{
             get_data_contract_history_response_v0, GetDataContractHistoryResponseV0,
         };
+        use dapi_grpc::Message;
         use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
         use dpp::data_contract::DataContract;
@@ -81,7 +82,6 @@ mod test {
         use dpp::validation::ValidationResult;
         use dpp::version::PlatformVersion;
         use drive::drive::Drive;
-        use dapi_grpc::Message;
 
         fn default_request_v0() -> GetDataContractHistoryRequestV0 {
             GetDataContractHistoryRequestV0 {

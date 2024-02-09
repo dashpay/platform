@@ -11,9 +11,9 @@ use dapi_grpc::platform::v0::{get_epochs_info_response, GetEpochsInfoResponse, P
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::check_validation_result_with_data;
 
+use dapi_grpc::Message;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use dapi_grpc::Message;
 
 impl<C> Platform<C> {
     pub(super) fn query_epoch_infos_v0(

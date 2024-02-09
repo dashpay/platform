@@ -22,8 +22,8 @@ use indexmap::IndexMap;
 
 use crate::error::execution::ExecutionError;
 use dpp::block::block_info::BlockInfo;
-use dpp::util::hash::hash_double;
 use dpp::bls_signatures::PublicKey as ThresholdBlsPublicKey;
+use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 
 /// Platform state

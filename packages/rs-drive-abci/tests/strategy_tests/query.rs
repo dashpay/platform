@@ -5,6 +5,7 @@ use dapi_grpc::platform::v0::{
     get_identities_by_public_key_hashes_request, get_identities_by_public_key_hashes_response,
     GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse, Proof,
 };
+use dapi_grpc::Message;
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -17,7 +18,6 @@ use drive::drive::verify::RootHash;
 use drive::drive::Drive;
 use drive_abci::abci::{AbciApplication, AbciError};
 use drive_abci::rpc::core::MockCoreRPCLike;
-use dapi_grpc::Message;
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
