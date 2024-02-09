@@ -51,7 +51,7 @@ runs:
       shell: bash
       run: |
         curl -Lo /tmp/protoc.zip \
-          "https://github.com/protocolbuffers/protobuf/releases/download/v22.0/protoc-22.0-linux-${{ steps.protoc_arch.outputs.arch }}.zip"
+          "https://github.com/protocolbuffers/protobuf/releases/download/v25.2/protoc-25.2-linux-${{ steps.protoc_arch.outputs.arch }}.zip"
         unzip /tmp/protoc.zip -d ${HOME}/.local
         echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
         export PATH="${PATH}:${HOME}/.local/bin"
