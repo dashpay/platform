@@ -20,12 +20,6 @@ impl DataContractCreatedStateTransitionStructureValidationV0 for DataContractCre
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        if self.data_contract().document_schemas().is_empty() {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                DataContractEmptySchemaError::new(self.data_contract().id().clone()).into(),
-            ));
-        }
-
         // Validate data contract
         let result = DataContract::try_from_platform_versioned(
             self.data_contract().clone(),

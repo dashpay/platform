@@ -40,23 +40,6 @@ describe('Platform', () => {
       }
     });
 
-    it('should fail to create new data contract with empty schema', async () => {
-      dataContractFixture = await getDataContractFixture(identity.getId());
-      dataContractFixture.setDocumentSchemas({});
-
-      let broadcastError;
-
-      try {
-        await client.platform.contracts.publish(dataContractFixture, identity);
-      } catch (e) {
-        broadcastError = e;
-      }
-
-      expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(1069);
-      expect(broadcastError.getCause()).to.be.an.instanceOf(DataContractEmptySchemaError);
-    });
-
     it('should fail to create new data contract with unknown owner', async () => {
       // if no identity is specified
       // random is generated within the function
