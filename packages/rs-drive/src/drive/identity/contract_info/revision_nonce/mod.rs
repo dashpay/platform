@@ -1,2 +1,3 @@
 mod fetch_identity_contract_nonce;
 pub(crate) mod merge_revision_nonce_for_identity_contract_pair;
+mod prove_identity_contract_nonce;

@@ -3,12 +3,13 @@
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::GetIdentityBalanceAndRevisionRequestV0;
 use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
+use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0;
 use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
 use dapi_grpc::platform::v0::{
     get_identity_balance_and_revision_request, get_identity_balance_request,
-    get_identity_by_public_key_hash_request, get_identity_request,
-    GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceRequest,
-    GetIdentityByPublicKeyHashRequest, GetIdentityRequest,
+    get_identity_by_public_key_hash_request, get_identity_contract_nonce_request,
+    get_identity_request, GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceRequest,
+    GetIdentityByPublicKeyHashRequest, GetIdentityContractNonceRequest, GetIdentityRequest,
 };
 use dpp::prelude::Identity;
 
@@ -78,6 +79,29 @@ impl Query<GetIdentityBalanceRequest> for dpp::prelude::Identifier {
         let request: GetIdentityBalanceRequest = GetIdentityBalanceRequest {
             version: Some(get_identity_balance_request::Version::V0(
                 GetIdentityBalanceRequestV0 { id, prove },
+            )),
+        };
+
+        Ok(request)
+    }
+}
+
+impl Query<GetIdentityContractNonceRequest>
+    for (dpp::prelude::Identifier, dpp::prelude::Identifier)
+{
+    fn query(self, prove: bool) -> Result<GetIdentityContractNonceRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        let (identity_id, contract_id) = self;
+
+        let request: GetIdentityContractNonceRequest = GetIdentityContractNonceRequest {
+            version: Some(get_identity_contract_nonce_request::Version::V0(
+                GetIdentityContractNonceRequestV0 {
+                    identity_id: identity_id.to_vec(),
+                    contract_id: contract_id.to_vec(),
+                    prove,
+                },
             )),
         };
 

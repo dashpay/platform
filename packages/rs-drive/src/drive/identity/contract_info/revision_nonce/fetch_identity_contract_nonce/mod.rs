@@ -33,7 +33,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<Revision>, Error> {
+    ) -> Result<Option<IdentityContractNonce>, Error> {
         match platform_version
             .drive
             .methods

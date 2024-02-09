@@ -89,6 +89,10 @@ GPBObjCClassDeclaration(GetIdentityByPublicKeyHashRequest);
 GPBObjCClassDeclaration(GetIdentityByPublicKeyHashRequest_GetIdentityByPublicKeyHashRequestV0);
 GPBObjCClassDeclaration(GetIdentityByPublicKeyHashResponse);
 GPBObjCClassDeclaration(GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0);
+GPBObjCClassDeclaration(GetIdentityContractNonceRequest);
+GPBObjCClassDeclaration(GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0);
+GPBObjCClassDeclaration(GetIdentityContractNonceResponse);
+GPBObjCClassDeclaration(GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0);
 GPBObjCClassDeclaration(GetIdentityKeysRequest);
 GPBObjCClassDeclaration(GetIdentityKeysRequest_GetIdentityKeysRequestV0);
 GPBObjCClassDeclaration(GetIdentityKeysResponse);
@@ -599,6 +603,130 @@ typedef struct GetIdentityRequest_GetIdentityRequestV0__storage_ {
                                    storageSize:sizeof(GetIdentityRequest_GetIdentityRequestV0__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentityRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetIdentityContractNonceRequest
+
+@implementation GetIdentityContractNonceRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetIdentityContractNonceRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0 *v0;
+} GetIdentityContractNonceRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0),
+        .number = GetIdentityContractNonceRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetIdentityContractNonceRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentityContractNonceRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentityContractNonceRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetIdentityContractNonceRequest_ClearVersionOneOfCase(GetIdentityContractNonceRequest *message) {
+  GPBDescriptor *descriptor = [GetIdentityContractNonceRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0
+
+@implementation GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0
+
+@dynamic identityId;
+@dynamic contractId;
+@dynamic prove;
+
+typedef struct GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *identityId;
+  NSData *contractId;
+} GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identityId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0_FieldNumber_IdentityId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0__storage_, identityId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "contractId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0_FieldNumber_ContractId,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0__storage_, contractId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0_FieldNumber_Prove,
+        .hasIndex = 2,
+        .offset = 3,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentityContractNonceRequest)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
@@ -1368,6 +1496,143 @@ typedef struct GetIdentitiesResponse_GetIdentitiesResponseV0__storage_ {
 
 void GetIdentitiesResponse_GetIdentitiesResponseV0_ClearResultOneOfCase(GetIdentitiesResponse_GetIdentitiesResponseV0 *message) {
   GPBDescriptor *descriptor = [GetIdentitiesResponse_GetIdentitiesResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetIdentityContractNonceResponse
+
+@implementation GetIdentityContractNonceResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetIdentityContractNonceResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0 *v0;
+} GetIdentityContractNonceResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0),
+        .number = GetIdentityContractNonceResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetIdentityContractNonceResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentityContractNonceResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentityContractNonceResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetIdentityContractNonceResponse_ClearVersionOneOfCase(GetIdentityContractNonceResponse *message) {
+  GPBDescriptor *descriptor = [GetIdentityContractNonceResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0
+
+@implementation GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic identityContractNonce;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  Proof *proof;
+  ResponseMetadata *metadata;
+  uint64_t identityContractNonce;
+} GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identityContractNonce",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0_FieldNumber_IdentityContractNonce,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0__storage_, identityContractNonce),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentityContractNonceResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0_ClearResultOneOfCase(GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0 descriptor];
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }

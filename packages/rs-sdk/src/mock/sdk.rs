@@ -125,6 +125,10 @@ impl MockDashPlatformSdk {
                     self.load_expectation::<proto::GetIdentityBalanceRequest>(filename)
                         .await?
                 }
+                "GetIdentityContractNonceRequest" => {
+                    self.load_expectation::<proto::GetIdentityContractNonceRequest>(filename)
+                        .await?
+                }
                 "GetIdentityBalanceAndRevisionRequest" => {
                     self.load_expectation::<proto::GetIdentityBalanceAndRevisionRequest>(filename)
                         .await?

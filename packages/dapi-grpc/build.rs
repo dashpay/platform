@@ -34,13 +34,14 @@ pub fn generate() -> Result<(), std::io::Error> {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 15] = [
+    const VERSIONED_REQUESTS: [&str; 16] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
         "GetDocumentsRequest",
         "GetIdentitiesByPublicKeyHashesRequest",
         "GetIdentitiesRequest",
+        "GetIdentityContractNonceRequest",
         "GetIdentityBalanceAndRevisionRequest",
         "GetIdentityBalanceRequest",
         "GetIdentityByPublicKeyHashRequest",

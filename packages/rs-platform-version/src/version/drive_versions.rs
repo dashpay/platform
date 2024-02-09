@@ -93,6 +93,7 @@ pub struct DriveVerifyIdentityMethodVersions {
     pub verify_identity_id_by_public_key_hash: FeatureVersion,
     pub verify_identity_ids_by_public_key_hashes: FeatureVersion,
     pub verify_identity_keys_by_identity_id: FeatureVersion,
+    pub verify_identity_contract_nonce: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -518,6 +519,7 @@ pub struct DriveIdentityFetchPartialIdentityMethodVersions {
 pub struct DriveIdentityProveMethodVersions {
     pub full_identity: FeatureVersion,
     pub full_identities: FeatureVersion,
+    pub identity_contract_nonce: FeatureVersion,
     pub prove_full_identities_by_unique_public_key_hashes: FeatureVersion,
     pub prove_full_identity_by_unique_public_key_hash: FeatureVersion,
     pub prove_identity_id_by_unique_public_key_hash: FeatureVersion,

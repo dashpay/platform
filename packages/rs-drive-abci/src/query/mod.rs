@@ -456,6 +456,119 @@ mod tests {
         }
     }
 
+    mod identity_contract_nonce {
+        use crate::error::query::QueryError;
+
+        use dapi_grpc::platform::v0::get_identity_contract_nonce_request::{
+            GetIdentityContractNonceRequestV0, Version,
+        };
+        use dapi_grpc::platform::v0::{
+            get_identity_contract_nonce_response, GetIdentityContractNonceRequest,
+            GetIdentityContractNonceResponse,
+        };
+        use prost::Message;
+
+        const QUERY_PATH: &str = "/identity/contractNonce";
+
+        #[test]
+        fn test_invalid_identity_id() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetIdentityContractNonceRequest {
+                version: Some(Version::V0(GetIdentityContractNonceRequestV0 {
+                    identity_id: vec![0; 8],
+                    prove: false,
+                    contract_id: vec![1; 32],
+                })),
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, version);
+            assert!(result.is_ok());
+            super::assert_invalid_identifier(result.unwrap());
+        }
+
+        #[test]
+        fn test_invalid_contract_id() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetIdentityContractNonceRequest {
+                version: Some(Version::V0(GetIdentityContractNonceRequestV0 {
+                    identity_id: vec![0; 32],
+                    prove: false,
+                    contract_id: vec![1; 8],
+                })),
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, version);
+            assert!(result.is_ok());
+            super::assert_invalid_identifier(result.unwrap());
+        }
+
+        #[test]
+        fn test_identity_not_found() {
+            let (platform, version) = super::setup_platform();
+
+            let id = vec![0; 32];
+
+            let request = GetIdentityContractNonceRequest {
+                version: Some(Version::V0(GetIdentityContractNonceRequestV0 {
+                    identity_id: vec![0; 32],
+                    prove: false,
+                    contract_id: vec![0; 32],
+                })),
+            }
+            .encode_to_vec();
+
+            let validation_result = platform
+                .query(QUERY_PATH, &request, version)
+                .expect("expected query to succeed");
+            let validation_error = validation_result.first_error().unwrap();
+
+            assert_eq!(
+                validation_error.to_string(),
+                "not found error: No Identity found".to_string()
+            );
+
+            assert!(matches!(validation_error, QueryError::NotFound(_)));
+        }
+
+        #[test]
+        fn test_identity_contract_nonce_absence_proof() {
+            let (platform, version) = super::setup_platform();
+
+            let id = vec![0; 32];
+
+            let request = GetIdentityContractNonceRequest {
+                version: Some(Version::V0(GetIdentityContractNonceRequestV0 {
+                    identity_id: vec![0; 32],
+                    prove: true,
+                    contract_id: vec![0; 32],
+                })),
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, version);
+            let validation_result = result.unwrap();
+            let response = GetIdentityContractNonceResponse::decode(
+                validation_result.data.unwrap().as_slice(),
+            )
+            .unwrap();
+
+            assert!(matches!(
+                extract_single_variant_or_panic!(
+                    response.version.expect("expected a versioned response"),
+                    get_identity_contract_nonce_response::Version::V0(inner),
+                    inner
+                )
+                .result
+                .unwrap(),
+                get_identity_contract_nonce_response::get_identity_contract_nonce_response_v0::Result::Proof(_)
+            ));
+        }
+    }
+
     mod identity_balance_and_revision {
         use crate::error::query::QueryError;
         use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::{

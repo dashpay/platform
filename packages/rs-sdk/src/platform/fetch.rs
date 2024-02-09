@@ -139,6 +139,10 @@ impl Fetch for drive_proof_verifier::types::IdentityBalance {
     type Request = platform_proto::GetIdentityBalanceRequest;
 }
 
+impl Fetch for drive_proof_verifier::types::IdentityContractNonce {
+    type Request = platform_proto::GetIdentityContractNonceRequest;
+}
+
 impl Fetch for drive_proof_verifier::types::IdentityBalanceAndRevision {
     type Request = platform_proto::GetIdentityBalanceAndRevisionRequest;
 }

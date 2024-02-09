@@ -216,6 +216,66 @@ export namespace GetIdentityRequest {
   }
 }
 
+export class GetIdentityContractNonceRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetIdentityContractNonceRequest.GetIdentityContractNonceRequestV0 | undefined;
+  setV0(value?: GetIdentityContractNonceRequest.GetIdentityContractNonceRequestV0): void;
+
+  getVersionCase(): GetIdentityContractNonceRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetIdentityContractNonceRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetIdentityContractNonceRequest): GetIdentityContractNonceRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetIdentityContractNonceRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetIdentityContractNonceRequest;
+  static deserializeBinaryFromReader(message: GetIdentityContractNonceRequest, reader: jspb.BinaryReader): GetIdentityContractNonceRequest;
+}
+
+export namespace GetIdentityContractNonceRequest {
+  export type AsObject = {
+    v0?: GetIdentityContractNonceRequest.GetIdentityContractNonceRequestV0.AsObject,
+  }
+
+  export class GetIdentityContractNonceRequestV0 extends jspb.Message {
+    getIdentityId(): Uint8Array | string;
+    getIdentityId_asU8(): Uint8Array;
+    getIdentityId_asB64(): string;
+    setIdentityId(value: Uint8Array | string): void;
+
+    getContractId(): Uint8Array | string;
+    getContractId_asU8(): Uint8Array;
+    getContractId_asB64(): string;
+    setContractId(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetIdentityContractNonceRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetIdentityContractNonceRequestV0): GetIdentityContractNonceRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetIdentityContractNonceRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetIdentityContractNonceRequestV0;
+    static deserializeBinaryFromReader(message: GetIdentityContractNonceRequestV0, reader: jspb.BinaryReader): GetIdentityContractNonceRequestV0;
+  }
+
+  export namespace GetIdentityContractNonceRequestV0 {
+    export type AsObject = {
+      identityId: Uint8Array | string,
+      contractId: Uint8Array | string,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class GetIdentityBalanceRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
@@ -582,6 +642,75 @@ export namespace GetIdentitiesResponse {
     export enum ResultCase {
       RESULT_NOT_SET = 0,
       IDENTITIES = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetIdentityContractNonceResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetIdentityContractNonceResponse.GetIdentityContractNonceResponseV0 | undefined;
+  setV0(value?: GetIdentityContractNonceResponse.GetIdentityContractNonceResponseV0): void;
+
+  getVersionCase(): GetIdentityContractNonceResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetIdentityContractNonceResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetIdentityContractNonceResponse): GetIdentityContractNonceResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetIdentityContractNonceResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetIdentityContractNonceResponse;
+  static deserializeBinaryFromReader(message: GetIdentityContractNonceResponse, reader: jspb.BinaryReader): GetIdentityContractNonceResponse;
+}
+
+export namespace GetIdentityContractNonceResponse {
+  export type AsObject = {
+    v0?: GetIdentityContractNonceResponse.GetIdentityContractNonceResponseV0.AsObject,
+  }
+
+  export class GetIdentityContractNonceResponseV0 extends jspb.Message {
+    hasIdentityContractNonce(): boolean;
+    clearIdentityContractNonce(): void;
+    getIdentityContractNonce(): number;
+    setIdentityContractNonce(value: number): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetIdentityContractNonceResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetIdentityContractNonceResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetIdentityContractNonceResponseV0): GetIdentityContractNonceResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetIdentityContractNonceResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetIdentityContractNonceResponseV0;
+    static deserializeBinaryFromReader(message: GetIdentityContractNonceResponseV0, reader: jspb.BinaryReader): GetIdentityContractNonceResponseV0;
+  }
+
+  export namespace GetIdentityContractNonceResponseV0 {
+    export type AsObject = {
+      identityContractNonce: number,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      IDENTITY_CONTRACT_NONCE = 1,
       PROOF = 2,
     }
   }

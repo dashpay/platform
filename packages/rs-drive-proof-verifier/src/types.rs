@@ -47,6 +47,9 @@ pub type IdentityBalance = u64;
 /// Identity balance and revision of the identity.
 pub type IdentityBalanceAndRevision = (u64, Revision);
 
+/// An identity contract nonce
+pub struct IdentityContractNonce(u64);
+
 /// Public keys belonging to some identity.
 ///
 /// Map of [key IDs](KeyID) to the [public key](IdentityPublicKey).
