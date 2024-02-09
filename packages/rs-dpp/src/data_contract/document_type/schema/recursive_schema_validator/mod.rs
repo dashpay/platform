@@ -105,7 +105,7 @@ mod test {
             PlatformVersion::first(),
         )
         .expect("expected traversal validator to succeed");
-        let consensus_error = result.errors.get(0).expect("the error should be returned");
+        let consensus_error = result.errors.first().expect("the error should be returned");
 
         match consensus_error {
             ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
@@ -145,7 +145,7 @@ mod test {
             PlatformVersion::first(),
         )
         .expect("expected traversal validator to exist for first protocol version");
-        let consensus_error = result.errors.get(0).expect("the error should be returned");
+        let consensus_error = result.errors.first().expect("the error should be returned");
 
         match consensus_error {
             ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
@@ -175,7 +175,7 @@ mod test {
             PlatformVersion::first(),
         )
         .expect("expected traversal validator to exist for first protocol version");
-        let consensus_error = result.errors.get(0).expect("the error should be returned");
+        let consensus_error = result.errors.first().expect("the error should be returned");
 
         match consensus_error {
             ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {

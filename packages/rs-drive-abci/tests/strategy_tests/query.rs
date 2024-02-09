@@ -351,9 +351,7 @@ mod tests {
     use strategy_tests::Strategy;
 
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
-    use dpp::dashcore::hashes::Hash;
-    use dpp::dashcore::{BlockHash, ChainLock};
-    use tenderdash_abci::proto::types::CoreChainLock;
+
     use tenderdash_abci::Application;
 
     macro_rules! extract_single_variant_or_panic {

@@ -97,7 +97,7 @@ pub fn delete_withdrawal_data_trigger_v0(
         )?
         .documents_owned();
 
-    let Some(withdrawal) = withdrawals.get(0) else {
+    let Some(withdrawal) = withdrawals.first() else {
         let err = DataTriggerConditionError::new(
             data_contract.id(),
             dt_delete.base().id(),
@@ -139,7 +139,7 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::{Document, DocumentV0Getters};
-    use dpp::platform_value::{platform_value, Bytes32};
+    use dpp::platform_value::platform_value;
     use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
     use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
     use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionV0;
@@ -212,7 +212,7 @@ mod tests {
         let platform_version = PlatformVersion::first();
 
         let data_contract =
-            load_system_data_contract(SystemDataContract::Withdrawals, &platform_version)
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
                 .expect("to load system data contract");
         let owner_id = data_contract.owner_id();
 
@@ -264,7 +264,7 @@ mod tests {
             .expect("should return a platform version");
 
         let data_contract =
-            load_system_data_contract(SystemDataContract::Withdrawals, &platform_version)
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
                 .expect("to load system data contract");
         let owner_id = data_contract.owner_id();
 

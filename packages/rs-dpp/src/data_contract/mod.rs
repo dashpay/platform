@@ -4,11 +4,9 @@ use crate::serialization::{
     PlatformLimitDeserializableFromVersionedStructure, PlatformSerializableWithPlatformVersion,
 };
 
-pub use data_contract::*;
 use derive_more::From;
 
 use bincode::config::{BigEndian, Configuration};
-pub use generate_data_contract::*;
 
 pub mod errors;
 pub mod extra;

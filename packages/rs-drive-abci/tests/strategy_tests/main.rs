@@ -62,6 +62,13 @@ mod verify_state_transitions;
 
 pub type BlockHeight = u64;
 
+fn asset_unlock_index(tx: &Transaction) -> u64 {
+    let Some(AssetUnlockPayloadType(ref payload)) = tx.special_transaction_payload else {
+        panic!("expected to get AssetUnlockPayloadType");
+    };
+    payload.base.index
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,14 +103,13 @@ mod tests {
     use drive::drive::config::DEFAULT_QUERY_LIMIT;
     use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
     use drive_abci::config::{ExecutionConfig, PlatformTestConfig};
-    use drive_abci::error::execution::ExecutionError;
-    use drive_abci::error::Error;
+
     use drive_abci::logging::LogLevel;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
     use itertools::Itertools;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
-    use tenderdash_abci::proto::types::CoreChainLock;
+
     use tenderdash_abci::Application;
 
     pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
@@ -2397,7 +2403,7 @@ mod tests {
                                 .unwrap()
                                 .asset_unlock_statuses
                                 .get(index)
-                                .map(|status| status.clone())
+                                .cloned()
                                 .unwrap()
                         })
                         .collect())
@@ -2444,7 +2450,7 @@ mod tests {
                     platform_version,
                 )
                 .unwrap();
-            assert!(withdrawal_documents_pooled.len() > 0);
+            assert!(!withdrawal_documents_pooled.is_empty());
             let pooled_withdrawals = withdrawal_documents_pooled.len();
 
             (outcome, pooled_withdrawals)
@@ -2586,7 +2592,7 @@ mod tests {
                 .unwrap();
 
             // In this block we should have new withdrawals pooled
-            assert!(withdrawal_documents_pooled.len() > 0);
+            assert!(!withdrawal_documents_pooled.is_empty());
 
             // And extra withdrawals broadcasted
             let withdrawals_broadcasted_expected =
@@ -2708,7 +2714,7 @@ mod tests {
                 .unwrap();
 
             // In this block we should have new withdrawals pooled
-            assert!(withdrawal_documents_pooled.len() > 0);
+            assert!(!withdrawal_documents_pooled.is_empty());
 
             // And some withdrawals completed
             let withdrawals_completed_expected =
@@ -2757,17 +2763,7 @@ mod tests {
 
         // Run block 6.
         // Tests withdrawal expiration
-        let ChainExecutionOutcome {
-            abci_app,
-            proposers,
-            quorums,
-            current_quorum_hash,
-            current_proposer_versions,
-            end_time_ms,
-            withdrawals,
-            identity_contract_nonce_counter,
-            ..
-        } = {
+        let ChainExecutionOutcome { .. } = {
             let outcome = continue_chain_for_strategy(
                 abci_app,
                 ChainExecutionParameters {
@@ -2836,7 +2832,7 @@ mod tests {
                 .unwrap();
 
             // In this block we should have new withdrawals pooled
-            assert!(withdrawal_documents_pooled.len() > 0);
+            assert!(!withdrawal_documents_pooled.is_empty());
 
             // Amount of completed withdrawals stays the same as in the last block
             assert_eq!(
@@ -3472,7 +3468,7 @@ mod tests {
 
         let outcome = run_chain_for_strategy(&mut platform, 15, strategy, config, 15);
 
-        let balances = &outcome
+        let _balances = &outcome
             .abci_app
             .platform
             .drive
@@ -3529,11 +3525,4 @@ mod tests {
         // Only three out of five transitions should've made to the block
         assert_eq!(state_transitions.len(), 3);
     }
-}
-
-fn asset_unlock_index(tx: &Transaction) -> u64 {
-    let Some(AssetUnlockPayloadType(ref payload)) = tx.special_transaction_payload else {
-        panic!("expected to get AssetUnlockPayloadType");
-    };
-    payload.base.index
 }

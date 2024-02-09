@@ -1,17 +1,15 @@
 use dashcore_rpc::dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
-    AssetUnlockStatusResult, ExtendedQuorumDetails, ExtendedQuorumListResult,
-    GetBestChainLockResult, GetChainTipsResult, GetTransactionLockedResult, MasternodeListDiff,
-    MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
+    AssetUnlockStatusResult, ExtendedQuorumDetails, ExtendedQuorumListResult, GetChainTipsResult,
+    MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
 };
 use dashcore_rpc::json::GetRawTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
-use dpp::dashcore::{hashes::Hash, InstantLock};
+use dpp::dashcore::InstantLock;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
-use tenderdash_abci::proto::types::CoreChainLock;
 
 /// Information returned by QuorumListExtended
 pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;

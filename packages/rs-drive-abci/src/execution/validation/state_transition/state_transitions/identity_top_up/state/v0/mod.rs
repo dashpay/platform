@@ -12,7 +12,7 @@ use dpp::identity::KeyType;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
-use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
+
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
 

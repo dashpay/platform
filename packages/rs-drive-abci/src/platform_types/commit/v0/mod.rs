@@ -37,7 +37,7 @@ impl CommitV0 {
             quorum_type,
 
             inner: proto::types::Commit {
-                block_id: Some(block_id.try_into().expect("cannot convert block id")),
+                block_id: Some(block_id.into()),
                 height: height as i64,
                 round: ci.round as i32,
                 // we need to "un-reverse" quorum hash, as it was reversed in [CleanedCommitInfo::try_from]

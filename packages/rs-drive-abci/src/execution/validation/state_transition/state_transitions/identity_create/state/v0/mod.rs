@@ -14,7 +14,7 @@ use dpp::identity::state_transition::AssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
-use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
+
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
 

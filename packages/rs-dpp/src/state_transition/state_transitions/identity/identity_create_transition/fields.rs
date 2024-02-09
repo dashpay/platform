@@ -1,7 +1,7 @@
 use crate::state_transition::state_transitions;
 
 pub use state_transitions::common_fields::property_names::{
-    ENTROPY, SIGNATURE, SIGNATURE_PUBLIC_KEY_ID, STATE_TRANSITION_PROTOCOL_VERSION, TRANSITION_TYPE,
+    SIGNATURE, STATE_TRANSITION_PROTOCOL_VERSION,
 };
 pub use state_transitions::identity::common_fields::property_names::{
     ASSET_LOCK_PROOF, IDENTITY_ID, PUBLIC_KEYS, PUBLIC_KEYS_DATA, PUBLIC_KEYS_SIGNATURE,

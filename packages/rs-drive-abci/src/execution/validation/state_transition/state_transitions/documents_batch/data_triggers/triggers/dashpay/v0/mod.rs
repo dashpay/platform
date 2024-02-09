@@ -1,4 +1,4 @@
-///! The `dashpay_data_triggers` module contains data triggers specific to the DashPay data contract.
+//! The `dashpay_data_triggers` module contains data triggers specific to the DashPay data contract.
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -201,7 +201,7 @@ mod test {
             &mut nonce_counter,
         );
         let document_transition = document_transitions
-            .get(0)
+            .first()
             .expect("document transition should be present");
 
         let document_create_transition = document_transition
@@ -294,7 +294,7 @@ mod test {
             &mut nonce_counter,
         );
         let document_transition = document_transitions
-            .get(0)
+            .first()
             .expect("document transition should be present");
 
         let document_create_transition = document_transition
@@ -343,7 +343,7 @@ mod test {
         assert!(matches!(
             &result.errors.first().unwrap(),
             &DataTriggerError::DataTriggerConditionError(e)  if {
-                e.message() == &format!("Identity {owner_id} must not be equal to owner id")
+                e.message() == format!("Identity {owner_id} must not be equal to owner id")
             }
         ));
     }
@@ -412,7 +412,7 @@ mod test {
             &mut nonce_counter,
         );
         let document_transition = document_transitions
-            .get(0)
+            .first()
             .expect("document transition should be present");
 
         let document_create_transition = document_transition
@@ -447,7 +447,7 @@ mod test {
         assert!(matches!(
             data_trigger_error,
             DataTriggerError::DataTriggerConditionError(e)  if {
-                e.message() == &format!("Identity {contract_request_to_user_id} doesn't exist")
+                e.message() == format!("Identity {contract_request_to_user_id} doesn't exist")
             }
         ));
     }
