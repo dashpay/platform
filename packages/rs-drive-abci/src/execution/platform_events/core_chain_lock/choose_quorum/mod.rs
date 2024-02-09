@@ -4,8 +4,8 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
-use dpp::dashcore::{ChainLock, QuorumHash};
-use dpp::platform_value::Bytes32;
+use dpp::dashcore::QuorumHash;
+
 use std::collections::BTreeMap;
 
 use crate::platform_types::platform::Platform;

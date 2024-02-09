@@ -1,7 +1,7 @@
 use dpp::validation::SimpleValidationResult;
-///! Data triggers implement custom validation logic for state transitions
-///! that modifies documents in a specific data contract.
-///! Data triggers can be assigned based on the data contract ID, document type, and action.
+/// Data triggers implement custom validation logic for state transitions
+/// that modifies documents in a specific data contract.
+/// Data triggers can be assigned based on the data contract ID, document type, and action.
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 
 use crate::error::Error;

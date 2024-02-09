@@ -1,4 +1,3 @@
-use dashcore_rpc::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
 use dpp::block::epoch::Epoch;
 
 use dpp::validation::SimpleValidationResult;
@@ -10,8 +9,7 @@ use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::version::PlatformVersion;
 
 use dpp::dashcore::bls_sig_utils::BLSSignature;
-use dpp::dashcore::consensus::Encodable;
-use dpp::dashcore::hashes::Hash;
+
 use tenderdash_abci::{
     proto::{serializers::timestamp::ToMilis, types::BlockId as ProtoBlockId},
     signatures::Hashable,
@@ -62,7 +60,7 @@ where
     ///
     pub(super) fn finalize_block_proposal_v0(
         &self,
-        mut request_finalize_block: FinalizeBlockCleanedRequest,
+        request_finalize_block: FinalizeBlockCleanedRequest,
         transaction: &Transaction,
         _platform_version: &PlatformVersion,
     ) -> Result<block_execution_outcome::v0::BlockFinalizationOutcome, Error> {
@@ -231,7 +229,6 @@ where
         let signatures = commit_info
             .threshold_vote_extensions
             .drain(..)
-            .into_iter()
             .map(|vote_extension| {
                 let signature_bytes: [u8; 96] =
                     vote_extension.signature.try_into().map_err(|e| {

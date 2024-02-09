@@ -40,8 +40,6 @@ mod execution_result;
 
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
-use dashcore_rpc::dashcore::consensus::Encodable;
-use dashcore_rpc::dashcore::hashes::HashEngine;
 
 use super::AbciError;
 use crate::error::Error;
@@ -368,7 +366,7 @@ where
 
     fn process_proposal(
         &self,
-        mut request: RequestProcessProposal,
+        request: RequestProcessProposal,
     ) -> Result<ResponseProcessProposal, proto::ResponseException> {
         let timer = crate::metrics::abci_request_duration("process_proposal");
 

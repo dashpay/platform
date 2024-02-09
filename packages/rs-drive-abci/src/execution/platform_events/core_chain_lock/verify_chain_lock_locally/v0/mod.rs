@@ -1,8 +1,7 @@
-use dpp::block::block_info::BlockInfo;
 use dpp::bls_signatures::G2Element;
-use dpp::dashcore::consensus::Encodable;
+
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
-use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};
+use dpp::dashcore::{ChainLock, QuorumSigningRequestId};
 
 use crate::error::Error;
 
@@ -10,7 +9,6 @@ use crate::platform_types::platform::Platform;
 
 use crate::rpc::core::CoreRPCLike;
 
-use crate::config::PlatformConfig;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::version::PlatformVersion;
@@ -236,7 +234,7 @@ where
             }
         }
 
-        return Ok(Some(chain_lock_verified));
+        Ok(Some(chain_lock_verified))
     }
 }
 

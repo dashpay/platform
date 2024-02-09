@@ -435,7 +435,7 @@ mod tests {
             .expect("expected to get array slice")
             .unwrap();
         assert_eq!(array.len(), 1);
-        assert!(array.get(0).unwrap().is_map());
+        assert!(array.first().unwrap().is_map());
         let array = value
             .get_optional_array_slice("disablePublicKeys")
             .expect("expected to get array slice")
