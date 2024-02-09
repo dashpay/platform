@@ -43,7 +43,7 @@ export default async function broadcast(
   }
 
   const identityContractNonce = await this.client.getDAPIClient().platform
-    .getIdentityContractNonce(identityId.toBuffer(), dataContractId.toBuffer());
+    .getIdentityContractNonce(identityId, dataContractId);
 
   console.log('identityContractNonce', {
     identityId: identityId.toString(),

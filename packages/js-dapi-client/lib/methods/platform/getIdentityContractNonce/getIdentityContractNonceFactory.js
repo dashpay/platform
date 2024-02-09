@@ -29,6 +29,16 @@ function getIdentityContractNonceFactory(grpcTransport) {
     // eslint-disable-next-line max-len
     const getIdentityContractNonceRequest = new GetIdentityContractNonceRequest();
 
+    if (Buffer.isBuffer(identityId)) {
+      // eslint-disable-next-line no-param-reassign
+      identityId = Buffer.from(identityId);
+    }
+
+    if (Buffer.isBuffer(contractId)) {
+      // eslint-disable-next-line no-param-reassign
+      contractId = Buffer.from(contractId);
+    }
+
     getIdentityContractNonceRequest.setV0(
       new GetIdentityContractNonceRequestV0()
         .setIdentityId(identityId)
