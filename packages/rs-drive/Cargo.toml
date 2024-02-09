@@ -9,6 +9,7 @@ authors = [
   "Wisdom Ogwu <wisdom@dash.org",
 ]
 edition = "2021"
+# Update using scripts/update-rust-toolchain.sh
 rust-version = "1.76"
 license = "MIT"
 private = true

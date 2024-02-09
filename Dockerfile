@@ -32,6 +32,7 @@
 ARG ALPINE_VERSION=3.18
 
 ARG RUSTC_WRAPPER
+# Update using scripts/update-rust-toolchain.sh
 ARG RUST_VERSION=1.76
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES

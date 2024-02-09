@@ -1,6 +1,6 @@
 [toolchain]
-# Rust version the same as in /README.md
 
+# Update using scripts/update-rust-toolchain.sh
 channel = "1.76"
 
 targets = ["wasm32-unknown-unknown"]

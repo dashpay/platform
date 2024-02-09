@@ -4,7 +4,7 @@ description: "Install dependencies"
 inputs:
   toolchain:
     description: Rust toolchain to use, stable / nightly / beta, or exact version
-    # The same as in /README.md
+    # Update using scripts/update-rust-toolchain.sh
     default: "1.76"
   target:
     description: Target Rust platform

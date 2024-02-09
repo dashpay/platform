@@ -3,6 +3,7 @@ name = "feature-flags-contract"
 description = "Feature flags data contract schema and tools"
 version = "1.0.0-dev.4"
 edition = "2021"
+# Update using scripts/update-rust-toolchain.sh
 rust-version = "1.76"
 license = "MIT"
 
