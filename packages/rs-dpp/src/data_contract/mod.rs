@@ -4,11 +4,9 @@ use crate::serialization::{
     PlatformLimitDeserializableFromVersionedStructure, PlatformSerializableWithPlatformVersion,
 };
 
-pub use data_contract::*;
 use derive_more::From;
 
 use bincode::config::{BigEndian, Configuration};
-pub use generate_data_contract::*;
 
 pub mod errors;
 pub mod extra;
@@ -264,7 +262,7 @@ mod tests {
     #[test]
     fn test_contract_serialization() {
         let platform_version = PlatformVersion::latest();
-        let data_contract = load_system_data_contract(Dashpay, platform_version.protocol_version)
+        let data_contract = load_system_data_contract(Dashpay, platform_version)
             .expect("expected dashpay contract");
         let platform_version = PlatformVersion::latest();
         let serialized = data_contract

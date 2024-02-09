@@ -69,7 +69,7 @@ pub struct Config {
 
 impl Config {
     /// Prefix of configuration options in the environment variables and `.env` file.
-    pub const CONFIG_PREFIX: &str = "RS_SDK_";
+    pub const CONFIG_PREFIX: &'static str = "RS_SDK_";
     /// Load configuration from operating system environment variables and `.env` file.
     ///
     /// Create new [Config] with data from environment variables and `${CARGO_MANIFEST_DIR}/tests/.env` file.
@@ -168,15 +168,11 @@ impl Config {
     }
 
     fn default_identity_id() -> Identifier {
-        data_contracts::SystemDataContract::DPNS
-            .source()
-            .expect("data contract source")
-            .owner_id_bytes
-            .into()
+        data_contracts::dpns_contract::OWNER_ID_BYTES.into()
     }
 
     fn default_data_contract_id() -> Identifier {
-        data_contracts::SystemDataContract::DPNS.id()
+        data_contracts::dpns_contract::ID_BYTES.into()
     }
 
     fn default_document_type_name() -> String {

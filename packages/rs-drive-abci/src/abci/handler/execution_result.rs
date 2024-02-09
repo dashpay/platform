@@ -1,14 +1,11 @@
 use crate::abci::handler::error::consensus::AbciResponseInfoGetter;
 use crate::abci::handler::error::HandlerError;
 use crate::error::Error;
-use crate::platform_types::state_transitions_processing_result::{
-    StateTransitionExecutionResult, StateTransitionsProcessingResult,
-};
+use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use dpp::fee::SignedCredits;
 use dpp::version::PlatformVersion;
 use dpp::version::TryIntoPlatformVersioned;
-use tenderdash_abci::proto::abci::tx_record::TxAction;
-use tenderdash_abci::proto::abci::{ExecTxResult, TxRecord};
+use tenderdash_abci::proto::abci::ExecTxResult;
 
 impl TryIntoPlatformVersioned<ExecTxResult> for StateTransitionExecutionResult {
     type Error = Error;

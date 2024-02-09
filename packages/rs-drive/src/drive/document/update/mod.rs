@@ -36,29 +36,21 @@
 // This module contains functionality for adding operations to update multiple documents
 #[cfg(feature = "full")]
 mod add_update_multiple_documents_operations;
-#[cfg(feature = "full")]
-pub use add_update_multiple_documents_operations::*;
 
 // Module: update_document_for_contract
 // This module contains functionality for updating a document for a given contract
 #[cfg(feature = "full")]
 mod update_document_for_contract;
-#[cfg(feature = "full")]
-pub use update_document_for_contract::*;
 
 // Module: update_document_for_contract_id
 // This module contains functionality for updating a document associated with a given contract id
 #[cfg(feature = "full")]
 mod update_document_for_contract_id;
-#[cfg(feature = "full")]
-pub use update_document_for_contract_id::*;
 
 // Module: update_document_with_serialization_for_contract
 // This module contains functionality for updating a document (with serialization) for a contract
 mod internal;
 mod update_document_with_serialization_for_contract;
-
-pub use update_document_with_serialization_for_contract::*;
 
 #[cfg(test)]
 mod tests {

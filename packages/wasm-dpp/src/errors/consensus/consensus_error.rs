@@ -3,7 +3,6 @@ use crate::errors::consensus::basic::{
     UnsupportedProtocolVersionErrorWasm, UnsupportedVersionErrorWasm,
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
-use std::ops::Deref;
 
 use crate::errors::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm,
@@ -12,7 +11,7 @@ use crate::errors::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm,
     IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityCreditTransferToSelfErrorWasm,
     IdentityInsufficientBalanceErrorWasm, InvalidAssetLockProofCoreChainHeightErrorWasm,
-    InvalidAssetLockProofTransactionHeightErrorWasm,
+    InvalidAssetLockProofTransactionHeightErrorWasm, InvalidAssetLockProofValueErrorWasm,
     InvalidAssetLockTransactionOutputReturnSizeErrorWasm,
     InvalidIdentityAssetLockProofChainLockValidationErrorWasm,
     InvalidIdentityAssetLockTransactionErrorWasm,
@@ -54,6 +53,9 @@ use dpp::consensus::signature::SignatureError;
 // use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use dpp::consensus::state::state_error::StateError;
 
+use dpp::consensus::state::data_trigger::DataTriggerError::{
+    DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
+};
 use wasm_bindgen::{JsError, JsValue};
 
 use crate::errors::consensus::basic::data_contract::{
@@ -75,9 +77,9 @@ use crate::errors::consensus::signature::{
     BasicBLSErrorWasm, BasicECDSAErrorWasm, IdentityNotFoundErrorWasm,
     SignatureShouldNotBePresentErrorWasm,
 };
-// use crate::errors::consensus::state::data_contract::data_trigger::{
-//     DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm,
-// };
+use crate::errors::consensus::state::data_contract::data_trigger::{
+    DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm, DataTriggerInvalidResultErrorWasm,
+};
 use crate::errors::consensus::state::data_contract::{
     DataContractAlreadyPresentErrorWasm, DataContractConfigUpdateErrorWasm,
     DataContractIsReadonlyErrorWasm,
@@ -185,20 +187,11 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::MissingIdentityPublicKeyIdsError(e) => {
             MissingIdentityPublicKeyIdsErrorWasm::from(e).into()
         }
-        // TODO(versioning): restore
-        // StateError::DataTriggerError(data_trigger_error) => match data_trigger_error.deref() {
-        //     DataTriggerError::DataTriggerConditionError(e) => {
-        //         DataTriggerConditionErrorWasm::from(e).into()
-        //     }
-        //     DataTriggerError::DataTriggerExecutionError(e) => {
-        //         DataTriggerExecutionErrorWasm::from(e).into()
-        //     }
-        //     DataTriggerError::DataTriggerInvalidResultError(e) => {
-        //         DataTriggerInvalidResultErrorWasm::from(e).into()
-        //     }
-        // },
-        // TODO(versioning): restore
-        // StateError::DataTriggerActionError(_) => JsError::new("Data Trigger action error").into(),
+        StateError::DataTriggerError(data_trigger_error) => match data_trigger_error {
+            DataTriggerConditionError(e) => DataTriggerConditionErrorWasm::from(e).into(),
+            DataTriggerExecutionError(e) => DataTriggerExecutionErrorWasm::from(e).into(),
+            DataTriggerInvalidResultError(e) => DataTriggerInvalidResultErrorWasm::from(e).into(),
+        },
         StateError::IdentityAlreadyExistsError(e) => {
             let wasm_error: IdentityAlreadyExistsErrorWasm = e.into();
             wasm_error.into()
@@ -215,6 +208,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DataContractConfigUpdateError(e) => {
             DataContractConfigUpdateErrorWasm::from(e).into()
+        }
+        StateError::InvalidAssetLockProofValueError(e) => {
+            InvalidAssetLockProofValueErrorWasm::from(e).into()
         }
         // TODO(versioning): restore
         _ => todo!(),

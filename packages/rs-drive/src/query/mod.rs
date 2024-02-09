@@ -214,7 +214,7 @@ impl InternalClauses {
             0 => Ok(None),
             1 => Ok(Some(
                 primary_key_equal_clauses_array
-                    .get(0)
+                    .first()
                     .expect("there must be a value")
                     .clone(),
             )),
@@ -229,7 +229,7 @@ impl InternalClauses {
             0 => Ok(None),
             1 => Ok(Some(
                 primary_key_in_clauses_array
-                    .get(0)
+                    .first()
                     .expect("there must be a value")
                     .clone(),
             )),
@@ -652,7 +652,7 @@ impl<'a> DriveQuery<'a> {
         // Should ideally iterate over each statement
         let first_statement =
             statements
-                .get(0)
+                .first()
                 .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
                     "Issue parsing sql",
                 )))?;
@@ -703,7 +703,7 @@ impl<'a> DriveQuery<'a> {
         // Get the document type from the 'from' section
         let document_type_name = match &select
             .from
-            .get(0)
+            .first()
             .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
                 "Invalid query: missing from section",
             )))?
@@ -714,7 +714,7 @@ impl<'a> DriveQuery<'a> {
                 alias: _,
                 args: _,
                 with_hints: _,
-            } => name.0.get(0).as_ref().map(|identifier| &identifier.value),
+            } => name.0.first().as_ref().map(|identifier| &identifier.value),
             _ => None,
         }
         .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
@@ -1974,10 +1974,9 @@ mod tests {
     fn setup_family_contract() -> (Drive, DataContract) {
         let tmp_dir = TempDir::new().unwrap();
 
-        let platform_version = PlatformVersion::latest();
+        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
-        let drive: Drive = Drive::open(tmp_dir, None, platform_version)
-            .expect("expected to open Drive successfully");
+        let platform_version = PlatformVersion::latest();
 
         drive
             .create_initial_state_structure(None, platform_version)

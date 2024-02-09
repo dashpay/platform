@@ -1,5 +1,6 @@
 mod protocol_version;
 pub use protocol_version::*;
+pub mod contracts;
 pub mod dpp_versions;
 pub mod drive_abci_versions;
 pub mod drive_versions;

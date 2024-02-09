@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 pub mod v0;
 
 /// Info pertinent to the current epoch.
-#[derive(Clone, Serialize, Deserialize, Debug, From)]
+#[derive(Clone, Serialize, Deserialize, Debug, From, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum EpochInfo {
     /// Version 0

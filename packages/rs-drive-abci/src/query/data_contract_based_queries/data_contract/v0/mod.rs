@@ -22,7 +22,7 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
-        let quorum_type = self.config.quorum_type() as u32;
+        let quorum_type = self.config.validator_set_quorum_type() as u32;
         let GetDataContractRequestV0 { id, prove } = request;
         let contract_id: Identifier =
             check_validation_result_with_data!(id.try_into().map_err(|_| {
@@ -39,11 +39,11 @@ impl<C> Platform<C> {
                 version: Some(get_data_contract_response::Version::V0(GetDataContractResponseV0 {
                     result: Some(get_data_contract_response::get_data_contract_response_v0::Result::Proof(Proof {
                         grovedb_proof: proof,
-                        quorum_hash: state.last_quorum_hash().to_vec(),
+                        quorum_hash: state.last_committed_quorum_hash().to_vec(),
                         quorum_type,
-                        block_id_hash: state.last_block_id_hash().to_vec(),
-                        signature: state.last_block_signature().to_vec(),
-                        round: state.last_block_round(),
+                        block_id_hash: state.last_committed_block_id_hash().to_vec(),
+                        signature: state.last_committed_block_signature().to_vec(),
+                        round: state.last_committed_block_round(),
                     })),
                     metadata: Some(metadata),
                 })),

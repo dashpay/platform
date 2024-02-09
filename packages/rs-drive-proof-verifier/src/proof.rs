@@ -29,7 +29,7 @@ use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
-pub use drive::drive::verify::RootHash;
+
 use drive::drive::Drive;
 use drive::query::DriveQuery;
 

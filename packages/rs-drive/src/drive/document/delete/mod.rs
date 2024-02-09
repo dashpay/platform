@@ -35,52 +35,42 @@
 // Module: delete_document_for_contract
 // This module contains functionality for deleting a document associated with a given contract
 mod delete_document_for_contract;
-pub use delete_document_for_contract::*;
 
 // Module: delete_document_for_contract_id
 // This module contains functionality for deleting a document associated with a given contract id
 mod delete_document_for_contract_id;
-pub use delete_document_for_contract_id::*;
 
 // Module: delete_document_for_contract_apply_and_add_to_operations
 // This module contains functionality to apply a delete operation and add to the operations of a contract
 mod delete_document_for_contract_apply_and_add_to_operations;
-pub use delete_document_for_contract_apply_and_add_to_operations::*;
 
 // Module: remove_document_from_primary_storage
 // This module contains functionality to remove a document from primary storage
 mod remove_document_from_primary_storage;
-pub use remove_document_from_primary_storage::*;
 
 // Module: remove_reference_for_index_level_for_contract_operations
 // This module contains functionality to remove a reference for an index level for contract operations
 mod remove_reference_for_index_level_for_contract_operations;
-pub use remove_reference_for_index_level_for_contract_operations::*;
 
 // Module: remove_indices_for_index_level_for_contract_operations
 // This module contains functionality to remove indices for an index level for contract operations
 mod remove_indices_for_index_level_for_contract_operations;
-pub use remove_indices_for_index_level_for_contract_operations::*;
 
 // Module: remove_indices_for_top_index_level_for_contract_operations
 // This module contains functionality to remove indices for the top index level for contract operations
 mod remove_indices_for_top_index_level_for_contract_operations;
-pub use remove_indices_for_top_index_level_for_contract_operations::*;
 
 // Module: delete_document_for_contract_id_with_named_type_operations
 // This module contains functionality to delete a document for a contract id with named type operations
 mod delete_document_for_contract_id_with_named_type_operations;
-pub use delete_document_for_contract_id_with_named_type_operations::*;
 
 // Module: delete_document_for_contract_with_named_type_operations
 // This module contains functionality to delete a document for a contract with named type operations
 mod delete_document_for_contract_with_named_type_operations;
-pub use delete_document_for_contract_with_named_type_operations::*;
 
 // Module: delete_document_for_contract_operations
 // This module contains functionality to delete a document for contract operations
 mod delete_document_for_contract_operations;
-pub use delete_document_for_contract_operations::*;
 
 mod internal;
 
@@ -118,9 +108,10 @@ mod tests {
     #[test]
     fn test_add_and_remove_family_one_document_no_transaction() {
         let tmp_dir = TempDir::new().unwrap();
+
+        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
         let platform_version = PlatformVersion::latest();
-        let drive: Drive = Drive::open(tmp_dir, None, platform_version)
-            .expect("expected to open Drive successfully");
 
         drive
             .create_initial_state_structure(None, platform_version)

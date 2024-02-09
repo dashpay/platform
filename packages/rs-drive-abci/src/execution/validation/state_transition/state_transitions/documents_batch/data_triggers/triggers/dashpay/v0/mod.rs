@@ -1,4 +1,4 @@
-///! The `dashpay_data_triggers` module contains data triggers specific to the DashPay data contract.
+//! The `dashpay_data_triggers` module contains data triggers specific to the DashPay data contract.
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -10,7 +10,8 @@ use dpp::ProtocolError;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
-use dpp::system_data_contracts::dashpay_contract::document_types::contact_request::properties::{CORE_HEIGHT_CREATED_AT, TO_USER_ID};
+use dpp::system_data_contracts::dashpay_contract::v1::document_types::contact_request::properties
+::{CORE_HEIGHT_CREATED_AT, TO_USER_ID};
 use dpp::version::PlatformVersion;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -77,7 +78,7 @@ pub fn create_contact_request_data_trigger_v0(
         }
 
         if let Some(core_height_created_at) = maybe_core_height_created_at {
-            let core_chain_locked_height = context.platform.state.core_height();
+            let core_chain_locked_height = context.platform.state.last_committed_core_height();
 
             let height_window_start = core_chain_locked_height.saturating_sub(BLOCKS_SIZE_WINDOW);
             let height_window_end = core_chain_locked_height.saturating_add(BLOCKS_SIZE_WINDOW);
@@ -179,7 +180,7 @@ mod test {
             vec![(contact_request_document, document_type, Bytes32::default())],
         )]);
         let document_transition = document_transitions
-            .get(0)
+            .first()
             .expect("document transition should be present");
 
         let document_create_transition = document_transition
@@ -266,7 +267,7 @@ mod test {
             vec![(contact_request_document, document_type, Bytes32::default())],
         )]);
         let document_transition = document_transitions
-            .get(0)
+            .first()
             .expect("document transition should be present");
 
         let document_create_transition = document_transition
@@ -315,7 +316,7 @@ mod test {
         assert!(matches!(
             &result.errors.first().unwrap(),
             &DataTriggerError::DataTriggerConditionError(e)  if {
-                e.message() == &format!("Identity {owner_id} must not be equal to owner id")
+                e.message() == format!("Identity {owner_id} must not be equal to owner id")
             }
         ));
     }
@@ -378,7 +379,7 @@ mod test {
             vec![(contact_request_document, document_type, Bytes32::default())],
         )]);
         let document_transition = document_transitions
-            .get(0)
+            .first()
             .expect("document transition should be present");
 
         let document_create_transition = document_transition
@@ -413,7 +414,7 @@ mod test {
         assert!(matches!(
             data_trigger_error,
             DataTriggerError::DataTriggerConditionError(e)  if {
-                e.message() == &format!("Identity {contract_request_to_user_id} doesn't exist")
+                e.message() == format!("Identity {contract_request_to_user_id} doesn't exist")
             }
         ));
     }

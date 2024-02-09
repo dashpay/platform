@@ -4,20 +4,19 @@ use crate::execution::validation::state_transition::transformer::StateTransition
 use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
-use dpp::identity::{KeyType, PartialIdentity};
+use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 
+use crate::error::execution::ExecutionError;
 use dpp::serialization::Signable;
-use dpp::state_transition::{StateTransition};
-use drive::state_transition_action::StateTransitionAction;
+use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
-use crate::error::execution::ExecutionError;
-use crate::execution::types::execution_operation::ExecutionOperation;
-use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
-use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
+use drive::state_transition_action::StateTransitionAction;
+
+use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext};
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{ValidateStateTransitionIdentitySignature};
 use crate::execution::validation::state_transition::state_transitions::identity_update::identity_and_signatures::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_create::identity_and_signatures::v0::IdentityCreateStateTransitionIdentityAndSignaturesValidationV0;
@@ -111,7 +110,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         ExecutionEvent::create_from_state_transition_action(
             action,
             maybe_identity,
-            platform.state.epoch_ref(),
+            platform.state.last_committed_block_epoch_ref(),
             state_transition_execution_context,
             platform_version,
         )

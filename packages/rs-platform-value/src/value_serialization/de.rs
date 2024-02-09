@@ -453,7 +453,7 @@ impl<'de> de::Deserializer<'de> for Deserializer<Value> {
             }
             Value::EnumString(x) => {
                 let variant_name = x
-                    .get(0)
+                    .first()
                     .ok_or_else(|| de::Error::invalid_length(0, &"at least one variant expected"))?
                     .clone();
                 visitor.visit_enum(variant_name.into_deserializer())

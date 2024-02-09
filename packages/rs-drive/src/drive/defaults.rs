@@ -33,7 +33,7 @@
 //!
 
 /// Protocol version
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const INITIAL_PROTOCOL_VERSION: u32 = 1;
 ///DataContract Documents subtree path height
 pub const CONTRACT_DOCUMENTS_PATH_HEIGHT: u16 = 4;
 /// Base contract root path size

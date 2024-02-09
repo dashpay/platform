@@ -22,6 +22,7 @@ const {
     Identifier,
     IdentityPublicKey,
     InvalidInstantAssetLockProofSignatureError,
+    InvalidAssetLockProofValueError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     BasicECDSAError,
     IdentityPublicKeyWithWitness,
@@ -53,6 +54,22 @@ describe('Platform', () => {
       identity = await client.platform.identities.register(400000);
 
       expect(identity).to.exist();
+    });
+
+    it('should fail to create an identity if asset lock amount is less than minimal', async () => {
+      let broadcastError;
+
+      try {
+        await client.platform.identities.register(117000);
+      } catch (e) {
+        broadcastError = e;
+      }
+
+      expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+      expect(broadcastError.getCause().getCode()).to.equal(4028);
+      expect(broadcastError.getCause()).to.be.an.instanceOf(
+        InvalidAssetLockProofValueError,
+      );
     });
 
     it('should fail to create an identity if instantLock is not valid', async () => {
@@ -440,7 +457,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identities.utils.createAssetLockTransaction(1);
+        } = await client.platform.identities.utils.createAssetLockTransaction(1000);
 
         const account = await client.getWalletAccount();
 

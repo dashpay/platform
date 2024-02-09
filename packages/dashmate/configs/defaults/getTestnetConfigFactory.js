@@ -24,6 +24,9 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
         },
       },
       core: {
+        docker: {
+          image: 'dashpay/dashd:20.1.0-devpr5855.4d19698f', commandArgs: [],
+        },
         p2p: {
           port: 19999,
         },
@@ -52,6 +55,11 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
             epochTime: 3600,
             validatorSet: {
               llmqType: 6,
+            },
+            chainLock: {
+              llmqType: 1,
+              dkgInterval: 24,
+              llmqSize: 50,
             },
           },
           tenderdash: {

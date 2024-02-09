@@ -198,7 +198,7 @@ pub fn get_withdrawal_document_fixture(
     };
 
     let document_type = data_contract.document_type_for_name(
-        data_contracts::withdrawals_contract::document_types::withdrawal::NAME,
+        data_contracts::withdrawals_contract::v1::document_types::withdrawal::NAME,
     )?;
 
     let properties = data

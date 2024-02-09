@@ -11,11 +11,12 @@ use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 pub const DOCUMENT_TRANSITION_TYPES: [StateTransitionType; 1] =
     [StateTransitionType::DocumentsBatch];
 
-pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 4] = [
+pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 5] = [
     StateTransitionType::IdentityCreate,
     StateTransitionType::IdentityTopUp,
     StateTransitionType::IdentityUpdate,
     StateTransitionType::IdentityCreditTransfer,
+    StateTransitionType::IdentityCreditWithdrawal,
 ];
 
 pub const DATA_CONTRACT_TRANSITION_TYPES: [StateTransitionType; 2] = [

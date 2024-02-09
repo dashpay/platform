@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
-use crate::execution::validation::state_transition::processor::process_state_transition;
+
 #[cfg(test)]
 use crate::platform_types::event_execution_result::EventExecutionResult;
 #[cfg(test)]
@@ -14,6 +14,8 @@ use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 
+#[cfg(test)]
+use crate::execution::validation::state_transition::processor::process_state_transition;
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;

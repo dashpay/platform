@@ -147,10 +147,10 @@ mod tests {
             .data_contract_owned();
 
         let config = PlatformConfig {
-            quorum_size: 10,
+            validator_set_quorum_size: 10,
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 300,
@@ -486,7 +486,7 @@ mod tests {
                 StateError::DataContractConfigUpdateError,
                 1
             );
-            let error = errors.get(0).expect("to have an error");
+            let error = errors.first().expect("to have an error");
             assert_eq!(
                 error.additional_message(),
                 "contract can not change whether it keeps history: changing from true to false"
