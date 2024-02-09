@@ -64,6 +64,9 @@ pub trait DocumentTransitionV0Methods {
 
     // sets revision of the transition
     fn set_revision(&mut self, revision: Revision);
+
+    // sets identity contract nonce
+    fn set_identity_contract_nonce(&mut self, nonce: IdentityContractNonce);
 }
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
@@ -343,6 +346,14 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Create(t) => t.base().identity_contract_nonce(),
             DocumentTransition::Replace(t) => t.base().identity_contract_nonce(),
             DocumentTransition::Delete(t) => t.base().identity_contract_nonce(),
+        }
+    }
+
+    fn set_identity_contract_nonce(&mut self, nonce: IdentityContractNonce) {
+        match self {
+            DocumentTransition::Create(t) => t.base_mut().set_identity_contract_nonce(nonce),
+            DocumentTransition::Replace(t) => t.base_mut().set_identity_contract_nonce(nonce),
+            DocumentTransition::Delete(t) => t.base_mut().set_identity_contract_nonce(nonce),
         }
     }
 }

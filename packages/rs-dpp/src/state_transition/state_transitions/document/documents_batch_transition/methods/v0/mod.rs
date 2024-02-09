@@ -81,4 +81,6 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
     }
 
     fn set_transitions(&mut self, transitions: Vec<DocumentTransition>);
+
+    fn set_identity_contract_nonce(&mut self, identity_contract_nonce: IdentityContractNonce);
 }

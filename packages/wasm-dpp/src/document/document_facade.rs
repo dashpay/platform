@@ -96,7 +96,7 @@ impl DocumentFacadeWasm {
     pub fn create_state_transition(
         &self,
         documents: &JsValue,
-        nonce_counter_value: &JsValue, //IdentityID/ContractID -> nonce
+        nonce_counter_value: &js_sys::Object, //IdentityID/ContractID -> nonce
     ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
         self.factory
             .create_state_transition(documents, nonce_counter_value)

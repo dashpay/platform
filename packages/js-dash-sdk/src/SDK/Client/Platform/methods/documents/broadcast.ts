@@ -21,6 +21,7 @@ export default async function broadcast(
     delete?: ExtendedDocument[]
   },
   identity: any,
+  nonce: any = 0,
 ): Promise<any> {
   this.logger.debug('[Document#broadcast] Broadcast documents', {
     create: documents.create?.length || 0,
@@ -31,7 +32,7 @@ export default async function broadcast(
 
   const { dpp } = this;
 
-  const documentsBatchTransition = dpp.document.createStateTransition(documents);
+  const documentsBatchTransition = dpp.document.createStateTransition(documents, nonce);
 
   this.logger.silly('[Document#broadcast] Created documents batch transition');
 

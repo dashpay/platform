@@ -6,7 +6,7 @@ use crate::prelude::{IdentityContractNonce, IdentityPublicKey};
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
 use crate::state_transition::documents_batch_transition::document_transition::{
-    DocumentReplaceTransition, DocumentTransition,
+    DocumentReplaceTransition, DocumentTransition, DocumentTransitionV0Methods,
 };
 use crate::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::documents_batch_transition::{
@@ -105,5 +105,11 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
 
     fn set_transitions(&mut self, transitions: Vec<DocumentTransition>) {
         self.transitions = transitions;
+    }
+
+    fn set_identity_contract_nonce(&mut self, identity_contract_nonce: IdentityContractNonce) {
+        self.transitions
+            .iter_mut()
+            .for_each(|transition| transition.set_identity_contract_nonce(identity_contract_nonce));
     }
 }

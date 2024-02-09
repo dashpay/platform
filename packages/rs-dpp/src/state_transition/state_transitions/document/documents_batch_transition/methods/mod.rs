@@ -21,6 +21,14 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
         }
     }
 
+    fn set_identity_contract_nonce(&mut self, identity_contract_nonce: IdentityContractNonce) {
+        match self {
+            DocumentsBatchTransition::V0(v0) => {
+                v0.set_identity_contract_nonce(identity_contract_nonce)
+            }
+        }
+    }
+
     #[cfg(feature = "state-transition-signing")]
     fn new_document_creation_transition_from_document<S: Signer>(
         document: Document,
