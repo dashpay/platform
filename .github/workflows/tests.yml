@@ -34,11 +34,15 @@ jobs:
 
       - uses: dorny/paths-filter@v2
         id: filter-js
+        if: ${{ github.event_name !== 'schedule' }}
         with:
           filters: .github/package-filters/js-packages.yml
 
+
+
       - uses: dorny/paths-filter@v2
         id: filter-rs
+        if: ${{ github.event_name !== 'schedule' }}
         with:
           filters: .github/package-filters/rs-packages.yml
 
@@ -88,6 +92,7 @@ jobs:
       # Run drive tests on self-hosted 4x
       test-runner: ${{ contains(fromJSON('["drive-abci"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]' || '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' }}
       check-each-feature: ${{ contains(fromJSON('["rs-sdk","rs-dapi-client","dapi-grpc","dpp","drive-abci"]'), matrix.rs-package) }}
+
   rs-crates-security:
     name: Rust crates security audit
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}

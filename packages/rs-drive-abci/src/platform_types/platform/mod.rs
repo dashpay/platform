@@ -207,6 +207,50 @@ impl<C> Platform<C> {
         )
     }
 
+    /// Open Platform with Drive and block execution context.
+    pub fn open_secondary_with_client<P: AsRef<Path>>(
+        primary_path: P,
+        secondary_path: P,
+        config: Option<PlatformConfig>,
+        core_rpc: C,
+    ) -> Result<Platform<C>, Error>
+    where
+        C: CoreRPCLike,
+    {
+        let config = config.unwrap_or(PlatformConfig::default_testnet());
+
+        let (drive, current_protocol_version) =
+            Drive::open_secondary(primary_path, secondary_path, Some(config.drive.clone()))
+                .map_err(Error::Drive)?;
+
+        if let Some(protocol_version) = current_protocol_version {
+            let platform_version = PlatformVersion::get(protocol_version)?;
+
+            let Some(execution_state) =
+                Platform::<C>::fetch_platform_state(&drive, None, platform_version)?
+            else {
+                return Err(Error::Execution(ExecutionError::CorruptedCachedState(
+                    "execution state should be stored as well as protocol version",
+                )));
+            };
+
+            return Platform::open_with_client_saved_state::<P>(
+                drive,
+                core_rpc,
+                config,
+                execution_state,
+            );
+        }
+
+        Platform::open_with_client_no_saved_state::<P>(
+            drive,
+            core_rpc,
+            config,
+            INITIAL_PROTOCOL_VERSION,
+            INITIAL_PROTOCOL_VERSION,
+        )
+    }
+
     /// Open Platform with Drive and block execution context from saved state.
     pub fn open_with_client_saved_state<P: AsRef<Path>>(
         drive: Drive,

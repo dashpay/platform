@@ -1,95 +1,100 @@
 //! This module implements ABCI application server.
 //!
-use crate::error::execution::ExecutionError;
+use crate::abci::app::consensus::ConsensusAbciApplication;
+use crate::abci::app::read_only::ReadOnlyAbciApplication;
+use crate::rpc::core::DefaultCoreRPC;
 use crate::{
     config::PlatformConfig, error::Error, platform_types::platform::Platform,
     rpc::core::CoreRPCLike,
 };
-use drive::grovedb::Transaction;
-use std::fmt::Debug;
-use std::sync::RwLock;
+use std::thread;
 use tokio_util::sync::CancellationToken;
-
-/// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
-///
-/// AbciApp implements logic that should be triggered when Tenderdash performs various operations, like
-/// creating new proposal or finalizing new block.
-pub struct AbciApplication<'a, C> {
-    /// Platform
-    pub platform: &'a Platform<C>,
-    /// The current transaction
-    pub transaction: RwLock<Option<Transaction<'a>>>,
-}
 
 /// Start ABCI server and process incoming connections.
 ///
 /// Should never return.
-pub fn start<C: CoreRPCLike>(
-    config: &PlatformConfig,
-    core_rpc: C,
-    cancel: CancellationToken,
-) -> Result<(), Error> {
-    let bind_address = config.abci.bind_address.clone();
+pub fn start(config: &PlatformConfig, cancel: CancellationToken) -> Result<(), Error> {
+    // TODO: Do this on main
+    let consensus_config = config.clone();
+    let read_only_config = config.clone();
+    let consensus_cancel = cancel.clone();
+    let read_only_cancel = cancel.clone();
 
-    let platform: Platform<C> =
-        Platform::open_with_client(&config.db_path, Some(config.clone()), core_rpc)?;
+    let consensus_app = thread::spawn(move || {
+        let core_rpc = DefaultCoreRPC::open(
+            consensus_config.core.rpc.url().as_str(),
+            consensus_config.core.rpc.username.clone(),
+            consensus_config.core.rpc.password.clone(),
+        )
+        .unwrap();
 
-    let abci = AbciApplication::new(&platform)?;
+        let platform: Platform<DefaultCoreRPC> = Platform::open_with_client(
+            &consensus_config.primary_db_path,
+            Some(consensus_config.clone()),
+            core_rpc,
+        )
+        .expect("Failed to open platform");
 
-    let server = tenderdash_abci::ServerBuilder::new(abci, &bind_address)
-        .with_cancel_token(cancel.clone())
+        let abci = ConsensusAbciApplication::new(&platform).expect("Failed to create ABCI app");
+
+        let server = tenderdash_abci::ServerBuilder::new(
+            abci,
+            &consensus_config.abci.consensus_bind_address,
+        )
+        .with_cancel_token(consensus_cancel.clone())
         .build()
-        .map_err(super::AbciError::from)?;
+        .map_err(super::AbciError::from)
+        .expect("Failed to build ABCI server");
 
-    while !cancel.is_cancelled() {
-        tracing::info!("waiting for new ABCI connection");
-        match server.next_client() {
-            Err(e) => tracing::error!("ABCI connection terminated: {:?}", e),
-            Ok(_) => tracing::info!("ABCI connection closed"),
+        while !consensus_cancel.is_cancelled() {
+            tracing::info!("waiting for new ABCI connection");
+            match server.next_client() {
+                Err(e) => tracing::error!("ABCI connection terminated: {:?}", e),
+                Ok(_) => tracing::info!("ABCI connection closed"),
+            }
         }
-    }
+    });
+
+    thread::sleep(std::time::Duration::from_secs(5));
+
+    let read_only_app = thread::spawn(move || {
+        let core_rpc = DefaultCoreRPC::open(
+            read_only_config.core.rpc.url().as_str(),
+            read_only_config.core.rpc.username.clone(),
+            read_only_config.core.rpc.password.clone(),
+        )
+        .unwrap();
+
+        let platform: Platform<DefaultCoreRPC> = Platform::open_secondary_with_client(
+            &read_only_config.primary_db_path,
+            &read_only_config.secondary_db_path,
+            Some(read_only_config.clone()),
+            core_rpc,
+        )
+        .expect("Failed to open platform");
+
+        let abci = ReadOnlyAbciApplication::new(&platform).expect("Failed to create ABCI app");
+
+        let server = tenderdash_abci::ServerBuilder::new(
+            abci,
+            &read_only_config.abci.read_only_bind_address,
+        )
+        .with_cancel_token(read_only_cancel.clone())
+        .build()
+        .map_err(super::AbciError::from)
+        .expect("Failed to build ABCI server");
+
+        while !read_only_cancel.is_cancelled() {
+            tracing::info!("waiting for new ABCI connection");
+            match server.next_client() {
+                Err(e) => tracing::error!("ABCI connection terminated: {:?}", e),
+                Ok(_) => tracing::info!("ABCI connection closed"),
+            }
+        }
+    });
+
+    read_only_app.join().unwrap();
+    consensus_app.join().unwrap();
 
     Ok(())
-}
-
-impl<'a, C> AbciApplication<'a, C> {
-    /// Create new ABCI app
-    pub fn new(platform: &'a Platform<C>) -> Result<AbciApplication<'a, C>, Error> {
-        let app = AbciApplication {
-            platform,
-            transaction: RwLock::new(None),
-        };
-
-        Ok(app)
-    }
-
-    /// create and store a new transaction
-    pub fn start_transaction(&self) {
-        let transaction = self.platform.drive.grove.start_transaction();
-        self.transaction.write().unwrap().replace(transaction);
-    }
-
-    /// Commit a transaction
-    pub fn commit_transaction(&self) -> Result<(), Error> {
-        let transaction = self
-            .transaction
-            .write()
-            .unwrap()
-            .take()
-            .ok_or(Error::Execution(ExecutionError::NotInTransaction(
-                "trying to commit a transaction, but we are not in one",
-            )))?;
-        let platform_state = self.platform.state.read().unwrap();
-        let platform_version = platform_state.current_platform_version()?;
-        self.platform
-            .drive
-            .commit_transaction(transaction, &platform_version.drive)
-            .map_err(Error::Drive)
-    }
-}
-
-impl<'a, C> Debug for AbciApplication<'a, C> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<AbciApp>")
-    }
 }

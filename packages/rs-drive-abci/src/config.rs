@@ -185,8 +185,11 @@ pub struct PlatformConfig {
     #[serde(default = "PlatformConfig::default_initial_protocol_version")]
     pub initial_protocol_version: ProtocolVersion,
 
-    /// Path to data storage
-    pub db_path: PathBuf,
+    /// Path to primary data storage
+    pub primary_db_path: PathBuf,
+
+    /// Path to secondary data storage
+    pub secondary_db_path: PathBuf,
 
     // todo: put this in tests like #[cfg(test)]
     /// This should be None, except in the case of Testing platform
@@ -309,7 +312,8 @@ impl PlatformConfig {
             abci: Default::default(),
             core: Default::default(),
             execution: Default::default(),
-            db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            primary_db_path: PathBuf::from("/var/lib/dash/rs-drive-abci/primary-db"),
+            secondary_db_path: PathBuf::from("/var/lib/dash/rs-drive-abci/secondary-db"),
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: 1,
         }
@@ -327,7 +331,8 @@ impl PlatformConfig {
             abci: Default::default(),
             core: Default::default(),
             execution: Default::default(),
-            db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            primary_db_path: PathBuf::from("/var/lib/dash/rs-drive-abci/primary-db"),
+            secondary_db_path: PathBuf::from("/var/lib/dash/rs-drive-abci/secondary-db"),
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: 1,
         }
@@ -345,7 +350,8 @@ impl PlatformConfig {
             abci: Default::default(),
             core: Default::default(),
             execution: Default::default(),
-            db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            primary_db_path: PathBuf::from("/var/lib/dash/rs-drive-abci/primary-db"),
+            secondary_db_path: PathBuf::from("/var/lib/dash/rs-drive-abci/secondary-db"),
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: 1,
         }
@@ -406,7 +412,7 @@ mod tests {
         let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.local");
 
         dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
-        assert_eq!("/tmp/db", env::var("DB_PATH").unwrap());
+        assert_eq!("/tmp/primary-db", env::var("PRIMARY_DB_PATH").unwrap());
 
         let config = super::PlatformConfig::from_env().expect("expected config from env");
         assert!(config.execution.verify_sum_trees);

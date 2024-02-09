@@ -12,7 +12,8 @@
 
 # TCP or UNIX socket address of the ABCI application,
 # or the name of an ABCI application compiled in with the Tendermint binary
-proxy-app = "tcp://drive_abci:26658"
+#proxy-app = "tcp://drive_abci:26658"
+proxy-app = "Query:socket:tcp://drive_abci:26659,CheckTx:socket:tcp://drive_abci:26659,*:socket:tcp://drive_abci:26658"
 
 # A custom human readable name for this node
 {{?it.platform.drive.tenderdash.moniker}}moniker = "{{=it.platform.drive.tenderdash.moniker}}"{{?}}
@@ -72,7 +73,7 @@ genesis-file = "config/genesis.json"
 node-key-file = "config/node_key.json"
 
 # Mechanism to connect to the ABCI application: socket | grpc
-abci = "socket"
+abci = "routed"
 
 # If true, query the ABCI app on connecting to a new peer
 # so the app can decide if we should keep the connection or not

@@ -85,7 +85,7 @@ impl Cli {
     fn run(self, config: PlatformConfig, cancel: CancellationToken) -> Result<(), String> {
         match self.command {
             Commands::Start => {
-                verify_grovedb(&config.db_path, false)?;
+                verify_grovedb(&config.primary_db_path, false)?;
 
                 let core_rpc = DefaultCoreRPC::open(
                     config.core.rpc.url().as_str(),
@@ -99,14 +99,16 @@ impl Cli {
                 // Drive and Tenderdash rely on Core. Various functions will fail if Core is not synced.
                 // We need to make sure that Core is ready before we start Drive ABCI app
                 // Tenderdash won't start too until ABCI port is open.
+                // TODO: If we cancel here we shouldn't go further
                 wait_for_core_to_sync_v0(&core_rpc, cancel.clone()).unwrap();
 
-                drive_abci::abci::start(&config, core_rpc, cancel).map_err(|e| e.to_string())?;
+                drive_abci::abci::start(&config, cancel).map_err(|e| e.to_string())?;
+
                 return Ok(());
             }
             Commands::Config => dump_config(&config)?,
             Commands::Status => check_status(&config)?,
-            Commands::Verify => verify_grovedb(&config.db_path, true)?,
+            Commands::Verify => verify_grovedb(&config.primary_db_path, true)?,
         };
 
         Ok(())

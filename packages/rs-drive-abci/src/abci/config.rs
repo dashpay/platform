@@ -20,8 +20,16 @@ pub struct AbciConfig {
     /// Address should be an URL with scheme `tcp://` or `unix://`, for example:
     /// - `tcp://127.0.0.1:1234`
     /// - `unix:///var/run/abci.sock`
-    #[serde(rename = "abci_bind_address")]
-    pub bind_address: String,
+    #[serde(rename = "abci_consensus_bind_address")]
+    pub consensus_bind_address: String,
+
+    /// Address to listen for ABCI connections
+    ///
+    /// Address should be an URL with scheme `tcp://` or `unix://`, for example:
+    /// - `tcp://127.0.0.1:1234`
+    /// - `unix:///var/run/abci.sock`
+    #[serde(rename = "abci_read_only_bind_address")]
+    pub read_only_bind_address: String,
 
     /// Address to listen for Prometheus connection.
     ///
@@ -71,7 +79,8 @@ impl AbciConfig {
 impl Default for AbciConfig {
     fn default() -> Self {
         Self {
-            bind_address: "tcp://127.0.0.1:1234".to_string(),
+            consensus_bind_address: "tcp://127.0.0.1:1234".to_string(),
+            read_only_bind_address: "tcp://127.0.0.1:1234".to_string(),
             prometheus_bind_address: None,
             keys: Keys::new_random_keys_with_seed(18012014, PlatformVersion::first())
                 .expect("random keys for first version can not error"), //Dash genesis day
