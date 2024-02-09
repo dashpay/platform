@@ -18,6 +18,7 @@ describe('PlatformPromiseClient', () => {
       getEpochsInfo: this.sinon.stub().resolves(response),
       getProtocolVersionUpgradeVoteStatus: this.sinon.stub().resolves(response),
       getProtocolVersionUpgradeState: this.sinon.stub().resolves(response),
+      getIdentityContractNonce: this.sinon.stub().resolves(response),
     };
   });
 
@@ -113,6 +114,16 @@ describe('PlatformPromiseClient', () => {
 
       expect(result).to.equal(response);
       expect(platformPromiseClient.client.getProtocolVersionUpgradeState)
+        .to.be.calledOnceWith(request);
+    });
+  });
+
+  describe('#getIdentityContractNonce', () => {
+    it('should get identity contract nonce', async () => {
+      const result = await platformPromiseClient.getIdentityContractNonce(request);
+
+      expect(result).to.equal(response);
+      expect(platformPromiseClient.client.getIdentityContractNonce)
         .to.be.calledOnceWith(request);
     });
   });

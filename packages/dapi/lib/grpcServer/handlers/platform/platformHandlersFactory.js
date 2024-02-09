@@ -31,6 +31,7 @@ const {
     GetEpochsInfoRequest,
     GetProtocolVersionUpgradeVoteStatusRequest,
     GetProtocolVersionUpgradeStateRequest,
+    GetIdentityContractNonceRequest,
     pbjs: {
       BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
       BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
@@ -66,6 +67,8 @@ const {
       GetProtocolVersionUpgradeVoteStatusResponse: PBJSGetProtocolVersionUpgradeVoteStatusResponse,
       GetProtocolVersionUpgradeStateRequest: PBJSGetProtocolVersionUpgradeStateRequest,
       GetProtocolVersionUpgradeStateResponse: PBJSGetProtocolVersionUpgradeStateResponse,
+      GetIdentityContractNonceRequest: PBJSGetIdentityContractNonceRequest,
+      GetIdentityContractNonceResponse: PBJSGetIdentityContractNonceResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -129,6 +132,10 @@ const getProtocolVersionUpgradeVoteStatusHandlerFactory = require(
 
 const getProtocolVersionUpgradeStateHandlerFactory = require(
   './getProtocolVersionUpgradeStateHandlerFactory',
+);
+
+const getIdentityContractNonceHandlerFactory = require(
+  './getIdentityContractNonceHandlerFactory',
 );
 
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
@@ -458,6 +465,21 @@ function platformHandlersFactory(
     wrapInErrorHandler(getProtocolVersionUpgradeStateHandler),
   );
 
+  const getIdentityContractNonceHandler = getIdentityContractNonceHandlerFactory(
+    driveClient,
+  );
+
+  const wrappedGetIdentityContractNonceHandler = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetIdentityContractNonceRequest,
+      PBJSGetIdentityContractNonceRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetIdentityContractNonceResponse,
+    ),
+    wrapInErrorHandler(getIdentityContractNonceHandler),
+  );
+
   return {
     broadcastStateTransition: wrappedBroadcastStateTransition,
     getIdentity: wrappedGetIdentity,
@@ -477,6 +499,7 @@ function platformHandlersFactory(
     getEpochsInfo: wrappedGetEpochsInfo,
     getProtocolVersionUpgradeVoteStatus: wrappedGetProtocolVersionUpgradeVoteStatus,
     getProtocolVersionUpgradeState: wrappedGetProtocolVersionUpgradeState,
+    getIdentityContractNonce: wrappedGetIdentityContractNonceHandler,
   };
 }
 

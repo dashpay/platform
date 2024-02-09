@@ -21,7 +21,6 @@ export default async function broadcast(
     delete?: ExtendedDocument[]
   },
   identity: any,
-  nonce: any = 0,
 ): Promise<any> {
   this.logger.debug('[Document#broadcast] Broadcast documents', {
     create: documents.create?.length || 0,
@@ -32,7 +31,31 @@ export default async function broadcast(
 
   const { dpp } = this;
 
-  const documentsBatchTransition = dpp.document.createStateTransition(documents, nonce);
+  const identityId = identity.getId();
+  const dataContractId = [
+    ...(documents.create || []),
+    ...(documents.replace || []),
+    ...(documents.delete || []),
+  ][0]?.getDataContractId();
+
+  if (!dataContractId) {
+    throw new Error('Data contract ID is not found');
+  }
+
+  const identityContractNonce = await this.client.getDAPIClient().platform
+    .getIdentityContractNonce(identityId.toBuffer(), dataContractId.toBuffer());
+
+  console.log('identityContractNonce', {
+    identityId: identityId.toString(),
+    dataContractId: dataContractId.toString(),
+    identityContractNonce,
+  });
+
+  const documentsBatchTransition = dpp.document.createStateTransition(documents, {
+    [identityId.toString()]: {
+      [dataContractId.toString()]: identityContractNonce,
+    },
+  });
 
   this.logger.silly('[Document#broadcast] Created documents batch transition');
 

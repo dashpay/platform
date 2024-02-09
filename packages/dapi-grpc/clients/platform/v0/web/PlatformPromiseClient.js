@@ -177,6 +177,20 @@ class PlatformPromiseClient {
   }
 
   /**
+   * @param {!GetIdentityContractNonceRequest} getIdentityContractNonceRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetIdentityContractNonceResponse>}
+   */
+  getIdentityContractNonce(getIdentityContractNonceRequest, metadata = {}) {
+    return promisify(
+      this.client.getIdentityContractNonceRequest.bind(this.client),
+    )(
+      getIdentityContractNonceRequest,
+      metadata,
+    );
+  }
+
+  /**
    * @param {string} protocolVersion
    */
   setProtocolVersion(protocolVersion) {

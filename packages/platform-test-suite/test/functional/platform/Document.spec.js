@@ -84,14 +84,12 @@ describe('Platform', () => {
       try {
         await client.platform.documents.broadcast({
           create: [newDocument],
-        }, identity, {
-          [identity.getId().toString()]: {
-            [newDocument.getDataContractId().toString()]: 1,
-          },
-        });
+        }, identity);
       } catch (e) {
         broadcastError = e;
       }
+
+      console.log(broadcastError);
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
       expect(broadcastError.getCause()).to.be.an.instanceOf(InvalidDocumentTypeError);
@@ -113,11 +111,7 @@ describe('Platform', () => {
       try {
         await client.platform.documents.broadcast({
           create: [document],
-        }, unknownIdentity, {
-          [unknownIdentity.getId().toString()]: {
-            [document.getDataContractId().toString()]: 1,
-          },
-        });
+        }, unknownIdentity);
       } catch (e) {
         broadcastError = e;
       }
@@ -144,11 +138,7 @@ describe('Platform', () => {
 
       await client.platform.documents.broadcast({
         create: [firstDocument],
-      }, identity, {
-        [identity.getId().toString()]: {
-          [firstDocument.getDataContractId().toString()]: 1,
-        },
-      });
+      }, identity);
 
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
@@ -167,11 +157,7 @@ describe('Platform', () => {
       try {
         await client.platform.documents.broadcast({
           create: [secondDocument],
-        }, identity, {
-          [identity.getId().toString()]: {
-            [firstDocument.getDataContractId().toString()]: 2,
-          },
-        });
+        }, identity);
       } catch (e) {
         broadcastError = e;
       }
@@ -193,11 +179,7 @@ describe('Platform', () => {
 
       await client.platform.documents.broadcast({
         create: [document],
-      }, identity, {
-        [identity.getId().toString()]: {
-          [document.getDataContractId().toString()]: 3,
-        },
-      });
+      }, identity);
 
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
@@ -235,11 +217,7 @@ describe('Platform', () => {
 
       await client.platform.documents.broadcast({
         replace: [storedDocument],
-      }, identity, {
-        [identity.getId().toString()]: {
-          [storedDocument.getDataContractId().toString()]: 4,
-        },
-      });
+      }, identity);
 
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
@@ -316,11 +294,7 @@ describe('Platform', () => {
 
       const documentsBatchTransition = await client.platform.documents.broadcast({
         replace: [storedDocument],
-      }, identity, {
-        [identity.getId().toString()]: {
-          [storedDocument.getDataContractId().toString()]: 5,
-        },
-      });
+      }, identity);
 
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
@@ -352,11 +326,7 @@ describe('Platform', () => {
     it('should be able to delete a document', async () => {
       await client.platform.documents.broadcast({
         delete: [document],
-      }, identity, {
-        [identity.getId().toString()]: {
-          [document.getDataContractId().toString()]: 6,
-        },
-      });
+      }, identity);
 
       await waitForSTPropagated();
 
@@ -390,11 +360,7 @@ describe('Platform', () => {
       try {
         await client.platform.documents.broadcast({
           create: [document],
-        }, identity, {
-          [identity.getId().toString()]: {
-            [document.getDataContractId().toString()]: 7,
-          },
-        });
+        }, identity);
       } catch (e) {
         broadcastError = e;
       }

@@ -9,6 +9,7 @@ const getConsensusParamsFactory = require('./getConsensusParams/getConsensusPara
 const getEpochsInfoFactory = require('./getEpochsInfo/getEpochsInfoFactory');
 const getProtocolVersionUpgradeVoteStatusFactory = require('./getProtocolVersionUpgradeVoteStatus/getProtocolVersionUpgradeVoteStatusFactory');
 const getProtocolVersionUpgradeStateFactory = require('./getProtocolVersionUpgradeState/getProtocolVersionUpgradeStateFactory');
+const getIdentityContractNonceFactory = require('./getIdentityContractNonce/getIdentityContractNonceFactory');
 
 class PlatformMethodsFacade {
   /**
@@ -28,6 +29,7 @@ class PlatformMethodsFacade {
       grpcTransport,
     );
     this.getProtocolVersionUpgradeState = getProtocolVersionUpgradeStateFactory(grpcTransport);
+    this.getIdentityContractNonce = getIdentityContractNonceFactory(grpcTransport);
   }
 }
 

@@ -254,6 +254,19 @@ class DriveClient {
       request.serializeBinary(),
     );
   }
+
+  /**
+   *  Fetch version upgrade state
+   *
+   * @param {GetIdentityContractNonceRequest} request
+   * @return {Promise<Buffer>}
+   */
+  async fetchIdentityContractNonceRequest(request) {
+    return this.request(
+      '/identity/contractNonce',
+      request.serializeBinary(),
+    );
+  }
 }
 
 module.exports = DriveClient;

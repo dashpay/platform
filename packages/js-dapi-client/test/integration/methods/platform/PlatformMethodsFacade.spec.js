@@ -7,6 +7,7 @@ const {
     GetEpochsInfoResponse,
     GetProtocolVersionUpgradeVoteStatusResponse,
     GetProtocolVersionUpgradeStateResponse,
+    GetIdentityContractNonceResponse,
     BroadcastStateTransitionResponse,
     WaitForStateTransitionResultResponse,
   },
@@ -28,6 +29,7 @@ const {
   GetProtocolVersionUpgradeVoteStatusResponseV0,
 } = GetProtocolVersionUpgradeVoteStatusResponse;
 const { GetProtocolVersionUpgradeStateResponseV0 } = GetProtocolVersionUpgradeStateResponse;
+const { GetIdentityContractNonceResponseV0 } = GetIdentityContractNonceResponse;
 
 describe('PlatformMethodsFacade', () => {
   let grpcTransportMock;
@@ -197,6 +199,26 @@ describe('PlatformMethodsFacade', () => {
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.getProtocolVersionUpgradeState({});
+
+      expect(grpcTransportMock.request).to.be.calledOnce();
+    });
+  });
+
+  describe('#getIdentityContractNonce', () => {
+    it('should get nonce', async () => {
+      // const { VersionEntry, Versions } = GetProtocolVersionUpgradeStateResponseV0;
+
+      const response = new GetIdentityContractNonceResponse();
+
+      response.setV0(
+        new GetIdentityContractNonceResponseV0()
+          .setIdentityContractNonce(1)
+          .setMetadata(new ResponseMetadata()),
+      );
+
+      grpcTransportMock.request.resolves(response);
+
+      await platformMethods.getIdentityContractNonce(Buffer.alloc(32), Buffer.alloc(32));
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });
