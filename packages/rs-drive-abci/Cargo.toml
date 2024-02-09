@@ -9,7 +9,7 @@ authors = [
     "Igor Markin <igor.markin@dash.org>",
 ]
 edition = "2021"
-rust-version = "1.73"
+rust-version = "1.76"
 license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

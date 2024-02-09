@@ -5,7 +5,7 @@ inputs:
   toolchain:
     description: Rust toolchain to use, stable / nightly / beta, or exact version
     # The same as in /README.md
-    default: "stable"
+    default: "1.76"
   target:
     description: Target Rust platform
     required: false
@@ -17,7 +17,6 @@ inputs:
     description: Enable Rust cache
     required: false
     default: "true"
-
 runs:
   using: composite
   steps:
@@ -28,7 +27,6 @@ runs:
         toolchain: ${{ inputs.toolchain }}
         target: ${{ inputs.target }}
         components: ${{ inputs.components }}
-
     - name: Get protoc arch
       shell: bash
       id: protoc_arch
@@ -47,7 +45,6 @@ runs:
             exit 1
             ;;
         esac
-
     # TODO: Move to AMI and build every day
     - name: Install protoc
       id: deps-protoc
@@ -58,18 +55,15 @@ runs:
         unzip /tmp/protoc.zip -d ${HOME}/.local
         echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
         export PATH="${PATH}:${HOME}/.local/bin"
-
     - name: Run sccache-cache
       uses: mozilla-actions/sccache-action@v0.0.3
       with:
         version: "v0.7.1" # Must be the same as in Dockerfile
       if: inputs.cache == 'true'
-
     - name: Hash ref_name
       id: hashed-ref-name
       shell: bash
       run: echo "key=$(echo '${{ github.ref_name }}' | sha256sum | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
-
     - name: Cache cargo registry (S3 bucket cache)
       uses: strophy/actions-cache@opendal-update
       if: inputs.cache == 'true'
@@ -84,7 +78,6 @@ runs:
         restore-keys: |
           ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
           ${{ runner.os }}/cargo/registry/
-
     # TODO: Move to AMI and build every day
     - name: Install clang
       id: deps-clang
