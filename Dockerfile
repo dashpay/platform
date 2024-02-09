@@ -68,7 +68,7 @@ RUN npm config set --global audit false
 # Install latest Rust toolbox
 
 ARG TARGETARCH
-
+ARG RUST_VERSION
 # TODO: It doesn't sharing PATH between stages, so we need "source $HOME/.cargo/env" everywhere
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
     --profile minimal \
