@@ -74,6 +74,7 @@ fn spawn_query_thread(
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let core_rpc = new_core_rpc(&config).expect("Failed to create core RPC client");
+
         // Wait until primary Drive is open
         let (ref primary_drive_lock, ref drive_notifier) = &*drive_semaphore;
         let mut is_primary_drive_open = primary_drive_lock.lock();

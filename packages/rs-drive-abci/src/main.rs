@@ -100,8 +100,11 @@ impl Cli {
                 // Drive and Tenderdash rely on Core. Various functions will fail if Core is not synced.
                 // We need to make sure that Core is ready before we start Drive ABCI app
                 // Tenderdash won't start too until ABCI port is open.
-                // TODO: If we cancel here we shouldn't go further
-                // wait_for_core_to_sync_v0(&core_rpc, cancel.clone()).unwrap();
+                wait_for_core_to_sync_v0(&core_rpc, cancel.clone()).map_err(|e| e.to_string())?;
+
+                if cancel.is_cancelled() {
+                    return Ok(());
+                }
 
                 abci::start_abci_apps(config, cancel).map_err(|e| e.to_string())?;
 
@@ -120,7 +123,7 @@ fn main() -> Result<(), ExitCode> {
     let cli = Cli::parse();
     let config = load_config(&cli.config);
     // We use `cancel` to notify other subsystems that the server is shutting down
-    let cancel = tokio_util::sync::CancellationToken::new();
+    let cancel = CancellationToken::new();
 
     let loggers = configure_logging(&cli, &config).expect("failed to configure logging");
 
@@ -143,14 +146,14 @@ fn main() -> Result<(), ExitCode> {
 
     // Main thread is not started in runtime, as it is synchronous and we don't want to run into
     // potential, hard to debug, issues.
-    let status = match cli.run(config, cancel) {
+    let result = match cli.run(config, cancel) {
         Ok(()) => {
             tracing::debug!("shutdown complete");
-            ExitCode::SUCCESS
+            Ok(())
         }
         Err(e) => {
             tracing::error!(error = e, "drive-abci failed");
-            ExitCode::FAILURE
+            Err(ExitCode::FAILURE)
         }
     };
 
@@ -158,7 +161,7 @@ fn main() -> Result<(), ExitCode> {
     runtime.shutdown_timeout(Duration::from_millis(SHUTDOWN_TIMEOUT_MILIS));
     tracing::info!("drive-abci server is stopped");
 
-    Err(status)
+    result
 }
 
 /// Handle signals received from operating system
@@ -203,9 +206,7 @@ fn start_prometheus(config: &PlatformConfig) -> Result<Option<Prometheus>, Strin
 
     if let Some(addr) = prometheus_addr {
         let addr = url::Url::parse(&addr).map_err(|e| e.to_string())?;
-        Ok(Some(
-            drive_abci::metrics::Prometheus::new(addr).map_err(|e| e.to_string())?,
-        ))
+        Ok(Some(Prometheus::new(addr).map_err(|e| e.to_string())?))
     } else {
         Ok(None)
     }
