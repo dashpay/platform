@@ -1,4 +1,4 @@
-use crate::abci::app::{PlatformApplication, TransactionalApplication};
+use crate::abci::app::{NamedApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::handler;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -18,6 +18,12 @@ pub struct ConsensusAbciApplication<'a, C> {
     pub platform: &'a Platform<C>,
     /// The current transaction
     pub transaction: RwLock<Option<Transaction<'a>>>,
+}
+
+impl<'a, C> NamedApplication for ConsensusAbciApplication<'a, C> {
+    fn name(&self) -> String {
+        String::from("Consensus")
+    }
 }
 
 impl<'a, C> ConsensusAbciApplication<'a, C> {
@@ -70,7 +76,7 @@ impl<'a, C> TransactionalApplication<'a> for ConsensusAbciApplication<'a, C> {
 
 impl<'a, C> Debug for ConsensusAbciApplication<'a, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<AbciApp>")
+        write!(f, "<ConsensusAbciApplication>")
     }
 }
 

@@ -17,6 +17,12 @@ pub trait PlatformApplication<C> {
     fn platform(&self) -> &Platform<C>;
 }
 
+/// ABCI application with name
+pub trait NamedApplication {
+    /// Returns Platform
+    fn name(&self) -> String;
+}
+
 /// Transactional ABCI application
 pub trait TransactionalApplication<'a> {
     /// Creates and keeps a new transaction

@@ -70,7 +70,7 @@ impl<'a, C> TransactionalApplication<'a> for FullAbciApplication<'a, C> {
 
 impl<'a, C> Debug for FullAbciApplication<'a, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<AbciApp>")
+        write!(f, "<FullAbciApplication>")
     }
 }
 

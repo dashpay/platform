@@ -3,6 +3,7 @@
 //! RS-Drive-ABCI server starts a single-threaded server and listens to connections from Tenderdash.
 
 use clap::{Parser, Subcommand};
+use drive_abci::abci;
 use drive_abci::config::{FromEnv, PlatformConfig};
 use drive_abci::core::wait_for_core_to_sync::v0::wait_for_core_to_sync_v0;
 use drive_abci::logging;
@@ -60,7 +61,7 @@ struct Cli {
     command: Commands,
     /// Path to the config (.env) file.
     #[arg(short, long, value_hint = clap::ValueHint::FilePath) ]
-    config: Option<std::path::PathBuf>,
+    config: Option<PathBuf>,
 
     /// Enable verbose logging. Use multiple times for even more logs.
     ///
@@ -100,9 +101,9 @@ impl Cli {
                 // We need to make sure that Core is ready before we start Drive ABCI app
                 // Tenderdash won't start too until ABCI port is open.
                 // TODO: If we cancel here we shouldn't go further
-                wait_for_core_to_sync_v0(&core_rpc, cancel.clone()).unwrap();
+                // wait_for_core_to_sync_v0(&core_rpc, cancel.clone()).unwrap();
 
-                drive_abci::abci::start(&config, cancel).map_err(|e| e.to_string())?;
+                abci::start_abci_apps(config, cancel).map_err(|e| e.to_string())?;
 
                 return Ok(());
             }

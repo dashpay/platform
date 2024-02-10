@@ -1,4 +1,4 @@
-use crate::abci::app::PlatformApplication;
+use crate::abci::app::{ConsensusAbciApplication, NamedApplication, PlatformApplication};
 use crate::abci::handler;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -13,6 +13,12 @@ use tenderdash_abci::proto::abci as proto;
 pub struct QueryAbciApplication<'a, C> {
     /// Platform
     pub platform: &'a Platform<C>,
+}
+
+impl<'a, C> NamedApplication for QueryAbciApplication<'a, C> {
+    fn name(&self) -> String {
+        String::from("Query")
+    }
 }
 
 impl<'a, C> PlatformApplication<C> for QueryAbciApplication<'a, C> {
@@ -32,7 +38,7 @@ impl<'a, C> QueryAbciApplication<'a, C> {
 
 impl<'a, C> Debug for QueryAbciApplication<'a, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<ReadOnlyAbciApp>")
+        write!(f, "<QueryAbciApplication>")
     }
 }
 
