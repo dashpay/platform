@@ -3,6 +3,8 @@ use crate::platform_types::platform::Platform;
 use drive::grovedb::Transaction;
 use std::sync::RwLock;
 
+/// Block update
+pub mod block_update;
 mod consensus;
 mod full;
 mod query;

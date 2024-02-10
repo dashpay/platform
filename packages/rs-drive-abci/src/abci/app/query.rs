@@ -1,9 +1,14 @@
-use crate::abci::app::{ConsensusAbciApplication, NamedApplication, PlatformApplication};
+use crate::abci::app::block_update::BlockUpdateChannel;
+use crate::abci::app::{NamedApplication, PlatformApplication};
 use crate::abci::handler;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
+use dpp::version::PlatformVersion;
+use dpp::version::PlatformVersionCurrentVersion;
 use std::fmt::Debug;
+use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
@@ -12,7 +17,8 @@ use tenderdash_abci::proto::abci as proto;
 /// creating new proposal or finalizing new block.
 pub struct QueryAbciApplication<'a, C> {
     /// Platform
-    pub platform: &'a Platform<C>,
+    platform: &'a Platform<C>,
+    block_update_channel: Arc<BlockUpdateChannel>,
 }
 
 impl<'a, C> NamedApplication for QueryAbciApplication<'a, C> {
@@ -29,10 +35,52 @@ impl<'a, C> PlatformApplication<C> for QueryAbciApplication<'a, C> {
 
 impl<'a, C> QueryAbciApplication<'a, C> {
     /// Create new ABCI app
-    pub fn new(platform: &'a Platform<C>) -> Result<QueryAbciApplication<'a, C>, Error> {
-        let app = QueryAbciApplication { platform };
+    pub fn new(
+        platform: &'a Platform<C>,
+        block_update_channel: Arc<BlockUpdateChannel>,
+    ) -> Result<QueryAbciApplication<'a, C>, Error> {
+        let app = Self {
+            platform,
+            block_update_channel,
+        };
 
         Ok(app)
+    }
+
+    fn apply_block_update(&self) {
+        let Some(block_update) = self.block_update_channel.receive() else {
+            return;
+        };
+
+        // Update platform state cache
+        let mut state_cache = self.platform.state.write().unwrap();
+        *state_cache = block_update.platform_state;
+        let current_protocol_version = state_cache.current_protocol_version_in_consensus();
+        let height = state_cache.last_committed_block_height();
+        drop(state_cache);
+
+        // Update data contract cache
+        let mut drive_cache = self.platform.drive.cache.write().unwrap();
+        drive_cache
+            .cached_contracts
+            .consume(block_update.data_contracts_cache);
+        drop(drive_cache);
+
+        // Catchup to new updated state
+        self.platform
+            .drive
+            .grove
+            .try_to_catch_up_from_primary()
+            .expect("failed to catch up");
+
+        // TODO: Do we need this or it will be already updated from consensus thread?
+        // Update version
+        let platform_version = PlatformVersion::get(current_protocol_version)
+            .expect("must be present since used by consensus thread");
+
+        PlatformVersion::set_current(platform_version);
+
+        tracing::debug!("Query app updated platform cache for height {}", height);
     }
 }
 
@@ -85,13 +133,7 @@ where
         &self,
         _request: proto::RequestFinalizeBlock,
     ) -> Result<proto::ResponseFinalizeBlock, proto::ResponseException> {
-        // TODO: We don't need this
-
-        self.platform
-            .drive
-            .grove
-            .try_to_catch_up_from_primary()
-            .expect("failed to catch up");
+        self.apply_block_update();
 
         Ok(proto::ResponseFinalizeBlock {
             events: vec![],

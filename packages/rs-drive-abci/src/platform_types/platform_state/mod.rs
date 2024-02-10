@@ -37,7 +37,7 @@ pub enum PlatformState {
 
 /// Platform state
 #[derive(Clone, Debug, Encode, Decode, From)]
-enum PlatformStateForSaving {
+pub(crate) enum PlatformStateForSaving {
     /// Version 0
     V0(PlatformStateForSavingV0),
 }

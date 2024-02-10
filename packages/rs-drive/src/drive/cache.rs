@@ -173,6 +173,19 @@ impl DataContractCache {
         self.global_cache.remove(&contract_id);
     }
 
+    /// Returns block cache
+    pub fn block_cache(&self) -> &Cache<[u8; 32], Arc<DataContractFetchInfo>> {
+        &self.block_cache
+    }
+
+    /// Merges cache into global cache
+    pub fn consume(&mut self, cache: Cache<[u8; 32], Arc<DataContractFetchInfo>>) {
+        for (contract_id, fetch_info) in cache.into_iter() {
+            self.global_cache
+                .insert(Arc::unwrap_or_clone(contract_id), fetch_info);
+        }
+    }
+
     /// Merge block cache to global cache
     pub fn merge_block_cache(&mut self) {
         for (contract_id, fetch_info) in self.block_cache.iter() {

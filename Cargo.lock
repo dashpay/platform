@@ -442,7 +442,7 @@ dependencies = [
 [[package]]
 name = "bls-dash-sys"
 version = "1.2.5"
-source = "git+https://github.com/dashpay/bls-signatures?branch=develop#3540b8bbed47e04ed6f02eea2141bd62dae0c411"
+source = "git+https://github.com/dashpay/bls-signatures?rev=b3b226733aed98d9b4a2f6e3241ce49011d88680#b3b226733aed98d9b4a2f6e3241ce49011d88680"
 dependencies = [
  "bindgen",
  "cc",
@@ -452,7 +452,7 @@ dependencies = [
 [[package]]
 name = "bls-signatures"
 version = "1.2.5"
-source = "git+https://github.com/dashpay/bls-signatures?branch=develop#3540b8bbed47e04ed6f02eea2141bd62dae0c411"
+source = "git+https://github.com/dashpay/bls-signatures?rev=b3b226733aed98d9b4a2f6e3241ce49011d88680#b3b226733aed98d9b4a2f6e3241ce49011d88680"
 dependencies = [
  "bls-dash-sys",
  "hex",
@@ -1281,6 +1281,7 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "mockall",
+ "moka",
  "parking_lot 0.11.2",
  "platform-version",
  "prost 0.11.9",

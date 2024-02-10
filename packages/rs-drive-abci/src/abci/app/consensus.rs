@@ -1,3 +1,4 @@
+use crate::abci::app::block_update::BlockUpdateChannel;
 use crate::abci::app::{NamedApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::handler;
 use crate::error::execution::ExecutionError;
@@ -6,7 +7,7 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use tenderdash_abci::proto::abci as proto;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
@@ -14,10 +15,12 @@ use tenderdash_abci::proto::abci as proto;
 /// AbciApp implements logic that should be triggered when Tenderdash performs various operations, like
 /// creating new proposal or finalizing new block.
 pub struct ConsensusAbciApplication<'a, C> {
+    // TODO: Why we do not own platform?
     /// Platform
-    pub platform: &'a Platform<C>,
+    platform: &'a Platform<C>,
     /// The current transaction
-    pub transaction: RwLock<Option<Transaction<'a>>>,
+    transaction: RwLock<Option<Transaction<'a>>>,
+    block_update_channel: Arc<BlockUpdateChannel>,
 }
 
 impl<'a, C> NamedApplication for ConsensusAbciApplication<'a, C> {
@@ -28,10 +31,14 @@ impl<'a, C> NamedApplication for ConsensusAbciApplication<'a, C> {
 
 impl<'a, C> ConsensusAbciApplication<'a, C> {
     /// Create new ABCI app
-    pub fn new(platform: &'a Platform<C>) -> Result<Self, Error> {
+    pub fn new(
+        platform: &'a Platform<C>,
+        block_update_channel: Arc<BlockUpdateChannel>,
+    ) -> Result<Self, Error> {
         let app = Self {
             platform,
             transaction: RwLock::new(None),
+            block_update_channel,
         };
 
         Ok(app)
@@ -123,7 +130,22 @@ where
         &self,
         request: proto::RequestFinalizeBlock,
     ) -> Result<proto::ResponseFinalizeBlock, proto::ResponseException> {
-        handler::finalize_block(self, request)
+        // Collect Data Contract block cache
+        let drive_cache = self.platform.drive.cache.read().unwrap();
+        let block_cache = drive_cache.cached_contracts.block_cache().clone();
+        drop(drive_cache);
+
+        let response = handler::finalize_block(self, request);
+
+        if response.is_ok() {
+            // Send state cache and data contract block cache to Query App thread
+            let state_cache = self.platform.state.read().unwrap();
+
+            self.block_update_channel
+                .update(block_cache, state_cache.clone());
+        }
+
+        response
     }
 
     fn prepare_proposal(

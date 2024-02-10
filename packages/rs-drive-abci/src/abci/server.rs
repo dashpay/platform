@@ -1,5 +1,6 @@
 //! This module implements ABCI application server.
 //!
+use crate::abci::app::block_update::BlockUpdateChannel;
 use crate::abci::app::QueryAbciApplication;
 use crate::abci::app::{ConsensusAbciApplication, NamedApplication};
 use crate::abci::AbciError;
@@ -18,16 +19,20 @@ pub fn start_abci_apps(config: PlatformConfig, cancel: CancellationToken) -> Res
 
     let config = Arc::new(config);
 
+    let block_update_channel = Arc::new(BlockUpdateChannel::default());
+
     let consensus_thread = spawn_consensus_thread(
         Arc::clone(&config),
         cancel.clone(),
         Arc::clone(&drive_semaphore),
+        Arc::clone(&block_update_channel),
     );
 
     let query_thread = spawn_query_thread(
         Arc::clone(&config),
         cancel.clone(),
         Arc::clone(&drive_semaphore),
+        Arc::clone(&block_update_channel),
     );
 
     consensus_thread.join().unwrap();
@@ -40,6 +45,7 @@ fn spawn_consensus_thread(
     config: Arc<PlatformConfig>,
     cancel: CancellationToken,
     drive_semaphore: Arc<(Mutex<bool>, Condvar)>,
+    block_update_channel: Arc<BlockUpdateChannel>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let core_rpc = new_core_rpc(&config).expect("Failed to create core RPC client");
@@ -61,7 +67,8 @@ fn spawn_consensus_thread(
         drop(is_primary_drive_open);
         drop(drive_semaphore);
 
-        let app = ConsensusAbciApplication::new(&platform).expect("Failed to create ABCI app");
+        let app = ConsensusAbciApplication::new(&platform, block_update_channel)
+            .expect("Failed to create ABCI app");
 
         start_tenderdash_abci_server(app, &config.abci.consensus_bind_address, cancel)
     })
@@ -71,6 +78,7 @@ fn spawn_query_thread(
     config: Arc<PlatformConfig>,
     cancel: CancellationToken,
     drive_semaphore: Arc<(Mutex<bool>, Condvar)>,
+    block_update_channel: Arc<BlockUpdateChannel>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let core_rpc = new_core_rpc(&config).expect("Failed to create core RPC client");
@@ -90,7 +98,8 @@ fn spawn_query_thread(
         )
         .expect("Failed to open platform");
 
-        let app = QueryAbciApplication::new(&platform).expect("Failed to create ABCI app");
+        let app = QueryAbciApplication::new(&platform, block_update_channel)
+            .expect("Failed to create ABCI app");
 
         start_tenderdash_abci_server(app, &config.abci.query_bind_address, cancel)
     })

@@ -7,6 +7,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive::grovedb::Transaction;
+use std::thread;
 
 impl<C> Platform<C>
 where
