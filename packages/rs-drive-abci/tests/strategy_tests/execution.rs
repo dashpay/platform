@@ -24,7 +24,7 @@ use dpp::bls_signatures::PrivateKey;
 use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};
-use drive_abci::abci::AbciApplication;
+use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
@@ -676,7 +676,8 @@ pub(crate) fn create_chain_for_strategy(
     config: PlatformConfig,
     rng: StdRng,
 ) -> ChainExecutionOutcome {
-    let abci_application = AbciApplication::new(platform).expect("expected new abci application");
+    let abci_application =
+        FullAbciApplication::new(platform).expect("expected new abci application");
     let seed = strategy
         .failure_testing
         .as_ref()
@@ -695,7 +696,7 @@ pub(crate) fn create_chain_for_strategy(
 }
 
 pub(crate) fn start_chain_for_strategy(
-    abci_application: AbciApplication<MockCoreRPCLike>,
+    abci_application: FullAbciApplication<MockCoreRPCLike>,
     block_count: u64,
     proposers_with_updates: Vec<MasternodeListItemWithUpdates>,
     quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
@@ -780,7 +781,7 @@ pub(crate) fn start_chain_for_strategy(
 }
 
 pub(crate) fn continue_chain_for_strategy(
-    abci_app: AbciApplication<MockCoreRPCLike>,
+    abci_app: FullAbciApplication<MockCoreRPCLike>,
     chain_execution_parameters: ChainExecutionParameters,
     mut strategy: NetworkStrategy,
     config: PlatformConfig,

@@ -27,5 +27,32 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
+//! Tenderdash ABCI Handlers.
+//!
+//! This module defines the `TenderdashAbci` trait and implements it for type `Platform`.
+//!
+//! Handlers in this function MUST be version agnostic, meaning that for all future versions, we
+//! can only make changes that are backwards compatible. Otherwise new calls must be made instead.
+//!
+
+mod check_tx;
 pub mod error;
 pub mod execution_result;
+mod extend_vote;
+mod finalize_block;
+mod info;
+mod init_chain;
+mod prepare_proposal;
+mod process_proposal;
+mod query;
+mod verify_vote_extension;
+
+pub use check_tx::check_tx;
+pub use extend_vote::extend_vote;
+pub use finalize_block::finalize_block;
+pub use info::info;
+pub use init_chain::init_chain;
+pub use prepare_proposal::prepare_proposal;
+pub use process_proposal::process_proposal;
+pub use query::query;
+pub use verify_vote_extension::verify_vote_extension;

@@ -14,7 +14,6 @@ use drive::drive::Drive;
 use drive::query::SingleDocumentDriveQuery;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
-use drive_abci::abci::AbciApplication;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -26,11 +25,12 @@ use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatch
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransition;
 use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransition;
+use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use platform_version::DefaultForPlatformVersion;
 
 pub(crate) fn verify_state_transitions_were_or_were_not_executed(
-    abci_app: &AbciApplication<MockCoreRPCLike>,
+    abci_app: &FullAbciApplication<MockCoreRPCLike>,
     expected_root_hash: &[u8; 32],
     state_transitions: &[(StateTransition, ExecTxResult)],
     block_info: &BlockInfo,

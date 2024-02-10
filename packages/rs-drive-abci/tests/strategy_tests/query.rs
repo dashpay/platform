@@ -15,7 +15,8 @@ use dpp::validation::SimpleValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::verify::RootHash;
 use drive::drive::Drive;
-use drive_abci::abci::{AbciApplication, AbciError};
+use drive_abci::abci::app::FullAbciApplication;
+use drive_abci::abci::AbciError;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use prost::Message;
 use rand::prelude::SliceRandom;
@@ -169,7 +170,7 @@ impl QueryStrategy {
         &self,
         proof_verification: &ProofVerification,
         current_identities: &Vec<Identity>,
-        abci_app: &AbciApplication<MockCoreRPCLike>,
+        abci_app: &FullAbciApplication<MockCoreRPCLike>,
         seed: StrategyRandomness,
         platform_version: &PlatformVersion,
     ) {
@@ -196,7 +197,7 @@ impl QueryStrategy {
         proof_verification: &ProofVerification,
         current_identities: &Vec<Identity>,
         frequency: &Frequency,
-        abci_app: &AbciApplication<MockCoreRPCLike>,
+        abci_app: &FullAbciApplication<MockCoreRPCLike>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) {
@@ -337,13 +338,9 @@ mod tests {
     };
     use dpp::block::epoch::EpochIndex;
     use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
-    use dpp::data_contract::accessors::v0::DataContractV0Getters;
-
-    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
     use dpp::version::PlatformVersion;
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
-
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
@@ -351,10 +348,6 @@ mod tests {
     use strategy_tests::Strategy;
 
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
-    use dpp::dashcore::hashes::Hash;
-    use dpp::dashcore::{BlockHash, ChainLock};
-    use tenderdash_abci::proto::types::CoreChainLock;
-    use tenderdash_abci::Application;
 
     macro_rules! extract_single_variant_or_panic {
         ($expression:expr, $pattern:pat, $binding:ident) => {

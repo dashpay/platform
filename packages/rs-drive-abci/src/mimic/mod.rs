@@ -1,8 +1,8 @@
-use crate::abci::app::consensus::ConsensusAbciApplication;
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
+use crate::abci::app::FullAbciApplication;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
 use crate::mimic::test_quorum::TestQuorumInfo;
@@ -73,7 +73,7 @@ pub struct MimicExecuteBlockOptions {
     pub independent_process_proposal_verification: bool,
 }
 
-impl<'a, C: CoreRPCLike> ConsensusAbciApplication<'a, C> {
+impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
     /// Execute a block with various state transitions
     /// Returns the withdrawal transactions that were signed in the block
     pub fn mimic_execute_block(

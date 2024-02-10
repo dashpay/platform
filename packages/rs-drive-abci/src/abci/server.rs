@@ -1,12 +1,9 @@
 //! This module implements ABCI application server.
 //!
-use crate::abci::app::consensus::ConsensusAbciApplication;
-use crate::abci::app::read_only::ReadOnlyAbciApplication;
+use crate::abci::app::ConsensusAbciApplication;
+use crate::abci::app::QueryAbciApplication;
 use crate::rpc::core::DefaultCoreRPC;
-use crate::{
-    config::PlatformConfig, error::Error, platform_types::platform::Platform,
-    rpc::core::CoreRPCLike,
-};
+use crate::{config::PlatformConfig, error::Error, platform_types::platform::Platform};
 use std::thread;
 use tokio_util::sync::CancellationToken;
 
@@ -73,7 +70,7 @@ pub fn start(config: &PlatformConfig, cancel: CancellationToken) -> Result<(), E
         )
         .expect("Failed to open platform");
 
-        let abci = ReadOnlyAbciApplication::new(&platform).expect("Failed to create ABCI app");
+        let abci = QueryAbciApplication::new(&platform).expect("Failed to create ABCI app");
 
         let server = tenderdash_abci::ServerBuilder::new(
             abci,
