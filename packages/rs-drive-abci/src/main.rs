@@ -100,7 +100,7 @@ impl Cli {
                 // Drive and Tenderdash rely on Core. Various functions will fail if Core is not synced.
                 // We need to make sure that Core is ready before we start Drive ABCI app
                 // Tenderdash won't start too until ABCI port is open.
-                //wait_for_core_to_sync_v0(&core_rpc, cancel.clone()).map_err(|e| e.to_string())?;
+                wait_for_core_to_sync_v0(&core_rpc, cancel.clone()).map_err(|e| e.to_string())?;
 
                 if cancel.is_cancelled() {
                     return Ok(());
