@@ -180,6 +180,19 @@ impl MockResponse for drive_proof_verifier::types::IdentityBalance {
     }
 }
 
+impl MockResponse for drive_proof_verifier::types::IdentityContractNonce {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        (self.0).to_le_bytes().to_vec()
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+        where
+            Self: Sized,
+    {
+        drive_proof_verifier::types::IdentityContractNonce(u64::from_le_bytes(buf.try_into().expect("identity contract nonce should be should be 8 bytes")))
+    }
+}
+
 impl MockResponse for drive_proof_verifier::types::IdentityBalanceAndRevision {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         bincode::encode_to_vec(self, bincode::config::standard())

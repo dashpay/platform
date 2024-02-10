@@ -48,7 +48,8 @@ pub type IdentityBalance = u64;
 pub type IdentityBalanceAndRevision = (u64, Revision);
 
 /// An identity contract nonce
-pub struct IdentityContractNonce(u64);
+#[derive(Debug)]
+pub struct IdentityContractNonce(pub u64);
 
 /// Public keys belonging to some identity.
 ///
