@@ -485,7 +485,11 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
-            super::assert_invalid_identifier(result.unwrap());
+            let validation_error = result.as_ref().unwrap().first_error().unwrap();
+
+            assert!(matches!(
+            validation_error,
+            QueryError::InvalidArgument(msg) if msg.contains("identity id must be 32 bytes long")));
         }
 
         #[test]
@@ -503,11 +507,15 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
-            super::assert_invalid_identifier(result.unwrap());
+            let validation_error = result.as_ref().unwrap().first_error().unwrap();
+
+            assert!(matches!(
+            validation_error,
+            QueryError::InvalidArgument(msg) if msg.contains("contract id must be 32 bytes long")));
         }
 
         #[test]
-        fn test_identity_not_found() {
+        fn test_identity_not_found_when_querying_identity_nonce() {
             let (platform, version) = super::setup_platform();
 
             let id = vec![0; 32];
@@ -528,7 +536,7 @@ mod tests {
 
             assert_eq!(
                 validation_error.to_string(),
-                "not found error: No Identity found".to_string()
+                "not found error: identity contract nonce for identity: 0000000000000000000000000000000000000000000000000000000000000000 / contract: 0000000000000000000000000000000000000000000000000000000000000000 not found".to_string()
             );
 
             assert!(matches!(validation_error, QueryError::NotFound(_)));

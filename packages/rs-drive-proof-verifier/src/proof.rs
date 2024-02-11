@@ -2,7 +2,7 @@ use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 
-use crate::{types::*, Error, QuorumInfoProvider, types};
+use crate::{types, types::*, Error, QuorumInfoProvider};
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
 };
@@ -396,14 +396,16 @@ impl FromProof<platform::GetIdentityContractNonceRequest> for IdentityContractNo
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (identity_id, contract_id) = match request.version.ok_or(Error::EmptyVersion)? {
-            get_identity_contract_nonce_request::Version::V0(v0) =>
-                Ok::<(dpp::identifier::Identifier, dpp::identifier::Identifier), Error>((Identifier::from_bytes(&v0.identity_id).map_err(|e| Error::ProtocolError {
-                    error: e.to_string(),
-                })?,
-                Identifier::from_bytes(&v0.contract_id).map_err(|e| Error::ProtocolError {
-                    error: e.to_string(),
-                })?,
-            )),
+            get_identity_contract_nonce_request::Version::V0(v0) => {
+                Ok::<(dpp::identifier::Identifier, dpp::identifier::Identifier), Error>((
+                    Identifier::from_bytes(&v0.identity_id).map_err(|e| Error::ProtocolError {
+                        error: e.to_string(),
+                    })?,
+                    Identifier::from_bytes(&v0.contract_id).map_err(|e| Error::ProtocolError {
+                        error: e.to_string(),
+                    })?,
+                ))
+            }
         }?;
 
         // Extract content from proof and verify Drive/GroveDB proofs

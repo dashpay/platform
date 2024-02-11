@@ -173,7 +173,6 @@ impl_transport_request_grpc!(
     get_identity_contract_nonce
 );
 
-
 impl_transport_request_grpc!(
     platform_proto::GetIdentityBalanceAndRevisionRequest,
     platform_proto::GetIdentityBalanceAndRevisionResponse,
