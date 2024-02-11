@@ -80,7 +80,10 @@ impl<'a, C> QueryAbciApplication<'a, C> {
 
         PlatformVersion::set_current(platform_version);
 
-        tracing::debug!("Query app updated platform cache for height {}", height);
+        tracing::debug!(
+            "Received block update from consensus app for height {}",
+            height
+        );
     }
 }
 

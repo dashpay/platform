@@ -4,6 +4,7 @@ use crate::abci::handler;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
@@ -143,6 +144,11 @@ where
 
             self.block_update_channel
                 .update(data_contracts_block_cache, state_cache.clone());
+
+            tracing::debug!(
+                "Sent block update to Query app thread for height {}",
+                state_cache.last_committed_block_height()
+            );
         }
 
         response

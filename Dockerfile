@@ -73,7 +73,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
     --profile minimal \
     -y \
     # Rust version the same as in /README.md
-    --default-toolchain stable \
+    --default-toolchain 1.76 \
     --target wasm32-unknown-unknown
 
 # Install protoc - protobuf compiler
