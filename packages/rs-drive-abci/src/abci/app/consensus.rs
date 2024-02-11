@@ -132,7 +132,7 @@ where
     ) -> Result<proto::ResponseFinalizeBlock, proto::ResponseException> {
         // Collect Data Contract block cache
         let drive_cache = self.platform.drive.cache.read().unwrap();
-        let block_cache = drive_cache.cached_contracts.block_cache().clone();
+        let data_contracts_block_cache = drive_cache.cached_contracts.block_cache().clone();
         drop(drive_cache);
 
         let response = handler::finalize_block(self, request);
@@ -142,7 +142,7 @@ where
             let state_cache = self.platform.state.read().unwrap();
 
             self.block_update_channel
-                .update(block_cache, state_cache.clone());
+                .update(data_contracts_block_cache, state_cache.clone());
         }
 
         response

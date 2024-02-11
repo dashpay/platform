@@ -47,7 +47,7 @@ impl<'a, C> QueryAbciApplication<'a, C> {
         Ok(app)
     }
 
-    fn apply_block_update(&self) {
+    fn receive_and_apply_block_update(&self) {
         let Some(block_update) = self.block_update_channel.receive() else {
             return;
         };
@@ -133,7 +133,7 @@ where
         &self,
         _request: proto::RequestFinalizeBlock,
     ) -> Result<proto::ResponseFinalizeBlock, proto::ResponseException> {
-        self.apply_block_update();
+        self.receive_and_apply_block_update();
 
         Ok(proto::ResponseFinalizeBlock {
             events: vec![],

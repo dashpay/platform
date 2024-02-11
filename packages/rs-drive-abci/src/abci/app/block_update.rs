@@ -22,12 +22,12 @@ impl BlockUpdateChannel {
     /// Add a new block update to the channel
     pub fn update(
         &self,
-        block_cache: Cache<[u8; 32], Arc<DataContractFetchInfo>>,
+        data_contracts_cache: Cache<[u8; 32], Arc<DataContractFetchInfo>>,
         platform_state: PlatformState,
     ) {
         let mut update = self.update.lock().unwrap();
         update.replace(BlockUpdate {
-            data_contracts_cache: block_cache,
+            data_contracts_cache,
             platform_state,
         });
     }
