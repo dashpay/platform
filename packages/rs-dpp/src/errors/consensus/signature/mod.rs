@@ -2,6 +2,7 @@ mod basic_bls_error;
 mod basic_ecdsa_error;
 mod identity_not_found_error;
 mod invalid_identity_public_key_type_error;
+mod invalid_signing_key_type_error;
 mod invalid_signature_public_key_security_level_error;
 mod invalid_state_transition_signature_error;
 mod missing_public_key_error;
@@ -23,3 +24,4 @@ pub use crate::consensus::signature::public_key_security_level_not_met_error::Pu
 pub use crate::consensus::signature::signature_error::SignatureError;
 pub use crate::consensus::signature::signature_should_not_be_present_error::SignatureShouldNotBePresentError;
 pub use crate::consensus::signature::wrong_public_key_purpose_error::WrongPublicKeyPurposeError;
+pub use crate::consensus::signature::invalid_signing_key_type_error::InvalidSigningKeyTypeError;

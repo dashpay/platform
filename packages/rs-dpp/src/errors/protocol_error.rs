@@ -7,6 +7,8 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
 use crate::document::errors::*;
+#[cfg(feature = "message-signing")]
+use crate::errors::consensus::signature::InvalidSigningKeyTypeError;
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
@@ -114,8 +116,12 @@ pub enum ProtocolError {
     #[error("Generic Error: {0}")]
     Generic(String),
 
+    #[cfg(feature = "message-signing")]
+    #[error(transparent)]
+    InvalidSigningKeyTypeError(InvalidSigningKeyTypeError),
+
     // State Transition Errors
-    #[cfg(feature = "state-transition-validation")]
+    #[cfg(any(feature = "state-transition-validation", feature = "state-transition-signing"))]
     #[error(transparent)]
     InvalidIdentityPublicKeyTypeError(InvalidIdentityPublicKeyTypeError),
     #[cfg(feature = "state-transition-validation")]

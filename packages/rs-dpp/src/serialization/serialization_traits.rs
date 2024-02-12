@@ -159,6 +159,7 @@ pub trait ValueConvertible<'a>: Serialize + Deserialize<'a> {
 }
 
 pub trait PlatformMessageSignable {
+    #[cfg(feature = "message-signature-verification")]
     fn verify_signature(
         &self,
         public_key_type: KeyType,
@@ -166,7 +167,7 @@ pub trait PlatformMessageSignable {
         signature: &[u8],
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 
-    #[cfg(feature = "state-transition-signing")]
+    #[cfg(feature = "message-signing")]
     fn sign_by_private_key(
         &self,
         private_key: &[u8],
