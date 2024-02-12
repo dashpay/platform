@@ -473,6 +473,9 @@ mod tests {
         use dpp::data_contract::document_type::random_document::CreateRandomDocument;
         use dpp::identifier::Identifier;
         use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::identity::identity_contract_nonce::{
+            IDENTITY_CONTRACT_NONCE_VALUE_FILTER, IDENTITY_CONTRACT_NONCE_VALUE_FILTER_MAX_BYTES,
+        };
         use dpp::identity::{Identity, IdentityV0};
         use dpp::prelude::IdentityContractNonce;
         use drive::common::identities::{
@@ -483,7 +486,6 @@ mod tests {
         use prost::Message;
         use rand::prelude::StdRng;
         use rand::{Rng, SeedableRng};
-        use dpp::identity::identity_contract_nonce::{IDENTITY_CONTRACT_NONCE_VALUE_FILTER, IDENTITY_CONTRACT_NONCE_VALUE_FILTER_MAX_BYTES};
 
         const QUERY_PATH: &str = "/identity/contractNonce";
 
@@ -547,14 +549,29 @@ mod tests {
             let validation_result = platform
                 .query(QUERY_PATH, &request, version)
                 .expect("expected query to succeed");
-            let validation_error = validation_result.first_error().unwrap();
 
-            assert_eq!(
-                validation_error.to_string(),
-                "not found error: identity contract nonce for identity: 0000000000000000000000000000000000000000000000000000000000000000 / contract: 0000000000000000000000000000000000000000000000000000000000000000 not found".to_string()
-            );
+            assert!(validation_result.first_error().is_none());
 
-            assert!(matches!(validation_error, QueryError::NotFound(_)));
+            let response_data = validation_result.into_data().expect("expected data");
+
+            let GetIdentityContractNonceResponse { version } =
+                GetIdentityContractNonceResponse::decode(response_data.as_slice())
+                    .expect("expected to decode the response");
+
+            let v0 = match version.unwrap() {
+                get_identity_contract_nonce_response::Version::V0(v0) => v0,
+            };
+
+            let nonce = match v0.result.unwrap() {
+                get_identity_contract_nonce_response_v0::Result::IdentityContractNonce(nonce) => {
+                    nonce
+                }
+                get_identity_contract_nonce_response_v0::Result::Proof(_) => {
+                    panic!("expected non proved")
+                }
+            };
+
+            assert_eq!(nonce, 0);
         }
 
         #[test]
@@ -578,14 +595,29 @@ mod tests {
             let validation_result = platform
                 .query(QUERY_PATH, &request, version)
                 .expect("expected query to succeed");
-            let validation_error = validation_result.first_error().unwrap();
 
-            assert_eq!(
-                validation_error.to_string(),
-                "not found error: identity contract nonce for identity: 5ec8021cc5f6474b479d07f2b5736cba3a894fcd0438099996846379bff35106 / contract: 0000000000000000000000000000000000000000000000000000000000000000 not found".to_string()
-            );
+            assert!(validation_result.first_error().is_none());
 
-            assert!(matches!(validation_error, QueryError::NotFound(_)));
+            let response_data = validation_result.into_data().expect("expected data");
+
+            let GetIdentityContractNonceResponse { version } =
+                GetIdentityContractNonceResponse::decode(response_data.as_slice())
+                    .expect("expected to decode the response");
+
+            let v0 = match version.unwrap() {
+                get_identity_contract_nonce_response::Version::V0(v0) => v0,
+            };
+
+            let nonce = match v0.result.unwrap() {
+                get_identity_contract_nonce_response_v0::Result::IdentityContractNonce(nonce) => {
+                    nonce
+                }
+                get_identity_contract_nonce_response_v0::Result::Proof(_) => {
+                    panic!("expected non proved")
+                }
+            };
+
+            assert_eq!(nonce, 0);
         }
 
         #[test]
@@ -652,7 +684,6 @@ mod tests {
             assert_eq!(nonce, 1);
         }
 
-
         #[test]
         fn test_identity_is_found_when_querying_identity_nonce_after_update() {
             let (platform, version) = super::setup_platform();
@@ -701,7 +732,7 @@ mod tests {
                     contract_id: dashpay.id().to_vec(),
                 })),
             }
-                .encode_to_vec();
+            .encode_to_vec();
 
             let validation_result = platform
                 .query(QUERY_PATH, &request, version)
@@ -729,7 +760,8 @@ mod tests {
             };
 
             assert_eq!(nonce & IDENTITY_CONTRACT_NONCE_VALUE_FILTER, 3);
-            assert_eq!(nonce >> IDENTITY_CONTRACT_NONCE_VALUE_FILTER_MAX_BYTES, 1); // the previous last one was not there
+            assert_eq!(nonce >> IDENTITY_CONTRACT_NONCE_VALUE_FILTER_MAX_BYTES, 1);
+            // the previous last one was not there
         }
 
         #[test]
@@ -795,7 +827,7 @@ mod tests {
                     contract_id: dashpay.id().to_vec(),
                 })),
             }
-                .encode_to_vec();
+            .encode_to_vec();
 
             let validation_result = platform
                 .query(QUERY_PATH, &request, version)

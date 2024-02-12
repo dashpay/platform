@@ -71,14 +71,8 @@ impl<C> Platform<C> {
                 platform_version,
             )?;
 
-            let identity_contract_nonce = check_validation_result_with_data!(maybe_identity
-                .ok_or_else(|| {
-                    QueryError::NotFound(format!(
-                        "identity contract nonce for identity: {} / contract: {} not found",
-                        hex::encode(identity_id.0),
-                        hex::encode(contract_id.0)
-                    ))
-                }));
+            // default here is 0;
+            let identity_contract_nonce = maybe_identity.unwrap_or_default();
 
             GetIdentityContractNonceResponse {
                 version: Some(get_identity_contract_nonce_response::Version::V0(GetIdentityContractNonceResponseV0 {
