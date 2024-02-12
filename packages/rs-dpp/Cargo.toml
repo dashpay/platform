@@ -210,5 +210,6 @@ extended-document = [
     "data-contract-serde-conversion",
     "data-contract-json-conversion",
 ]
-client = []
+
 factories = []
+client = ["factories", "state-transitions"]

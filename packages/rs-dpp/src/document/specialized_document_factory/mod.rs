@@ -11,8 +11,10 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
-use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
-use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::documents_batch_transition::{
+    document_transition::action_type::DocumentTransitionActionType, DocumentsBatchTransition,
+};
 use crate::util::entropy_generator::EntropyGenerator;
 pub use v0::SpecializedDocumentFactoryV0;
 

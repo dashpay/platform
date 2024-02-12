@@ -9,18 +9,16 @@ use crate::prelude::{Identifier, Revision};
 
 use crate::identity::identity_factory::IdentityFactory;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::identity_create_transition::IdentityCreateTransition;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::{
+    identity_create_transition::IdentityCreateTransition,
+    identity_credit_transfer_transition::IdentityCreditTransferTransition,
+    identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
+    identity_topup_transition::IdentityTopUpTransition,
+    identity_update_transition::IdentityUpdateTransition,
+    public_key_in_creation::IdentityPublicKeyInCreation,
+};
 
 use crate::identity::core_script::CoreScript;
-use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::withdrawal::Pooling;
 use crate::ProtocolError;
 
@@ -54,6 +52,7 @@ impl IdentityFacade {
     //         .create_from_object(raw_identity)
     // }
 
+    #[cfg(all(feature = "identity-serialization", feature = "client"))]
     pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,

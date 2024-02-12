@@ -35,7 +35,9 @@ use crate::state_transition::identity_create_transition::IdentityCreateTransitio
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
