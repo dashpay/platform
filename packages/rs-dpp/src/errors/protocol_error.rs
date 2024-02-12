@@ -115,7 +115,7 @@ pub enum ProtocolError {
     Generic(String),
 
     #[cfg(feature = "message-signing")]
-    #[error(transparent)]
+    #[error("Invalid signing type error: {0}")]
     InvalidSigningKeyTypeError(String),
 
     // State Transition Errors
