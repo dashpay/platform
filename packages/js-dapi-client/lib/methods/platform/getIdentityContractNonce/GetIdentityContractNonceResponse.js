@@ -1,6 +1,8 @@
 const AbstractResponse = require('../response/AbstractResponse');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
+const IDENTITY_CONTRACT_NONCE_VALUE_FILTER = 0xFFFFFFFFFF;
+
 class GetIdentityContractNonceResponse extends AbstractResponse {
   /**
    * @param {number} identityContractNonce
@@ -25,7 +27,9 @@ class GetIdentityContractNonceResponse extends AbstractResponse {
    * @returns {GetIdentityContractNonceResponse}
    */
   static createFromProto(proto) {
-    const identityContractNonce = proto.getV0().getIdentityContractNonce();
+    // eslint-disable-next-line
+    const identityContractNonce = proto.getV0()
+      .getIdentityContractNonce() & IDENTITY_CONTRACT_NONCE_VALUE_FILTER;
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(
       proto,
     );

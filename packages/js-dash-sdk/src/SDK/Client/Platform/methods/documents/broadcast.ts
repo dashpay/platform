@@ -42,7 +42,12 @@ export default async function broadcast(
     throw new Error('Data contract ID is not found');
   }
 
-  const identityContractNonce = await this.client.getDAPIClient().platform
+  console.log('Fetching nonce for', {
+    identity: identityId.toString('hex'),
+    contract: dataContractId.toString('hex'),
+  });
+
+  const { identityContractNonce } = await this.client.getDAPIClient().platform
     .getIdentityContractNonce(identityId, dataContractId);
 
   console.log('identityContractNonce', {
@@ -53,7 +58,7 @@ export default async function broadcast(
 
   const documentsBatchTransition = dpp.document.createStateTransition(documents, {
     [identityId.toString()]: {
-      [dataContractId.toString()]: identityContractNonce,
+      [dataContractId.toString()]: identityContractNonce + 1,
     },
   });
 
