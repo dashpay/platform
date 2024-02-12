@@ -119,7 +119,10 @@ pub enum ProtocolError {
     InvalidSigningKeyTypeError(String),
 
     // State Transition Errors
-    #[cfg(any(feature = "state-transition-validation", feature = "state-transition-signing"))]
+    #[cfg(any(
+        feature = "state-transition-validation",
+        feature = "state-transition-signing"
+    ))]
     #[error(transparent)]
     InvalidIdentityPublicKeyTypeError(InvalidIdentityPublicKeyTypeError),
     #[cfg(feature = "state-transition-validation")]

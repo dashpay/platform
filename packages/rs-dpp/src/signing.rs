@@ -9,7 +9,6 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::{BlsModule, ProtocolError};
 use dashcore::signer;
 
-
 impl PlatformMessageSignable for &[u8] {
     #[cfg(feature = "message-signature-verification")]
     fn verify_signature(
@@ -121,9 +120,10 @@ impl PlatformMessageSignable for &[u8] {
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
             // is to return the error for the BIP13_SCRIPT_HASH
             KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
-                Err(ProtocolError::InvalidSigningKeyTypeError(
-                    format!("key type {} can not sign", key_type.to_string()),
-                ))
+                Err(ProtocolError::InvalidSigningKeyTypeError(format!(
+                    "key type {} can not sign",
+                    key_type.to_string()
+                )))
             }
         }
     }
