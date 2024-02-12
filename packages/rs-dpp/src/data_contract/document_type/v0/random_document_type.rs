@@ -101,8 +101,7 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::document_type::{
-    v0::DocumentTypeV0,
-    DocumentProperty, DocumentPropertyType, DocumentType, Index,
+    v0::DocumentTypeV0, DocumentProperty, DocumentPropertyType, DocumentType, Index,
 };
 use crate::identity::SecurityLevel;
 use crate::version::PlatformVersion;

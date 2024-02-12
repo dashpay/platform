@@ -9,9 +9,9 @@ use crate::data_contract::errors::*;
 use crate::document::errors::*;
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError,
-    InvalidSignaturePublicKeyError, PublicKeyMismatchError, PublicKeySecurityLevelNotMetError,
-    StateTransitionError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
+    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
+    PublicKeySecurityLevelNotMetError, StateTransitionError, StateTransitionIsNotSignedError,
+    WrongPublicKeyPurposeError,
 };
 use crate::{
     CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError,
