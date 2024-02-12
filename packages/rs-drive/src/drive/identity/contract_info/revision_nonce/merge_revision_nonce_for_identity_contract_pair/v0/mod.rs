@@ -219,10 +219,10 @@ impl Drive {
                     let old_missing_revisions =
                         (existing_nonce & MISSING_IDENTITY_CONTRACT_REVISIONS_FILTER);
                     let byte_to_unset = 1
-                        << (previous_revision_position_from_top
+                        << (previous_revision_position_from_top - 1
                             + IDENTITY_CONTRACT_NONCE_VALUE_FILTER_MAX_BYTES);
-                    let old_revision_already_set = (old_missing_revisions & !byte_to_unset) > 0;
-                    if old_revision_already_set {
+                    let old_revision_already_existing = (old_missing_revisions & !byte_to_unset) > 0;
+                    if old_revision_already_existing {
                         return Ok((
                             NonceAlreadyPresentInPast(previous_revision_position_from_top),
                             drive_operations,
