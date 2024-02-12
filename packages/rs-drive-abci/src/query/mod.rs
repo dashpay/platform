@@ -458,15 +458,31 @@ mod tests {
 
     mod identity_contract_nonce {
         use crate::error::query::QueryError;
+        use std::collections::BTreeMap;
 
         use dapi_grpc::platform::v0::get_identity_contract_nonce_request::{
             GetIdentityContractNonceRequestV0, Version,
         };
+        use dapi_grpc::platform::v0::get_identity_contract_nonce_response::get_identity_contract_nonce_response_v0;
         use dapi_grpc::platform::v0::{
             get_identity_contract_nonce_response, GetIdentityContractNonceRequest,
             GetIdentityContractNonceResponse,
         };
+        use dpp::block::block_info::BlockInfo;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+        use dpp::identifier::Identifier;
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::identity::{Identity, IdentityV0};
+        use dpp::prelude::IdentityContractNonce;
+        use drive::common::identities::{
+            create_test_identities_with_rng, create_test_identity_with_rng,
+        };
+        use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
+        use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
         use prost::Message;
+        use rand::prelude::StdRng;
+        use rand::{Rng, SeedableRng};
 
         const QUERY_PATH: &str = "/identity/contractNonce";
 
@@ -518,8 +534,6 @@ mod tests {
         fn test_identity_not_found_when_querying_identity_nonce() {
             let (platform, version) = super::setup_platform();
 
-            let id = vec![0; 32];
-
             let request = GetIdentityContractNonceRequest {
                 version: Some(Version::V0(GetIdentityContractNonceRequestV0 {
                     identity_id: vec![0; 32],
@@ -540,6 +554,101 @@ mod tests {
             );
 
             assert!(matches!(validation_error, QueryError::NotFound(_)));
+        }
+
+        #[test]
+        fn test_contract_info_not_found_when_querying_identity_nonce_with_known_identity() {
+            let (platform, version) = super::setup_platform();
+            let mut rng = StdRng::seed_from_u64(45);
+            let id = rng.gen::<[u8; 32]>();
+            let identity =
+                create_test_identity_with_rng(&platform.drive, id, &mut rng, None, version)
+                    .expect("expected to create a test identity");
+
+            let request = GetIdentityContractNonceRequest {
+                version: Some(Version::V0(GetIdentityContractNonceRequestV0 {
+                    identity_id: id.to_vec(),
+                    prove: false,
+                    contract_id: vec![0; 32],
+                })),
+            }
+            .encode_to_vec();
+
+            let validation_result = platform
+                .query(QUERY_PATH, &request, version)
+                .expect("expected query to succeed");
+            let validation_error = validation_result.first_error().unwrap();
+
+            assert_eq!(
+                validation_error.to_string(),
+                "not found error: identity contract nonce for identity: 5ec8021cc5f6474b479d07f2b5736cba3a894fcd0438099996846379bff35106 / contract: 0000000000000000000000000000000000000000000000000000000000000000 not found".to_string()
+            );
+
+            assert!(matches!(validation_error, QueryError::NotFound(_)));
+        }
+
+        #[test]
+        fn test_identity_is_found_when_querying_identity_nonce() {
+            let (platform, version) = super::setup_platform();
+            let mut rng = StdRng::seed_from_u64(10);
+            let id = rng.gen::<[u8; 32]>();
+            let identity =
+                create_test_identity_with_rng(&platform.drive, id, &mut rng, None, version)
+                    .expect("expected to create a test identity");
+
+            let cache = platform.drive.cache.read().unwrap();
+
+            let dashpay = &cache.system_data_contracts.dashpay;
+
+            platform
+                .drive
+                .merge_revision_nonce_for_identity_contract_pair(
+                    identity.id().to_buffer(),
+                    dashpay.id().to_buffer(),
+                    1,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    &mut vec![],
+                    version,
+                )
+                .expect("expected to set nonce");
+
+            let request = GetIdentityContractNonceRequest {
+                version: Some(Version::V0(GetIdentityContractNonceRequestV0 {
+                    identity_id: id.to_vec(),
+                    prove: false,
+                    contract_id: dashpay.id().to_vec(),
+                })),
+            }
+            .encode_to_vec();
+
+            let validation_result = platform
+                .query(QUERY_PATH, &request, version)
+                .expect("expected query to succeed");
+
+            assert!(validation_result.first_error().is_none());
+
+            let response_data = validation_result.into_data().expect("expected data");
+
+            let GetIdentityContractNonceResponse { version } =
+                GetIdentityContractNonceResponse::decode(response_data.as_slice())
+                    .expect("expected to decode the response");
+
+            let v0 = match version.unwrap() {
+                get_identity_contract_nonce_response::Version::V0(v0) => v0,
+            };
+
+            let nonce = match v0.result.unwrap() {
+                get_identity_contract_nonce_response_v0::Result::IdentityContractNonce(nonce) => {
+                    nonce
+                }
+                get_identity_contract_nonce_response_v0::Result::Proof(_) => {
+                    panic!("expected non proved")
+                }
+            };
+
+            assert_eq!(nonce, 1);
         }
 
         #[test]
