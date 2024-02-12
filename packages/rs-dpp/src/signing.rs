@@ -4,8 +4,6 @@ use crate::consensus::signature::{
 };
 use crate::identity::KeyType;
 use crate::serialization::PlatformMessageSignable;
-#[cfg(feature = "message-signing")]
-use crate::consensus::signature::InvalidSigningKeyTypeError;
 #[cfg(feature = "message-signature-verification")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{BlsModule, ProtocolError};
@@ -124,7 +122,7 @@ impl PlatformMessageSignable for &[u8] {
             // is to return the error for the BIP13_SCRIPT_HASH
             KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
                 Err(ProtocolError::InvalidSigningKeyTypeError(
-                    InvalidSigningKeyTypeError::new(key_type),
+                    format!("key type {} can not sign", key_type.to_string()),
                 ))
             }
         }
