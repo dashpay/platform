@@ -7,10 +7,9 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
 use crate::document::errors::*;
-#[cfg(all(feature = "state-transitions", feature = "validation"))]
-use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::{
+    InvalidIdentityPublicKeyTypeError,
     InvalidSignaturePublicKeyError, PublicKeyMismatchError, PublicKeySecurityLevelNotMetError,
     StateTransitionError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
 };
@@ -116,22 +115,22 @@ pub enum ProtocolError {
     Generic(String),
 
     // State Transition Errors
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     InvalidIdentityPublicKeyTypeError(InvalidIdentityPublicKeyTypeError),
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     StateTransitionIsNotSignedError(StateTransitionIsNotSignedError),
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     PublicKeySecurityLevelNotMetError(PublicKeySecurityLevelNotMetError),
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     WrongPublicKeyPurposeError(WrongPublicKeyPurposeError),
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     PublicKeyMismatchError(PublicKeyMismatchError),
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     InvalidSignaturePublicKeyError(InvalidSignaturePublicKeyError),
 

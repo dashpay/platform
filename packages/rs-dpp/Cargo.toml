@@ -195,11 +195,11 @@ state-transition-json-conversion = [
     "json-object",
     "data-contract-json-conversion",
 ]
-state-transition-validation = []
-state-transition-signing = ["message-signing"]
+state-transition-validation = ["state-transitions"]
+state-transition-signing = ["state-transitions", "message-signing"]
 state-transitions = []
 system_contracts = ["factories"]
-fixtures-and-mocks = []
+fixtures-and-mocks = ["system_contracts"]
 random-public-keys = []
 random-identities = ["random-public-keys"]
 random-documents = []

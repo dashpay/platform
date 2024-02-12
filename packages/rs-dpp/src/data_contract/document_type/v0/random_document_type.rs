@@ -98,8 +98,10 @@ impl RandomDocumentTypeParameters {
 }
 
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::v0::{DocumentTypeV0, StatelessJsonSchemaLazyValidator};
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::document_type::{
+    v0::DocumentTypeV0,
     DocumentProperty, DocumentPropertyType, DocumentType, Index,
 };
 use crate::identity::SecurityLevel;
@@ -258,6 +260,7 @@ impl DocumentTypeV0 {
             requires_identity_encryption_bounded_key: None,
             requires_identity_decryption_bounded_key: None,
             security_level_requirement: SecurityLevel::HIGH,
+            #[cfg(feature = "validation")]
             json_schema_validator: StatelessJsonSchemaLazyValidator::new(),
         })
     }
