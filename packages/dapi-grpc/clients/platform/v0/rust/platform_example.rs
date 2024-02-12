@@ -1,6 +1,6 @@
 use dapi_grpc::platform::v0 as platform;
 use dapi_grpc::platform::v0::get_consensus_params_request::GetConsensusParamsRequestV0;
-use prost::Message;
+use dapi_grpc::Message;
 
 fn main() {
     let request = platform::GetConsensusParamsRequest {

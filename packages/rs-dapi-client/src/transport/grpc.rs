@@ -2,41 +2,64 @@
 
 use std::time::Duration;
 
+use super::{CanRetry, TransportClient, TransportRequest};
+use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 use dapi_grpc::core::v0::core_client::CoreClient;
+use dapi_grpc::core::v0::{self as core_proto};
 use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
+use dapi_grpc::tonic::Streaming;
+use dapi_grpc::tonic::{transport::Channel, IntoRequest};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
 use http::Uri;
-use tonic::{transport::Channel, IntoRequest};
-
-use super::{CanRetry, TransportClient, TransportRequest, TransportResponse};
-use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 
 /// Platform Client using gRPC transport.
 pub type PlatformGrpcClient = PlatformClient<Channel>;
 /// Core Client using gRPC transport.
 pub type CoreGrpcClient = CoreClient<Channel>;
 
+fn channel_with_uri(uri: Uri) -> Channel {
+    Channel::builder(uri).connect_lazy()
+}
+
+fn channel_with_uri_and_settings(uri: Uri, settings: &AppliedRequestSettings) -> Channel {
+    let mut builder = Channel::builder(uri);
+
+    if let Some(timeout) = settings.connect_timeout {
+        builder = builder.connect_timeout(timeout);
+    }
+
+    builder.connect_lazy()
+}
+
 impl TransportClient for PlatformGrpcClient {
-    type Error = tonic::Status;
+    type Error = dapi_grpc::tonic::Status;
 
     fn with_uri(uri: Uri) -> Self {
-        Self::new(Channel::builder(uri).connect_lazy())
+        Self::new(channel_with_uri(uri))
+    }
+
+    fn with_uri_and_settings(uri: Uri, settings: &AppliedRequestSettings) -> Self {
+        Self::new(channel_with_uri_and_settings(uri, settings))
     }
 }
 
 impl TransportClient for CoreGrpcClient {
-    type Error = tonic::Status;
+    type Error = dapi_grpc::tonic::Status;
 
     fn with_uri(uri: Uri) -> Self {
-        Self::new(Channel::builder(uri).connect_lazy())
+        Self::new(channel_with_uri(uri))
+    }
+
+    fn with_uri_and_settings(uri: Uri, settings: &AppliedRequestSettings) -> Self {
+        Self::new(channel_with_uri_and_settings(uri, settings))
     }
 }
 
-impl CanRetry for tonic::Status {
-    fn can_retry(&self) -> bool {
+impl CanRetry for dapi_grpc::tonic::Status {
+    fn is_node_failure(&self) -> bool {
         let code = self.code();
 
-        use tonic::Code::*;
+        use dapi_grpc::tonic::Code::*;
         matches!(
             code,
             Ok | DataLoss
@@ -46,6 +69,7 @@ impl CanRetry for tonic::Status {
                 | ResourceExhausted
                 | Aborted
                 | Internal
+                | Unavailable
         )
     }
 }
@@ -61,6 +85,10 @@ macro_rules! impl_transport_request_grpc {
 
             const SETTINGS_OVERRIDES: RequestSettings = $settings;
 
+            fn method_name(&self) -> &'static str {
+                stringify!($($method)+)
+            }
+
             fn execute_transport<'c>(
                 self,
                 client: &'c mut Self::Client,
@@ -68,7 +96,10 @@ macro_rules! impl_transport_request_grpc {
             ) -> BoxFuture<'c, Result<Self::Response, <Self::Client as TransportClient>::Error>>
             {
                 let mut grpc_request = self.into_request();
-                grpc_request.set_timeout(settings.timeout);
+
+                if !settings.timeout.is_zero() {
+                    grpc_request.set_timeout(settings.timeout);
+                }
 
                 client
                     .$($method)+(grpc_request)
@@ -76,11 +107,12 @@ macro_rules! impl_transport_request_grpc {
                     .boxed()
             }
         }
-        impl TransportResponse for $response {}
     };
 }
 
 // Link to each platform gRPC request what client and method to use:
+
+const STREAMING_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 impl_transport_request_grpc!(
     platform_proto::GetIdentityRequest,
@@ -135,7 +167,8 @@ impl_transport_request_grpc!(
     platform_proto::WaitForStateTransitionResultResponse,
     PlatformGrpcClient,
     RequestSettings {
-        timeout: Some(Duration::from_secs(120)),
+        timeout: Some(Duration::from_secs(80)),
+        retries: Some(0),
         ..RequestSettings::default()
     },
     wait_for_state_transition_result
@@ -222,8 +255,6 @@ impl_transport_request_grpc!(
 );
 
 // Link to each core gRPC request what client and method to use:
-/*
-TODO: Implement serde on Core gRPC requests and responses
 
 impl_transport_request_grpc!(
     core_proto::GetTransactionRequest,
@@ -248,4 +279,14 @@ impl_transport_request_grpc!(
     RequestSettings::default(),
     broadcast_transaction
 );
-*/
+
+impl_transport_request_grpc!(
+    core_proto::TransactionsWithProofsRequest,
+    Streaming<core_proto::TransactionsWithProofsResponse>,
+    CoreGrpcClient,
+    RequestSettings {
+        timeout: Some(STREAMING_TIMEOUT),
+        ..RequestSettings::default()
+    },
+    subscribe_to_transactions_with_proofs
+);

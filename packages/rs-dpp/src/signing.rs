@@ -1,15 +1,16 @@
+#[cfg(feature = "message-signature-verification")]
 use crate::consensus::signature::{
     BasicBLSError, BasicECDSAError, SignatureError, SignatureShouldNotBePresentError,
 };
 use crate::identity::KeyType;
 use crate::serialization::PlatformMessageSignable;
-#[cfg(any(feature = "state-transitions", feature = "validation"))]
-use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
+#[cfg(feature = "message-signature-verification")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{BlsModule, ProtocolError};
 use dashcore::signer;
 
 impl PlatformMessageSignable for &[u8] {
+    #[cfg(feature = "message-signature-verification")]
     fn verify_signature(
         &self,
         public_key_type: KeyType,
@@ -99,7 +100,7 @@ impl PlatformMessageSignable for &[u8] {
             }
         }
     }
-
+    #[cfg(feature = "message-signing")]
     fn sign_by_private_key(
         &self,
         private_key: &[u8],
@@ -119,9 +120,10 @@ impl PlatformMessageSignable for &[u8] {
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
             // is to return the error for the BIP13_SCRIPT_HASH
             KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
-                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
-                    InvalidIdentityPublicKeyTypeError::new(key_type),
-                ))
+                Err(ProtocolError::InvalidSigningKeyTypeError(format!(
+                    "key type {} can not sign",
+                    key_type.to_string()
+                )))
             }
         }
     }

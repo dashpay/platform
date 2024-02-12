@@ -1,5 +1,5 @@
 use crate::document::Document;
-use crate::{prelude::Identifier, util::hash::hash_to_vec};
+use crate::{prelude::Identifier, util::hash::hash_double_to_vec};
 
 impl Document {
     /// Generates the document ID
@@ -16,6 +16,6 @@ impl Document {
         buf.extend_from_slice(document_type_name.as_bytes());
         buf.extend_from_slice(entropy);
 
-        Identifier::from_bytes(&hash_to_vec(&buf)).unwrap()
+        Identifier::from_bytes(&hash_double_to_vec(&buf)).unwrap()
     }
 }

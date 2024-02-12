@@ -13,7 +13,7 @@ use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use prost::Message;
+use dapi_grpc::Message;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_response::get_identity_balance_and_revision_response_v0::BalanceAndRevision;
 use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
 

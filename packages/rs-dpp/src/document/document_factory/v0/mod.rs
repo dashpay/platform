@@ -23,12 +23,12 @@ use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
 use crate::prelude::TimestampMillis;
-use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
-use crate::state_transition::documents_batch_transition::document_transition::{
-    DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-    DocumentTransition,
-};
+#[cfg(feature = "state-transitions")]
 use crate::state_transition::documents_batch_transition::{
+    document_transition::{
+        action_type::DocumentTransitionActionType, DocumentCreateTransition,
+        DocumentDeleteTransition, DocumentReplaceTransition, DocumentTransition,
+    },
     DocumentsBatchTransition, DocumentsBatchTransitionV0,
 };
 use itertools::Itertools;
@@ -243,6 +243,7 @@ impl DocumentFactoryV0 {
         .into())
     }
 
+    #[cfg(feature = "extended-document")]
     pub fn create_extended_from_document_buffer(
         &self,
         buffer: &[u8],
@@ -335,6 +336,7 @@ impl DocumentFactoryV0 {
     // //     Ok(data_contract)
     // // }
     //
+    #[cfg(feature = "state-transitions")]
     fn document_create_transitions(
         documents: Vec<(Document, DocumentTypeRef, Bytes32)>,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
@@ -379,6 +381,7 @@ impl DocumentFactoryV0 {
             .collect()
     }
 
+    #[cfg(feature = "state-transitions")]
     fn document_replace_transitions(
         documents: Vec<(Document, DocumentTypeRef)>,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
@@ -462,6 +465,7 @@ impl DocumentFactoryV0 {
         // Ok(raw_transitions)
     }
 
+    #[cfg(feature = "state-transitions")]
     fn document_delete_transitions(
         documents: Vec<(Document, DocumentTypeRef)>,
         nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce

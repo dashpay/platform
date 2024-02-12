@@ -95,6 +95,8 @@ pub struct PublicKeyInCreationMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct StateTransitionConversionVersions {
     pub identity_to_identity_create_transition: FeatureVersion,
+    pub identity_to_identity_top_up_transition: FeatureVersion,
+    pub identity_to_identity_withdrawal_transition: FeatureVersion,
     pub identity_to_identity_create_transition_with_signer: FeatureVersion,
 }
 

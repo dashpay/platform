@@ -41,6 +41,7 @@ use std::convert::TryFrom;
     Encode,
     Decode,
     Default,
+    strum::EnumIter,
 )]
 pub enum KeyType {
     #[default]
@@ -73,6 +74,17 @@ impl KeyType {
     /// Gets the default size of the public key
     pub fn default_size(&self) -> usize {
         KEY_TYPE_SIZES[self]
+    }
+
+    /// All key types
+    pub fn all_key_types() -> [KeyType; 5] {
+        [
+            Self::ECDSA_SECP256K1,
+            Self::BLS12_381,
+            Self::ECDSA_HASH160,
+            Self::BIP13_SCRIPT_HASH,
+            Self::EDDSA_25519_HASH160,
+        ]
     }
 
     /// Are keys of this type unique?

@@ -12,7 +12,7 @@ authors = [
 ]
 
 [dependencies]
-anyhow = { version = "1.0.70" }
+anyhow = { version = "1.0.75" }
 async-trait = { version = "0.1.68" }
 base64 = "0.20.0"
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", branch = "develop" }
@@ -63,6 +63,7 @@ nohash-hasher = "0.2.0"
 rust_decimal = "1.29.1"
 rust_decimal_macros = "1.29.1"
 indexmap = { version = "2.0.2", features = ["serde"] }
+strum = { version = "0.25.0", features = ["derive"] }
 
 [dev-dependencies]
 test-case = { version = "2.0" }
@@ -170,14 +171,16 @@ validation = [
 json-object = ["platform-value"]
 platform-value = []
 identity-hashing = ["identity-serialization"]
+message-signing = []
+message-signature-verification = []
 document-serde-conversion = []
 document-value-conversion = ["document-serde-conversion"]
 document-json-conversion = ["document-value-conversion"]
-document-cbor-conversion = ["document-value-conversion"]
+document-cbor-conversion = ["document-value-conversion", "cbor"]
 data-contract-serde-conversion = []
 data-contract-value-conversion = ["data-contract-serde-conversion"]
 data-contract-json-conversion = ["data-contract-value-conversion"]
-data-contract-cbor-conversion = ["data-contract-value-conversion"]
+data-contract-cbor-conversion = ["data-contract-value-conversion", "cbor"]
 identity-serialization = []
 identity-serde-conversion = []
 identity-value-conversion = ["identity-serde-conversion"]
@@ -193,11 +196,11 @@ state-transition-json-conversion = [
     "json-object",
     "data-contract-json-conversion",
 ]
-state-transition-validation = []
-state-transition-signing = []
+state-transition-validation = ["state-transitions", "message-signature-verification"]
+state-transition-signing = ["state-transitions", "message-signing","state-transition-validation"]
 state-transitions = []
 system_contracts = ["factories"]
-fixtures-and-mocks = []
+fixtures-and-mocks = ["system_contracts"]
 random-public-keys = []
 random-identities = ["random-public-keys"]
 random-documents = []
@@ -208,5 +211,6 @@ extended-document = [
     "data-contract-serde-conversion",
     "data-contract-json-conversion",
 ]
-client = []
+
 factories = []
+client = ["factories", "state-transitions"]

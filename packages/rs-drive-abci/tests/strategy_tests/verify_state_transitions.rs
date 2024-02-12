@@ -7,6 +7,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::Document;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
+use dapi_grpc::Message;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
@@ -19,13 +20,12 @@ use drive_abci::execution::validation::state_transition::transformer::StateTrans
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::MockCoreRPCLike;
-use prost::Message;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransition;
-use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransition;
+use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransitionAction;
 use drive_abci::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use platform_version::DefaultForPlatformVersion;
 
@@ -353,7 +353,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     // );
                                     assert_eq!(
                                         document,
-                                        Document::try_from_create_transition(
+                                        Document::try_from_create_transition_action(
                                             creation_action,
                                             documents_batch_transition.owner_id(),
                                             platform_version,
@@ -372,7 +372,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     if let Some(document) = document {
                                         assert_eq!(
                                             document,
-                                            Document::try_from_replace_transition(
+                                            Document::try_from_replace_transition_action(
                                                 replace_action,
                                                 documents_batch_transition.owner_id(),
                                                 platform_version,
@@ -386,7 +386,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     if let Some(document) = document {
                                         assert_ne!(
                                             document,
-                                            Document::try_from_replace_transition(
+                                            Document::try_from_replace_transition_action(
                                                 replace_action,
                                                 documents_batch_transition.owner_id(),
                                                 platform_version,
@@ -608,6 +608,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             &identity_update_transition.identity_id().into_buffer(),
                             None,
                         ),
+                        false,
+                        false,
                         false,
                         platform_version,
                     )

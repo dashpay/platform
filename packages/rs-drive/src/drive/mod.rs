@@ -53,7 +53,7 @@ pub mod config;
 #[cfg(any(feature = "full", feature = "verify", feature = "fixtures-and-mocks"))]
 pub mod contract;
 /// Fee pools module
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod credit_pools;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod defaults;
@@ -75,7 +75,7 @@ pub mod initialization;
 pub mod object_size_info;
 
 /// Protocol upgrade module
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod protocol_upgrade;
 #[cfg(feature = "full")]
 mod shared_estimation_costs;

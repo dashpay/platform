@@ -1,6 +1,10 @@
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetStatusRequest {}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetStatusResponse {
@@ -21,6 +25,8 @@ pub struct GetStatusResponse {
 }
 /// Nested message and enum types in `GetStatusResponse`.
 pub mod get_status_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Version {
@@ -31,6 +37,8 @@ pub mod get_status_response {
         #[prost(string, tag = "3")]
         pub agent: ::prost::alloc::string::String,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Time {
@@ -41,6 +49,8 @@ pub mod get_status_response {
         #[prost(uint32, tag = "3")]
         pub median: u32,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Chain {
@@ -61,6 +71,8 @@ pub mod get_status_response {
         #[prost(double, tag = "8")]
         pub sync_progress: f64,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Masternode {
@@ -77,6 +89,7 @@ pub mod get_status_response {
     }
     /// Nested message and enum types in `Masternode`.
     pub mod masternode {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[derive(
             Clone,
             Copy,
@@ -132,6 +145,8 @@ pub mod get_status_response {
             }
         }
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct NetworkFee {
@@ -140,6 +155,8 @@ pub mod get_status_response {
         #[prost(double, tag = "2")]
         pub incremental: f64,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Network {
@@ -148,6 +165,7 @@ pub mod get_status_response {
         #[prost(message, optional, tag = "2")]
         pub fee: ::core::option::Option<NetworkFee>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[derive(
         Clone,
         Copy,
@@ -191,6 +209,8 @@ pub mod get_status_response {
         }
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetBlockRequest {
@@ -199,6 +219,7 @@ pub struct GetBlockRequest {
 }
 /// Nested message and enum types in `GetBlockRequest`.
 pub mod get_block_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Block {
@@ -208,12 +229,16 @@ pub mod get_block_request {
         Hash(::prost::alloc::string::String),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetBlockResponse {
     #[prost(bytes = "vec", tag = "1")]
     pub block: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BroadcastTransactionRequest {
@@ -224,18 +249,24 @@ pub struct BroadcastTransactionRequest {
     #[prost(bool, tag = "3")]
     pub bypass_limits: bool,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BroadcastTransactionResponse {
     #[prost(string, tag = "1")]
     pub transaction_id: ::prost::alloc::string::String,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetTransactionRequest {
     #[prost(string, tag = "1")]
     pub id: ::prost::alloc::string::String,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetTransactionResponse {
@@ -252,6 +283,8 @@ pub struct GetTransactionResponse {
     #[prost(bool, tag = "6")]
     pub is_chain_locked: bool,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BlockHeadersWithChainLocksRequest {
@@ -264,6 +297,7 @@ pub struct BlockHeadersWithChainLocksRequest {
 }
 /// Nested message and enum types in `BlockHeadersWithChainLocksRequest`.
 pub mod block_headers_with_chain_locks_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum FromBlock {
@@ -273,6 +307,8 @@ pub mod block_headers_with_chain_locks_request {
         FromBlockHeight(u32),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BlockHeadersWithChainLocksResponse {
@@ -283,6 +319,7 @@ pub struct BlockHeadersWithChainLocksResponse {
 }
 /// Nested message and enum types in `BlockHeadersWithChainLocksResponse`.
 pub mod block_headers_with_chain_locks_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Responses {
@@ -292,24 +329,32 @@ pub mod block_headers_with_chain_locks_response {
         ChainLock(::prost::alloc::vec::Vec<u8>),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BlockHeaders {
     #[prost(bytes = "vec", repeated, tag = "1")]
     pub headers: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetEstimatedTransactionFeeRequest {
     #[prost(uint32, tag = "1")]
     pub blocks: u32,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetEstimatedTransactionFeeResponse {
     #[prost(double, tag = "1")]
     pub fee: f64,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TransactionsWithProofsRequest {
@@ -324,6 +369,7 @@ pub struct TransactionsWithProofsRequest {
 }
 /// Nested message and enum types in `TransactionsWithProofsRequest`.
 pub mod transactions_with_proofs_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum FromBlock {
@@ -333,6 +379,8 @@ pub mod transactions_with_proofs_request {
         FromBlockHeight(u32),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BloomFilter {
@@ -345,6 +393,8 @@ pub struct BloomFilter {
     #[prost(uint32, tag = "4")]
     pub n_flags: u32,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TransactionsWithProofsResponse {
@@ -353,6 +403,7 @@ pub struct TransactionsWithProofsResponse {
 }
 /// Nested message and enum types in `TransactionsWithProofsResponse`.
 pub mod transactions_with_proofs_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Responses {
@@ -364,12 +415,16 @@ pub mod transactions_with_proofs_response {
         RawMerkleBlock(::prost::alloc::vec::Vec<u8>),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RawTransactions {
     #[prost(bytes = "vec", repeated, tag = "1")]
     pub transactions: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InstantSendLockMessages {

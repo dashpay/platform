@@ -4,23 +4,19 @@ version = "1.0.0-dev.4"
 edition = "2021"
 
 [dependencies]
-dpp = { path = "../rs-dpp", features = [
-    "client",
-    "validation",
-    "identity-value-conversion",
-] }
+dpp = { path = "../rs-dpp", features = ["all_features"] }
 dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
     "verify",
 ] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
-# drive-abci is only needed for core rpc; TODO remove once we have correct core rpc impl
-drive-abci = { path = "../rs-drive-abci", default-features = false }
+dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 
 bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
 thiserror = "1.0.47"
 tokio = { version = "1.32.0", features = ["macros"] }
+tokio-util = { version = "0.7.8" }
 async-trait = { version = "0.1.73" }
 http = { version = "0.2.9" }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
@@ -34,6 +30,9 @@ futures = { version = "0.3.28" }
 derive_more = { version = "0.99.16" }
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.2" }
+lru = { version = "0.12.2", optional = true }
+bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
+
 
 [dev-dependencies]
 rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks"] }
@@ -46,6 +45,7 @@ dpp = { path = "../rs-dpp", features = [
 ] }
 data-contracts = { path = "../data-contracts" }
 tokio-test = { version = "0.4.3" }
+clap = { version = "4.4.18", features = ["derive"] }
 
 [features]
 default = ["mocks", "offline-testing"]
@@ -61,6 +61,7 @@ mocks = [
     "dep:hex",
     "dep:dotenvy",
     "dep:envy",
+    "dep:lru",
 ]
 
 # Run integration tests using test vectors from `tests/vectors/` instead of connecting to live Dash Platform.
@@ -85,3 +86,9 @@ network-testing = ["mocks"]
 # dump all requests and responses to `tests/vectors/`,
 # so that they can be used later for `offline-testing`.
 generate-test-vectors = ["network-testing"]
+
+
+[[example]]
+
+name = "read_contract"
+required-features = ["mocks"]

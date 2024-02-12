@@ -9,6 +9,7 @@ use dpp::ProtocolError;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
 
 use dpp::version::PlatformVersion;
@@ -46,25 +47,25 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
 }
 
 /// documents from create transition v0
-pub trait DocumentFromCreateTransitionV0 {
-    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` instance and `owner_id`.
+pub trait DocumentFromCreateTransitionActionV0 {
+    /// Attempts to create a new `Document` from the given `DocumentCreateTransitionActionV0` instance and `owner_id`.
     ///
     /// # Arguments
     ///
-    /// * `value` - A `DocumentCreateTransition` instance containing information about the document being created.
+    /// * `value` - A `DocumentCreateTransitionActionV0` instance containing information about the document being created.
     /// * `owner_id` - The `Identifier` of the document's owner.
     ///
     /// # Returns
     ///
     /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    fn try_from_owned_create_transition_v0(
+    fn try_from_owned_create_transition_action_v0(
         v0: DocumentCreateTransitionActionV0,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
-    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` reference and `owner_id`.
+    /// Attempts to create a new `Document` from the given `DocumentCreateTransitionActionV0` reference and `owner_id`.
     ///
     /// # Arguments
     ///
@@ -74,7 +75,7 @@ pub trait DocumentFromCreateTransitionV0 {
     /// # Returns
     ///
     /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    fn try_from_create_transition_v0(
+    fn try_from_create_transition_action_v0(
         v0: &DocumentCreateTransitionActionV0,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
@@ -83,18 +84,8 @@ pub trait DocumentFromCreateTransitionV0 {
         Self: Sized;
 }
 
-impl DocumentFromCreateTransitionV0 for Document {
-    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` reference and `owner_id`.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - A reference to the `DocumentCreateTransitionActionV0` containing information about the document being created.
-    /// * `owner_id` - The `Identifier` of the document's owner.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    fn try_from_create_transition_v0(
+impl DocumentFromCreateTransitionActionV0 for Document {
+    fn try_from_create_transition_action_v0(
         v0: &DocumentCreateTransitionActionV0,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
@@ -143,17 +134,7 @@ impl DocumentFromCreateTransitionV0 for Document {
         }
     }
 
-    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` instance and `owner_id`.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - A `DocumentCreateTransition` instance containing information about the document being created.
-    /// * `owner_id` - The `Identifier` of the document's owner.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    fn try_from_owned_create_transition_v0(
+    fn try_from_owned_create_transition_action_v0(
         v0: DocumentCreateTransitionActionV0,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
