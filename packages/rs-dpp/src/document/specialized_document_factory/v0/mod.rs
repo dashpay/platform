@@ -245,6 +245,7 @@ impl SpecializedDocumentFactoryV0 {
         .into())
     }
 
+    #[cfg(feature = "extended-document")]
     pub fn create_extended_from_document_buffer(
         &self,
         buffer: &[u8],

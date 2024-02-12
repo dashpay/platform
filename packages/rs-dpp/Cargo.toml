@@ -171,6 +171,7 @@ validation = [
 json-object = ["platform-value"]
 platform-value = []
 identity-hashing = ["identity-serialization"]
+message-signing = []
 document-serde-conversion = []
 document-value-conversion = ["document-serde-conversion"]
 document-json-conversion = ["document-value-conversion"]
@@ -195,7 +196,7 @@ state-transition-json-conversion = [
     "data-contract-json-conversion",
 ]
 state-transition-validation = []
-state-transition-signing = []
+state-transition-signing = ["message-signing"]
 state-transitions = []
 system_contracts = ["factories"]
 fixtures-and-mocks = []

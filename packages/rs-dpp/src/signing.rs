@@ -3,7 +3,7 @@ use crate::consensus::signature::{
 };
 use crate::identity::KeyType;
 use crate::serialization::PlatformMessageSignable;
-#[cfg(any(feature = "state-transitions", feature = "validation"))]
+#[cfg(feature = "message-signing")]
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{BlsModule, ProtocolError};
@@ -99,7 +99,7 @@ impl PlatformMessageSignable for &[u8] {
             }
         }
     }
-
+    #[cfg(feature = "message-signing")]
     fn sign_by_private_key(
         &self,
         private_key: &[u8],
