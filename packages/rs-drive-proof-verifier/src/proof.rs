@@ -1,4 +1,4 @@
-use crate::{types::*, types, ContextProvider, Error};
+use crate::{types, types::*, ContextProvider, Error};
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
 };
