@@ -11,7 +11,7 @@ use dpp::document::Document;
 use dpp::prelude::Identifier;
 use std::borrow::Cow;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0, DocumentFromCreateTransition};
+use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0, DocumentFromCreateTransitionAction};
 use dpp::version::PlatformVersion;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction {
@@ -26,7 +26,7 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
         let document_type_name = self.base().document_type_name().clone();
 
         let document =
-            Document::try_from_owned_create_transition(self, owner_id, platform_version)?;
+            Document::try_from_owned_create_transition_action(self, owner_id, platform_version)?;
 
         let storage_flags = StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
 

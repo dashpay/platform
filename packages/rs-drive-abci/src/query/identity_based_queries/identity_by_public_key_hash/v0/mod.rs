@@ -9,12 +9,12 @@ use dapi_grpc::platform::v0::get_identity_by_public_key_hash_response::GetIdenti
 use dapi_grpc::platform::v0::{
     get_identity_by_public_key_hash_response, GetIdentityByPublicKeyHashResponse, Proof,
 };
+use dapi_grpc::Message;
 use dpp::check_validation_result_with_data;
 use dpp::platform_value::Bytes20;
 use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use prost::Message;
 
 impl<C> Platform<C> {
     pub(super) fn query_identity_by_public_key_hash_v0(

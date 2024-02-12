@@ -14,7 +14,6 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::{CStr, CString},
     hash::Hash,
-    io::Read,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
     path::{Path, PathBuf},
     sync::{Mutex, RwLock},

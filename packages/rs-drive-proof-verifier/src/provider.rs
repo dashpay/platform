@@ -1,13 +1,21 @@
+use std::{ops::Deref, sync::Arc};
+
+use crate::error::ContextProviderError;
+use dpp::prelude::{DataContract, Identifier};
 use hex::ToHex;
 
-/// `QuorumInfoProvider` trait provides an interface to fetch quorum related information, required to verify the proof.
+/// Interface between the Sdk and state of the application.
 ///
-/// Developers should implement this trait to provide required quorum details to [FromProof](crate::FromProof)
-/// implementations.
+/// ContextProvider is called by the [FromProof](crate::FromProof) trait (and similar) to get information about
+/// the application and/or network state, including data contracts that might be cached by the application or
+/// quorum public keys.
 ///
-/// It defines a single method [`get_quorum_public_key()`](QuorumInfoProvider::get_quorum_public_key())
-/// which retrieves the public key of a given quorum.
-pub trait QuorumInfoProvider: Send + Sync {
+/// Developers using the Dash Platform SDK should implement this trait to provide required information
+/// to the Sdk, especially implementation of [FromProof](crate::FromProof) trait.
+///
+/// A ContextProvider should be thread-safe and manage timeouts and other concurrency-related issues internally,
+/// as the [FromProof](crate::FromProof) implementations can block on ContextProvider calls.
+pub trait ContextProvider: Send + Sync {
     /// Fetches the public key for a specified quorum.
     ///
     /// # Arguments
@@ -25,24 +33,84 @@ pub trait QuorumInfoProvider: Send + Sync {
         quorum_type: u32,
         quorum_hash: [u8; 32], // quorum hash is 32 bytes
         core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], crate::Error>; // public key is 48 bytes
+    ) -> Result<[u8; 48], ContextProviderError>; // public key is 48 bytes
+
+    /// Fetches the data contract for a specified data contract ID.
+    /// This method is used by [FromProof](crate::FromProof) implementations to fetch data contracts
+    /// referenced in proofs.
+    ///
+    /// # Arguments
+    ///
+    /// * `data_contract_id`: The ID of the data contract to fetch.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Option<Arc<DataContract>>)`: On success, returns the data contract if it exists, or `None` if it does not.
+    /// We use Arc to avoid copying the data contract.
+    /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
+    fn get_data_contract(
+        &self,
+        id: &Identifier,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError>;
 }
 
-/// Mock QuorumInfoProvider that can read quorum keys from files.
+impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
+    fn get_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Result<[u8; 48], ContextProviderError> {
+        self.as_ref()
+            .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+    }
+
+    fn get_data_contract(
+        &self,
+        id: &Identifier,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        self.as_ref().get_data_contract(id)
+    }
+}
+
+impl<'a, T: ContextProvider + 'a> ContextProvider for std::sync::Mutex<T>
+where
+    Self: Sync + Send,
+{
+    fn get_data_contract(
+        &self,
+        id: &Identifier,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        let lock = self.lock().expect("lock poisoned");
+        lock.get_data_contract(id)
+    }
+    fn get_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32], // quorum hash is 32 bytes
+        core_chain_locked_height: u32,
+    ) -> Result<[u8; 48], ContextProviderError> {
+        let lock = self.lock().expect("lock poisoned");
+        lock.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+    }
+}
+
+/// Mock ContextProvider that can read quorum keys from files.
 ///
 /// Use `rs_sdk::SdkBuilder::with_dump_dir()` to generate quorum keys files.
 #[cfg(feature = "mocks")]
-pub struct MockQuorumInfoProvider {
+#[derive(Debug)]
+pub struct MockContextProvider {
     quorum_keys_dir: Option<std::path::PathBuf>,
 }
 
 #[cfg(feature = "mocks")]
-impl MockQuorumInfoProvider {
-    /// Create a new instance of [MockQuorumInfoProvider].
+impl MockContextProvider {
+    /// Create a new instance of [MockContextProvider].
     ///
     /// This instance can be used to read quorum keys from files.
     /// You need to configure quorum keys dir using
-    /// [MockQuorumInfoProvider::quorum_keys_dir()](MockQuorumInfoProvider::quorum_keys_dir())
+    /// [MockContextProvider::quorum_keys_dir()](MockContextProvider::quorum_keys_dir())
     /// before using this instance.
     ///
     /// In future, we may add more methods to this struct to allow setting expectations.
@@ -60,30 +128,26 @@ impl MockQuorumInfoProvider {
     }
 }
 
-impl Default for MockQuorumInfoProvider {
+impl Default for MockContextProvider {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[cfg(feature = "mocks")]
-impl QuorumInfoProvider for MockQuorumInfoProvider {
-    /// Mock implementation of [QuorumInfoProvider] that returns keys from files saved on disk.
+impl ContextProvider for MockContextProvider {
+    /// Mock implementation of [ContextProvider] that returns keys from files saved on disk.
     ///
-    /// Use `rs_sdk::SdkBuilder::with_dump_dir()` to generate quorum keys files.   
+    /// Use `rs_sdk::SdkBuilder::with_dump_dir()` to generate quorum keys files.
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
         quorum_hash: [u8; 32],
         _core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], crate::Error> {
+    ) -> Result<[u8; 48], ContextProviderError> {
         let path = match &self.quorum_keys_dir {
             Some(p) => p,
-            None => {
-                return Err(crate::Error::InvalidQuorum {
-                    error: "dump dir not set".to_string(),
-                })
-            }
+            None => return Err(ContextProviderError::Config("dump dir not set".to_string())),
         };
 
         let file = path.join(format!(
@@ -95,18 +159,30 @@ impl QuorumInfoProvider for MockQuorumInfoProvider {
         let f = match std::fs::File::open(&file) {
             Ok(f) => f,
             Err(e) => {
-                return Err(crate::Error::InvalidQuorum {
-                    error: format!(
-                        "cannot load quorum key file {}: {}",
-                        file.to_string_lossy(),
-                        e
-                    ),
-                })
+                return Err(ContextProviderError::InvalidQuorum(format!(
+                    "cannot load quorum key file {}: {}",
+                    file.to_string_lossy(),
+                    e
+                )))
             }
         };
 
         let key: Vec<u8> = serde_json::from_reader(f).expect("cannot parse quorum key");
 
         Ok(key.try_into().expect("quorum key format mismatch"))
+    }
+
+    fn get_data_contract(
+        &self,
+        _data_contract_id: &Identifier,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        todo!("not implemented yet");
+    }
+}
+// the trait `std::convert::AsRef<(dyn drive_proof_verifier::ContextProvider + 'static)>`
+// is not implemented for `std::sync::Arc<mock::provider::GrpcContextProvider<'_>>`
+impl<'a, T: ContextProvider + 'a> AsRef<dyn ContextProvider + 'a> for Arc<T> {
+    fn as_ref(&self) -> &(dyn ContextProvider + 'a) {
+        self.deref()
     }
 }

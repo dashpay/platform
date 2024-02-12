@@ -89,7 +89,7 @@ impl TryFrom<IdentityCreateTransitionV0Inner> for IdentityCreateTransitionV0 {
 
 impl IdentityCreateTransitionV0 {
     pub fn try_from_identity_v0(
-        identity: Identity,
+        identity: &Identity,
         asset_lock_proof: AssetLockProof,
     ) -> Result<Self, ProtocolError> {
         let mut identity_create_transition = IdentityCreateTransitionV0::default();
@@ -109,7 +109,7 @@ impl IdentityCreateTransitionV0 {
     }
 
     pub fn try_from_identity(
-        identity: Identity,
+        identity: &Identity,
         asset_lock_proof: AssetLockProof,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {

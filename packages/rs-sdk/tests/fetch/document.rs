@@ -2,15 +2,13 @@
 
 use std::sync::Arc;
 
-use crate::common::setup_logs;
-use crate::config::Config;
+use super::{common::setup_logs, config::Config};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::{DataContract, Identifier};
 use drive::query::DriveQuery;
-use rs_sdk::platform::DocumentQuery;
-use rs_sdk::platform::{Fetch, FetchMany};
+use rs_sdk::platform::{DocumentQuery, Fetch, FetchMany};
 
 /// Given some data contract ID, document type and document ID, when I fetch it, then I get it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -18,12 +16,12 @@ async fn document_read() {
     setup_logs();
 
     let cfg = Config::new();
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
     let data_contract_id = cfg.existing_data_contract_id;
 
     let contract = Arc::new(
-        DataContract::fetch(&mut sdk, data_contract_id)
+        DataContract::fetch(&sdk, data_contract_id)
             .await
             .expect("fetch data contract")
             .expect("data contract not found"),
@@ -33,7 +31,7 @@ async fn document_read() {
     let all_docs_query =
         DocumentQuery::new(Arc::clone(&contract), &cfg.existing_document_type_name)
             .expect("create SdkDocumentQuery");
-    let first_doc = Document::fetch_many(&mut sdk, all_docs_query)
+    let first_doc = Document::fetch_many(&sdk, all_docs_query)
         .await
         .expect("fetch many documents")
         .pop_first()
@@ -46,7 +44,7 @@ async fn document_read() {
         .expect("create SdkDocumentQuery")
         .with_document_id(&first_doc.id());
 
-    let doc = Document::fetch(&mut sdk, query)
+    let doc = Document::fetch(&sdk, query)
         .await
         .expect("fetch document")
         .expect("document must be found");
@@ -60,12 +58,12 @@ async fn document_read_no_contract() {
     setup_logs();
 
     let cfg = Config::new();
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
     let data_contract_id = Identifier::from_bytes(&[0; 32]).expect("create Identifier");
 
     let query = DocumentQuery::new_with_data_contract_id(
-        &mut sdk,
+        &sdk,
         data_contract_id,
         &cfg.existing_document_type_name,
     )
@@ -86,13 +84,13 @@ async fn document_read_no_document() {
     setup_logs();
 
     let cfg = Config::new();
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
     let data_contract_id = cfg.existing_data_contract_id;
     let document_id = [0; 32].into();
 
     let query = DocumentQuery::new_with_data_contract_id(
-        &mut sdk,
+        &sdk,
         data_contract_id,
         &cfg.existing_document_type_name,
     )
@@ -100,9 +98,7 @@ async fn document_read_no_document() {
     .expect("create SdkDocumentQuery")
     .with_document_id(&document_id);
 
-    let doc = Document::fetch(&mut sdk, query)
-        .await
-        .expect("fetch document");
+    let doc = Document::fetch(&sdk, query).await.expect("fetch document");
 
     assert!(doc.is_none(), "document must not be found");
 }
@@ -116,11 +112,11 @@ async fn document_list_drive_query() {
     setup_logs();
 
     let cfg = Config::new();
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
     let data_contract_id = cfg.existing_data_contract_id;
 
-    let data_contract = DataContract::fetch(&mut sdk, data_contract_id)
+    let data_contract = DataContract::fetch(&sdk, data_contract_id)
         .await
         .expect("fetch data contract")
         .expect("data contract not found");
@@ -129,9 +125,19 @@ async fn document_list_drive_query() {
         .document_type_for_name(&cfg.existing_document_type_name)
         .expect("document type not found");
 
-    let query = DriveQuery::any_item_query(&data_contract, doctype);
+    let query = DriveQuery {
+        contract: &data_contract,
+        document_type: doctype,
+        internal_clauses: Default::default(),
+        offset: None,
+        limit: Some(1),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: true,
+        block_time_ms: None,
+    };
 
-    let docs = <Document>::fetch_many(&mut sdk, query)
+    let docs = <Document>::fetch_many(&sdk, query)
         .await
         .expect("fetch many documents");
 
@@ -151,12 +157,12 @@ async fn document_list_document_query() {
     setup_logs();
 
     let cfg = Config::new();
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
     let data_contract_id = cfg.existing_data_contract_id;
 
     let data_contract = Arc::new(
-        DataContract::fetch(&mut sdk, data_contract_id)
+        DataContract::fetch(&sdk, data_contract_id)
             .await
             .expect("fetch data contract")
             .expect("data contra)ct not found"),
@@ -165,7 +171,7 @@ async fn document_list_document_query() {
     let query = DocumentQuery::new(Arc::clone(&data_contract), &cfg.existing_document_type_name)
         .expect("document query created");
 
-    let docs = <Document>::fetch_many(&mut sdk, query)
+    let docs = <Document>::fetch_many(&sdk, query)
         .await
         .expect("fetch many documents");
 

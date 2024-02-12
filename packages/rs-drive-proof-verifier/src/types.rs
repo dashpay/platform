@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 
+pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::{
     block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
     dashcore::ProTxHash,
@@ -57,12 +58,6 @@ pub type Documents = RetrievedObjects<Identifier, Document>;
 
 /// Collection of epoch information
 pub type ExtendedEpochInfos = RetrievedObjects<EpochIndex, ExtendedEpochInfo>;
-
-/// Number of votes for a protocol version upgrade.
-///
-/// Number of votes for a protocol version upgrade, returned by [ProtocolVersionVoteCount::fetch_many()].
-/// See [ProtocolVersionUpgrades].
-pub type ProtocolVersionVoteCount = u64;
 
 /// Results of protocol version upgrade voting.
 ///

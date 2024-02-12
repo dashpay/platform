@@ -8,7 +8,7 @@
 //!   It requires the implementing type to also implement [Debug] and [FromProof]
 //!   traits. The associated [Fetch::Request]` type needs to implement [TransportRequest].
 
-use crate::mock::{MockRequest, MockResponse};
+use crate::mock::MockResponse;
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
@@ -37,10 +37,10 @@ use super::DocumentQuery;
 /// use rs_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
-/// let mut sdk = Sdk::new_mock();
+/// let sdk = Sdk::new_mock();
 /// let query = Identifier::new(SOME_IDENTIFIER);
 ///
-/// let identity = Identity::fetch(&mut sdk, query);
+/// let identity = Identity::fetch(&sdk, query);
 /// ```
 #[async_trait::async_trait]
 pub trait Fetch
@@ -59,9 +59,7 @@ where
     /// Most likely, one of the types defined in [`dapi_grpc::platform::v0`].
     ///
     /// This type must implement [`TransportRequest`] and [`MockRequest`].
-    type Request: TransportRequest
-        + MockRequest
-        + Into<<Self as FromProof<<Self as Fetch>::Request>>::Request>;
+    type Request: TransportRequest + Into<<Self as FromProof<<Self as Fetch>::Request>>::Request>;
 
     /// Fetch single object from the Platfom.
     ///
@@ -84,7 +82,7 @@ where
     ///
     /// Any errors encountered during the execution are returned as [Error] instances.
     async fn fetch<Q: Query<<Self as Fetch>::Request>>(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         query: Q,
     ) -> Result<Option<Self>, Error> {
         let request = query.query(sdk.prove())?;
@@ -115,7 +113,7 @@ where
     ///
     /// - `sdk`: An instance of [Sdk].
     /// - `id`: An [Identifier] of the object to be fetched.
-    async fn fetch_by_identifier(sdk: &mut Sdk, id: Identifier) -> Result<Option<Self>, Error>
+    async fn fetch_by_identifier(sdk: &Sdk, id: Identifier) -> Result<Option<Self>, Error>
     where
         Identifier: Query<<Self as Fetch>::Request>,
     {

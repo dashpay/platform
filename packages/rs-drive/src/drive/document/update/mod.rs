@@ -219,7 +219,7 @@ mod tests {
         // Check Alice profile
 
         let sql_string = "select * from profile";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
@@ -319,7 +319,7 @@ mod tests {
         // Check Alice profile
 
         let sql_string = "select * from profile";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
@@ -427,7 +427,7 @@ mod tests {
         // Check Alice profile
 
         let sql_string = "select * from profile";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query

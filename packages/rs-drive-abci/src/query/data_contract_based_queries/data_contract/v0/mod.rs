@@ -7,12 +7,12 @@ use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_data_contract_request::GetDataContractRequestV0;
 use dapi_grpc::platform::v0::get_data_contract_response::GetDataContractResponseV0;
 use dapi_grpc::platform::v0::{get_data_contract_response, GetDataContractResponse, Proof};
+use dapi_grpc::Message;
 use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use prost::Message;
 
 impl<C> Platform<C> {
     pub(super) fn query_data_contract_v0(

@@ -7,12 +7,11 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
 use crate::document::errors::*;
-#[cfg(feature = "validation")]
-use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::{
-    InvalidSignaturePublicKeyError, PublicKeyMismatchError, PublicKeySecurityLevelNotMetError,
-    StateTransitionError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
+    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
+    PublicKeySecurityLevelNotMetError, StateTransitionError, StateTransitionIsNotSignedError,
+    WrongPublicKeyPurposeError,
 };
 use crate::{
     CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError,
@@ -115,23 +114,30 @@ pub enum ProtocolError {
     #[error("Generic Error: {0}")]
     Generic(String),
 
+    #[cfg(feature = "message-signing")]
+    #[error("Invalid signing type error: {0}")]
+    InvalidSigningKeyTypeError(String),
+
     // State Transition Errors
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(any(
+        feature = "state-transition-validation",
+        feature = "state-transition-signing"
+    ))]
     #[error(transparent)]
     InvalidIdentityPublicKeyTypeError(InvalidIdentityPublicKeyTypeError),
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     StateTransitionIsNotSignedError(StateTransitionIsNotSignedError),
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     PublicKeySecurityLevelNotMetError(PublicKeySecurityLevelNotMetError),
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     WrongPublicKeyPurposeError(WrongPublicKeyPurposeError),
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     PublicKeyMismatchError(PublicKeyMismatchError),
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     InvalidSignaturePublicKeyError(InvalidSignaturePublicKeyError),
 
@@ -172,7 +178,7 @@ pub enum ProtocolError {
 
     /// Error
     #[error("missing key: {0}")]
-    DocumentKeyMissing(String),
+    DesiredKeyWithTypePurposeSecurityLevelMissing(String),
 
     /// Value error
     #[error("value error: {0}")]
