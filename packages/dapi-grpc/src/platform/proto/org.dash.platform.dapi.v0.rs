@@ -727,6 +727,7 @@ pub mod get_proofs_request {
                 FullIdentity = 0,
                 Balance = 1,
                 Keys = 2,
+                Revision = 3,
             }
             impl Type {
                 /// String value of the enum field names used in the ProtoBuf definition.
@@ -738,6 +739,7 @@ pub mod get_proofs_request {
                         Type::FullIdentity => "FULL_IDENTITY",
                         Type::Balance => "BALANCE",
                         Type::Keys => "KEYS",
+                        Type::Revision => "REVISION",
                     }
                 }
                 /// Creates an enum from field names used in the ProtoBuf definition.
@@ -746,6 +748,7 @@ pub mod get_proofs_request {
                         "FULL_IDENTITY" => Some(Self::FullIdentity),
                         "BALANCE" => Some(Self::Balance),
                         "KEYS" => Some(Self::Keys),
+                        "REVISION" => Some(Self::Revision),
                         _ => None,
                     }
                 }
