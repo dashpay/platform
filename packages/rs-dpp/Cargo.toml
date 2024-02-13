@@ -40,6 +40,7 @@ jsonptr = "0.1.5"
 jsonschema = { git = "https://github.com/fominok/jsonschema-rs", branch = "feat-unevaluated-properties", default-features = false, features = [
     "draft202012",
 ] }
+json-schema-faker = { git = "https://github.com/fominok/json-schema-faker-rs", rev = "306636f", optional = true }
 lazy_static = { version = "1.4" }
 log = { version = "0.4.6" }
 num_enum = "0.5.7"
@@ -90,6 +91,7 @@ all_features = [
     "identity-hashing",
     "identity-serialization",
     "ciborium",
+    "documents-faker",
     "document-serde-conversion",
     "document-value-conversion",
     "document-json-conversion",
@@ -214,3 +216,4 @@ extended-document = [
 
 factories = []
 client = ["factories", "state-transitions"]
+documents-faker = ["dep:json-schema-faker", "document-serde-conversion"]

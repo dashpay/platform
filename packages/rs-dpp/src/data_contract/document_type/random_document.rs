@@ -28,6 +28,16 @@ pub enum DocumentFieldFillSize {
 // TODO The factory is used in benchmark and tests. Probably it should be available under the test feature
 /// Functions for creating various types of random documents.
 pub trait CreateRandomDocument {
+    #[cfg(feature = "documents-faker")]
+    /// Create random documents using json-schema-faker-rs
+    fn random_documents_faker(
+        &self,
+        owner_id: Identifier,
+        entropy: &Bytes32,
+        count: u32,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Document>, ProtocolError>;
+
     /// Random documents with DoNotFillIfNotRequired and AnyDocumentFillSize
     fn random_documents(
         &self,
@@ -89,6 +99,21 @@ pub trait CreateRandomDocument {
 }
 
 impl CreateRandomDocument for DocumentType {
+    #[cfg(feature = "documents-faker")]
+    fn random_documents_faker(
+        &self,
+        owner_id: Identifier,
+        entropy: &Bytes32,
+        count: u32,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Document>, ProtocolError> {
+        match self {
+            DocumentType::V0(v0) => {
+                v0.random_documents_faker(owner_id, entropy, count, platform_version)
+            }
+        }
+    }
+
     fn random_documents(
         &self,
         count: u32,
@@ -199,6 +224,21 @@ impl CreateRandomDocument for DocumentType {
 }
 
 impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
+    #[cfg(feature = "documents-faker")]
+    fn random_documents_faker(
+        &self,
+        owner_id: Identifier,
+        entropy: &Bytes32,
+        count: u32,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Document>, ProtocolError> {
+        match self {
+            DocumentTypeRef::V0(v0) => {
+                v0.random_documents_faker(owner_id, entropy, count, platform_version)
+            }
+        }
+    }
+
     fn random_documents(
         &self,
         count: u32,
@@ -306,5 +346,41 @@ impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
                 platform_version,
             ),
         }
+    }
+}
+
+#[cfg(all(test, feature = "documents-faker"))]
+mod faker_tests {
+    use data_contracts::SystemDataContract;
+    use platform_version::TryIntoPlatformVersioned;
+    use rand::SeedableRng;
+
+    use crate::{
+        data_contract::accessors::v0::DataContractV0Getters,
+        system_data_contracts::load_system_data_contract,
+    };
+
+    use super::*;
+
+    #[test]
+    fn test_random_document_faker() {
+        let data_contract =
+            load_system_data_contract(SystemDataContract::DPNS, &PlatformVersion::latest())
+                .unwrap();
+        let mut rng = StdRng::from_entropy();
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let _random_documents = data_contract
+            .document_types()
+            .iter()
+            .next()
+            .unwrap()
+            .1
+            .random_documents_faker(
+                Identifier::random(),
+                &entropy,
+                2,
+                &PlatformVersion::latest(),
+            );
     }
 }

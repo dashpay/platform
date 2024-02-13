@@ -21,6 +21,82 @@ use rand::{Rng, SeedableRng};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 impl CreateRandomDocument for DocumentTypeV0 {
+    /// Create random documents using json-schema-faker-rs
+    #[cfg(feature = "documents-faker")]
+    fn random_documents_faker(
+        &self,
+        owner_id: Identifier,
+        entropy: &Bytes32,
+        count: u32,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Document>, ProtocolError> {
+        use anyhow::Context;
+
+        use crate::document::{
+            extended_document_property_names::FEATURE_VERSION,
+            property_names::{ID, OWNER_ID, REVISION},
+            serialization_traits::DocumentPlatformValueMethodsV0,
+        };
+
+        let json_schema = &self
+            .schema
+            .clone()
+            .try_into()
+            .expect("jsonschema must be a valid JSON");
+        let json_documents = json_schema_faker::generate(&json_schema, count as u16)
+            .context("cannot generate a random document with json-schema-faker")?;
+
+        let mut fix_document = |mut document: platform_value::Value| {
+            let id = Document::generate_document_id_v0(
+                &self.data_contract_id,
+                &owner_id,
+                self.name.as_str(),
+                entropy.as_slice(),
+            );
+            let now = SystemTime::now();
+            let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+            let time_ms = duration_since_epoch.as_millis() as u64;
+
+            if self.documents_mutable {
+                document.as_map_mut().into_iter().for_each(|d| {
+                    d.push((REVISION.into(), 1.into()));
+                });
+            }
+            document.as_map_mut().into_iter().for_each(|d| {
+                d.push((ID.into(), id.into()));
+            });
+            document.as_map_mut().into_iter().for_each(|d| {
+                d.push((OWNER_ID.into(), owner_id.into()));
+            });
+            if self.required_fields.contains(FEATURE_VERSION) {
+                document.as_map_mut().into_iter().for_each(|d| {
+                    d.push((FEATURE_VERSION.into(), "0".into()));
+                });
+            }
+            if self.required_fields.contains(CREATED_AT) {
+                document.as_map_mut().into_iter().for_each(|d| {
+                    d.push((CREATED_AT.into(), time_ms.into()));
+                });
+            }
+            if self.required_fields.contains(UPDATED_AT) {
+                document.as_map_mut().into_iter().for_each(|d| {
+                    d.push((UPDATED_AT.into(), time_ms.into()));
+                });
+            }
+
+            document
+        };
+
+        json_documents
+            .into_iter()
+            .map(|d| {
+                let p_value: platform_value::Value = d.into();
+                let fixed_value = fix_document(p_value);
+                Document::from_platform_value(fixed_value, platform_version)
+            })
+            .collect()
+    }
+
     /// Creates `count` Documents with random data using a seed if given, otherwise entropy.
     fn random_documents(
         &self,

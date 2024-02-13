@@ -4,7 +4,7 @@
 
 use std::{sync::Once, time::Instant};
 
-use metrics::{absolute_counter, describe_counter, describe_histogram, histogram, Label};
+use metrics::{counter, describe_counter, describe_histogram, histogram, Label};
 use metrics_exporter_prometheus::PrometheusBuilder;
 
 /// Default Prometheus port (29090)
@@ -74,7 +74,7 @@ impl Drop for HistogramTiming {
         let key = self.key.name().to_string();
 
         let labels: Vec<Label> = self.key.labels().cloned().collect();
-        histogram!(key, stop.as_secs_f64(), labels);
+        histogram!(key, labels).record(stop.as_secs_f64());
     }
 }
 
@@ -187,17 +187,17 @@ impl Prometheus {
 /// abci_last_platform_height(height);
 /// ```
 pub fn abci_last_platform_height(height: u64) {
-    absolute_counter!(COUNTER_LAST_HEIGHT, height);
+    counter!(COUNTER_LAST_HEIGHT).absolute(height);
 }
 
 /// Add round of last finalized round to [HISTOGRAM_FINALIZED_ROUND] metric.
 pub fn abci_last_finalized_round(round: u32) {
-    histogram!(HISTOGRAM_FINALIZED_ROUND, round as f64);
+    histogram!(HISTOGRAM_FINALIZED_ROUND).record(round as f64);
 }
 
 /// Set time of last block into [COUNTER_LAST_BLOCK_TIME].
 pub fn abci_last_block_time(time: u64) {
-    absolute_counter!(COUNTER_LAST_BLOCK_TIME, time);
+    counter!(COUNTER_LAST_BLOCK_TIME).absolute(time);
 }
 
 /// Returns a `[HistogramTiming]` instance for measuring ABCI request duration.
