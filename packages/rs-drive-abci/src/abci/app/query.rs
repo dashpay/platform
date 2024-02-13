@@ -52,6 +52,8 @@ impl<'a, C> QueryAbciApplication<'a, C> {
             return;
         };
 
+        let time = std::time::Instant::now();
+
         // Update platform state cache
         let mut state_cache = self.platform.state.write().unwrap();
         *state_cache = block_update.platform_state;
@@ -81,8 +83,9 @@ impl<'a, C> QueryAbciApplication<'a, C> {
         PlatformVersion::set_current(platform_version);
 
         tracing::debug!(
-            "Received block update from consensus app for height {}",
-            height
+            "Received and applied block update from consensus app for height {}, took {} ms",
+            height,
+            time.elapsed().as_millis()
         );
     }
 }
