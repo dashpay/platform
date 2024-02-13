@@ -1,3 +1,5 @@
+use sqlparser::parser::ParserError;
+
 /// Query errors
 #[derive(Debug, thiserror::Error)]
 pub enum QuerySyntaxError {
@@ -8,8 +10,11 @@ pub enum QuerySyntaxError {
     #[error("unsupported error: {0}")]
     Unsupported(String),
     /// Invalid SQL error
+    #[error("sql parsing error: {0}")]
+    SQLParsingError(#[from] ParserError),
+    /// Invalid SQL error
     #[error("invalid sql error: {0}")]
-    InvalidSQL(&'static str),
+    InvalidSQL(String),
 
     /// We asked for nothing
     #[error("no query items error: {0}")]
@@ -39,7 +44,7 @@ pub enum QuerySyntaxError {
     InvalidBetweenClause(&'static str),
     /// Invalid in clause error
     #[error("invalid IN clause error: {0}")]
-    InvalidInClause(&'static str),
+    InvalidInClause(String),
     /// Invalid starts with clause error
     #[error("invalid STARTSWITH clause error: {0}")]
     InvalidStartsWithClause(&'static str),

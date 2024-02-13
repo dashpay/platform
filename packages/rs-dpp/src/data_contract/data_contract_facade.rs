@@ -51,6 +51,7 @@ impl DataContractFacade {
     }
 
     /// Create Data Contract from plain object
+    #[cfg(all(feature = "identity-serialization", feature = "client"))]
     pub fn create_from_object(
         &self,
         raw_data_contract: Value,
@@ -61,6 +62,7 @@ impl DataContractFacade {
     }
 
     /// Create Data Contract from buffer
+    #[cfg(all(feature = "identity-serialization", feature = "client"))]
     pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,

@@ -12,8 +12,6 @@ edition = "2021"
 rust-version = "1.73"
 license = "MIT"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
@@ -41,9 +39,9 @@ simple-signer = { path = "../simple-signer" }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
 mockall = { version = "0.11", optional = true }
-prost = { version = "0.11.6", default-features = false }
+prost = { version = "0.12", default-features = false }
 tracing = { version = "0.1.37", default-features = false, features = [] }
-clap = { version = "4.1.8", optional = true, features = ["derive"] }
+clap = { version = "4.4.10", optional = true, features = ["derive"] }
 envy = { version = "0.4.2" }
 dotenvy = { version = "0.15.7", optional = true }
 dapi-grpc = { path = "../dapi-grpc" }

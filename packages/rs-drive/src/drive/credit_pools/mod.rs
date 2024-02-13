@@ -27,33 +27,59 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
+#[cfg(feature = "full")]
 use crate::drive::batch::GroveDbOpBatch;
+#[cfg(feature = "full")]
 use crate::drive::Drive;
+#[cfg(feature = "full")]
 use crate::error::drive::DriveError;
+#[cfg(feature = "full")]
 use crate::error::Error;
 
+#[cfg(feature = "full")]
 use crate::fee_pools::epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES;
+#[cfg(feature = "full")]
 use crate::fee_pools::epochs::paths::encode_epoch_index_key;
+#[cfg(feature = "full")]
 use crate::fee_pools::epochs::paths::EpochProposers;
 
+#[cfg(feature = "full")]
 use dpp::block::epoch::{Epoch, EpochIndex};
+#[cfg(feature = "full")]
 use dpp::fee::epoch::SignedCreditsPerEpoch;
 use dpp::fee::SignedCredits;
+#[cfg(feature = "full")]
 use grovedb::query_result_type::QueryResultType;
+#[cfg(feature = "full")]
 use grovedb::{Element, PathQuery, Query, TransactionArg};
+#[cfg(feature = "full")]
 use itertools::Itertools;
 
+#[cfg(feature = "full")]
 /// Epochs module
 pub mod epochs;
+
+#[cfg(any(feature = "full", feature = "verify"))]
 pub(crate) mod paths;
+
+#[cfg(feature = "full")]
 pub mod pending_epoch_refunds;
+
+#[cfg(feature = "full")]
 pub mod storage_fee_distribution_pool;
+#[cfg(feature = "full")]
 pub mod unpaid_epoch;
 
+#[cfg(feature = "full")]
 use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+
+#[cfg(feature = "full")]
 use crate::drive::fee::get_overflow_error;
+
+#[cfg(any(feature = "full", feature = "verify"))]
 pub use paths::*;
 
+#[cfg(feature = "full")]
 impl Drive {
     /// Adds GroveDB operations to update epoch storage fee pools with specified map of credits to epochs
     /// This method optimized to update sequence of epoch pools without gaps

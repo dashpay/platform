@@ -52,7 +52,7 @@ use sqlparser::ast::Value::Number;
 #[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::ast::{OrderByExpr, Select, Statement};
 #[cfg(any(feature = "full", feature = "verify"))]
-use sqlparser::dialect::GenericDialect;
+use sqlparser::dialect::MySqlDialect;
 #[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::parser::Parser;
 
@@ -214,7 +214,7 @@ impl InternalClauses {
             0 => Ok(None),
             1 => Ok(Some(
                 primary_key_equal_clauses_array
-                    .get(0)
+                    .first()
                     .expect("there must be a value")
                     .clone(),
             )),
@@ -229,7 +229,7 @@ impl InternalClauses {
             0 => Ok(None),
             1 => Ok(Some(
                 primary_key_in_clauses_array
-                    .get(0)
+                    .first()
                     .expect("there must be a value")
                     .clone(),
             )),
@@ -643,18 +643,18 @@ impl<'a> DriveQuery<'a> {
     pub fn from_sql_expr(
         sql_string: &str,
         contract: &'a DataContract,
-        config: &DriveConfig,
+        config: Option<&DriveConfig>,
     ) -> Result<Self, Error> {
-        let dialect: GenericDialect = sqlparser::dialect::GenericDialect {};
+        let dialect: MySqlDialect = MySqlDialect {};
         let statements: Vec<Statement> = Parser::parse_sql(&dialect, sql_string)
-            .map_err(|_| Error::Query(QuerySyntaxError::InvalidSQL("Issue parsing sql")))?;
+            .map_err(|e| Error::Query(QuerySyntaxError::SQLParsingError(e)))?;
 
         // Should ideally iterate over each statement
         let first_statement =
             statements
-                .get(0)
+                .first()
                 .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
-                    "Issue parsing sql",
+                    "Issue parsing sql getting first statement".to_string(),
                 )))?;
 
         let query: &ast::Query = match first_statement {
@@ -662,23 +662,42 @@ impl<'a> DriveQuery<'a> {
             _ => None,
         }
         .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
-            "Issue parsing sql",
+            "Issue parsing sql: not a query".to_string(),
         )))?;
+
+        let max_limit = config
+            .map(|config| config.max_query_limit)
+            .unwrap_or(DriveConfig::default().max_query_limit);
 
         let limit: u16 = if let Some(limit_expr) = &query.limit {
             match limit_expr {
                 ast::Expr::Value(Number(num_string, _)) => {
                     let cast_num_string: &String = num_string;
-                    cast_num_string.parse::<u16>().ok()
+                    let user_limit = cast_num_string.parse::<u16>().map_err(|e| {
+                        Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                            "limit could not be parsed {}",
+                            e
+                        )))
+                    })?;
+                    if user_limit > max_limit {
+                        return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                            "limit {} greater than max limit {}",
+                            user_limit, max_limit
+                        ))));
+                    }
+                    user_limit
                 }
-                _ => None,
+                result => {
+                    return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                        "expression not a limit {}",
+                        result
+                    ))));
+                }
             }
-            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                "limit greater than max limit {}",
-                config.max_query_limit
-            ))))?
         } else {
-            config.default_query_limit
+            config
+                .map(|config| config.default_query_limit)
+                .unwrap_or(DriveConfig::default().default_query_limit)
         };
 
         let order_by: IndexMap<String, OrderClause> = query
@@ -692,33 +711,28 @@ impl<'a> DriveQuery<'a> {
             .collect::<IndexMap<String, OrderClause>>();
 
         // Grab the select section of the query
-        let select: &Select = match &query.body {
+        let select: &Select = match &*query.body {
             ast::SetExpr::Select(select) => Some(select),
             _ => None,
         }
         .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
-            "Issue parsing sql",
+            "Issue parsing sql: Not a select".to_string(),
         )))?;
 
         // Get the document type from the 'from' section
         let document_type_name = match &select
             .from
-            .get(0)
+            .first()
             .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
-                "Invalid query: missing from section",
+                "Invalid query: missing from section".to_string(),
             )))?
             .relation
         {
-            Table {
-                name,
-                alias: _,
-                args: _,
-                with_hints: _,
-            } => name.0.get(0).as_ref().map(|identifier| &identifier.value),
+            Table { name, .. } => name.0.first().as_ref().map(|identifier| &identifier.value),
             _ => None,
         }
         .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
-            "Issue parsing sql: invalid from value",
+            "Issue parsing sql: invalid from value".to_string(),
         )))?;
 
         let document_type =
@@ -745,6 +759,7 @@ impl<'a> DriveQuery<'a> {
         if let Some(selection_tree) = selection_tree {
             WhereClause::build_where_clauses_from_operations(
                 selection_tree,
+                document_type,
                 &mut all_where_clauses,
             )?;
         }

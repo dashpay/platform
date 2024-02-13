@@ -52,7 +52,7 @@ impl<'a> OrderClause {
         }
 
         let field_value = clause_components
-            .get(0)
+            .first()
             .expect("check above enforces it exists");
         let field_ref = field_value.as_text().ok_or(Error::InvalidQuery(
             "first field of where component should be a string",

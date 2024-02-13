@@ -175,7 +175,7 @@ impl Drive {
                 .iter()
                 .map(|&x| Vec::from(x))
                 .collect();
-            let top_index_property = index.properties.get(0).ok_or(Error::Drive(
+            let top_index_property = index.properties.first().ok_or(Error::Drive(
                 DriveError::CorruptedContractIndexes("invalid contract indices"),
             ))?;
             index_path.push(Vec::from(top_index_property.name.as_bytes()));

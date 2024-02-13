@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
-use crate::execution::validation::state_transition::processor::process_state_transition;
+
 #[cfg(test)]
 use crate::platform_types::event_execution_result::EventExecutionResult;
 #[cfg(test)]
@@ -14,6 +14,8 @@ use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 
+#[cfg(test)]
+use crate::execution::validation::state_transition::processor::process_state_transition;
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
@@ -532,7 +534,7 @@ mod tests {
 
         let identity_create_transition: StateTransition =
             IdentityCreateTransition::try_from_identity_with_signer(
-                identity.clone(),
+                &identity,
                 asset_lock_proof,
                 pk.as_slice(),
                 &signer,
@@ -722,7 +724,7 @@ mod tests {
 
         let identity_create_transition: StateTransition =
             IdentityCreateTransition::try_from_identity_with_signer(
-                identity.clone(),
+                &identity,
                 asset_lock_proof,
                 pk.as_slice(),
                 &signer,
@@ -768,10 +770,9 @@ mod tests {
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(
-                identity.clone(),
+                &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
-                &NativeBlsModule,
                 platform_version,
                 None,
             )
@@ -858,7 +859,7 @@ mod tests {
 
         let identity_create_transition: StateTransition =
             IdentityCreateTransition::try_from_identity_with_signer(
-                identity.clone(),
+                &identity,
                 asset_lock_proof,
                 pk.as_slice(),
                 &signer,
@@ -904,10 +905,9 @@ mod tests {
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(
-                identity.clone(),
+                &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
-                &NativeBlsModule,
                 platform_version,
                 None,
             )
@@ -1032,10 +1032,9 @@ mod tests {
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(
-                identity.clone(),
+                &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
-                &NativeBlsModule,
                 platform_version,
                 None,
             )
@@ -1109,7 +1108,7 @@ mod tests {
 
         let identity_create_transition: StateTransition =
             IdentityCreateTransition::try_from_identity_with_signer(
-                identity.clone(),
+                &identity,
                 asset_lock_proof,
                 pk.as_slice(),
                 &signer,
@@ -1155,10 +1154,9 @@ mod tests {
 
         let identity_top_up_transition: StateTransition =
             IdentityTopUpTransition::try_from_identity(
-                identity.clone(),
+                &identity,
                 asset_lock_proof_top_up.clone(),
                 pk.as_slice(),
-                &NativeBlsModule,
                 platform_version,
                 None,
             )
@@ -1222,7 +1220,7 @@ mod tests {
 
         let identity_create_transition: StateTransition =
             IdentityCreateTransition::try_from_identity_with_signer(
-                identity,
+                &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
                 &signer,

@@ -1,5 +1,5 @@
 use crate::prelude::Revision;
-use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+
 use platform_value::Identifier;
 
 pub trait IdentityCreditTransferTransitionAccessorsV0 {

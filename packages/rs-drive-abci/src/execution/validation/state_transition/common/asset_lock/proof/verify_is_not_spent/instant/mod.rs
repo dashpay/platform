@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
-use crate::rpc::core::CoreRPCLike;
+
 use dpp::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
 };

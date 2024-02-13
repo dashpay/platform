@@ -31,7 +31,7 @@ pub use invalid_data_contract_version_error::*;
 pub use invalid_index_property_type_error::*;
 pub use invalid_indexed_property_constraint_error::*;
 pub use invalid_json_schema_ref_error::*;
-pub use invalid_json_schema_ref_error::*;
+
 pub use system_property_index_already_present_error::*;
 pub use undefined_index_property_error::*;
 pub use unique_indices_limit_reached_error::*;

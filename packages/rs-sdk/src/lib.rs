@@ -44,7 +44,7 @@
 //!
 //! ## Error handling
 //!
-//! Errors of type [Error] are returned by the rs-sdk. Note that missing objects ("not found") are not
+//! Errors of type [Error] are returned by the dash-platform-sdk. Note that missing objects ("not found") are not
 //! treated as errors; `Ok(None)` is returned instead.
 //!
 //! Mocking functions often panic instead of returning an error.
@@ -61,12 +61,14 @@
 #![allow(rustdoc::private_intra_doc_links)]
 
 pub mod core;
+mod core_client;
 pub mod error;
 pub mod mock;
 pub mod platform;
 pub mod sdk;
+
 pub use error::Error;
-pub use sdk::{Sdk, SdkBuilder};
+pub use sdk::{RequestSettings, Sdk, SdkBuilder};
 
 /// Version of the SDK
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

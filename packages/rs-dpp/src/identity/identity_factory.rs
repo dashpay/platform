@@ -35,7 +35,9 @@ use crate::state_transition::identity_create_transition::IdentityCreateTransitio
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
@@ -154,7 +156,7 @@ impl IdentityFactory {
     #[cfg(all(feature = "state-transitions", feature = "client"))]
     pub fn create_identity_create_transition(
         &self,
-        identity: Identity,
+        identity: &Identity,
         asset_lock_proof: AssetLockProof,
     ) -> Result<IdentityCreateTransition, ProtocolError> {
         let transition =
@@ -178,7 +180,7 @@ impl IdentityFactory {
         });
 
         let identity_create_transition = IdentityCreateTransition::V0(
-            IdentityCreateTransitionV0::try_from_identity_v0(identity.clone(), asset_lock_proof)?,
+            IdentityCreateTransitionV0::try_from_identity_v0(&identity, asset_lock_proof)?,
         );
         Ok((identity, identity_create_transition))
     }

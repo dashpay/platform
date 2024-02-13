@@ -39,7 +39,10 @@ pub mod balances;
 pub mod block;
 pub mod fee;
 pub mod serialization;
-#[cfg(feature = "validation")]
+#[cfg(any(
+    feature = "message-signing",
+    feature = "message-signature-verification"
+))]
 pub mod signing;
 #[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;

@@ -557,7 +557,7 @@ pub(crate) fn run_chain_for_strategy(
                 .as_slice()
                 .try_into()
                 .expect("Expected a byte array of length 32");
-            (quorum_hash.clone(), fixed_bytes)
+            (*quorum_hash, fixed_bytes)
         })
         .collect();
 
@@ -579,7 +579,7 @@ pub(crate) fn run_chain_for_strategy(
 
             let block_hash = *core_blocks
                 .get(&block_height)
-                .expect(format!("expected a block hash to be known for {}", core_height).as_str());
+                .unwrap_or_else(|| panic!("expected a block hash to be known for {}", core_height));
 
             let chain_lock = if sign_chain_locks {
                 // From DIP 8: https://github.com/dashpay/dips/blob/master/dip-0008.md#finalization-of-signed-blocks
@@ -654,7 +654,7 @@ pub(crate) fn run_chain_for_strategy(
     platform
         .core_rpc
         .expect_submit_chain_lock()
-        .returning(move |chain_lock: &ChainLock| return Ok(chain_lock.block_height));
+        .returning(move |chain_lock: &ChainLock| Ok(chain_lock.block_height));
 
     create_chain_for_strategy(
         platform,
@@ -953,7 +953,7 @@ pub(crate) fn continue_chain_for_strategy(
 
         let MimicExecuteBlockOutcome {
             state_transaction_results,
-            withdrawal_transactions: mut withdrawals_this_block,
+            withdrawal_transactions: withdrawals_this_block,
             validator_set_update,
             next_validator_set_hash,
             root_app_hash,

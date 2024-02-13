@@ -6,7 +6,21 @@ use std::{
 use tonic_build::Builder;
 
 fn main() {
-    generate().expect("failed to compile protobuf definitions");
+    let core = MappingConfig::new(
+        PathBuf::from("protos/core/v0/core.proto"),
+        PathBuf::from("src/core/proto"),
+    );
+    configure_core(core)
+        .generate()
+        .expect("generate core proto");
+
+    let platform = MappingConfig::new(
+        PathBuf::from("protos/platform/v0/platform.proto"),
+        PathBuf::from("src/platform/proto"),
+    );
+    configure_platform(platform)
+        .generate()
+        .expect("generate platform proto");
 
     println!("cargo:rerun-if-changed=./protos");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_SERDE");
@@ -18,19 +32,8 @@ struct MappingConfig {
     builder: Builder,
     proto_includes: Vec<PathBuf>,
 }
-/// Generate Rust definitions from Protobuf definitions
-pub fn generate() -> Result<(), std::io::Error> {
-    let core = MappingConfig::new(
-        PathBuf::from("protos/core/v0/core.proto"),
-        PathBuf::from("src/core/proto"),
-    );
-    core.generate().unwrap();
 
-    let mut platform = MappingConfig::new(
-        PathBuf::from("protos/platform/v0/platform.proto"),
-        PathBuf::from("src/platform/proto"),
-    );
-
+fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
@@ -92,6 +95,9 @@ pub fn generate() -> Result<(), std::io::Error> {
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
     }
 
+    // All messages can be mocked.
+    platform = platform.message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#);
+
     #[cfg(feature = "serde")]
     let platform = platform
         .type_attribute(
@@ -132,9 +138,21 @@ pub fn generate() -> Result<(), std::io::Error> {
         .field_attribute("Proof.signature", r#"#[serde(with = "serde_bytes")]"#)
         .field_attribute("Proof.block_id_hash", r#"#[serde(with = "serde_bytes")]"#);
 
-    platform.generate().unwrap();
+    platform
+}
 
-    Ok(())
+fn configure_core(mut core: MappingConfig) -> MappingConfig {
+    // All messages can be mocked.
+    core = core.message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#);
+
+    // Serde support
+    #[cfg(feature = "serde")]
+    let core = core.type_attribute(
+        ".",
+        r#"#[derive(::serde::Serialize, ::serde::Deserialize)]"#,
+    );
+
+    core
 }
 
 impl MappingConfig {

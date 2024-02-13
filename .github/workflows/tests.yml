@@ -6,7 +6,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - master
-      - v[0-9]+\.[0-9]+-dev
+      - 'v[0-9]+\.[0-9]+-dev'
   push:
     branches:
       - master
@@ -87,8 +87,9 @@ jobs:
     uses: ./.github/workflows/tests-rs-package.yml
     with:
       package: ${{ matrix.rs-package }}
-      # Run drive and drive-abci linter on self-hosted 2x
-      lint-runner: ${{ contains(fromJSON('["drive-abci", "drive"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' || '"ubuntu-22.04"' }}
+      # lint-runner: ${{ contains(fromJSON('["drive-abci", "drive"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' || '"ubuntu-22.04"' }}
+      # FIXME: Clippy fails on github hosted runners, most likely due to RAM usage. Using self-hosted runners for now.
+      lint-runner: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
       # Run drive tests on self-hosted 4x
       test-runner: ${{ contains(fromJSON('["drive-abci"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]' || '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' }}
       check-each-feature: ${{ contains(fromJSON('["rs-sdk","rs-dapi-client","dapi-grpc","dpp","drive-abci"]'), matrix.rs-package) }}

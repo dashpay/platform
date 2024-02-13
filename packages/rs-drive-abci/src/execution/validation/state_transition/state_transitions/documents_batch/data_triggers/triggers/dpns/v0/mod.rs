@@ -2,7 +2,7 @@ use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTrigg
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contracts::dpns_contract::v1::document_types::domain::properties::PARENT_DOMAIN_NAME;
 ///! The `dpns_triggers` module contains data triggers specific to the DPNS data contract.
-use dpp::util::hash::hash;
+use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 
 use crate::error::execution::ExecutionError;
@@ -303,7 +303,7 @@ pub fn create_domain_data_trigger_v0(
     salted_domain_buffer.extend(preorder_salt);
     salted_domain_buffer.extend(full_domain_name.as_bytes());
 
-    let salted_domain_hash = hash(salted_domain_buffer);
+    let salted_domain_hash = hash_double(salted_domain_buffer);
 
     let document_type = data_contract.document_type_for_name("preorder")?;
 
@@ -416,7 +416,7 @@ mod test {
             DocumentTransitionActionType::Create,
             vec![(document, document_type, Bytes32::default())],
         )]);
-        let first_transition = transitions.get(0).expect("transition should be present");
+        let first_transition = transitions.first().expect("transition should be present");
 
         let document_create_transition = first_transition
             .as_transition_create()
