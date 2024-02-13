@@ -178,7 +178,7 @@ export default function getBaseConfigFactory(homeDir) {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:feat-abci-routing',
+              image: 'dashpay/tenderdash:test-abci-routing',
             },
             p2p: {
               host: '0.0.0.0',
