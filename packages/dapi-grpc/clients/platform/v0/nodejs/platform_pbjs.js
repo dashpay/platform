@@ -9736,6 +9736,7 @@ $root.org = (function() {
                                         case 0:
                                         case 1:
                                         case 2:
+                                        case 3:
                                             break;
                                         }
                                     return null;
@@ -9770,6 +9771,10 @@ $root.org = (function() {
                                     case "KEYS":
                                     case 2:
                                         message.requestType = 2;
+                                        break;
+                                    case "REVISION":
+                                    case 3:
+                                        message.requestType = 3;
                                         break;
                                     }
                                     return message;
@@ -9823,12 +9828,14 @@ $root.org = (function() {
                                  * @property {number} FULL_IDENTITY=0 FULL_IDENTITY value
                                  * @property {number} BALANCE=1 BALANCE value
                                  * @property {number} KEYS=2 KEYS value
+                                 * @property {number} REVISION=3 REVISION value
                                  */
                                 IdentityRequest.Type = (function() {
                                     var valuesById = {}, values = Object.create(valuesById);
                                     values[valuesById[0] = "FULL_IDENTITY"] = 0;
                                     values[valuesById[1] = "BALANCE"] = 1;
                                     values[valuesById[2] = "KEYS"] = 2;
+                                    values[valuesById[3] = "REVISION"] = 3;
                                     return values;
                                 })();
 

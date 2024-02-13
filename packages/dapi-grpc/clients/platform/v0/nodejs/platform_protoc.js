@@ -10055,7 +10055,8 @@ proto.org.dash.platform.dapi.v0.GetProofsRequest.GetProofsRequestV0.IdentityRequ
 proto.org.dash.platform.dapi.v0.GetProofsRequest.GetProofsRequestV0.IdentityRequest.Type = {
   FULL_IDENTITY: 0,
   BALANCE: 1,
-  KEYS: 2
+  KEYS: 2,
+  REVISION: 3
 };
 
 /**
