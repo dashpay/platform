@@ -1,45 +1,41 @@
-#!/usr/bin/env bash
+#!/bin/sh
+set -e
+set -u
 
-## Paths to distributive that exposed to library consumers
-DIST_DIR="$PWD/dist"
-DIST_WASM_DIR="$DIST_DIR/wasm"
-DIST_WASM_BINARY_BASE_64="$DIST_WASM_DIR/wasm_dpp_bg.js"
+mkdir -p ./dist/wasm/
+mkdir -p ./lib/wasm/
 
-## Paths to wasm files produced by wasm-bindgen
-WASM_DIR="$PWD/wasm"
-WASM_TYPINGS_PATH="$WASM_DIR/wasm_dpp.d.ts"
-WASM_JS_CODE_PATH="$WASM_DIR/wasm_dpp.js"
-WASM_BINARY_PATH="$WASM_DIR/wasm_dpp_bg.wasm"
+# Paths to wasm files produced by wasm-bindgen
+#   ./wasm/wasm_dpp.d.ts
+#   ./wasm/wasm_dpp.js
+#   ./wasm/wasm_dpp_bg.wasm
 
-## Paths to TypeScript source files
-LIB_DIR="$PWD/lib"
-LIB_WASM_DIR="$LIB_DIR/wasm"
+CARGO_BUILD_PROFILE="${CARGO_BUILD_PROFILE:-dev}"
+PROFILE="${CARGO_BUILD_PROFILE}"
+if test "${CARGO_BUILD_PROFILE}" = "dev"; then
+    PROFILE=debug
+fi
+if ! test -f ./wasm/wasm_dpp_bg.wasm; then
+    wasm-bindgen --out-dir=./wasm/ --target=web --omit-default-module-path ../../target/wasm32-unknown-unknown/"${PROFILE}"/wasm_dpp.wasm
+fi
 
-# Create directory in TS source files to save wasm TS typings
-mkdir -p $LIB_WASM_DIR
+echo 'Converting wasm binary into base64 module'
+WASM_BUILD_BASE_64="$(base64 -i './wasm/wasm_dpp_bg.wasm')"
+echo 'module.exports = "'"${WASM_BUILD_BASE_64}"'"' > './dist/wasm/wasm_dpp_bg.js'
 
-# Create directory in dist to save transpiled wasm code and TS typings
-mkdir -p $DIST_WASM_DIR
+## save directly to dist folder to avoid re-generating TS declarations
+echo 'Transpiling wasm ES Modules to CommonJS'
+yarn babel './wasm/wasm_dpp.js' --out-dir './dist/wasm/'
 
-## Converting wasm into base64 and saving it to dist folder
-echo "Converting wasm binary into base64 module"
-WASM_BUILD_BASE_64=$(base64 -i "$WASM_BINARY_PATH")
-echo 'module.exports = "'${WASM_BUILD_BASE_64}'"' > "$DIST_WASM_BINARY_BASE_64"
-
-## Transpile ES Modules code to Common JS
-## and save directly to dist folder to avoid re-generating TS declarations
-echo "Transpiling wasm ES Modules to CommonJS"
-yarn babel "$WASM_JS_CODE_PATH" --out-dir "$DIST_WASM_DIR"
-
-## Copying wasm typings to dist and source folders
 ## In dist folder they provide typings for external consumers
 ## In source folder they provide typings for TS compiler
-echo "Copying wasm typings"
-cp "$WASM_TYPINGS_PATH" "$DIST_WASM_DIR"
-cp "$WASM_TYPINGS_PATH" "$LIB_WASM_DIR"
+echo 'Copying wasm typings'
+cp -RPp './wasm/wasm_dpp.d.ts' './dist/wasm/'
+mkdir -p './lib/wasm'
+cp -RPp './wasm/wasm_dpp.d.ts' './lib/wasm/'
 
-echo "Building TypeScript code"
+echo 'Building TypeScript code'
 yarn tsc
 
-echo "Cleaning up intermediate wasm build"
-rm -rf $WASM_DIR
+echo 'Cleaning up intermediate wasm build'
+rm -rf './wasm/'
