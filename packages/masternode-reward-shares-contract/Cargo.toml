@@ -3,7 +3,7 @@ name = "masternode-reward-shares-contract"
 description = "Masternode reward shares data contract schema and tools"
 version = "1.0.0-pr.1694.1"
 edition = "2021"
-rust-version = "1.73"
+rust-version = "1.76"
 license = "MIT"
 
 [dependencies]

@@ -394,7 +394,7 @@ Increment version to overcome already published Dash SDK 3.25.16
 
 ### Build System
 
-* update rust to 1.73 ([#1529](https://github.com/dashpay/platform/issues/1529))
+* update rust to 1.76 ([#1529](https://github.com/dashpay/platform/issues/1529))
 
 
 ### Code Refactoring
