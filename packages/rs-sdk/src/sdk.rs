@@ -218,7 +218,7 @@ impl Sdk {
     /// Updates or fetches the nonce for a given identity and contract pair from a cache,
     /// querying Platform if the cached value is stale or absent. Optionally
     /// increments the nonce before storing it, based on the provided settings.
-    pub async fn next_identity_contract_nonce(
+    pub async fn get_identity_contract_nonce(
         &self,
         identity_id: Identifier,
         contract_id: Identifier,

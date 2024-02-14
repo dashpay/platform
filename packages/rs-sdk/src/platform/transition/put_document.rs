@@ -91,7 +91,7 @@ impl<S: Signer> PutDocument<S> for Document {
         settings: RequestSettings,
     ) -> Result<StateTransition, Error> {
         let new_identity_contract_nonce = sdk
-            .next_identity_contract_nonce(
+            .get_identity_contract_nonce(
                 self.owner_id(),
                 document_type.data_contract_id(),
                 true,
