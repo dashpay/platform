@@ -484,7 +484,6 @@ mod tests {
         };
         use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
         use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-        use prost::Message;
         use rand::prelude::StdRng;
         use rand::{Rng, SeedableRng};
 
