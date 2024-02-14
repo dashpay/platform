@@ -57,16 +57,6 @@ impl IdentityCreditWithdrawalStateTransitionStructureValidationV0
             return Ok(result);
         }
 
-        // validate core_fee is in not less than minimal relay fee
-        if self.core_fee_per_byte() < MIN_CORE_FEE_PER_BYTE {
-            result.add_error(InvalidIdentityCreditWithdrawalTransitionCoreFeeError::new(
-                self.core_fee_per_byte(),
-                MIN_CORE_FEE_PER_BYTE,
-            ));
-
-            return Ok(result);
-        }
-
         // validate output_script types
         if !self.output_script().is_p2pkh() && !self.output_script().is_p2sh() {
             result.add_error(

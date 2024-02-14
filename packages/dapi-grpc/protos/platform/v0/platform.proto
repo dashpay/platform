@@ -234,6 +234,7 @@ message GetProofsRequest {
         FULL_IDENTITY = 0;
         BALANCE = 1;
         KEYS = 2;
+        REVISION = 3;
       }
       bytes identity_id = 1;
       Type request_type = 2;

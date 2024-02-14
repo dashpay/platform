@@ -21,7 +21,7 @@ const DEFAULT_POOLING = 0;
 const ASSET_UNLOCK_TX_SIZE = 190;
 
 // Minimal accepted core fee per byte to avoid low fee error from core
-const MIN_ASSET_UNLOCK_CORE_FEE_PER_BYTE = 5;
+const MIN_ASSET_UNLOCK_CORE_FEE_PER_BYTE = 1;
 
 // Minimal withdrawal amount in credits to avoid dust error from core
 const MINIMAL_WITHDRAWAL_AMOUNT = ASSET_UNLOCK_TX_SIZE * MIN_ASSET_UNLOCK_CORE_FEE_PER_BYTE * 1000;
@@ -77,8 +77,7 @@ export async function creditWithdrawal(
   const minRelayFeePerByte = Math.ceil(this.client.wallet.storage
     .getDefaultChainStore().state.fees.minRelay / 1000);
 
-  const coreFeePerByte = minRelayFeePerByte > MIN_ASSET_UNLOCK_CORE_FEE_PER_BYTE
-    ? nearestGreaterFibonacci(minRelayFeePerByte) : MIN_ASSET_UNLOCK_CORE_FEE_PER_BYTE;
+  const coreFeePerByte = nearestGreaterFibonacci(minRelayFeePerByte);
 
   const revision = identity.getRevision();
 
