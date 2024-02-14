@@ -2550,7 +2550,7 @@ dependencies = [
 [[package]]
 name = "json-schema-faker"
 version = "0.1.0"
-source = "git+https://github.com/fominok/json-schema-faker-rs?rev=306636f#306636f1fcc30f01e44bad0cc2f2cd007a9712fa"
+source = "git+https://github.com/fominok/json-schema-faker-rs?rev=2dd1cf7#2dd1cf7ea17b9246aa2aabd7026a3a320e3fa903"
 dependencies = [
  "dircpy",
  "serde_json",

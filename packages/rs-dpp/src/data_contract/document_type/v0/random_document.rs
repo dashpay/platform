@@ -44,7 +44,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
             .try_into()
             .expect("jsonschema must be a valid JSON");
         let json_documents = json_schema_faker::generate(&json_schema, count as u16)
-            .context("cannot generate a random document with json-schema-faker")?;
+            .context("cannot generate a random document with json-schema-faker-rs")?;
 
         let mut fix_document = |mut document: platform_value::Value| {
             let id = Document::generate_document_id_v0(
