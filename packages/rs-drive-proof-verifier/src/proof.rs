@@ -375,7 +375,7 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
     Ok(request_type)
 }
 
-impl FromProof<platform::GetIdentityContractNonceRequest> for IdentityContractNonce {
+impl FromProof<platform::GetIdentityContractNonceRequest> for IdentityContractNonceFetcher {
     type Request = platform::GetIdentityContractNonceRequest;
     type Response = platform::GetIdentityContractNonceResponse;
 
@@ -424,7 +424,7 @@ impl FromProof<platform::GetIdentityContractNonceRequest> for IdentityContractNo
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok(maybe_identity.map(types::IdentityContractNonce))
+        Ok(maybe_identity.map(types::IdentityContractNonceFetcher))
     }
 }
 

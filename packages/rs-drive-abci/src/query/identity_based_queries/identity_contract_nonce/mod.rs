@@ -5,6 +5,7 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identity_contract_nonce_request::Version;
 use dapi_grpc::platform::v0::GetIdentityContractNonceRequest;
+use dapi_grpc::Message;
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use crate::{Error, Sdk};
 
 use dapi_grpc::platform::VersionedGrpcResponse;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
@@ -89,11 +90,20 @@ impl<S: Signer> PutDocument<S> for Document {
         signer: &S,
         settings: RequestSettings,
     ) -> Result<StateTransition, Error> {
+        let new_identity_contract_nonce = sdk
+            .next_identity_contract_nonce(
+                self.owner_id(),
+                document_type.data_contract_id(),
+                true,
+                &settings,
+            )
+            .await?;
         let transition = DocumentsBatchTransition::new_document_creation_transition_from_document(
             self.clone(),
             document_type.as_ref(),
             document_state_transition_entropy,
             &identity_public_key,
+            new_identity_contract_nonce,
             signer,
             sdk.version(),
             None,

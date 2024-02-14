@@ -103,9 +103,9 @@ where
         }
     }
 
-    /// Fetch single object from the Platfom by identifier.
+    /// Fetch single object from the Platform by identifier.
     ///
-    /// Conveniance method that allows fetching objects by identifier for types that implement [Query] for [Identifier].
+    /// Convenience method that allows fetching objects by identifier for types that implement [Query] for [Identifier].
     ///
     /// See [`Fetch::fetch()`] for more details.
     ///
@@ -137,7 +137,7 @@ impl Fetch for drive_proof_verifier::types::IdentityBalance {
     type Request = platform_proto::GetIdentityBalanceRequest;
 }
 
-impl Fetch for drive_proof_verifier::types::IdentityContractNonce {
+impl Fetch for drive_proof_verifier::types::IdentityContractNonceFetcher {
     type Request = platform_proto::GetIdentityContractNonceRequest;
 }
 

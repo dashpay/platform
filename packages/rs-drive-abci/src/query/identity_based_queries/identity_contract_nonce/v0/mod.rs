@@ -9,12 +9,12 @@ use dapi_grpc::platform::v0::get_identity_contract_nonce_response::GetIdentityCo
 use dapi_grpc::platform::v0::{
     get_identity_contract_nonce_response, GetIdentityContractNonceResponse, Proof,
 };
+use dapi_grpc::Message;
 use dpp::check_validation_result_with_data;
 use dpp::platform_value::Identifier;
 use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use prost::Message;
 
 impl<C> Platform<C> {
     pub(super) fn query_identity_contract_nonce_v0(
@@ -60,8 +60,7 @@ impl<C> Platform<C> {
                     })),
                     metadata: Some(metadata),
                 })),
-            }
-                .encode_to_vec()
+            }.encode_to_vec()
         } else {
             let maybe_identity = self.drive.fetch_identity_contract_nonce(
                 identity_id.0,

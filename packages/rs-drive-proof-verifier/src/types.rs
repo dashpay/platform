@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 
+use dpp::prelude::IdentityContractNonce;
 pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::{
     block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
@@ -50,7 +51,7 @@ pub type IdentityBalanceAndRevision = (u64, Revision);
 
 /// An identity contract nonce
 #[derive(Debug)]
-pub struct IdentityContractNonce(pub u64);
+pub struct IdentityContractNonceFetcher(pub IdentityContractNonce);
 
 /// Public keys belonging to some identity.
 ///

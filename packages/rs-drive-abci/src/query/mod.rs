@@ -468,6 +468,7 @@ mod tests {
             get_identity_contract_nonce_response, GetIdentityContractNonceRequest,
             GetIdentityContractNonceResponse,
         };
+        use dapi_grpc::Message;
         use dpp::block::block_info::BlockInfo;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::data_contract::document_type::random_document::CreateRandomDocument;

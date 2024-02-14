@@ -1,4 +1,6 @@
+#[cfg(feature = "full")]
 pub mod keys;
+#[cfg(feature = "full")]
 pub(crate) mod revision_nonce;
 
 /// The sub elements in the contract space for each identity.

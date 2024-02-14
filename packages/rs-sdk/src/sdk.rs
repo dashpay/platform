@@ -1,28 +1,41 @@
 //! [Sdk] entrypoint to Dash Platform.
 
-use std::sync::Arc;
+use std::collections::btree_map::Entry;
+use std::collections::BTreeMap;
+use std::sync::{Arc, RwLock};
 use std::{fmt::Debug, num::NonZeroUsize, ops::DerefMut};
 
 use crate::error::Error;
 use crate::mock::MockResponse;
 #[cfg(feature = "mocks")]
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
+use crate::platform::{Fetch, Identifier};
 use dapi_grpc::mock::Mockable;
+use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0;
+use dapi_grpc::platform::v0::get_identity_contract_nonce_response::Version;
+use dapi_grpc::platform::v0::{
+    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, Proof,
+};
+use dpp::prelude;
+use dpp::prelude::IdentityContractNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use drive_proof_verifier::types::IdentityContractNonceFetcher;
 #[cfg(feature = "mocks")]
 use drive_proof_verifier::MockContextProvider;
-use drive_proof_verifier::{ContextProvider, FromProof};
+use drive_proof_verifier::{types, ContextProvider, FromProof};
 pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
+use rs_dapi_client::transport::AppliedRequestSettings;
 pub use rs_dapi_client::AddressList;
 pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
-    DapiClient, DapiClientError, DapiRequestExecutor,
+    DapiClient, DapiClientError, DapiRequestExecutor, DEFAULT_IDENTITY_CONTRACT_NONCE_STALE_TIME_S,
 };
 #[cfg(feature = "mocks")]
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::Mutex;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
@@ -31,6 +44,12 @@ use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 /// How many quorum public keys fit in the cache.
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
+
+/// a type to represent staleness in seconds
+pub type StalenessInSeconds = u64;
+
+/// The last query timestamp
+pub type LastQueryTimestamp = u64;
 
 /// Dash Platform SDK
 ///
@@ -61,6 +80,16 @@ pub struct Sdk {
     ///
     /// This is set to `true` by default. `false` is not implemented yet.
     proofs: bool,
+
+    /// This is the identity contract nonce counter for the sdk
+    /// The sdk will automatically manage this counter for the user.
+    /// When the sdk user requests to put documents this will be automatically updated
+    /// This update can involve querying Platform for the current identity contract nonce
+    /// If the sdk user requests to put a state transition the counter is checked and either
+    /// returns an error or is updated.
+    identity_contract_nonce_counter: tokio::sync::Mutex<
+        BTreeMap<(Identifier, Identifier), (prelude::IdentityContractNonce, LastQueryTimestamp)>,
+    >,
 
     /// Context provider used by the SDK.
     ///
@@ -182,6 +211,92 @@ impl Sdk {
             mock.lock().expect("mock lock poisoned")
         } else {
             panic!("not a mock")
+        }
+    }
+
+    /// Updates or fetches the nonce for a given identity and contract pair from a cache,
+    /// querying Platform if the cached value is stale or absent. Optionally
+    /// increments the nonce before storing it, based on the provided settings.
+    pub async fn next_identity_contract_nonce(
+        &self,
+        identity_id: Identifier,
+        contract_id: Identifier,
+        bump_first: bool,
+        settings: &RequestSettings,
+    ) -> Result<IdentityContractNonce, Error> {
+        let current_time_s = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(n) => n.as_secs(),
+            Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+        };
+
+        // we start by only using a read lock, as this speeds up the system
+        let mut identity_contract_nonce_counter = self.identity_contract_nonce_counter.lock().await;
+        let entry = identity_contract_nonce_counter.entry((identity_id, contract_id));
+
+        let should_query_platform = match &entry {
+            Entry::Vacant(e) => true,
+            Entry::Occupied(e) => {
+                let (_, last_query_time) = e.get();
+                *last_query_time
+                    < current_time_s.saturating_sub(
+                        settings
+                            .identity_contract_nonce_stale_time_s
+                            .unwrap_or(DEFAULT_IDENTITY_CONTRACT_NONCE_STALE_TIME_S),
+                    )
+            }
+        };
+
+        if should_query_platform {
+            let platform_nonce =
+                IdentityContractNonceFetcher::fetch(&self, (identity_id, contract_id))
+                    .await?
+                    .unwrap_or(IdentityContractNonceFetcher(0))
+                    .0;
+            match entry {
+                Entry::Vacant(e) => {
+                    let insert_nonce = if bump_first {
+                        platform_nonce + 1
+                    } else {
+                        platform_nonce
+                    };
+                    e.insert((insert_nonce, current_time_s));
+                    Ok(insert_nonce)
+                }
+                Entry::Occupied(mut e) => {
+                    let (current_nonce, _) = e.get();
+                    let insert_nonce = if platform_nonce > *current_nonce {
+                        if bump_first {
+                            platform_nonce + 1
+                        } else {
+                            platform_nonce
+                        }
+                    } else {
+                        if bump_first {
+                            *current_nonce + 1
+                        } else {
+                            *current_nonce
+                        }
+                    };
+                    e.insert((insert_nonce, current_time_s));
+                    Ok(insert_nonce)
+                }
+            }
+        } else {
+            match entry {
+                Entry::Vacant(_) => {
+                    panic!("this can not happen, vacant entry not possible");
+                }
+                Entry::Occupied(mut e) => {
+                    let (current_nonce, _) = e.get();
+                    if bump_first {
+                        let insert_nonce = current_nonce + 1;
+                        e.insert((insert_nonce, current_time_s));
+                        Ok(insert_nonce)
+                    } else {
+                        Ok(*current_nonce)
+                    }
+                }
+            }
         }
     }
 
@@ -467,6 +582,7 @@ impl SdkBuilder {
                 let sdk= Sdk{
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
+                    identity_contract_nonce_counter: Mutex::new(BTreeMap::<(Identifier, Identifier), (IdentityContractNonce, LastQueryTimestamp)>::new()),
                     context_provider: std::sync:: Mutex::new(self.context_provider),
                     cancel_token: self.cancel_token,
                     #[cfg(feature = "mocks")]
@@ -517,6 +633,7 @@ impl SdkBuilder {
                     },
                     dump_dir: self.dump_dir,
                     proofs:self.proofs,
+                    identity_contract_nonce_counter: Mutex::new(BTreeMap::<(Identifier, Identifier), (IdentityContractNonce, LastQueryTimestamp)>::new()),
                     context_provider:  std::sync:: Mutex::new( Some(context_provider)),
                     cancel_token: self.cancel_token,
                 };

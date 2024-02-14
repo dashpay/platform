@@ -162,7 +162,7 @@ impl MockResponse for drive_proof_verifier::types::IdentityBalance {
     }
 }
 
-impl MockResponse for drive_proof_verifier::types::IdentityContractNonce {
+impl MockResponse for drive_proof_verifier::types::IdentityContractNonceFetcher {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         (self.0).to_le_bytes().to_vec()
     }
@@ -171,7 +171,7 @@ impl MockResponse for drive_proof_verifier::types::IdentityContractNonce {
     where
         Self: Sized,
     {
-        drive_proof_verifier::types::IdentityContractNonce(u64::from_le_bytes(
+        drive_proof_verifier::types::IdentityContractNonceFetcher(u64::from_le_bytes(
             buf.try_into()
                 .expect("identity contract nonce should be should be 8 bytes"),
         ))

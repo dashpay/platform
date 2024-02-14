@@ -119,6 +119,7 @@ pub struct GetIdentityContractNonceRequest {
 pub mod get_identity_contract_nonce_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentityContractNonceRequestV0 {
@@ -143,6 +144,7 @@ pub mod get_identity_contract_nonce_request {
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityBalanceRequest {
@@ -387,6 +389,7 @@ pub struct GetIdentityContractNonceResponse {
 pub mod get_identity_contract_nonce_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentityContractNonceResponseV0 {
@@ -429,6 +432,7 @@ pub mod get_identity_contract_nonce_response {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityBalanceResponse {
