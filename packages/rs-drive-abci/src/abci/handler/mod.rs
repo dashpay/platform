@@ -87,7 +87,7 @@ where
 
         if !tenderdash_abci::check_version(&request.abci_version) {
             return Err(proto::ResponseException::from(format!(
-                "tenderdash requires protobuf definitions version {}, our version is {}",
+                "client requires tenderdash protobuf definitions version {}, but this drive server was built with v{}",
                 request.abci_version,
                 tenderdash_abci::proto::ABCI_VERSION
             )));
