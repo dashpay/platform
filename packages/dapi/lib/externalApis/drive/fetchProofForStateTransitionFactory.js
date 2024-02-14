@@ -38,14 +38,31 @@ function fetchProofForStateTransitionFactory(driveClient) {
     } if (stateTransition.isIdentityStateTransition()) {
       const { IdentityRequest } = GetProofsRequestV0;
 
-      const identitiesList = modifiedIds.map((id) => {
-        const identityRequest = new IdentityRequest();
-        identityRequest.setIdentityId(id.toBuffer());
-        identityRequest.setRequestType(
-          stateTransition.getType() === StateTransitionTypes.IdentityCreditTransfer
-            ? IdentityRequest.Type.BALANCE : IdentityRequest.Type.FULL_IDENTITY,
-        );
-        return identityRequest;
+      const identitiesList = modifiedIds.flatMap((id) => {
+        const stType = stateTransition.getType();
+        let proofRequests;
+
+        if (stType === StateTransitionTypes.IdentityCreditTransfer) {
+          proofRequests = new IdentityRequest();
+          proofRequests.setIdentityId(id.toBuffer());
+          proofRequests.setRequestType(IdentityRequest.Type.BALANCE);
+        } else if (stType === StateTransitionTypes.IdentityTopUp) {
+          const proofRequestsBalance = new IdentityRequest();
+          proofRequestsBalance.setIdentityId(id.toBuffer());
+          proofRequestsBalance.setRequestType(IdentityRequest.Type.BALANCE);
+
+          const proofRequestsRevision = new IdentityRequest();
+          proofRequestsRevision.setIdentityId(id.toBuffer());
+          proofRequestsRevision.setRequestType(IdentityRequest.Type.REVISION);
+
+          proofRequests = [proofRequestsBalance, proofRequestsRevision];
+        } else {
+          proofRequests = new IdentityRequest();
+          proofRequests.setIdentityId(id.toBuffer());
+          proofRequests.setRequestType(IdentityRequest.Type.FULL_IDENTITY);
+        }
+
+        return proofRequests;
       });
 
       getProofsRequest.setV0(new GetProofsRequestV0().setIdentitiesList(identitiesList));

@@ -1,5 +1,5 @@
-use crate::{common::setup_logs, config::Config};
-use drive_proof_verifier::types::ProtocolVersionVoteCount;
+use super::{common::setup_logs, config::Config};
+use dpp::version::ProtocolVersionVoteCount;
 use rs_sdk::platform::FetchMany;
 
 /// Given some existing identity ID, when I fetch the identity keys, I get some of them indexed by key ID.
@@ -8,9 +8,9 @@ async fn test_protocol_version_vote_count() {
     setup_logs();
 
     let cfg = Config::new();
-    let mut sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api().await;
 
-    let votings = ProtocolVersionVoteCount::fetch_many(&mut sdk, ())
+    let votings = ProtocolVersionVoteCount::fetch_many(&sdk, ())
         .await
         .expect("fetch protocol version votes");
 

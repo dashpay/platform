@@ -2730,7 +2730,7 @@ fn test_family_sql_query() {
     .expect("should build query");
 
     let sql_string = "select * from person order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2754,7 +2754,7 @@ fn test_family_sql_query() {
     .expect("should build query");
 
     let sql_string = "select * from person where firstName = 'Chris'";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2783,7 +2783,7 @@ fn test_family_sql_query() {
 
     let sql_string =
         "select * from person where firstName < 'Chris' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2812,7 +2812,7 @@ fn test_family_sql_query() {
 
     let sql_string =
         "select * from person where firstName like 'C%' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2841,7 +2841,7 @@ fn test_family_sql_query() {
     .expect("should build query");
 
     let sql_string = "select * from person where firstName > 'Chris' and firstName <= 'Noellyn' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2871,7 +2871,7 @@ fn test_family_sql_query() {
 
     let sql_string =
         "select * from person where firstName in ('a', 'b') order by firstName limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);

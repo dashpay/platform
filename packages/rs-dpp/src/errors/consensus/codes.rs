@@ -151,7 +151,7 @@ impl ErrorWithCode for StateError {
             // Data contract
             Self::DataContractAlreadyPresentError { .. } => 4000,
             Self::DataContractIsReadonlyError { .. } => 4026,
-            #[cfg(feature = "validation")]
+            #[cfg(feature = "state-transition-validation")]
             Self::DataTriggerError(ref e) => e.code(),
             Self::DataContractConfigUpdateError { .. } => 4027,
 

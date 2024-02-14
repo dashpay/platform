@@ -61,7 +61,7 @@ mod tests {
 
         let identity_create_transition = IdentityCreateTransition::V0(
             IdentityCreateTransitionV0::try_from_identity(
-                identity,
+                &identity,
                 AssetLockProof::Instant(asset_lock_proof),
                 platform_version,
             )

@@ -5,10 +5,10 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::Version;
 use dapi_grpc::platform::v0::GetIdentityByPublicKeyHashRequest;
+use dapi_grpc::Message;
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use prost::Message;
 
 mod v0;
 

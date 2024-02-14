@@ -63,7 +63,7 @@ use crate::version::drive_versions::{
     DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
     DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
     DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions,
-    DriveVerifySystemMethodVersions, DriveVersion,
+    DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions, DriveVersion,
 };
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
@@ -258,6 +258,9 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     verify_epoch_infos: 0,
                     verify_upgrade_state: 0,
                     verify_upgrade_vote_status: 0,
+                },
+                state_transition: DriveVerifyStateTransitionMethodVersions {
+                    verify_state_transition_was_executed_with_proof: 0,
                 },
             },
             identity: DriveIdentityMethodVersions {
@@ -833,6 +836,8 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         },
         state_transition_conversion_versions: StateTransitionConversionVersions {
             identity_to_identity_create_transition: 0,
+            identity_to_identity_top_up_transition: 0,
+            identity_to_identity_withdrawal_transition: 0,
             identity_to_identity_create_transition_with_signer: 0,
         },
         state_transition_method_versions: StateTransitionMethodVersions {

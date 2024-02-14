@@ -8,12 +8,12 @@ use dapi_grpc::platform::v0::get_data_contracts_request::GetDataContractsRequest
 use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
 use dapi_grpc::platform::v0::get_data_contracts_response::GetDataContractsResponseV0;
 use dapi_grpc::platform::v0::{get_data_contracts_response, GetDataContractsResponse, Proof};
+use dapi_grpc::Message;
 use dpp::platform_value::Bytes32;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::{check_validation_result_with_data, ProtocolError};
-use prost::Message;
 
 impl<C> Platform<C> {
     pub(super) fn query_data_contracts_v0(

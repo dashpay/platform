@@ -3,6 +3,7 @@ mod identity_signed;
 mod json_conversion;
 mod state_transition_like;
 mod types;
+mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
@@ -23,7 +24,7 @@ use crate::{
 
 // TODO: unsafe - we must use actual relay fee from core
 /// Minimal core per byte. Must be a fibonacci number
-pub const MIN_CORE_FEE_PER_BYTE: u32 = 5;
+pub const MIN_CORE_FEE_PER_BYTE: u32 = 1;
 
 /// Minimal amount in credits (x1000) to avoid "dust" error in Core
 pub const MIN_WITHDRAWAL_AMOUNT: u64 =

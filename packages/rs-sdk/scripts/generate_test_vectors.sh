@@ -24,7 +24,7 @@ if [ -z "$1" ]; then
     rm -f "${CARGO_DIR}"/tests/vectors/*
 fi
 
-cargo test -p rs-sdk \
+cargo test -p dash-platform-sdk \
     --no-default-features \
     --features generate-test-vectors \
     "$1"
