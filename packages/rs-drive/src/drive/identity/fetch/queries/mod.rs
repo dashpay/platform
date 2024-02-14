@@ -24,6 +24,8 @@ pub enum IdentityProveRequestType {
     Balance = 1,
     /// Keys: A variant representing keys access only, assigned the value 2.
     Keys = 2,
+    /// Revision: A variant representing revision field
+    Revision = 3,
 }
 
 impl TryFrom<u8> for IdentityProveRequestType {
@@ -34,6 +36,7 @@ impl TryFrom<u8> for IdentityProveRequestType {
             0 => Ok(IdentityProveRequestType::FullIdentity),
             1 => Ok(IdentityProveRequestType::Balance),
             2 => Ok(IdentityProveRequestType::Keys),
+            3 => Ok(IdentityProveRequestType::Revision),
             _ => Err(Error::Query(QuerySyntaxError::InvalidIdentityProveRequest(
                 "unknown prove request type",
             ))),

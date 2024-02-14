@@ -1164,6 +1164,7 @@ export namespace GetProofsRequest {
         FULL_IDENTITY: 0;
         BALANCE: 1;
         KEYS: 2;
+        REVISION: 3;
       }
 
       export const Type: TypeMap;
