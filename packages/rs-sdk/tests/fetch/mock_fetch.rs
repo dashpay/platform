@@ -57,7 +57,8 @@ async fn test_mock_fetch_identity_not_found() {
 async fn test_mock_fetch_data_contract() {
     let sdk = Sdk::new_mock();
 
-    let expected = mock_data_contract(None);
+    let document_type: DocumentType = mock_document_type();
+    let expected = mock_data_contract(Some(&document_type));
     let id = expected.id();
 
     sdk.mock().expect_fetch(id, Some(expected.clone())).await;

@@ -10,7 +10,6 @@ const {
     StateTransitionBroadcastError,
   },
   PlatformProtocol: {
-    DataContractEmptySchemaError,
     IdentityNotFoundError,
     InvalidDataContractVersionError,
     IncompatibleDataContractSchemaError,
