@@ -33,7 +33,7 @@ impl Drive {
     ) -> Result<Vec<u8>, Error> {
         let contract_query = Self::fetch_contract_query(contract_id, true);
         tracing::trace!(?contract_query, "proving contract");
-        let contract_proof = self.grove_get_proved_path_query(
+        let contract_proof = self.grove_get_proved_path_query_with_conditional(
             &contract_query,
             false,
             transaction,
