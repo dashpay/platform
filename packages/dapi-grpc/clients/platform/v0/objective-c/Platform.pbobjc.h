@@ -132,6 +132,7 @@ typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type) {
   GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_FullIdentity = 0,
   GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Balance = 1,
   GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Keys = 2,
+  GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Revision = 3,
 };
 
 GPBEnumDescriptor *GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_EnumDescriptor(void);
