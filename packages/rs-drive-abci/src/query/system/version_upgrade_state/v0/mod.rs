@@ -52,9 +52,9 @@ impl<C> Platform<C> {
             }
                 .encode_to_vec()
         } else {
-            let drive_cache = self.drive.cache.read().unwrap();
-            let versions = drive_cache
-                .protocol_versions_counter
+            let protocol_versions_counter =
+                self.drive.cache.protocol_versions_counter.read().unwrap();
+            let versions = protocol_versions_counter
                 .global_cache
                 .iter()
                 .map(|(protocol_version, count)| VersionEntry {
@@ -62,6 +62,7 @@ impl<C> Platform<C> {
                     vote_count: *count as u32,
                 })
                 .collect();
+            drop(protocol_versions_counter);
 
             GetProtocolVersionUpgradeStateResponse {
                 version: Some(get_protocol_version_upgrade_state_response::Version::V0(

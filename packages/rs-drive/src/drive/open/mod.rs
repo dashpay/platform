@@ -82,17 +82,17 @@ impl Drive {
         let drive = Drive {
             grove,
             config,
-            cache: RwLock::new(DriveCache {
-                cached_contracts: DataContractCache::new(
+            cache: DriveCache {
+                data_contracts: DataContractCache::new(
                     data_contracts_global_cache_size,
                     data_contracts_block_cache_size,
                 ),
-                genesis_time_ms,
-                protocol_versions_counter: ProtocolVersionsCache::new(),
+                genesis_time_ms: RwLock::new(genesis_time_ms),
+                protocol_versions_counter: RwLock::new(ProtocolVersionsCache::new()),
                 system_data_contracts: SystemDataContracts::load_genesis_system_contracts(
                     platform_version,
                 )?,
-            }),
+            },
         };
 
         Ok((drive, protocol_version))

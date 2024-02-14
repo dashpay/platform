@@ -60,15 +60,12 @@ impl Drive {
             },
         );
 
-        let cache = self.cache.read().unwrap();
+        let contract = self.cache.system_data_contracts.withdrawals();
 
-        let document_type = cache
-            .system_data_contracts
-            .withdrawals
-            .document_type_for_name(withdrawal::NAME)?;
+        let document_type = contract.document_type_for_name(withdrawal::NAME)?;
 
         let drive_query = DriveQuery {
-            contract: &cache.system_data_contracts.withdrawals,
+            contract: &contract,
             document_type,
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,

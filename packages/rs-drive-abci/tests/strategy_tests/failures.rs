@@ -256,15 +256,7 @@ mod tests {
             platform_version,
         );
 
-        let cache = platform
-            .drive
-            .cache
-            .read()
-            .expect("expected to get a read lock on the cache");
-
-        let dpns_contract = cache.system_data_contracts.dpns.clone();
-
-        drop(cache);
+        let dpns_contract = platform.drive.cache.system_data_contracts.dpns().clone();
 
         let dpns_contract_for_type = dpns_contract.clone();
 

@@ -116,14 +116,12 @@ where
             end_transaction_index,
         );
 
-        let cache = self.drive.cache.read().unwrap();
+        let withdrawals_contract = self.drive.cache.system_data_contracts.withdrawals();
 
         self.drive.add_update_multiple_documents_operations(
             &documents,
-            &cache.system_data_contracts.withdrawals,
-            cache
-                .system_data_contracts
-                .withdrawals
+            &withdrawals_contract,
+            withdrawals_contract
                 .document_type_for_name(withdrawal::NAME)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(

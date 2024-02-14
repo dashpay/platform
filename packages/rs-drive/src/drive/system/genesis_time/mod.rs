@@ -43,23 +43,23 @@ impl Drive {
     /// Returns the genesis time. Checks cache first, then storage.
     pub fn get_genesis_time(&self, transaction: TransactionArg) -> Result<Option<u64>, Error> {
         // let's first check the cache
-        let cache = self.cache.read().unwrap();
+        let genesis_time_ms = self.cache.genesis_time_ms.read().unwrap();
 
         let platform_version = PlatformVersion::latest();
 
-        if cache.genesis_time_ms.is_some() {
-            return Ok(cache.genesis_time_ms);
+        if genesis_time_ms.is_some() {
+            return Ok(*genesis_time_ms);
         };
 
-        drop(cache);
+        drop(genesis_time_ms);
 
         let epoch = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
 
         match self.get_epoch_start_time(&epoch, transaction, platform_version) {
             Ok(genesis_time_ms) => {
-                let mut cache = self.cache.write().unwrap();
+                let mut genesis_time_ms_cache = self.cache.genesis_time_ms.write().unwrap();
 
-                cache.genesis_time_ms = Some(genesis_time_ms);
+                *genesis_time_ms_cache = Some(genesis_time_ms);
 
                 Ok(Some(genesis_time_ms))
             }
@@ -72,8 +72,8 @@ impl Drive {
 
     /// Sets genesis time
     pub fn set_genesis_time(&self, genesis_time_ms: u64) {
-        let mut cache = self.cache.write().unwrap();
-        cache.genesis_time_ms = Some(genesis_time_ms);
+        let mut genesis_time_ms_cache = self.cache.genesis_time_ms.write().unwrap();
+        *genesis_time_ms_cache = Some(genesis_time_ms);
     }
 }
 
@@ -106,13 +106,13 @@ mod tests {
         fn should_return_some_if_cache_is_set() {
             let drive = setup_drive(None);
 
-            let mut cache = drive.cache.write().unwrap();
+            let mut genesis_time_ms_cache = drive.cache.genesis_time_ms.write().unwrap();
 
             let genesis_time_ms = 100;
 
-            cache.genesis_time_ms = Some(genesis_time_ms);
+            *genesis_time_ms_cache = Some(genesis_time_ms);
 
-            drop(cache);
+            drop(genesis_time_ms_cache);
 
             let result = drive
                 .get_genesis_time(None)
@@ -169,9 +169,9 @@ mod tests {
 
             drive.set_genesis_time(genesis_time_ms);
 
-            let cache = drive.cache.read().unwrap();
+            let genesis_time_ms_cache = drive.cache.genesis_time_ms.read().unwrap();
 
-            assert!(matches!(cache.genesis_time_ms, Some(g) if g == genesis_time_ms));
+            assert!(matches!(*genesis_time_ms_cache, Some(g) if g == genesis_time_ms));
         }
     }
 }

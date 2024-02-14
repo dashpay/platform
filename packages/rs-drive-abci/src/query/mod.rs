@@ -1937,8 +1937,7 @@ mod tests {
 
             let drive = &platform.drive;
 
-            let mut cache = drive.cache.write().unwrap();
-            let version_counter = &mut cache.protocol_versions_counter;
+            let mut version_counter = drive.cache.protocol_versions_counter.write().unwrap();
 
             let transaction = drive.grove.start_transaction();
 
@@ -2002,9 +2001,8 @@ mod tests {
                 .commit_transaction(transaction, &version.drive)
                 .expect("expected to commit");
 
-            cache.protocol_versions_counter.merge_block_cache();
-
-            drop(cache);
+            version_counter.merge_block_cache();
+            drop(version_counter);
 
             let request = GetProtocolVersionUpgradeStateRequest {
                 version: Some(Version::V0(GetProtocolVersionUpgradeStateRequestV0 {
@@ -2093,8 +2091,7 @@ mod tests {
 
             let drive = &platform.drive;
 
-            let mut cache = drive.cache.write().unwrap();
-            let version_counter = &mut cache.protocol_versions_counter;
+            let version_counter = &mut drive.cache.protocol_versions_counter.write().unwrap();
 
             let transaction = drive.grove.start_transaction();
 
@@ -2158,9 +2155,7 @@ mod tests {
                 .commit_transaction(transaction, &version.drive)
                 .expect("expected to commit");
 
-            cache.protocol_versions_counter.merge_block_cache();
-
-            drop(cache);
+            version_counter.merge_block_cache();
 
             let request = GetProtocolVersionUpgradeStateRequest {
                 version: Some(Version::V0(GetProtocolVersionUpgradeStateRequestV0 {
@@ -2307,9 +2302,7 @@ mod tests {
 
             let drive = &platform.drive;
 
-            let mut cache = drive.cache.write().unwrap();
-            let version_counter = &mut cache.protocol_versions_counter;
-
+            let version_counter = &mut drive.cache.protocol_versions_counter.write().unwrap();
             let transaction = drive.grove.start_transaction();
 
             version_counter
@@ -2370,9 +2363,7 @@ mod tests {
                 .commit_transaction(transaction, &version.drive)
                 .expect("expected to commit");
 
-            cache.protocol_versions_counter.merge_block_cache();
-
-            drop(cache);
+            version_counter.merge_block_cache();
 
             let request = GetProtocolVersionUpgradeVoteStatusRequest {
                 version: Some(Version::V0(GetProtocolVersionUpgradeVoteStatusRequestV0 {
@@ -2473,8 +2464,7 @@ mod tests {
 
             let drive = &platform.drive;
 
-            let mut cache = drive.cache.write().unwrap();
-            let version_counter = &mut cache.protocol_versions_counter;
+            let version_counter = &mut drive.cache.protocol_versions_counter.write().unwrap();
 
             let transaction = drive.grove.start_transaction();
 
@@ -2538,9 +2528,7 @@ mod tests {
                 .commit_transaction(transaction, &version.drive)
                 .expect("expected to commit");
 
-            cache.protocol_versions_counter.merge_block_cache();
-
-            drop(cache);
+            version_counter.merge_block_cache();
 
             let request = GetProtocolVersionUpgradeVoteStatusRequest {
                 version: Some(Version::V0(GetProtocolVersionUpgradeVoteStatusRequestV0 {

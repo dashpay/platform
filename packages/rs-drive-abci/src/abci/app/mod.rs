@@ -1,10 +1,9 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use drive::grovedb::Transaction;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 /// Block update
-pub mod block_update;
 mod consensus;
 mod full;
 mod query;

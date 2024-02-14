@@ -15,7 +15,7 @@ authors = [
 anyhow = { version = "1.0.75" }
 async-trait = { version = "0.1.68" }
 base64 = "0.20.0"
-bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "b3b226733aed98d9b4a2f6e3241ce49011d88680" }
+bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "bea68b24410538e158a8140df82f42d246447a5d" }
 bs58 = "0.4.0"
 byteorder = { version = "1.4" }
 chrono = { version = "0.4.20", default-features = false, features = [

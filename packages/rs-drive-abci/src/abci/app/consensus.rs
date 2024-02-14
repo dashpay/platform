@@ -1,14 +1,12 @@
-use crate::abci::app::block_update::BlockUpdateChannel;
 use crate::abci::app::{NamedApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::handler;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 use tenderdash_abci::proto::abci as proto;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
@@ -21,7 +19,6 @@ pub struct ConsensusAbciApplication<'a, C> {
     platform: &'a Platform<C>,
     /// The current transaction
     transaction: RwLock<Option<Transaction<'a>>>,
-    block_update_channel: Arc<BlockUpdateChannel>,
 }
 
 impl<'a, C> NamedApplication for ConsensusAbciApplication<'a, C> {
@@ -32,14 +29,10 @@ impl<'a, C> NamedApplication for ConsensusAbciApplication<'a, C> {
 
 impl<'a, C> ConsensusAbciApplication<'a, C> {
     /// Create new ABCI app
-    pub fn new(
-        platform: &'a Platform<C>,
-        block_update_channel: Arc<BlockUpdateChannel>,
-    ) -> Result<Self, Error> {
+    pub fn new(platform: &'a Platform<C>) -> Result<Self, Error> {
         let app = Self {
             platform,
             transaction: RwLock::new(None),
-            block_update_channel,
         };
 
         Ok(app)
@@ -131,27 +124,7 @@ where
         &self,
         request: proto::RequestFinalizeBlock,
     ) -> Result<proto::ResponseFinalizeBlock, proto::ResponseException> {
-        // Collect Data Contract block cache
-        let drive_cache = self.platform.drive.cache.read().unwrap();
-        let data_contracts_block_cache = drive_cache.cached_contracts.block_cache().clone();
-        drop(drive_cache);
-
-        let response = handler::finalize_block(self, request);
-
-        if response.is_ok() {
-            // Send state cache and data contract block cache to Query App thread
-            let state_cache = self.platform.state.read().unwrap();
-
-            self.block_update_channel
-                .update(data_contracts_block_cache, state_cache.clone());
-
-            tracing::debug!(
-                "Sent block update to Query app thread for height {}",
-                state_cache.last_committed_block_height()
-            );
-        }
-
-        response
+        handler::finalize_block(self, request)
     }
 
     fn prepare_proposal(
