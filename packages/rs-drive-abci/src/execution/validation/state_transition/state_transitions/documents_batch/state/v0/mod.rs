@@ -15,7 +15,7 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
-use crate::execution::validation::state_transition::documents_batch::data_triggers::DataTriggerExecutionContext;
+use crate::execution::validation::state_transition::documents_batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
 use crate::execution::validation::state_transition::documents_batch::state::v0::data_triggers::execute_data_triggers;
 use crate::platform_types::platform::{PlatformStateRef};
 use crate::execution::validation::state_transition::state_transitions::documents_batch::transformer::v0::DocumentsBatchTransitionTransformerV0;
@@ -58,6 +58,12 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
 
         let mut validated_transitions = vec![];
 
+        let data_trigger_bindings = if platform.config.execution.use_document_triggers {
+            data_trigger_bindings_list(platform_version)?
+        } else {
+            vec![]
+        };
+
         // Next we need to validate the structure of all actions (this means with the data contract)
         for transition in state_transition_action.transitions_take() {
             let transition_validation_result = match &transition {
@@ -90,28 +96,46 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                     ),
                 );
             } else {
-                validated_transitions.push(transition);
+                if platform.config.execution.use_document_triggers {
+                    // we should also validate document triggers
+                    let data_trigger_execution_context = DataTriggerExecutionContext {
+                        platform,
+                        transaction,
+                        owner_id: &self.owner_id(),
+                        state_transition_execution_context: &state_transition_execution_context,
+                    };
+                    let data_trigger_execution_result = transition.validate_with_data_triggers(
+                        &data_trigger_bindings,
+                        &data_trigger_execution_context,
+                        platform_version,
+                    )?;
+
+                    if !data_trigger_execution_result.is_valid() {
+                        // If a state transition isn't valid because of data triggers we still need
+                        // to bump the identity data contract nonce
+                        validation_result.add_errors(transition_validation_result.errors);
+                        validated_transitions.push(
+                            DocumentTransitionAction::BumpIdentityDataContractNonce(
+                                BumpIdentityDataContractNonceAction::from_base_transition_action(
+                                    transition.base_owned().ok_or(Error::Execution(
+                                        ExecutionError::CorruptedCodeExecution(
+                                            "base should always exist on transition",
+                                        ),
+                                    ))?,
+                                    owner_id,
+                                )?,
+                            ),
+                        );
+                    } else {
+                        validated_transitions.push(transition);
+                    }
+                } else {
+                    validated_transitions.push(transition);
+                }
             }
         }
 
         state_transition_action.set_transitions(validated_transitions);
-
-        let data_trigger_execution_context = DataTriggerExecutionContext {
-            platform,
-            transaction,
-            owner_id: &self.owner_id(),
-            state_transition_execution_context: &state_transition_execution_context,
-        };
-
-        if platform.config.execution.use_document_triggers {
-            let data_triggers_validation_result = execute_data_triggers(
-                state_transition_action.transitions(),
-                &data_trigger_execution_context,
-                platform.state.current_platform_version()?,
-            )?;
-
-            validation_result.add_errors_into(data_triggers_validation_result.errors);
-        }
 
         validation_result.set_data(state_transition_action.into());
 
