@@ -1,9 +1,9 @@
-use std::collections::BTreeMap;
-use tokio::sync::Mutex;
-use dpp::prelude;
-use dpp::prelude::IdentityContractNonce;
 use crate::platform::Identifier;
 use crate::sdk::LastQueryTimestamp;
+use dpp::prelude;
+use dpp::prelude::IdentityContractNonce;
+use std::collections::BTreeMap;
+use tokio::sync::Mutex;
 
 mod identity_contract_nonce_counter;
 
@@ -23,7 +23,10 @@ pub struct InternalSdkCache {
 impl Default for InternalSdkCache {
     fn default() -> Self {
         InternalSdkCache {
-            identity_contract_nonce_counter: Mutex::new(BTreeMap::<(Identifier, Identifier), (IdentityContractNonce, LastQueryTimestamp)>::new()),
+            identity_contract_nonce_counter: Mutex::new(BTreeMap::<
+                (Identifier, Identifier),
+                (IdentityContractNonce, LastQueryTimestamp),
+            >::new()),
         }
     }
 }

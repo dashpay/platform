@@ -63,10 +63,10 @@
 pub mod core;
 mod core_client;
 pub mod error;
+mod internal_cache;
 pub mod mock;
 pub mod platform;
 pub mod sdk;
-mod internal_cache;
 
 pub use error::Error;
 pub use sdk::{RequestSettings, Sdk, SdkBuilder};

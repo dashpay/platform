@@ -6,6 +6,7 @@ use std::sync::{Arc, RwLock};
 use std::{fmt::Debug, num::NonZeroUsize, ops::DerefMut};
 
 use crate::error::Error;
+use crate::internal_cache::InternalSdkCache;
 use crate::mock::MockResponse;
 #[cfg(feature = "mocks")]
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
@@ -40,7 +41,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::Mutex;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
-use crate::internal_cache::InternalSdkCache;
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
@@ -225,7 +225,11 @@ impl Sdk {
         };
 
         // we start by only using a read lock, as this speeds up the system
-        let mut identity_contract_nonce_counter = self.internal_cache.identity_contract_nonce_counter.lock().await;
+        let mut identity_contract_nonce_counter = self
+            .internal_cache
+            .identity_contract_nonce_counter
+            .lock()
+            .await;
         let entry = identity_contract_nonce_counter.entry((identity_id, contract_id));
 
         let should_query_platform = match &entry {

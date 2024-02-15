@@ -1,8 +1,8 @@
 use std::fs::read;
 use mockall::Any;
 use dpp::consensus::ConsensusError;
+use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::ProtocolError::ConsensusError;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
@@ -122,7 +122,11 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                         );
                         // If a state transition isn't valid because of data triggers we still need
                         // to bump the identity data contract nonce
-                        let consensus_errors : Vec<ConsensusError> = data_trigger_execution_result.errors.into_iter().map(ConsensusError).collect();
+                        let consensus_errors: Vec<ConsensusError> = data_trigger_execution_result
+                            .errors
+                            .into_iter()
+                            .map(|e| ConsensusError::StateError(StateError::DataTriggerError(e)))
+                            .collect();
                         validation_result.add_errors(consensus_errors);
                         validated_transitions.push(
                             DocumentTransitionAction::BumpIdentityDataContractNonce(

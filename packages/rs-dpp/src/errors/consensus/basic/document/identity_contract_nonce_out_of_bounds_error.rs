@@ -1,17 +1,17 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
+use crate::prelude::IdentityContractNonce;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
-use crate::prelude::IdentityContractNonce;
 
 #[derive(
-Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error(
-"Identity contract nonce is out of bounds: {}",
-identity_contract_nonce
+    "Identity contract nonce is out of bounds: {}",
+    identity_contract_nonce
 )]
 #[platform_serialize(unversioned)]
 pub struct IdentityContractNonceOutOfBoundsError {
@@ -25,7 +25,9 @@ pub struct IdentityContractNonceOutOfBoundsError {
 
 impl IdentityContractNonceOutOfBoundsError {
     pub fn new(identity_contract_nonce: IdentityContractNonce) -> Self {
-        Self { identity_contract_nonce }
+        Self {
+            identity_contract_nonce,
+        }
     }
 
     pub fn identity_contract_nonce(&self) -> IdentityContractNonce {
@@ -35,8 +37,6 @@ impl IdentityContractNonceOutOfBoundsError {
 
 impl From<IdentityContractNonceOutOfBoundsError> for ConsensusError {
     fn from(err: IdentityContractNonceOutOfBoundsError) -> Self {
-        Self::BasicError(BasicError::IdentityContractNonceOutOfBoundsError(
-            err,
-        ))
+        Self::BasicError(BasicError::IdentityContractNonceOutOfBoundsError(err))
     }
 }

@@ -17,7 +17,16 @@ use crate::consensus::basic::data_contract::{
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
-use crate::consensus::basic::document::{DataContractNotPresentError, DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError, IdentityContractNonceOutOfBoundsError, InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError, InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError, MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError, MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError};
+use crate::consensus::basic::document::{
+    DataContractNotPresentError, DocumentTransitionsAreAbsentError,
+    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
+    IdentityContractNonceOutOfBoundsError, InconsistentCompoundIndexDataError,
+    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
+    InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError,
+    MissingDataContractIdBasicError, MissingDocumentTransitionActionError,
+    MissingDocumentTransitionTypeError, MissingDocumentTypeError,
+    MissingPositionsInDocumentTypePropertiesError,
+};
 use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DuplicatedIdentityPublicKeyBasicError,
     DuplicatedIdentityPublicKeyIdBasicError, IdentityAssetLockProofLockedTransactionMismatchError,
