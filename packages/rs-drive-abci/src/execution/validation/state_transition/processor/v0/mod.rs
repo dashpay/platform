@@ -474,9 +474,11 @@ impl StateTransitionStateValidationV0 for StateTransition {
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
+            // The replay attack is prevented by checking if a data contract exists with this id first
             StateTransition::DataContractCreate(st) => {
                 st.validate_state(action, platform, execution_context, tx)
             }
+            // The replay attack is prevented by identity data contract nonce
             StateTransition::DataContractUpdate(st) => {
                 st.validate_state(action, platform, execution_context, tx)
             }
@@ -492,6 +494,7 @@ impl StateTransitionStateValidationV0 for StateTransition {
             StateTransition::IdentityCreditWithdrawal(st) => {
                 st.validate_state(action, platform, execution_context, tx)
             }
+            // The replay attack is prevented by identity data contract nonce
             StateTransition::DocumentsBatch(st) => {
                 st.validate_state(action, platform, execution_context, tx)
             }
