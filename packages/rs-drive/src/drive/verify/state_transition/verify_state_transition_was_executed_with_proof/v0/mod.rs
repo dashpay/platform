@@ -179,21 +179,25 @@ impl Drive {
                 Ok((root_hash, VerifiedIdentity(identity)))
             }
             StateTransition::IdentityTopUp(identity_top_up_transition) => {
-                // we expect to get an identity that matches the state transition
-                let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
-                    proof,
-                    identity_top_up_transition.identity_id().into_buffer(),
-                    false,
-                    platform_version,
-                )?;
-                let balance = balance.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain balance for identity {} expected to exist because of state transition (top up)", identity_top_up_transition.identity_id()))))?;
+                // we expect to get a new balance and revision
+                let identity_id = identity_top_up_transition.identity_id();
+                let (root_hash, Some((balance, revision))) =
+                    Drive::verify_identity_balance_and_revision_for_identity_id(
+                        proof,
+                        identity_id.into_buffer(),
+                        false,
+                    )?
+                else {
+                    return Err(Error::Proof(ProofError::IncorrectProof(
+                        format!("proof did not contain balance for identity {} expected to exist because of state transition (top up)", identity_id))));
+                };
                 Ok((
                     root_hash,
                     VerifiedPartialIdentity(PartialIdentity {
                         id: *identity_top_up_transition.identity_id(),
                         loaded_public_keys: Default::default(),
                         balance: Some(balance),
-                        revision: None,
+                        revision: Some(revision),
                         not_found_public_keys: Default::default(),
                     }),
                 ))

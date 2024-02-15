@@ -2591,11 +2591,12 @@ GPBEnumDescriptor *GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Enum
   static _Atomic(GPBEnumDescriptor*) descriptor = nil;
   if (!descriptor) {
     static const char *valueNames =
-        "FullIdentity\000Balance\000Keys\000";
+        "FullIdentity\000Balance\000Keys\000Revision\000";
     static const int32_t values[] = {
         GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_FullIdentity,
         GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Balance,
         GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Keys,
+        GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Revision,
     };
     GPBEnumDescriptor *worker =
         [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type)
@@ -2616,6 +2617,7 @@ BOOL GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_IsValidValue(int32
     case GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_FullIdentity:
     case GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Balance:
     case GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Keys:
+    case GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Revision:
       return YES;
     default:
       return NO;
