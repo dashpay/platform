@@ -22,6 +22,7 @@ use crate::state_transition::data_contract_update_transition::DataContractUpdate
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::version::PlatformVersion;
 use crate::{errors::ProtocolError, prelude::Identifier};
+use crate::prelude::IdentityContractNonce;
 
 /// The version 0 implementation of the data contract factory.
 ///
@@ -192,9 +193,10 @@ impl DataContractFactoryV0 {
     pub fn create_unsigned_data_contract_update_transition(
         &self,
         data_contract: DataContract,
+        identity_contract_nonce: IdentityContractNonce,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
         DataContractUpdateTransition::try_from_platform_versioned(
-            data_contract,
+            (data_contract, identity_contract_nonce),
             PlatformVersion::get(self.protocol_version)?,
         )
     }

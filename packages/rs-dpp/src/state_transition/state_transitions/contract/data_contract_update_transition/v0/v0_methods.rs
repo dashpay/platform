@@ -12,17 +12,20 @@ use crate::version::FeatureVersion;
 use crate::{NonConsensusError, ProtocolError};
 use platform_version::version::PlatformVersion;
 use platform_version::TryIntoPlatformVersioned;
+use crate::prelude::IdentityContractNonce;
 
 impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransitionV0 {
     fn new_from_data_contract<S: Signer>(
         data_contract: DataContract,
         identity: &PartialIdentity,
         key_id: KeyID,
+        identity_contract_nonce: IdentityContractNonce,
         signer: &S,
         platform_version: &PlatformVersion,
         _feature_version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
         let transition = DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
+            identity_contract_nonce,
             data_contract: data_contract.try_into_platform_versioned(platform_version)?,
             signature_public_key_id: key_id,
             signature: Default::default(),

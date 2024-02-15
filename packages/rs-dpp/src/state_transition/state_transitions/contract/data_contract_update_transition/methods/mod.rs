@@ -13,12 +13,14 @@ use crate::version::FeatureVersion;
 use crate::ProtocolError;
 
 use platform_version::version::PlatformVersion;
+use crate::prelude::IdentityContractNonce;
 
 impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransition {
     fn new_from_data_contract<S: Signer>(
         data_contract: DataContract,
         identity: &PartialIdentity,
         key_id: KeyID,
+        identity_contract_nonce: IdentityContractNonce,
         signer: &S,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
@@ -34,6 +36,7 @@ impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransition {
                 data_contract,
                 identity,
                 key_id,
+                identity_contract_nonce,
                 signer,
                 platform_version,
                 feature_version,

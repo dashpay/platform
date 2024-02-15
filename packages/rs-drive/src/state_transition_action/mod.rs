@@ -5,6 +5,9 @@ pub mod document;
 /// identity
 pub mod identity;
 
+/// system
+pub mod system;
+
 use crate::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use crate::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;

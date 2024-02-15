@@ -31,6 +31,8 @@ use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
+use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) trait DataContractUpdateStateTransitionStateValidationV0 {
@@ -56,7 +58,17 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let action = self.transform_into_action_v0(platform_version)?;
 
-        if !action.is_valid_with_data() {
+        if !action.is_valid() {
+            DocumentTransitionAction::BumpIdentityDataContractNonce(
+                BumpIdentityDataContractNonceAction::from_base_transition_action(
+                    transition.base_owned().ok_or(Error::Execution(
+                        ExecutionError::CorruptedCodeExecution(
+                            "base should always exist on transition",
+                        ),
+                    ))?,
+                    owner_id,
+                )?,
+            ),
             return Ok(action);
         }
 

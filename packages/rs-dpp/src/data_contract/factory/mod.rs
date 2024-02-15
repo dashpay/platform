@@ -15,6 +15,7 @@ use crate::state_transition::data_contract_create_transition::DataContractCreate
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 pub use v0::DataContractFactoryV0;
+use crate::prelude::IdentityContractNonce;
 
 /// # Data Contract Factory
 ///
@@ -141,10 +142,11 @@ impl DataContractFactory {
     pub fn create_data_contract_update_transition(
         &self,
         data_contract: DataContract,
+        identity_contract_nonce: IdentityContractNonce,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
         match self {
             DataContractFactory::V0(v0) => {
-                v0.create_unsigned_data_contract_update_transition(data_contract)
+                v0.create_unsigned_data_contract_update_transition(data_contract, identity_contract_nonce)
             }
         }
     }

@@ -6,6 +6,7 @@ use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
+use crate::prelude::IdentityContractNonce;
 
 pub trait DataContractUpdateTransitionMethodsV0 {
     /// Creates a new instance of `DataContractUpdateTransition` from the given `data_contract`.
@@ -25,6 +26,7 @@ pub trait DataContractUpdateTransitionMethodsV0 {
         data_contract: DataContract,
         identity: &PartialIdentity,
         key_id: KeyID,
+        identity_contract_nonce: IdentityContractNonce,
         signer: &S,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
