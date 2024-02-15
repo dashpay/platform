@@ -12,8 +12,8 @@ use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
 
-use platform_version::version::PlatformVersion;
 use crate::prelude::IdentityContractNonce;
+use platform_version::version::PlatformVersion;
 
 impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransition {
     fn new_from_data_contract<S: Signer>(

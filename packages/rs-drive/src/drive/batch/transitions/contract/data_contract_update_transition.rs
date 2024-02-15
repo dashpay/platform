@@ -4,9 +4,9 @@ use crate::drive::batch::{DataContractOperationType, DriveOperation, IdentityOpe
 use crate::error::Error;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::version::PlatformVersion;
 use std::borrow::Cow;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 impl DriveHighLevelOperationConverter for DataContractUpdateTransitionAction {
     fn into_high_level_drive_operations<'a>(

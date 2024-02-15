@@ -2,11 +2,11 @@ use crate::data_contract::DataContract;
 use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
 
+use crate::prelude::IdentityContractNonce;
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
-use crate::prelude::IdentityContractNonce;
 
 pub trait DataContractUpdateTransitionMethodsV0 {
     /// Creates a new instance of `DataContractUpdateTransition` from the given `data_contract`.

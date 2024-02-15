@@ -75,8 +75,7 @@ impl BumpIdentityDataContractNonceAction {
     ) -> Result<Self, ProtocolError> {
         match value {
             DataContractUpdateTransition::V0(v0) => Ok(
-                BumpIdentityDataContractNonceActionV0::try_from_data_contract_update(v0)?
-                    .into(),
+                BumpIdentityDataContractNonceActionV0::try_from_data_contract_update(v0)?.into(),
             ),
         }
     }
@@ -87,9 +86,7 @@ impl BumpIdentityDataContractNonceAction {
     ) -> Result<Self, ProtocolError> {
         match value {
             DataContractUpdateTransition::V0(v0) => Ok(
-                BumpIdentityDataContractNonceActionV0::try_from_borrowed_data_contract_update(
-                    v0,
-                )?
+                BumpIdentityDataContractNonceActionV0::try_from_borrowed_data_contract_update(v0)?
                     .into(),
             ),
         }
@@ -101,9 +98,7 @@ impl BumpIdentityDataContractNonceAction {
     ) -> Result<Self, ProtocolError> {
         match value {
             DataContractUpdateTransitionAction::V0(v0) => Ok(
-                BumpIdentityDataContractNonceActionV0::try_from_data_contract_update_action(
-                    v0,
-                )?
+                BumpIdentityDataContractNonceActionV0::try_from_data_contract_update_action(v0)?
                     .into(),
             ),
         }

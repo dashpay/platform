@@ -8,12 +8,12 @@ mod document;
 mod identity;
 mod system;
 
+use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;
 use crate::state_transition_action::StateTransitionAction;
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
-use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
 
 /// A converter that will get High Level Drive Operations from State transitions
 pub trait DriveHighLevelOperationConverter {
@@ -60,8 +60,10 @@ impl<'s> DriveHighLevelOperationConverter for StateTransitionAction {
                 identity_credit_transfer_transition,
             ) => identity_credit_transfer_transition
                 .into_high_level_drive_operations(epoch, platform_version),
-            StateTransitionAction::BumpIdentityDataContractNonceAction(bump_identity_credit_transfer_transition) =>
-                bump_identity_credit_transfer_transition.into_high_level_drive_operations(epoch, platform_version),
+            StateTransitionAction::BumpIdentityDataContractNonceAction(
+                bump_identity_credit_transfer_transition,
+            ) => bump_identity_credit_transfer_transition
+                .into_high_level_drive_operations(epoch, platform_version),
         }
     }
 }

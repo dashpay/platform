@@ -32,8 +32,8 @@ use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
-use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
+use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) trait DataContractUpdateStateTransitionStateValidationV0 {
     fn validate_state_v0<C: CoreRPCLike>(
@@ -65,7 +65,10 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 )?,
             );
 
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(bump_action, action.errors));
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action,
+                action.errors,
+            ));
         }
 
         let state_transition_action = action.data.as_ref().unwrap();
@@ -103,7 +106,10 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 )?,
             );
 
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(bump_action, validation_result.errors));
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action,
+                validation_result.errors,
+            ));
         };
 
         let old_data_contract = &contract_fetch_info.contract;
@@ -120,7 +126,10 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 )?,
             );
 
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(bump_action, validation_result.errors));
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action,
+                validation_result.errors,
+            ));
         }
 
         if old_data_contract.config().readonly() {
@@ -131,7 +140,10 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 )?,
             );
 
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(bump_action, validation_result.errors));
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action,
+                validation_result.errors,
+            ));
         }
 
         // We should now validate that new indexes contains all old indexes
@@ -171,7 +183,10 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 )?,
             );
 
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(bump_action, validation_result.errors));
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action,
+                validation_result.errors,
+            ));
         }
 
         let config_validation_result = old_data_contract.config().validate_config_update(
@@ -188,7 +203,10 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 )?,
             );
 
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(bump_action, validation_result.errors));
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action,
+                validation_result.errors,
+            ));
         }
 
         // Schema defs should be compatible
@@ -243,7 +261,10 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                     )?,
                 );
 
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(bump_action, validation_result.errors));
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    validation_result.errors,
+                ));
             }
         }
 
@@ -289,7 +310,10 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                     )?,
                 );
 
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(bump_action, validation_result.errors));
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    validation_result.errors,
+                ));
             }
         }
 

@@ -19,10 +19,10 @@ use crate::state_transition::data_contract_create_transition::DataContractCreate
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
+use crate::prelude::IdentityContractNonce;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::version::PlatformVersion;
 use crate::{errors::ProtocolError, prelude::Identifier};
-use crate::prelude::IdentityContractNonce;
 
 /// The version 0 implementation of the data contract factory.
 ///

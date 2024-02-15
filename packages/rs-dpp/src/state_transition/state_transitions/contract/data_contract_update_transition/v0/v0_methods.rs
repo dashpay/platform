@@ -3,6 +3,7 @@ use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
 use crate::serialization::Signable;
 
+use crate::prelude::IdentityContractNonce;
 use crate::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionV0,
@@ -12,7 +13,6 @@ use crate::version::FeatureVersion;
 use crate::{NonConsensusError, ProtocolError};
 use platform_version::version::PlatformVersion;
 use platform_version::TryIntoPlatformVersioned;
-use crate::prelude::IdentityContractNonce;
 
 impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransitionV0 {
     fn new_from_data_contract<S: Signer>(

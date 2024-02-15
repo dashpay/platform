@@ -4,6 +4,7 @@ use crate::state_transition::data_contract_update_transition::fields::*;
 use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransitionV0, BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS,
 };
+use crate::state_transition::state_transitions::common_fields::property_names::IDENTITY_CONTRACT_NONCE;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::state_transition::StateTransitionValueConvert;
 use crate::ProtocolError;
@@ -12,7 +13,6 @@ use platform_value::{IntegerReplacementType, ReplacementType, Value};
 use platform_version::version::PlatformVersion;
 use platform_version::TryIntoPlatformVersioned;
 use std::collections::BTreeMap;
-use crate::state_transition::state_transitions::common_fields::property_names::IDENTITY_CONTRACT_NONCE;
 
 impl<'a> StateTransitionValueConvert<'a> for DataContractUpdateTransitionV0 {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
@@ -50,12 +50,14 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractUpdateTransitionV0 {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         Ok(DataContractUpdateTransitionV0 {
-            identity_contract_nonce: raw_object
-                .remove_integer(IDENTITY_CONTRACT_NONCE).map_err(|_| {
-                ProtocolError::DecodingError(
-                    "identity contract nonce missing on data contract update state transition".to_string(),
-                )
-            })?,
+            identity_contract_nonce: raw_object.remove_integer(IDENTITY_CONTRACT_NONCE).map_err(
+                |_| {
+                    ProtocolError::DecodingError(
+                        "identity contract nonce missing on data contract update state transition"
+                            .to_string(),
+                    )
+                },
+            )?,
             signature: raw_object
                 .remove_optional_binary_data(SIGNATURE)
                 .map_err(ProtocolError::ValueError)?
@@ -83,11 +85,13 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractUpdateTransitionV0 {
     ) -> Result<Self, ProtocolError> {
         Ok(DataContractUpdateTransitionV0 {
             identity_contract_nonce: raw_value_map
-                .remove_integer(IDENTITY_CONTRACT_NONCE).map_err(|_| {
-                ProtocolError::DecodingError(
-                    "identity contract nonce missing on data contract update state transition".to_string(),
-                )
-            })?,
+                .remove_integer(IDENTITY_CONTRACT_NONCE)
+                .map_err(|_| {
+                    ProtocolError::DecodingError(
+                        "identity contract nonce missing on data contract update state transition"
+                            .to_string(),
+                    )
+                })?,
             signature: raw_value_map
                 .remove_optional_binary_data(SIGNATURE)
                 .map_err(ProtocolError::ValueError)?
