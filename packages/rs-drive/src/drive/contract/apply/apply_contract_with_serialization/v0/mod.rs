@@ -1,4 +1,4 @@
-use crate::drive::contract::paths::{contract_keeping_history_storage_path, contract_root_path};
+use crate::drive::contract::paths::{contract_keeping_history_root_path, contract_root_path};
 use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
 
 use crate::drive::flags::StorageFlags;
@@ -126,7 +126,7 @@ impl Drive {
                         // we need to get the latest of a contract that keeps history, can't be raw since there is a reference
                         let stored_element = self
                             .grove_get(
-                                (&contract_keeping_history_storage_path(
+                                (&contract_keeping_history_root_path(
                                     contract.id_ref().as_bytes(),
                                 ))
                                     .into(),
