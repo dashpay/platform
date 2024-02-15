@@ -7,7 +7,8 @@ use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::version::drive_versions::DriveVersion;
 
-use grovedb::{PathQuery, TransactionArg};
+use grovedb::{Element, PathQuery, TransactionArg};
+use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Retrieves a proof of the specified path query in groveDB.
@@ -24,9 +25,11 @@ impl Drive {
     /// # Returns
     /// * `Ok(Vec<u8>)` if the operation was successful, returning the proof data.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the platform version does not match known versions.
-    pub fn grove_get_proved_path_query_with_conditional(
+    pub fn grove_get_proved_path_query_with_conditional<B: AsRef<[u8]>>(
         &self,
-        path_query: &PathQuery,
+        root_path: SubtreePath<'_, B>,
+        key: &[u8],
+        path_query_resolver: &impl Fn(Option<Element>) -> PathQuery,
         verbose: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
@@ -38,7 +41,9 @@ impl Drive {
             .grove_get_proved_path_query_with_conditional
         {
             0 => self.grove_get_proved_path_query_with_conditional_v0(
-                path_query,
+                root_path,
+                key,
+                path_query_resolver,
                 verbose,
                 transaction,
                 drive_operations,

@@ -126,9 +126,7 @@ impl Drive {
                         // we need to get the latest of a contract that keeps history, can't be raw since there is a reference
                         let stored_element = self
                             .grove_get(
-                                (&contract_keeping_history_root_path(
-                                    contract.id_ref().as_bytes(),
-                                ))
+                                (&contract_keeping_history_root_path(contract.id_ref().as_bytes()))
                                     .into(),
                                 &[0],
                                 QueryType::StatefulQuery,
