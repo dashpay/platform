@@ -61,6 +61,7 @@ impl DataContractCache {
             self.global_cache
                 .insert(Arc::unwrap_or_clone(contract_id), fetch_info);
         }
+        self.clear_block_cache();
     }
 
     /// Clear block cache
