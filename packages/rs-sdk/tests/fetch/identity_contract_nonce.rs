@@ -18,7 +18,7 @@ async fn test_identity_contract_no_nonce_read() {
     let cfg = Config::new();
     let identity_id: dpp::prelude::Identifier = cfg.existing_identity_id;
     // We are putting a contract id that does not exist, hence we will never get a nonce
-    let contract_id: dpp::prelude::Identifier = Identifier::from_bytes(&[5u8;32]).unwrap();
+    let contract_id: dpp::prelude::Identifier = Identifier::from_bytes(&[5u8; 32]).unwrap();
 
     let sdk = cfg.setup_api().await;
 
@@ -27,10 +27,10 @@ async fn test_identity_contract_no_nonce_read() {
             .await
             .expect("fetch identity contract nonce");
 
-    assert_eq!(identity_contract_nonce, None);
+    assert!(identity_contract_nonce.is_none());
 }
 
-/// Todo: add this test when we have a mock wallet
+// Todo: add this test when we have a mock wallet
 // #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 // async fn test_identity_contract_nonce_read() {
 //     setup_logs();
@@ -50,4 +50,3 @@ async fn test_identity_contract_no_nonce_read() {
 //
 //     assert_eq!(identity_contract_nonce, 1);
 // }
-
