@@ -1,5 +1,3 @@
-use std::fs::read;
-use mockall::Any;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
