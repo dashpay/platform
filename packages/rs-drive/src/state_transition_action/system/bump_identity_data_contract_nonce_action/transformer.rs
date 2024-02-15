@@ -72,11 +72,10 @@ impl BumpIdentityDataContractNonceAction {
     /// from data contract update
     pub fn from_data_contract_update_transition(
         value: DataContractUpdateTransition,
-        identity_id: Identifier,
     ) -> Result<Self, ProtocolError> {
         match value {
             DataContractUpdateTransition::V0(v0) => Ok(
-                BumpIdentityDataContractNonceActionV0::try_from_data_contract_update(v0, identity_id)?
+                BumpIdentityDataContractNonceActionV0::try_from_data_contract_update(v0)?
                     .into(),
             ),
         }
@@ -85,13 +84,11 @@ impl BumpIdentityDataContractNonceAction {
     /// from borrowed data contract update
     pub fn from_borrowed_data_contract_update_transition(
         value: &DataContractUpdateTransition,
-        identity_id: Identifier,
     ) -> Result<Self, ProtocolError> {
         match value {
             DataContractUpdateTransition::V0(v0) => Ok(
                 BumpIdentityDataContractNonceActionV0::try_from_borrowed_data_contract_update(
                     v0,
-                    identity_id,
                 )?
                     .into(),
             ),
@@ -101,13 +98,11 @@ impl BumpIdentityDataContractNonceAction {
     /// from data contract update action
     pub fn from_data_contract_update_transition_action(
         value: DataContractUpdateTransitionAction,
-        identity_id: Identifier,
     ) -> Result<Self, ProtocolError> {
         match value {
             DataContractUpdateTransitionAction::V0(v0) => Ok(
                 BumpIdentityDataContractNonceActionV0::try_from_data_contract_update_action(
                     v0,
-                    identity_id,
                 )?
                     .into(),
             ),
@@ -117,13 +112,11 @@ impl BumpIdentityDataContractNonceAction {
     /// from borrowed data contract update action
     pub fn from_borrowed_data_contract_update_transition_action(
         value: &DataContractUpdateTransitionAction,
-        identity_id: Identifier,
     ) -> Result<Self, ProtocolError> {
         match value {
             DataContractUpdateTransitionAction::V0(v0) => Ok(
                 BumpIdentityDataContractNonceActionV0::try_from_borrowed_data_contract_update_action(
                     v0,
-                    identity_id,
                 )?
                     .into(),
             ),

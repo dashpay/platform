@@ -12,7 +12,7 @@ use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
-use drive::state_transition_action::document::documents_batch::document_transition::bump_identity_data_contract_nonce_action::{BumpIdentityDataContractNonceAction, BumpIdentityDataContractNonceActionV0};
+use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
@@ -89,7 +89,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                 validation_result.add_errors(transition_validation_result.errors);
                 validated_transitions.push(
                     DocumentTransitionAction::BumpIdentityDataContractNonce(
-                        BumpIdentityDataContractNonceAction::from_base_transition_action(
+                        BumpIdentityDataContractNonceAction::from_document_base_transition_action(
                             transition.base_owned().ok_or(Error::Execution(
                                 ExecutionError::CorruptedCodeExecution(
                                     "base should always exist on transition",
@@ -130,7 +130,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                         validation_result.add_errors(consensus_errors);
                         validated_transitions.push(
                             DocumentTransitionAction::BumpIdentityDataContractNonce(
-                                BumpIdentityDataContractNonceAction::from_base_transition_action(
+                                BumpIdentityDataContractNonceAction::from_document_base_transition_action(
                                     transition.base_owned().ok_or(Error::Execution(
                                         ExecutionError::CorruptedCodeExecution(
                                             "base should always exist on transition",

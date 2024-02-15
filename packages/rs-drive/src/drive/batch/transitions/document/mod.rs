@@ -4,7 +4,6 @@ use dpp::block::epoch::Epoch;
 use dpp::platform_value::Identifier;
 use dpp::version::PlatformVersion;
 
-mod bump_identity_data_contract_nonce;
 mod document_create_transition;
 mod document_delete_transition;
 mod document_transition;

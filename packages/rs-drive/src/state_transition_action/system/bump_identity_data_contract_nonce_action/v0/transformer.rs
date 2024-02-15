@@ -80,7 +80,6 @@ impl BumpIdentityDataContractNonceActionV0 {
     /// try from data contract update
     pub fn try_from_data_contract_update(
         value: DataContractUpdateTransitionV0,
-        identity_id: Identifier,
     ) -> Result<Self, ProtocolError> {
         let DataContractUpdateTransitionV0 {
             data_contract,
@@ -88,7 +87,7 @@ impl BumpIdentityDataContractNonceActionV0 {
             ..
         } = value;
         Ok(BumpIdentityDataContractNonceActionV0 {
-            identity_id,
+            identity_id: data_contract.owner_id(),
             data_contract_id: data_contract.id(),
             identity_contract_nonce,
         })
@@ -97,7 +96,6 @@ impl BumpIdentityDataContractNonceActionV0 {
     /// try from borrowed data contract update
     pub fn try_from_borrowed_data_contract_update(
         value: &DataContractUpdateTransitionV0,
-        identity_id: Identifier,
     ) -> Result<Self, ProtocolError> {
         let DataContractUpdateTransitionV0 {
             data_contract,
@@ -105,7 +103,7 @@ impl BumpIdentityDataContractNonceActionV0 {
             ..
         } = value;
         Ok(BumpIdentityDataContractNonceActionV0 {
-            identity_id,
+            identity_id: data_contract.owner_id(),
             data_contract_id: data_contract.id(),
             identity_contract_nonce: *identity_contract_nonce,
         })
@@ -114,7 +112,6 @@ impl BumpIdentityDataContractNonceActionV0 {
     /// try from data contract update action
     pub fn try_from_data_contract_update_action(
         value: DataContractUpdateTransitionActionV0,
-        identity_id: Identifier,
     ) -> Result<Self, ProtocolError> {
         let DataContractUpdateTransitionActionV0 {
             data_contract,
@@ -122,7 +119,7 @@ impl BumpIdentityDataContractNonceActionV0 {
             ..
         } = value;
         Ok(BumpIdentityDataContractNonceActionV0 {
-            identity_id,
+            identity_id: data_contract.owner_id(),
             data_contract_id: data_contract.id(),
             identity_contract_nonce,
         })
@@ -131,7 +128,6 @@ impl BumpIdentityDataContractNonceActionV0 {
     /// try from borrowed data contract update action
     pub fn try_from_borrowed_data_contract_update_action(
         value: &DataContractUpdateTransitionActionV0,
-        identity_id: Identifier,
     ) -> Result<Self, ProtocolError> {
         let DataContractUpdateTransitionActionV0 {
             data_contract,
@@ -139,7 +135,7 @@ impl BumpIdentityDataContractNonceActionV0 {
             ..
         } = value;
         Ok(BumpIdentityDataContractNonceActionV0 {
-            identity_id,
+            identity_id: data_contract.owner_id(),
             data_contract_id: data_contract.id(),
             identity_contract_nonce: *identity_contract_nonce,
         })

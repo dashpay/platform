@@ -5,6 +5,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use dpp::block::epoch::Epoch;
 use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
+use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentTransitionAction {
     fn into_high_level_document_drive_operations<'b>(
@@ -37,9 +38,8 @@ impl DriveHighLevelDocumentOperationConverter for DocumentTransitionAction {
             }
             DocumentTransitionAction::BumpIdentityDataContractNonce(
                 bump_identity_contract_nonce_action,
-            ) => bump_identity_contract_nonce_action.into_high_level_document_drive_operations(
+            ) => bump_identity_contract_nonce_action.into_high_level_drive_operations(
                 epoch,
-                owner_id,
                 platform_version,
             ),
         }

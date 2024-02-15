@@ -17,6 +17,7 @@ use crate::state_transition_action::identity::identity_credit_withdrawal::Identi
 use crate::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use crate::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
 use derive_more::From;
+use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
 /// ST action
 #[derive(Debug, Clone, From)]
@@ -37,4 +38,8 @@ pub enum StateTransitionAction {
     IdentityUpdateAction(IdentityUpdateTransitionAction),
     /// identity credit transfer
     IdentityCreditTransferAction(IdentityCreditTransferTransitionAction),
+    /// bump identity contract nonce action
+    /// this can only come in this form from the document contract update state transition
+    /// it will also only happen if the state validation fails
+    BumpIdentityDataContractNonceAction(BumpIdentityDataContractNonceAction),
 }
