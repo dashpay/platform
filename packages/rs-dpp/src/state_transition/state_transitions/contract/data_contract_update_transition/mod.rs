@@ -129,8 +129,7 @@ mod test {
         let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
             .data_contract_owned();
 
-        let state_transition: DataContractUpdateTransition = data_contract
-            .clone()
+        let state_transition: DataContractUpdateTransition = (data_contract.clone(), 1)
             .try_into_platform_versioned(platform_version)
             .expect("expected to get transition");
 

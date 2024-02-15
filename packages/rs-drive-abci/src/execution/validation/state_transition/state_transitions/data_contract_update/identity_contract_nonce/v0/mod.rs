@@ -9,6 +9,8 @@ use dpp::identity::identity_contract_nonce::{
     IDENTITY_CONTRACT_NONCE_VALUE_FILTER_MAX_BYTES, MISSING_IDENTITY_CONTRACT_REVISIONS_FILTER,
     MISSING_IDENTITY_CONTRACT_REVISIONS_MAX_BYTES,
 };
+use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
+use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
 
@@ -21,9 +23,9 @@ use crate::platform_types::platform::PlatformStateRef;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
-pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchStateTransitionIdentityContractNonceV0
+pub(in crate::execution::validation::state_transition::state_transitions) trait DataContractUpdateStateTransitionIdentityContractNonceV0
 {
-    fn validate_identity_contract_nonces_v0(
+    fn validate_identity_contract_nonce_v0(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -32,37 +34,32 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl DocumentsBatchStateTransitionIdentityContractNonceV0 for DocumentsBatchTransition {
-    fn validate_identity_contract_nonces_v0(
+impl DataContractUpdateStateTransitionIdentityContractNonceV0 for DataContractUpdateTransition {
+    fn validate_identity_contract_nonce_v0(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        // We should validate that all newly created documents have valid ids
-        for transition in self.transitions() {
-            let revision_nonce = transition.identity_contract_nonce();
-            let identity_id = self.owner_id();
-            let (existing_nonce, fees) = platform.drive.fetch_identity_contract_nonce_with_fees(
-                identity_id.to_buffer(),
-                transition.data_contract_id().to_buffer(),
-                block_info,
-                true,
-                tx,
-                platform_version,
-            )?;
+        let revision_nonce = self.identity_contract_nonce();
+        let identity_id = self.data_contract().owner_id();
+        let contract_id = self.data_contract().id();
+        let (existing_nonce, fees) = platform.drive.fetch_identity_contract_nonce_with_fees(
+            identity_id.to_buffer(),
+            contract_id.to_buffer(),
+            block_info,
+            true,
+            tx,
+            platform_version,
+        )?;
 
-            let result = if let Some(existing_nonce) = existing_nonce {
-                validate_identity_contract_nonce_update(existing_nonce, revision_nonce, identity_id)
-            } else {
-                validate_new_identity_contract_nonce(revision_nonce, identity_id)
-            };
-            if !result.is_valid() {
-                return Ok(result);
-            }
-        }
+        let result = if let Some(existing_nonce) = existing_nonce {
+            validate_identity_contract_nonce_update(existing_nonce, revision_nonce, identity_id)
+        } else {
+            validate_new_identity_contract_nonce(revision_nonce, identity_id)
+        };
 
-        Ok(SimpleConsensusValidationResult::new())
+        Ok(result)
     }
 }

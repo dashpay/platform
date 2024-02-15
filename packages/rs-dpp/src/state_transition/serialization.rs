@@ -289,6 +289,7 @@ mod tests {
         created_data_contract.set_entropy_used(Default::default());
         let data_contract_update_transition =
             DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
+                identity_contract_nonce: 1,
                 data_contract: created_data_contract
                     .data_contract_owned()
                     .try_into_platform_versioned(platform_version)

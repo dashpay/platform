@@ -179,7 +179,7 @@ pub(crate) trait StateTransitionBasicStructureValidationV0 {
 }
 
 /// A trait for validating state transitions within a blockchain.
-pub(crate) trait StateTransitionRevisionValidationV0 {
+pub(crate) trait StateTransitionIdentityContractNonceValidationV0 {
     /// Validates the structure of a transaction by checking its basic elements.
     ///
     /// # Arguments
@@ -277,7 +277,7 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
     }
 }
 
-impl StateTransitionRevisionValidationV0 for StateTransition {
+impl StateTransitionIdentityContractNonceValidationV0 for StateTransition {
     fn validate_identity_contract_nonces(
         &self,
         platform: &PlatformStateRef,
@@ -287,6 +287,9 @@ impl StateTransitionRevisionValidationV0 for StateTransition {
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
             StateTransition::DocumentsBatch(st) => {
+                st.validate_identity_contract_nonces(platform, block_info, tx, platform_version)
+            }
+            StateTransition::DataContractUpdate(st) => {
                 st.validate_identity_contract_nonces(platform, block_info, tx, platform_version)
             }
             _ => Ok(SimpleConsensusValidationResult::new()),

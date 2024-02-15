@@ -18,8 +18,8 @@ impl DriveHighLevelOperationConverter for DataContractUpdateTransitionAction {
         // We must create the contract
         drive_operations.push(IdentityOperation(
             IdentityOperationType::UpdateIdentityContractNonce {
-                identity_id: self.data_contract().owner_id().into_buffer(),
-                contract_id: self.data_contract().id().into_buffer(),
+                identity_id: self.data_contract_ref().owner_id().into_buffer(),
+                contract_id: self.data_contract_ref().id().into_buffer(),
                 nonce: self.identity_contract_nonce(),
             },
         ));

@@ -30,7 +30,7 @@ impl DataContractUpdateTransitionAction {
     }
 
     /// identity contract nonce
-    pub fn identity_contract_nonce(self) -> IdentityContractNonce {
+    pub fn identity_contract_nonce(&self) -> IdentityContractNonce {
         match self {
             DataContractUpdateTransitionAction::V0(transition) => {
                 transition.identity_contract_nonce
