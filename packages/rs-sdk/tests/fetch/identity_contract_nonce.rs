@@ -27,7 +27,7 @@ async fn test_identity_contract_no_nonce_read() {
             .await
             .expect("fetch identity contract nonce");
 
-    assert_eq!(identity_contract_nonce, None);
+    assert!(identity_contract_nonce.is_none());
 }
 
 // Todo: add this test when we have a mock wallet
