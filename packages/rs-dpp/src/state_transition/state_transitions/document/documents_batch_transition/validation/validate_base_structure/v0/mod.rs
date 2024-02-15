@@ -1,7 +1,4 @@
-use crate::consensus::basic::document::{
-    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
-    MaxDocumentsTransitionsExceededError,
-};
+use crate::consensus::basic::document::{DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError, IdentityContractNonceOutOfBoundsError, MaxDocumentsTransitionsExceededError};
 use crate::consensus::basic::BasicError;
 
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -17,6 +14,7 @@ use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use crate::identity::identity_contract_nonce::MISSING_IDENTITY_CONTRACT_REVISIONS_FILTER;
 
 const MAX_TRANSITIONS_IN_BATCH: usize = 1;
 
@@ -57,6 +55,16 @@ impl DocumentsBatchTransition {
         let mut result = SimpleConsensusValidationResult::default();
 
         for transitions in document_transitions_by_contracts.values() {
+            for transition in transitions {
+                // We need to make sure that the identity contract nonce is within the allowed bounds
+                // This means that it is stored on 40 bits
+                if transition.identity_contract_nonce() & MISSING_IDENTITY_CONTRACT_REVISIONS_FILTER {
+                    result.add_error(BasicError::IdentityContractNonceOutOfBoundsError(
+                        IdentityContractNonceOutOfBoundsError::new(transition.identity_contract_nonce()),
+                    ));
+                }
+            }
+
             // Make sure we don't have duplicate transitions
             let duplicate_transitions = find_duplicates_by_id(transitions, platform_version)?;
 
