@@ -40,6 +40,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::Mutex;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
+use crate::internal_cache::InternalSdkCache;
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
@@ -82,15 +83,8 @@ pub struct Sdk {
     /// This is set to `true` by default. `false` is not implemented yet.
     proofs: bool,
 
-    /// This is the identity contract nonce counter for the sdk
-    /// The sdk will automatically manage this counter for the user.
-    /// When the sdk user requests to put documents this will be automatically updated
-    /// This update can involve querying Platform for the current identity contract nonce
-    /// If the sdk user requests to put a state transition the counter is checked and either
-    /// returns an error or is updated.
-    identity_contract_nonce_counter: tokio::sync::Mutex<
-        BTreeMap<(Identifier, Identifier), (prelude::IdentityContractNonce, LastQueryTimestamp)>,
-    >,
+    /// An internal SDK cache managed exclusively by the SDK
+    internal_cache: InternalSdkCache,
 
     /// Context provider used by the SDK.
     ///
@@ -231,7 +225,7 @@ impl Sdk {
         };
 
         // we start by only using a read lock, as this speeds up the system
-        let mut identity_contract_nonce_counter = self.identity_contract_nonce_counter.lock().await;
+        let mut identity_contract_nonce_counter = self.internal_cache.identity_contract_nonce_counter.lock().await;
         let entry = identity_contract_nonce_counter.entry((identity_id, contract_id));
 
         let should_query_platform = match &entry {
@@ -583,11 +577,11 @@ impl SdkBuilder {
                 let sdk= Sdk{
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
-                    identity_contract_nonce_counter: Mutex::new(BTreeMap::<(Identifier, Identifier), (IdentityContractNonce, LastQueryTimestamp)>::new()),
                     context_provider: std::sync:: Mutex::new(self.context_provider),
                     cancel_token: self.cancel_token,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
+                    internal_cache: Default::default(),
                 };
                 let sdk = Arc::new(sdk);
 
@@ -634,7 +628,7 @@ impl SdkBuilder {
                     },
                     dump_dir: self.dump_dir,
                     proofs:self.proofs,
-                    identity_contract_nonce_counter: Mutex::new(BTreeMap::<(Identifier, Identifier), (IdentityContractNonce, LastQueryTimestamp)>::new()),
+                    internal_cache: Default::default(),
                     context_provider:  std::sync:: Mutex::new( Some(context_provider)),
                     cancel_token: self.cancel_token,
                 };

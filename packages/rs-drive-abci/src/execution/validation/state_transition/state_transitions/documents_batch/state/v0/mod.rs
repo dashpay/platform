@@ -1,6 +1,8 @@
 use std::fs::read;
+use mockall::Any;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::StateTransitionLike;
 use drive::state_transition_action::StateTransitionAction;
@@ -111,6 +113,11 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                     )?;
 
                     if !data_trigger_execution_result.is_valid() {
+                        tracing::debug!(
+                            "{} state transition data trigger was not valid, errors are {:?}",
+                            transition.type_name(),
+                            data_trigger_execution_result.errors,
+                        );
                         // If a state transition isn't valid because of data triggers we still need
                         // to bump the identity data contract nonce
                         validation_result.add_errors(transition_validation_result.errors);

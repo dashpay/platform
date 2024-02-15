@@ -66,6 +66,7 @@ pub mod error;
 pub mod mock;
 pub mod platform;
 pub mod sdk;
+mod internal_cache;
 
 pub use error::Error;
 pub use sdk::{RequestSettings, Sdk, SdkBuilder};
