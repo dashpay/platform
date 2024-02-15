@@ -10,8 +10,8 @@ use crate::prelude::IdentityContractNonce;
 Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error(
-"Document transitions with duplicate unique properties: {:?}",
-references
+"Identity contract nonce is out of bounds: {}",
+identity_contract_nonce
 )]
 #[platform_serialize(unversioned)]
 pub struct IdentityContractNonceOutOfBoundsError {

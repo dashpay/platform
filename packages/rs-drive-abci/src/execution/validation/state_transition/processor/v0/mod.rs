@@ -117,6 +117,11 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         transaction,
     )?;
 
+    tracing::debug!(
+                    "result is {:?}",
+                    result
+                );
+
     result.map_result(|action| {
         ExecutionEvent::create_from_state_transition_action(
             action,
