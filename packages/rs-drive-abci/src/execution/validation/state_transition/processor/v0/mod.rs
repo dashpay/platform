@@ -109,6 +109,18 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
 
     let maybe_identity = result.into_data()?;
 
+    // Validating identity contract nonce, this must happen after validating the signature
+    let result = state_transition.validate_identity_contract_nonces(
+        &platform.into(),
+        platform.block_info,
+        transaction,
+        platform_version,
+    )?;
+
+    if !result.is_valid() {
+        return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+    }
+
     // Validating state
     let result = state_transition.validate_state(
         action,

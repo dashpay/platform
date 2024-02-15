@@ -114,8 +114,8 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
 
                     if !data_trigger_execution_result.is_valid() {
                         tracing::debug!(
-                            "{} state transition data trigger was not valid, errors are {:?}",
-                            transition.type_name(),
+                            "{:?} state transition data trigger was not valid, errors are {:?}",
+                            transition,
                             data_trigger_execution_result.errors,
                         );
                         // If a state transition isn't valid because of data triggers we still need
