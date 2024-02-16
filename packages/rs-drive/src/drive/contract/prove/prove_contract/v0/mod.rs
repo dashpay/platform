@@ -1,6 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 
+use crate::drive::contract::paths::{contract_root_path, contract_root_path_vec};
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
@@ -31,54 +32,27 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        let contract_query = Self::fetch_contract_query(contract_id, true);
-        tracing::trace!(?contract_query, "proving contract");
-        let contract_proof = self.grove_get_proved_path_query(
-            &contract_query,
+        self.grove_get_proved_path_query_with_conditional(
+            (&contract_root_path(&contract_id)).into(),
+            &[0],
+            &|element| {
+                if let Some(element) = element {
+                    if element.is_tree() {
+                        // this is a contract that keeps history
+                        Self::fetch_contract_with_history_latest_query(contract_id, true)
+                    } else {
+                        // this is a normal contract
+                        Self::fetch_contract_query(contract_id, true)
+                    }
+                } else {
+                    // we will just get the proof that the contract doesn't exist, either way
+                    Self::fetch_contract_query(contract_id, true)
+                }
+            },
             false,
             transaction,
             &mut vec![],
             &platform_version.drive,
-        )?;
-        let result = Drive::verify_contract(
-            contract_proof.as_slice(),
-            Some(false),
-            false,
-            false,
-            contract_id,
-            platform_version,
-        );
-        match result {
-            Ok(_) => Ok(contract_proof),
-            Err(Error::GroveDB(grovedb::Error::WrongElementType("expected an item"))) => {
-                // In this case we are trying to prove a historical type contract
-                let contract_query =
-                    Self::fetch_contract_with_history_latest_query(contract_id, true);
-                tracing::trace!(?contract_query, "proving historical contract");
-                let historical_contract_proof = self.grove_get_proved_path_query(
-                    &contract_query,
-                    false,
-                    transaction,
-                    &mut vec![],
-                    &platform_version.drive,
-                )?;
-                if let Ok(Some(_)) = Drive::verify_contract(
-                    historical_contract_proof.as_slice(),
-                    Some(true),
-                    false,
-                    false,
-                    contract_id,
-                    platform_version,
-                )
-                .map(|(_, proof_returned_historical_contract)| proof_returned_historical_contract)
-                {
-                    // Only return the historical proof if an element was found
-                    Ok(historical_contract_proof)
-                } else {
-                    Ok(contract_proof)
-                }
-            }
-            Err(e) => Err(e),
-        }
+        )
     }
 }
