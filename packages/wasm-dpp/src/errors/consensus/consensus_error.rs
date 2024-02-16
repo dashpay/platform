@@ -59,7 +59,8 @@ use dpp::consensus::state::data_trigger::DataTriggerError::{
 use wasm_bindgen::{JsError, JsValue};
 
 use crate::errors::consensus::basic::data_contract::{
-    DataContractHaveNewUniqueIndexErrorWasm, DataContractImmutablePropertiesUpdateErrorWasm,
+    DataContractEmptySchemaErrorWasm, DataContractHaveNewUniqueIndexErrorWasm,
+    DataContractImmutablePropertiesUpdateErrorWasm,
     DataContractInvalidIndexDefinitionUpdateErrorWasm, DataContractUniqueIndicesChangedErrorWasm,
     IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm,
 };
@@ -305,6 +306,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::IncompatibleDataContractSchemaError(err) => {
             IncompatibleDataContractSchemaErrorWasm::from(err).into()
+        }
+        BasicError::DataContractEmptySchemaError(err) => {
+            DataContractEmptySchemaErrorWasm::from(err).into()
         }
         BasicError::InvalidIdentityKeySignatureError(err) => {
             InvalidIdentityKeySignatureErrorWasm::from(err).into()
