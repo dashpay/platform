@@ -68,7 +68,7 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
         }
 
         if (jsonRpcError.data.startsWith('mempool is full')) {
-          throw new ResourceExhaustedGrpcErπror(jsonRpcError.data);
+          throw new ResourceExhaustedGrpcError(jsonRpcError.data);
         }
 
         if (jsonRpcError.data === 'context deadline exceeded') {
