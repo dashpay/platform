@@ -1,5 +1,6 @@
 use crate::buffer::Buffer;
 
+use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityContractNonceError;
 use dpp::consensus::ConsensusError;
 use dpp::identity::identity_contract_nonce::MergeIdentityContractNonceResult;
