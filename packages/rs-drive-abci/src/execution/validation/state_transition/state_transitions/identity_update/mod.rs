@@ -1,7 +1,7 @@
 pub(crate) mod identity_and_signatures;
+mod nonce;
 mod state;
 mod structure;
-mod nonce;
 
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};

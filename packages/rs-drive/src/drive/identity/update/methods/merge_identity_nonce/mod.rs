@@ -13,7 +13,26 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
+use crate::error::identity::IdentityError;
+use dpp::identity::identity_nonce::MergeIdentityNonceResult;
 use std::collections::HashMap;
+
+pub(crate) trait MergeIdentityContractNonceResultToResult {
+    fn to_result(self) -> Result<(), Error>;
+}
+
+impl MergeIdentityContractNonceResultToResult for MergeIdentityNonceResult {
+    /// Gives a result from the enum
+    fn to_result(self) -> Result<(), Error> {
+        if let Some(error_message) = self.error_message() {
+            Err(Error::Identity(IdentityError::IdentityNonceError(
+                error_message,
+            )))
+        } else {
+            Ok(())
+        }
+    }
+}
 
 impl Drive {
     /// Updates the nonce for a specific identity. This function is version controlled.
@@ -30,7 +49,7 @@ impl Drive {
     /// # Returns
     ///
     /// * `Result<FeeResult, Error>` - The resulting fee if successful, or an error.
-    pub fn update_identity_nonce(
+    pub fn merge_identity_nonce(
         &self,
         identity_id: [u8; 32],
         nonce: IdentityNonce,
@@ -44,9 +63,9 @@ impl Drive {
             .methods
             .identity
             .update
-            .update_identity_nonce
+            .merge_identity_nonce
         {
-            0 => self.update_identity_nonce_v0(
+            0 => self.merge_identity_nonce_v0(
                 identity_id,
                 nonce,
                 block_info,
@@ -55,7 +74,7 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "update_identity_nonce".to_string(),
+                method: "merge_identity_nonce".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -73,30 +92,34 @@ impl Drive {
     /// # Returns
     ///
     /// * `LowLevelDriveOperation` - The resulting low level drive operation.
-    pub fn update_identity_nonce_operation(
+    pub fn merge_identity_nonce_operations(
         &self,
         identity_id: [u8; 32],
         nonce: IdentityNonce,
+        block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<LowLevelDriveOperation, Error> {
+    ) -> Result<(MergeIdentityNonceResult, Vec<LowLevelDriveOperation>), Error> {
         match platform_version
             .drive
             .methods
             .identity
             .update
-            .update_identity_nonce
+            .merge_identity_nonce
         {
-            0 => self.update_identity_nonce_operation_v0(
+            0 => self.merge_identity_nonce_operations_v0(
                 identity_id,
                 nonce,
+                block_info,
                 estimated_costs_only_with_layer_info,
+                transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "update_identity_nonce_operation".to_string(),
+                method: "merge_identity_nonce_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

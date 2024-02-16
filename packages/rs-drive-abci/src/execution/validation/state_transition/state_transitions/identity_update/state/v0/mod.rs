@@ -66,11 +66,8 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
         );
 
         if !validation_result.is_valid() {
-
             let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                BumpIdentityNonceAction::from_borrowed_identity_update_transition(
-                    self,
-                )?,
+                BumpIdentityNonceAction::from_borrowed_identity_update_transition(self)?,
             );
 
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -93,9 +90,7 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
 
         if !validation_result.is_valid() {
             let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                BumpIdentityNonceAction::from_borrowed_identity_update_transition(
-                    self,
-                )?,
+                BumpIdentityNonceAction::from_borrowed_identity_update_transition(self)?,
             );
 
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -120,9 +115,7 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
 
         if !validation_result.is_valid() {
             let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                BumpIdentityNonceAction::from_borrowed_identity_update_transition(
-                    self,
-                )?,
+                BumpIdentityNonceAction::from_borrowed_identity_update_transition(self)?,
             );
 
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -147,9 +140,7 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
 
             if !validation_result.is_valid() {
                 let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                    BumpIdentityNonceAction::from_borrowed_identity_update_transition(
-                        self,
-                    )?,
+                    BumpIdentityNonceAction::from_borrowed_identity_update_transition(self)?,
                 );
 
                 return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -188,9 +179,7 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
                         ),
                     );
                     let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                        BumpIdentityNonceAction::from_borrowed_identity_update_transition(
-                            self,
-                        )?,
+                        BumpIdentityNonceAction::from_borrowed_identity_update_transition(self)?,
                     );
 
                     return Ok(ConsensusValidationResult::new_with_data_and_errors(

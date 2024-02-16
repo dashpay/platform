@@ -13,11 +13,12 @@ use dpp::prelude::IdentityNonce;
 use dpp::version::PlatformVersion;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
+use crate::drive::identity::update::methods::merge_identity_nonce::MergeIdentityContractNonceResultToResult;
 use std::collections::HashMap;
 
 impl Drive {
     /// Update nonce for specific identity
-    pub fn update_identity_nonce_v0(
+    pub fn merge_identity_nonce_v0(
         &self,
         identity_id: [u8; 32],
         nonce: IdentityNonce,
@@ -34,12 +35,16 @@ impl Drive {
             Some(HashMap::new())
         };
 
-        let batch_operations = vec![self.update_identity_nonce_operation_v0(
+        let (result, batch_operations) = self.merge_identity_nonce_operations_v0(
             identity_id,
             nonce,
+            block_info,
             &mut estimated_costs_only_with_layer_info,
+            transaction,
             platform_version,
-        )?];
+        )?;
+
+        result.to_result()?;
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 

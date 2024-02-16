@@ -42,9 +42,7 @@ pub struct DataContractUpdateTransitionV0 {
     pub signature: BinaryData,
 }
 
-impl TryFromPlatformVersioned<(DataContract, IdentityNonce)>
-    for DataContractUpdateTransitionV0
-{
+impl TryFromPlatformVersioned<(DataContract, IdentityNonce)> for DataContractUpdateTransitionV0 {
     type Error = ProtocolError;
 
     fn try_from_platform_versioned(

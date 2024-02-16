@@ -21,7 +21,9 @@ pub(in crate::execution::validation::state_transition::state_transitions) trait 
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl IdentityCreditWithdrawalTransitionIdentityContractNonceV0 for IdentityCreditWithdrawalTransition {
+impl IdentityCreditWithdrawalTransitionIdentityContractNonceV0
+    for IdentityCreditWithdrawalTransition
+{
     fn validate_nonce_v0(
         &self,
         platform: &PlatformStateRef,

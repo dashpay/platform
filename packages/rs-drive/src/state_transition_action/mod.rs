@@ -17,8 +17,8 @@ use crate::state_transition_action::identity::identity_credit_withdrawal::Identi
 use crate::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use crate::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
-use derive_more::From;
 use crate::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceAction;
+use derive_more::From;
 
 /// ST action
 #[derive(Debug, Clone, From)]

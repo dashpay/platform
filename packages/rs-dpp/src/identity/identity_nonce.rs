@@ -13,8 +13,7 @@ use platform_value::Identifier;
 pub const IDENTITY_NONCE_VALUE_FILTER: u64 = 0xFFFFFFFFFF;
 pub const MISSING_IDENTITY_REVISIONS_FILTER: u64 = 0xFFFFFF0000000000;
 pub const MAX_MISSING_IDENTITY_REVISIONS: u64 = 20;
-pub const MISSING_IDENTITY_REVISIONS_MAX_BYTES: u64 =
-    MAX_MISSING_IDENTITY_REVISIONS;
+pub const MISSING_IDENTITY_REVISIONS_MAX_BYTES: u64 = MAX_MISSING_IDENTITY_REVISIONS;
 pub const IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES: u64 = 40;
 
 #[derive(
@@ -44,9 +43,7 @@ impl MergeIdentityNonceResult {
     /// Gives a result from the enum
     pub fn error_message(self) -> Option<&'static str> {
         match self {
-            MergeIdentityNonceResult::NonceTooFarInFuture => {
-                Some("nonce too far in future")
-            }
+            MergeIdentityNonceResult::NonceTooFarInFuture => Some("nonce too far in future"),
             MergeIdentityNonceResult::NonceTooFarInPast => Some("nonce too far in past"),
             MergeIdentityNonceResult::NonceAlreadyPresentAtTip => {
                 Some("nonce already present at tip")
@@ -95,9 +92,7 @@ pub fn validate_identity_nonce_update(
             }),
         ));
     } else if actual_existing_revision < new_revision_nonce {
-        if new_revision_nonce - actual_existing_revision
-            >= MISSING_IDENTITY_REVISIONS_MAX_BYTES
-        {
+        if new_revision_nonce - actual_existing_revision >= MISSING_IDENTITY_REVISIONS_MAX_BYTES {
             // we are too far away from the actual revision
             return SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(
                 StateError::InvalidIdentityNonceError(InvalidIdentityNonceError {
@@ -121,8 +116,7 @@ pub fn validate_identity_nonce_update(
                 }),
             ));
         } else {
-            let old_missing_revisions =
-                (existing_nonce & MISSING_IDENTITY_REVISIONS_FILTER);
+            let old_missing_revisions = existing_nonce & MISSING_IDENTITY_REVISIONS_FILTER;
             let byte_to_unset = 1
                 << (previous_revision_position_from_top - 1
                     + IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES);

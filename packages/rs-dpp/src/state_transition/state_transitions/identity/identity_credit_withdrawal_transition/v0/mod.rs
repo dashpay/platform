@@ -15,13 +15,13 @@ use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
 
 use crate::balances::credits::CREDITS_PER_DUFF;
+use crate::prelude::IdentityNonce;
 use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::{Identifier, Revision},
     withdrawal::Pooling,
     ProtocolError,
 };
-use crate::prelude::IdentityNonce;
 
 // TODO: unsafe - we must use actual relay fee from core
 /// Minimal core per byte. Must be a fibonacci number

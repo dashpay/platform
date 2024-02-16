@@ -61,9 +61,7 @@ impl DocumentsBatchTransition {
             for transition in transitions {
                 // We need to make sure that the identity contract nonce is within the allowed bounds
                 // This means that it is stored on 40 bits
-                if transition.identity_contract_nonce() & MISSING_IDENTITY_REVISIONS_FILTER
-                    > 0
-                {
+                if transition.identity_contract_nonce() & MISSING_IDENTITY_REVISIONS_FILTER > 0 {
                     result.add_error(BasicError::IdentityContractNonceOutOfBoundsError(
                         IdentityContractNonceOutOfBoundsError::new(
                             transition.identity_contract_nonce(),

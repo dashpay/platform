@@ -323,17 +323,17 @@ pub(crate) fn identity_query_keys_full_tree_path<'a>(
 #[derive(Copy, Clone)]
 pub enum IdentityRootStructure {
     /// The revision of the identity
-    IdentityTreeRevision = 0,
+    IdentityTreeRevision = 192,
     /// The nonce of the identity, it is used to prevent replay attacks
-    IdentityTreeNonce = 1,
+    IdentityTreeNonce = 64,
     /// The keys that an identity has
-    IdentityTreeKeys = 2,
+    IdentityTreeKeys = 128,
     /// A Way to search for specific keys
-    IdentityTreeKeyReferences = 3,
+    IdentityTreeKeyReferences = 160,
     /// Owed processing fees
-    IdentityTreeNegativeCredit = 4,
+    IdentityTreeNegativeCredit = 96,
     /// Identity contract information
-    IdentityContractInfo = 5,
+    IdentityContractInfo = 32,
 }
 
 #[cfg(feature = "full")]
@@ -361,11 +361,12 @@ impl From<IdentityRootStructure> for [u8; 1] {
 impl From<IdentityRootStructure> for &'static [u8; 1] {
     fn from(identity_tree: IdentityRootStructure) -> Self {
         match identity_tree {
-            IdentityRootStructure::IdentityTreeRevision => &[0],
-            IdentityRootStructure::IdentityTreeKeys => &[1],
-            IdentityRootStructure::IdentityTreeKeyReferences => &[2],
-            IdentityRootStructure::IdentityTreeNegativeCredit => &[3],
-            IdentityRootStructure::IdentityContractInfo => &[4],
+            IdentityRootStructure::IdentityTreeRevision => &[192],
+            IdentityRootStructure::IdentityTreeNonce => &[64],
+            IdentityRootStructure::IdentityTreeKeys => &[128],
+            IdentityRootStructure::IdentityTreeKeyReferences => &[160],
+            IdentityRootStructure::IdentityTreeNegativeCredit => &[96],
+            IdentityRootStructure::IdentityContractInfo => &[32],
         }
     }
 }

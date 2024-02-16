@@ -282,6 +282,7 @@ mod tests {
             current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
+            identity_nonce_counter,
             identity_contract_nonce_counter,
             ..
         } = run_chain_for_strategy(&mut platform, 15, strategy.clone(), config.clone(), 40);
@@ -346,7 +347,8 @@ mod tests {
                 quorums,
                 current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions),
-                current_identity_nonce_counter: identity_contract_nonce_counter,
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
             },
@@ -416,6 +418,7 @@ mod tests {
             current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
+            identity_nonce_counter,
             identity_contract_nonce_counter,
             ..
         } = run_chain_for_strategy(&mut platform, 15, strategy.clone(), config.clone(), 40);
@@ -480,7 +483,8 @@ mod tests {
                 quorums,
                 current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions),
-                current_identity_nonce_counter: identity_contract_nonce_counter,
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
             },
@@ -549,7 +553,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99868861500)
+        assert_eq!(balance, 99864802180)
     }
 
     #[test]
@@ -1148,7 +1152,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "fa6e1d4977b35a5b9d9be63afb65d9cd3cf607e79a733bf743b96bfd6de48eed".to_string()
+            "b91e7b8759189050aa92a00dc5fb240689bb0a58e3a2388c80f8d18156d4eb0b".to_string()
         )
     }
 
@@ -1710,7 +1714,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "84435c7bee5ab7c217b5ea7e808d5aac9f2ee8d95d1813090ffde9d90e8dc714".to_string()
+            "8bbc02f180d134b43cc93571749aae4b202f8cb3433a38ca83b2612b5bcd39a3".to_string()
         )
     }
 
@@ -1830,7 +1834,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "35f310c338d97cf91abb9889fff14cc273571062373e6f024d2235428b77df95".to_string()
+            "9d75c6b22b67f31516fe43e570839e654b8c43200861bf19a80e450c7694916c".to_string()
         )
     }
 
@@ -2427,6 +2431,7 @@ mod tests {
                 current_quorum_hash,
                 current_proposer_versions,
                 end_time_ms,
+                identity_nonce_counter,
                 identity_contract_nonce_counter,
                 ..
             },
@@ -2466,6 +2471,7 @@ mod tests {
             current_proposer_versions,
             end_time_ms,
             withdrawals: last_block_withdrawals,
+            identity_nonce_counter,
             identity_contract_nonce_counter,
             ..
         } = {
@@ -2479,7 +2485,8 @@ mod tests {
                     quorums,
                     current_quorum_hash,
                     current_proposer_versions: Some(current_proposer_versions),
-                    current_identity_nonce_counter: identity_contract_nonce_counter,
+                    current_identity_nonce_counter: identity_nonce_counter,
+                    current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms,
                 },
@@ -2543,6 +2550,7 @@ mod tests {
                 current_proposer_versions,
                 end_time_ms,
                 withdrawals: last_block_withdrawals,
+                identity_nonce_counter,
                 identity_contract_nonce_counter,
                 ..
             },
@@ -2558,7 +2566,8 @@ mod tests {
                     quorums,
                     current_quorum_hash,
                     current_proposer_versions: Some(current_proposer_versions),
-                    current_identity_nonce_counter: identity_contract_nonce_counter,
+                    current_identity_nonce_counter: identity_nonce_counter,
+                    current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                 },
@@ -2653,6 +2662,7 @@ mod tests {
                 current_proposer_versions,
                 end_time_ms,
                 withdrawals: last_block_withdrawals,
+                identity_nonce_counter,
                 identity_contract_nonce_counter,
                 ..
             },
@@ -2668,7 +2678,8 @@ mod tests {
                     quorums,
                     current_quorum_hash,
                     current_proposer_versions: Some(current_proposer_versions),
-                    current_identity_nonce_counter: identity_contract_nonce_counter,
+                    current_identity_nonce_counter: identity_nonce_counter,
+                    current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                 },
@@ -2774,7 +2785,8 @@ mod tests {
                     quorums,
                     current_quorum_hash,
                     current_proposer_versions: Some(current_proposer_versions),
-                    current_identity_nonce_counter: identity_contract_nonce_counter,
+                    current_identity_nonce_counter: identity_nonce_counter,
+                    current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                 },
@@ -3342,6 +3354,7 @@ mod tests {
             current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
+            identity_nonce_counter,
             identity_contract_nonce_counter,
             ..
         } = run_chain_for_strategy(&mut platform, 100, strategy.clone(), config.clone(), 89);
@@ -3404,7 +3417,8 @@ mod tests {
                 quorums,
                 current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions),
-                current_identity_nonce_counter: identity_contract_nonce_counter,
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
             },

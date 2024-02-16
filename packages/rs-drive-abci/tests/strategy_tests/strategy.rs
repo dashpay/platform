@@ -43,7 +43,7 @@ use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::BinaryData;
-use dpp::prelude::Identifier;
+use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 use dpp::state_transition::documents_batch_transition::document_create_transition::{DocumentCreateTransition, DocumentCreateTransitionV0};
 use dpp::state_transition::documents_batch_transition::document_transition::document_delete_transition::DocumentDeleteTransitionV0;
@@ -474,6 +474,7 @@ impl NetworkStrategy {
         platform: &Platform<MockCoreRPCLike>,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
+        identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
@@ -502,6 +503,7 @@ impl NetworkStrategy {
                     block_info,
                     current_identities,
                     signer,
+                    identity_nonce_counter,
                     contract_nonce_counter,
                     rng,
                     platform_version,
@@ -546,8 +548,10 @@ pub struct ChainExecutionOutcome<'a> {
     pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     pub current_quorum_hash: QuorumHash,
     pub current_proposer_versions: Option<HashMap<ProTxHash, ValidatorVersionMigration>>,
+    /// Identity nonce counters
+    pub identity_nonce_counter: BTreeMap<Identifier, IdentityNonce>,
     /// Identity Contract nonce counters
-    pub identity_contract_nonce_counter: BTreeMap<(Identifier, Identifier), u64>,
+    pub identity_contract_nonce_counter: BTreeMap<(Identifier, Identifier), IdentityNonce>,
     pub end_epoch_index: u16,
     pub end_time_ms: u64,
     pub strategy: NetworkStrategy,
@@ -575,7 +579,8 @@ pub struct ChainExecutionParameters {
     // the first option is if it is set
     // the second option is if we are even upgrading
     pub current_proposer_versions: Option<Option<HashMap<ProTxHash, ValidatorVersionMigration>>>,
-    pub current_identity_nonce_counter: BTreeMap<(Identifier, Identifier), u64>,
+    pub current_identity_nonce_counter: BTreeMap<Identifier, IdentityNonce>,
+    pub current_identity_contract_nonce_counter: BTreeMap<(Identifier, Identifier), IdentityNonce>,
     pub start_time_ms: u64,
     pub current_time_ms: u64,
 }

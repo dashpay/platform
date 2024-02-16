@@ -47,7 +47,7 @@ pub enum IdentityError {
 
     /// Identity Contract revision nonce error
     #[error("identity contract revision nonce error: {0}")]
-    IdentityContractRevisionNonceError(&'static str),
+    IdentityNonceError(&'static str),
 
     /// Identity key incorrect query missing information error
     #[error("identity key incorrect query missing information error: {0}")]

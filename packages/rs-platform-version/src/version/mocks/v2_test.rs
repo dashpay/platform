@@ -283,6 +283,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     },
                     attributes: DriveIdentityFetchAttributesMethodVersions {
                         revision: 0,
+                        nonce: 0,
                         identity_contract_nonce: 0,
                         balance: 0,
                         balance_include_debt: 0,
@@ -339,7 +340,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 },
                 update: DriveIdentityUpdateMethodVersions {
                     update_identity_revision: 0,
-                    update_identity_nonce: 0,
+                    merge_identity_nonce: 0,
                     update_identity_negative_credit_operation: 0,
                     initialize_identity_revision: 0,
                     disable_identity_keys: 0,

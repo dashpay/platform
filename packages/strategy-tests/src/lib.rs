@@ -564,6 +564,7 @@ impl Strategy {
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
+        identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
@@ -1012,6 +1013,7 @@ impl Strategy {
                                         crate::transitions::create_identity_update_transition_add_keys(
                                             random_identity,
                                             *count,
+                                            identity_nonce_counter,
                                             signer,
                                             rng,
                                             platform_version,
@@ -1028,6 +1030,7 @@ impl Strategy {
                                             random_identity,
                                             *count,
                                             block_info.time_ms,
+                                            identity_nonce_counter,
                                             signer,
                                             rng,
                                             platform_version,
@@ -1049,6 +1052,7 @@ impl Strategy {
                             let state_transition =
                                 crate::transitions::create_identity_withdrawal_transition(
                                     random_identity,
+                                    identity_nonce_counter,
                                     signer,
                                     rng,
                                 );
@@ -1067,7 +1071,11 @@ impl Strategy {
 
                         let state_transition =
                             crate::transitions::create_identity_credit_transfer_transition(
-                                owner, recipient, signer, 1000,
+                                owner,
+                                recipient,
+                                identity_nonce_counter,
+                                signer,
+                                1000,
                             );
                         operations.push(state_transition);
                     }
@@ -1124,6 +1132,7 @@ impl Strategy {
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
+        identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
@@ -1147,6 +1156,7 @@ impl Strategy {
                     block_info,
                     current_identities,
                     signer,
+                    identity_nonce_counter,
                     contract_nonce_counter,
                     rng,
                     platform_version,

@@ -1,6 +1,6 @@
+mod nonce;
 mod state;
 mod structure;
-mod nonce;
 
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};

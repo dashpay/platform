@@ -249,8 +249,7 @@ impl Drive {
 
         // We insert a nonce of 0, nonces are used to prevent replay attacks, and should not be confused
         // revisions
-        batch_operations
-            .push(self.initialize_identity_nonce_operation_v0(id.to_buffer(), 0));
+        batch_operations.push(self.initialize_identity_nonce_operation_v0(id.to_buffer(), 0));
 
         let mut create_tree_keys_operations = self.create_key_tree_with_keys_operations(
             id.to_buffer(),

@@ -16,7 +16,7 @@ impl DriveHighLevelOperationConverter for IdentityCreditTransferTransitionAction
         let recipient_id = self.recipient_id();
         let identity_id = self.identity_id();
         let transfer_amount = self.transfer_amount();
-        let revision = self.revision();
+        let revision = self.nonce();
 
         let drive_operations = vec![
             IdentityOperation(IdentityOperationType::UpdateIdentityRevision {

@@ -1336,6 +1336,7 @@ mod tests {
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: dpns_contract::OWNER_ID_BYTES.into(),
             revision: 0,
+            nonce: 1,
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
@@ -1442,6 +1443,7 @@ mod tests {
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: dashpay_contract::OWNER_ID_BYTES.into(),
             revision: 1,
+            nonce: 1,
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key.clone())],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
@@ -1465,6 +1467,7 @@ mod tests {
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: dashpay_contract::OWNER_ID_BYTES.into(),
             revision: 1,
+            nonce: 1,
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,

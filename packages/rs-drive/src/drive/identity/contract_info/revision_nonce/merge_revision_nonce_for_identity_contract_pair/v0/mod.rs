@@ -70,25 +70,17 @@ impl Drive {
         >,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<
-        (
-            MergeIdentityNonceResult,
-            Vec<LowLevelDriveOperation>,
-        ),
-        Error,
-    > {
+    ) -> Result<(MergeIdentityNonceResult, Vec<LowLevelDriveOperation>), Error> {
         if revision_nonce & MISSING_IDENTITY_REVISIONS_FILTER > 0 {
-            return Err(Error::Identity(
-                IdentityError::IdentityContractRevisionNonceError(
-                    "revision nonce was set too high or with missing revision bytes",
-                ),
-            ));
+            return Err(Error::Identity(IdentityError::IdentityNonceError(
+                "revision nonce was set too high or with missing revision bytes",
+            )));
         }
 
         if revision_nonce == 0 {
-            return Err(Error::Identity(
-                IdentityError::IdentityContractRevisionNonceError("revision nonce must not be 0"),
-            ));
+            return Err(Error::Identity(IdentityError::IdentityNonceError(
+                "revision nonce must not be 0",
+            )));
         }
 
         let mut drive_operations = vec![];
@@ -189,8 +181,7 @@ impl Drive {
                 // we were not able to update the revision as it is the same as we already had
                 return Ok((NonceAlreadyPresentAtTip, drive_operations));
             } else if actual_existing_revision < revision_nonce {
-                if revision_nonce - actual_existing_revision
-                    >= MISSING_IDENTITY_REVISIONS_MAX_BYTES
+                if revision_nonce - actual_existing_revision >= MISSING_IDENTITY_REVISIONS_MAX_BYTES
                 {
                     // we are too far away from the actual revision
                     return Ok((NonceTooFarInFuture, drive_operations));
@@ -210,14 +201,11 @@ impl Drive {
                 }
             } else {
                 let previous_revision_position_from_top = actual_existing_revision - revision_nonce;
-                if previous_revision_position_from_top
-                    >= MISSING_IDENTITY_REVISIONS_MAX_BYTES
-                {
+                if previous_revision_position_from_top >= MISSING_IDENTITY_REVISIONS_MAX_BYTES {
                     // we are too far away from the actual revision
                     return Ok((NonceTooFarInPast, drive_operations));
                 } else {
-                    let old_missing_revisions =
-                        (existing_nonce & MISSING_IDENTITY_REVISIONS_FILTER);
+                    let old_missing_revisions = existing_nonce & MISSING_IDENTITY_REVISIONS_FILTER;
                     let byte_to_unset = 1
                         << (previous_revision_position_from_top - 1
                             + IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES);
@@ -245,8 +233,7 @@ impl Drive {
             let missing_amount_of_revisions = revision_nonce - 1;
             // the missing_revisions_bytes are the amount of bytes to put in the missing area
             let missing_revisions_bytes = if missing_amount_of_revisions > 0 {
-                ((1 << missing_amount_of_revisions) - 1)
-                    << IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES
+                ((1 << missing_amount_of_revisions) - 1) << IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES
             } else {
                 0
             };
@@ -269,9 +256,6 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        Ok((
-            MergeIdentityNonceSuccess(nonce_to_set),
-            drive_operations,
-        ))
+        Ok((MergeIdentityNonceSuccess(nonce_to_set), drive_operations))
     }
 }

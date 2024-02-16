@@ -4,10 +4,9 @@ use dpp::consensus::state::identity::invalid_identity_contract_nonce_error::Inva
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::identity::identity_nonce::{
-    validate_identity_nonce_update, validate_new_identity_nonce,
-    MergeIdentityNonceResult, IDENTITY_NONCE_VALUE_FILTER,
-    IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES, MISSING_IDENTITY_REVISIONS_FILTER,
-    MISSING_IDENTITY_REVISIONS_MAX_BYTES,
+    validate_identity_nonce_update, validate_new_identity_nonce, MergeIdentityNonceResult,
+    IDENTITY_NONCE_VALUE_FILTER, IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES,
+    MISSING_IDENTITY_REVISIONS_FILTER, MISSING_IDENTITY_REVISIONS_MAX_BYTES,
 };
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;

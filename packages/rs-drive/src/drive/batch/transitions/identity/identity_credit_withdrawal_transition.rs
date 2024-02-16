@@ -17,7 +17,7 @@ impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionActi
         _platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
         let identity_id = self.identity_id();
-        let revision = self.revision();
+        let revision = self.nonce();
         let balance_to_remove = self.amount();
         let prepared_withdrawal_document = self.prepared_withdrawal_document_owned();
 

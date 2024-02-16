@@ -60,10 +60,10 @@ impl<'s> DriveHighLevelOperationConverter for StateTransitionAction {
                 identity_credit_transfer_transition,
             ) => identity_credit_transfer_transition
                 .into_high_level_drive_operations(epoch, platform_version),
-            StateTransitionAction::BumpIdentityNonceAction(
-                bump_identity_nonce_transition,
-            ) => bump_identity_nonce_transition
-                .into_high_level_drive_operations(epoch, platform_version),
+            StateTransitionAction::BumpIdentityNonceAction(bump_identity_nonce_transition) => {
+                bump_identity_nonce_transition
+                    .into_high_level_drive_operations(epoch, platform_version)
+            }
             StateTransitionAction::BumpIdentityDataContractNonceAction(
                 bump_identity_data_contract_nonce_transition,
             ) => bump_identity_data_contract_nonce_transition

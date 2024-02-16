@@ -13,23 +13,6 @@ use std::collections::HashMap;
 
 mod v0;
 
-pub(crate) trait MergeIdentityContractNonceResultToResult {
-    fn to_result(self) -> Result<(), Error>;
-}
-
-impl MergeIdentityContractNonceResultToResult for MergeIdentityNonceResult {
-    /// Gives a result from the enum
-    fn to_result(self) -> Result<(), Error> {
-        if let Some(error_message) = self.error_message() {
-            Err(Error::Identity(
-                IdentityError::IdentityContractRevisionNonceError(error_message),
-            ))
-        } else {
-            Ok(())
-        }
-    }
-}
-
 impl Drive {
     /// Merges the given revision into the identity contract pair nonce
     pub fn merge_revision_nonce_for_identity_contract_pair(
@@ -80,13 +63,7 @@ impl Drive {
         >,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<
-        (
-            MergeIdentityNonceResult,
-            Vec<LowLevelDriveOperation>,
-        ),
-        Error,
-    > {
+    ) -> Result<(MergeIdentityNonceResult, Vec<LowLevelDriveOperation>), Error> {
         match platform_version
             .drive
             .methods

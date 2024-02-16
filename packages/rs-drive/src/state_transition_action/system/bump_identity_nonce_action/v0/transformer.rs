@@ -1,11 +1,11 @@
-use dpp::ProtocolError;
-use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
-use dpp::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
-use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition_action::identity::identity_credit_transfer::v0::IdentityCreditTransferTransitionActionV0;
 use crate::state_transition_action::identity::identity_credit_withdrawal::v0::IdentityCreditWithdrawalTransitionActionV0;
 use crate::state_transition_action::identity::identity_update::v0::IdentityUpdateTransitionActionV0;
 use crate::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceActionV0;
+use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+use dpp::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use dpp::ProtocolError;
 
 impl BumpIdentityNonceActionV0 {
     /// try from identity update
@@ -13,9 +13,7 @@ impl BumpIdentityNonceActionV0 {
         value: IdentityUpdateTransitionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityUpdateTransitionV0 {
-            identity_id,
-            nonce,
-            ..
+            identity_id, nonce, ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id,
@@ -28,9 +26,7 @@ impl BumpIdentityNonceActionV0 {
         value: &IdentityUpdateTransitionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityUpdateTransitionV0 {
-            identity_id,
-            nonce,
-            ..
+            identity_id, nonce, ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
@@ -43,13 +39,11 @@ impl BumpIdentityNonceActionV0 {
         value: IdentityUpdateTransitionActionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityUpdateTransitionActionV0 {
-            identity_id,
-            nonce,
-            ..
+            identity_id, nonce, ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
-            identity_id: *identity_id,
-            identity_nonce: *nonce,
+            identity_id,
+            identity_nonce: nonce,
         })
     }
 
@@ -58,9 +52,7 @@ impl BumpIdentityNonceActionV0 {
         value: &IdentityUpdateTransitionActionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityUpdateTransitionActionV0 {
-            identity_id,
-            nonce,
-            ..
+            identity_id, nonce, ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
@@ -73,9 +65,7 @@ impl BumpIdentityNonceActionV0 {
         value: IdentityCreditTransferTransitionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreditTransferTransitionV0 {
-            identity_id,
-            nonce,
-            ..
+            identity_id, nonce, ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id,
@@ -88,9 +78,7 @@ impl BumpIdentityNonceActionV0 {
         value: &IdentityCreditTransferTransitionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreditTransferTransitionV0 {
-            identity_id,
-            nonce,
-            ..
+            identity_id, nonce, ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
@@ -103,13 +91,11 @@ impl BumpIdentityNonceActionV0 {
         value: IdentityCreditTransferTransitionActionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreditTransferTransitionActionV0 {
-            identity_id,
-            nonce,
-            ..
+            identity_id, nonce, ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
-            identity_id: *identity_id,
-            identity_nonce: *nonce,
+            identity_id,
+            identity_nonce: nonce,
         })
     }
 
@@ -118,9 +104,7 @@ impl BumpIdentityNonceActionV0 {
         value: &IdentityCreditTransferTransitionActionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreditTransferTransitionActionV0 {
-            identity_id,
-            nonce,
-            ..
+            identity_id, nonce, ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
@@ -128,15 +112,12 @@ impl BumpIdentityNonceActionV0 {
         })
     }
 
-
     /// try from identity credit withdrawal
     pub fn try_from_identity_credit_withdrawal(
         value: IdentityCreditWithdrawalTransitionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreditWithdrawalTransitionV0 {
-            identity_id,
-            nonce,
-            ..
+            identity_id, nonce, ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id,
@@ -149,9 +130,7 @@ impl BumpIdentityNonceActionV0 {
         value: &IdentityCreditWithdrawalTransitionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreditWithdrawalTransitionV0 {
-            identity_id,
-            nonce,
-            ..
+            identity_id, nonce, ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
@@ -164,13 +143,11 @@ impl BumpIdentityNonceActionV0 {
         value: IdentityCreditWithdrawalTransitionActionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreditWithdrawalTransitionActionV0 {
-            identity_id,
-            nonce,
-            ..
+            identity_id, nonce, ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
-            identity_id: *identity_id,
-            identity_nonce: *nonce,
+            identity_id,
+            identity_nonce: nonce,
         })
     }
 
@@ -179,9 +156,7 @@ impl BumpIdentityNonceActionV0 {
         value: &IdentityCreditWithdrawalTransitionActionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreditWithdrawalTransitionActionV0 {
-            identity_id,
-            nonce,
-            ..
+            identity_id, nonce, ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,

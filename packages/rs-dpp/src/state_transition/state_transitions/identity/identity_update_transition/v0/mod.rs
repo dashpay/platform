@@ -18,12 +18,12 @@ use std::convert::{TryFrom, TryInto};
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 
+use crate::prelude::IdentityNonce;
 use crate::{
     identity::KeyID,
     prelude::{Identifier, Revision, TimestampMillis},
     ProtocolError,
 };
-use crate::prelude::IdentityNonce;
 
 #[derive(Encode, Decode, PlatformSignable, Debug, Clone, PartialEq)]
 #[cfg_attr(

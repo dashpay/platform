@@ -59,9 +59,7 @@ pub enum DataContractUpdateTransition {
     V0(DataContractUpdateTransitionV0),
 }
 
-impl TryFromPlatformVersioned<(DataContract, IdentityNonce)>
-    for DataContractUpdateTransition
-{
+impl TryFromPlatformVersioned<(DataContract, IdentityNonce)> for DataContractUpdateTransition {
     type Error = ProtocolError;
 
     fn try_from_platform_versioned(

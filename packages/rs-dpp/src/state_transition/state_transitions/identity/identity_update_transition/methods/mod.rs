@@ -11,8 +11,8 @@ use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
 
-use platform_version::version::PlatformVersion;
 use crate::prelude::IdentityNonce;
+use platform_version::version::PlatformVersion;
 
 impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransition {
     #[cfg(feature = "state-transition-signing")]

@@ -28,7 +28,7 @@ impl Drive {
     ///
     /// # Errors
     /// This function will return an error if the method version doesn't match any known versions.
-    pub(crate) fn add_estimation_costs_for_update_revision(
+    pub(crate) fn add_estimation_costs_for_update_nonce(
         identity_id: [u8; 32],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
@@ -40,14 +40,14 @@ impl Drive {
             .for_update_revision
         {
             0 => {
-                Self::add_estimation_costs_for_update_revision_v0(
+                Self::add_estimation_costs_for_update_nonce_v0(
                     identity_id,
                     estimated_costs_only_with_layer_info,
                 );
                 Ok(())
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "add_estimation_costs_for_update_revision".to_string(),
+                method: "add_estimation_costs_for_update_nonce".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

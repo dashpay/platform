@@ -6,11 +6,11 @@ use dpp::block::block_info::BlockInfo;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::{IdentityNonce, Revision};
 
+use crate::drive::identity::update::methods::merge_identity_nonce::MergeIdentityContractNonceResultToResult;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use crate::drive::identity::contract_info::revision_nonce::merge_revision_nonce_for_identity_contract_pair::MergeIdentityContractNonceResultToResult;
 
 /// Operations on Identities
 #[derive(Clone, Debug)]
@@ -75,6 +75,14 @@ pub enum IdentityOperationType {
         identity_id: [u8; 32],
         /// The revision we are updating to
         revision: Revision,
+    },
+
+    /// Updates an identities nonce for a specific contract.
+    UpdateIdentityNonce {
+        /// The revision id
+        identity_id: [u8; 32],
+        /// The nonce we are updating to
+        nonce: IdentityNonce,
     },
 
     /// Updates an identities nonce for a specific contract.
@@ -192,6 +200,18 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                         transaction,
                         platform_version,
                     )?;
+                result.to_result()?;
+                Ok(operations)
+            }
+            IdentityOperationType::UpdateIdentityNonce { identity_id, nonce } => {
+                let (result, operations) = drive.merge_identity_nonce_operations(
+                    identity_id,
+                    nonce,
+                    block_info,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
                 result.to_result()?;
                 Ok(operations)
             }

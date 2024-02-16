@@ -11,6 +11,7 @@ use crate::identity::{Identity, IdentityPublicKey};
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use crate::prelude::IdentityNonce;
 use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use crate::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
@@ -23,7 +24,6 @@ use crate::{
     prelude::{Identifier, Revision, TimestampMillis},
     ProtocolError,
 };
-use crate::prelude::IdentityNonce;
 
 impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]

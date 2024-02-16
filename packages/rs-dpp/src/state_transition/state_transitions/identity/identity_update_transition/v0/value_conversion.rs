@@ -9,8 +9,8 @@ use crate::state_transition::identity_update_transition::v0::{
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionValueConvert;
 
-use platform_version::version::PlatformVersion;
 use crate::state_transition::state_transitions::common_fields::property_names::NONCE;
+use platform_version::version::PlatformVersion;
 
 impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
     fn from_object(
