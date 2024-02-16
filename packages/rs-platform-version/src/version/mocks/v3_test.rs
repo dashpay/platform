@@ -443,6 +443,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 grove_get_raw_path_query_with_optional: 0,
                 grove_get_raw_path_query: 0,
                 grove_get_proved_path_query: 0,
+                grove_get_proved_path_query_with_conditional: 0,
                 grove_get_sum_tree_total_value: 0,
                 grove_has_raw: 0,
             },

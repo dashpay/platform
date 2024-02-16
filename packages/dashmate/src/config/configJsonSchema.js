@@ -608,6 +608,10 @@ export default {
                 mempool: {
                   type: 'object',
                   properties: {
+                    cacheSize: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
                     size: {
                       type: 'integer',
                       minimum: 0,
@@ -618,7 +622,7 @@ export default {
                     },
                   },
                   additionalProperties: false,
-                  required: ['size', 'maxTxsBytes'],
+                  required: ['size', 'maxTxsBytes', 'cacheSize'],
                 },
                 consensus: {
                   type: 'object',
