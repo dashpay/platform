@@ -61,7 +61,7 @@ where
     ) -> Result<StateTransitionsProcessingResult, Error> {
         let platform_ref = PlatformRef {
             drive: &self.drive,
-            state: &self.state,
+            state: &self.state, // TODO: This is wrong. It must be block state
             version: block_platform_state.current_platform_version()?,
             config: &self.config,
             core_rpc: &self.core_rpc,
