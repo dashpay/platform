@@ -4035,6 +4035,7 @@ dependencies = [
  "platform-version",
  "rand",
  "rocksdb",
+ "serde_json",
  "simple-signer",
  "tracing",
 ]

@@ -97,6 +97,7 @@ impl RandomDocumentTypeParameters {
     }
 }
 
+use crate::data_contract::document_type::array::ArrayItemType;
 use crate::data_contract::document_type::index_level::IndexLevel;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
@@ -108,9 +109,12 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use indexmap::IndexMap;
-use platform_value::{Identifier, Value};
+use itertools::Itertools;
+use platform_value::Identifier;
 use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
 use rand::Rng;
+use serde_json::json;
 use std::collections::BTreeSet;
 use std::ops::Range;
 
@@ -137,17 +141,13 @@ impl DocumentTypeV0 {
             let random_weight = rng.gen_range(0..total_weight);
             let document_type = if random_weight < field_weights.string_weight {
                 let has_min_len = rng.gen_bool(parameters.field_bounds.string_has_min_len_chance);
-                let has_max_len = rng.gen_bool(parameters.field_bounds.string_has_max_len_chance);
                 let min_len = if has_min_len {
                     Some(rng.gen_range(parameters.field_bounds.string_min_len.clone()))
                 } else {
                     None
                 };
-                let max_len = if has_max_len {
-                    Some(rng.gen_range(parameters.field_bounds.string_max_len.clone()))
-                } else {
-                    None
-                };
+                // If a string property is used in an index it must have maxLength 63 or less (v1.0-dev)
+                let max_len = Some(63);
                 DocumentPropertyType::String(min_len, max_len)
             } else if random_weight < field_weights.string_weight + field_weights.integer_weight {
                 DocumentPropertyType::Integer
@@ -175,19 +175,13 @@ impl DocumentTypeV0 {
             } else {
                 let has_min_len =
                     rng.gen_bool(parameters.field_bounds.byte_array_has_min_len_chance);
-                let has_max_len =
-                    rng.gen_bool(parameters.field_bounds.byte_array_has_max_len_chance);
                 let min_len = if has_min_len {
                     Some(rng.gen_range(parameters.field_bounds.byte_array_min_len.clone()))
                 } else {
                     None
                 };
-                let max_len = if has_max_len {
-                    Some(rng.gen_range(parameters.field_bounds.byte_array_max_len.clone()))
-                } else {
-                    None
-                };
-
+                // Indexed arrays must have maxItems 255 or less (v1.0-dev)
+                let max_len = Some(255);
                 DocumentPropertyType::ByteArray(min_len, max_len)
             };
 
@@ -218,10 +212,13 @@ impl DocumentTypeV0 {
 
         let index_count = rng.gen_range(parameters.new_indexes_count_range.clone());
         let field_names: Vec<String> = properties.keys().cloned().collect();
+        // DPP only allows 10 properties per index (v1.0-dev)
+        let ten_field_names = field_names.choose_multiple(&mut rand::thread_rng(), 10).cloned().collect_vec();
+
         let mut indices = Vec::with_capacity(index_count as usize);
 
         for _ in 0..index_count {
-            match Index::random(&field_names, &indices, rng) {
+            match Index::random(&ten_field_names, &indices, rng) {
                 Ok(index) => indices.push(index),
                 Err(_) => break,
             }
@@ -242,10 +239,159 @@ impl DocumentTypeV0 {
                 .document_type_versions,
         )?;
 
+        // Generate properties JSON schema
+        let mut position_counter = 0;
+        let properties_json_schema = properties.iter().map(|(key, prop)| {
+            let mut schema_part = match &prop.property_type {
+                DocumentPropertyType::String(min, max) => {
+                    let mut schema = serde_json::Map::new();
+                    schema.insert("type".to_string(), serde_json::Value::String("string".to_owned()));
+                    if let Some(min_len) = min {
+                        schema.insert("minLength".to_string(), serde_json::Value::Number(serde_json::Number::from(*min_len)));
+                    }
+                    if let Some(max_len) = max {
+                        schema.insert("maxLength".to_string(), serde_json::Value::Number(serde_json::Number::from(*max_len)));
+                    }
+                    serde_json::Value::Object(schema)
+                },
+                DocumentPropertyType::Integer => {
+                    let mut schema = serde_json::Map::new();
+                    schema.insert("type".to_string(), serde_json::Value::String("integer".to_owned()));
+                    // Add min and max if specified in parameters
+                    let integer_min = parameters.field_bounds.integer_min.start;
+                    let integer_max = parameters.field_bounds.integer_max.end;
+                    schema.insert("minimum".to_string(), serde_json::Value::Number(serde_json::Number::from(integer_min)));
+                    schema.insert("maximum".to_string(), serde_json::Value::Number(serde_json::Number::from(integer_max)));
+                    serde_json::Value::Object(schema)
+                },
+                DocumentPropertyType::Number => {
+                    let mut schema = serde_json::Map::new();
+                    schema.insert("type".to_string(), serde_json::Value::String("number".to_owned()));
+                    // Add min and max if specified in parameters
+                    let float_min = parameters.field_bounds.float_min.start;
+                    let float_max = parameters.field_bounds.float_max.end;
+                    schema.insert("minimum".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(float_min).unwrap()));
+                    schema.insert("maximum".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(float_max).unwrap()));
+                    serde_json::Value::Object(schema)
+                },
+                DocumentPropertyType::Date => {
+                    let mut schema = serde_json::Map::new();
+                    schema.insert("type".to_string(), serde_json::Value::String("string".to_owned()));
+                    schema.insert("format".to_string(), serde_json::Value::String("date-time".to_owned()));
+                    // There's a maxLength constraint in DPP, not sure what it is. Just putting 10 for now.
+                    schema.insert("maxLength".to_string(), serde_json::Value::Number(serde_json::Number::from(10)));
+                    serde_json::Value::Object(schema)
+                },
+                DocumentPropertyType::Boolean => {
+                    serde_json::json!({"type": "boolean"})
+                },
+                DocumentPropertyType::ByteArray(min, max) => {
+                    let mut schema = serde_json::Map::new();
+                    schema.insert("type".to_string(), serde_json::Value::String("array".to_owned()));
+                    if let Some(min_len) = min {
+                        schema.insert("minItems".to_string(), serde_json::Value::Number(serde_json::Number::from(*min_len)));
+                    }
+                    if let Some(max_len) = max {
+                        schema.insert("maxItems".to_string(), serde_json::Value::Number(serde_json::Number::from(*max_len)));
+                    }
+                    schema.insert("byteArray".to_string(), serde_json::Value::Bool(true));
+                    serde_json::Value::Object(schema)
+                },
+                DocumentPropertyType::Identifier => {
+                    json!({
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "pattern": "^[0-9a-fA-F]{64}$"
+                        },
+                        "minItems": 1,
+                        "maxItems": 1,
+                        "byteArray": true,
+                    })
+                },
+                DocumentPropertyType::Object(sub_properties) => {
+                    let sub_props_schema = sub_properties.iter().map(|(sub_key, _sub_prop)| {
+                        (sub_key.clone(), serde_json::json!({"type": "string"}))
+                    }).collect::<serde_json::Map<_, _>>();
+
+                    json!({
+                        "type": "object",
+                        "properties": sub_props_schema,
+                        "additionalProperties": false
+                    })
+                },
+                DocumentPropertyType::Array(item_type) => {
+                    let items_schema = match *item_type {
+                        ArrayItemType::String(min, max) => json!({"type": "string", "minLength": min, "maxLength": max}),
+                        ArrayItemType::Integer => json!({"type": "integer"}),
+                        ArrayItemType::Number => json!({"type": "number"}),
+                        ArrayItemType::ByteArray(min, max) => {
+                            json!({"type": "array", "items": {"type": "byte"}, "minItems": min, "maxItems": max})
+                        },
+                        ArrayItemType::Identifier => json!({"type": "array"}),
+                        ArrayItemType::Boolean => json!({"type": "bool"}),
+                        ArrayItemType::Date => json!({"type": "date"}), 
+                    };
+
+                    json!({
+                        "type": "array",
+                        "items": items_schema,
+                        "byteArray": true,
+                    })
+                },
+                DocumentPropertyType::VariableTypeArray(types) => {
+                    let types_schema = types.iter().map(|t| {
+                        match t {
+                            ArrayItemType::String(_, _) => json!({"type": "string"}),
+                            _ => json!({})
+                        }
+                    }).collect::<Vec<_>>();
+
+                    json!({
+                        "type": "array",
+                        "items": {
+                            "oneOf": types_schema
+                        }
+                    })
+                },
+            };
+
+            if let serde_json::Value::Object(ref mut schema) = schema_part {
+                schema.insert("position".to_string(), serde_json::Value::Number(serde_json::Number::from(position_counter)));
+            }
+            position_counter += 1;
+        
+            (key.clone(), schema_part)
+        }).collect::<serde_json::Map<String, serde_json::Value>>();
+        
+        // Generate indices
+        let indices_json_schema = indices.iter().map(|index| {
+            let properties_schema = index.properties.iter().map(|prop| {
+                // Only "asc" is allowed for now (v1.0-dev)
+                json!({ <std::string::String as Clone>::clone(&prop.name): "asc" })
+            }).collect::<Vec<_>>();
+        
+            json!({
+                "name": index.name,
+                "properties": properties_schema,
+                "unique": index.unique,
+            })
+        }).collect::<Vec<_>>();
+                
+        // Combine everything into the final schema
+        let schema = json!({
+            "title": name,
+            "type": "object",
+            "properties": properties_json_schema,
+            "required": required_fields.iter().cloned().collect::<Vec<_>>(),
+            "indices": indices_json_schema,
+            "additionalProperties": false,
+        });
+        
         // TODO: It might not work properly
         Ok(DocumentTypeV0 {
             name,
-            schema: Value::Null,
+            schema: schema.into(),
             indices,
             index_structure,
             flattened_properties: properties.clone(),

@@ -204,10 +204,117 @@ pub enum IdentityUpdateOp {
 pub type DocumentTypeNewFieldsOptionalCountRange = Range<u16>;
 pub type DocumentTypeCount = Range<u16>;
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct DataContractUpdateOp {
+    pub action: DataContractUpdateAction,
+    pub contract: DataContract,
+    pub document_type: Option<DocumentType>,
+}
+
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
-pub enum DataContractUpdateOp {
+pub struct DataContractUpdateOpInSerializationFormat {
+    action: DataContractUpdateAction,
+    contract: DataContractInSerializationFormat,
+    document_type: Option<Value>,
+}
+
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+pub enum DataContractUpdateAction {
     DataContractNewDocumentTypes(RandomDocumentTypeParameters), // How many fields should it have
     DataContractNewOptionalFields(DocumentTypeNewFieldsOptionalCountRange, DocumentTypeCount), // How many new fields on how many document types
+}
+
+impl PlatformSerializableWithPlatformVersion for DataContractUpdateOp {
+    type Error = ProtocolError;
+
+    fn serialize_to_bytes_with_platform_version(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        self.clone()
+            .serialize_consume_to_bytes_with_platform_version(platform_version)
+    }
+
+    fn serialize_consume_to_bytes_with_platform_version(
+        self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        let DataContractUpdateOp { action, contract, document_type } = self;
+        
+        // Serialize contract and optionally document type
+        let contract_in_serialization_format: DataContractInSerializationFormat =
+            contract.try_into_platform_versioned(platform_version)?;
+
+        // Convert DocumentType to its serializable schema representation
+        let document_type_in_serialization_format = document_type.map(|dt| {
+            // Assuming `schema_owned` or a similar method returns a serializable representation
+            dt.schema_owned()
+        });
+
+        let update_op_in_serialization_format = DataContractUpdateOpInSerializationFormat {
+            action,
+            contract: contract_in_serialization_format,
+            document_type: document_type_in_serialization_format,
+        };
+
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        bincode::encode_to_vec(update_op_in_serialization_format, config).map_err(|e| {
+            PlatformSerializationError(format!("Unable to serialize DataContractUpdateOp: {}", e))
+        })
+    }
+}
+
+impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for DataContractUpdateOp {
+    fn versioned_deserialize(
+        data: &[u8],
+        validate: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        let deserialized: DataContractUpdateOpInSerializationFormat =
+            bincode::borrow_decode_from_slice(data, config)
+                .map_err(|e| PlatformDeserializationError(format!("Unable to deserialize DataContractUpdateOp: {}", e)))?.0;
+
+        let contract = DataContract::try_from_platform_versioned(deserialized.contract, validate, platform_version)?;
+
+        let action = deserialized.action;
+
+        let document_type = deserialized.document_type.and_then(|value| {
+            match value {
+                Value::Map(map) => {
+                    map.into_iter().map(|(name, schema_json)| {
+                        let name_str = name.to_str().expect("Couldn't convert document type name to str in deserialization");
+                        let schema = Value::try_from(schema_json).unwrap();
+                        let owner_id = contract.owner_id(); // Assuming you have a method to get the owner_id from the contract
+                        DocumentType::try_from_schema(
+                            owner_id, 
+                            name_str, 
+                            schema, 
+                            None,
+                            true,
+                            true,
+                            validate, 
+                            platform_version
+                        ).expect("Failed to reconstruct DocumentType from schema")
+                    }).next() // Assumes only one document type is being deserialized
+                },
+                _ => None,
+            }
+        });
+
+        Ok(DataContractUpdateOp {
+            action,
+            contract,
+            document_type,
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -231,7 +338,7 @@ enum OperationTypeInSerializationFormat {
         RandomDocumentTypeParameters,
         DocumentTypeCount,
     ),
-    OperationTypeInSerializationFormatContractUpdate(DataContractUpdateOp),
+    OperationTypeInSerializationFormatContractUpdate(Vec<u8>),
     OperationTypeInSerializationFormatIdentityTransfer,
 }
 
@@ -269,7 +376,9 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
                 OperationTypeInSerializationFormat::OperationTypeInSerializationFormatContractCreate(p,c)
             }
             OperationType::ContractUpdate(update_op) => {
-                OperationTypeInSerializationFormat::OperationTypeInSerializationFormatContractUpdate(update_op)
+                // let's just serialize it to make things easier
+                let contract_op_in_serialization_format = update_op.serialize_consume_to_bytes_with_platform_version(platform_version)?;
+                OperationTypeInSerializationFormat::OperationTypeInSerializationFormatContractUpdate(contract_op_in_serialization_format)
             }
             OperationType::IdentityTransfer => {
                 OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityTransfer
@@ -319,7 +428,8 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
             OperationTypeInSerializationFormat::OperationTypeInSerializationFormatContractCreate(p, c) => {
                 OperationType::ContractCreate(p, c)
             }
-            OperationTypeInSerializationFormat::OperationTypeInSerializationFormatContractUpdate(update_op) => {
+            OperationTypeInSerializationFormat::OperationTypeInSerializationFormatContractUpdate(serialized_op) => {
+                let update_op = DataContractUpdateOp::versioned_deserialize(serialized_op.as_slice(), validate, platform_version)?;
                 OperationType::ContractUpdate(update_op)
             }
             OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityTransfer => {
