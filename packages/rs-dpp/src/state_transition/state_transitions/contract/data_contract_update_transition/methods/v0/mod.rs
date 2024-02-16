@@ -2,6 +2,7 @@ use crate::data_contract::DataContract;
 use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
 
+use crate::prelude::IdentityContractNonce;
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
@@ -25,6 +26,7 @@ pub trait DataContractUpdateTransitionMethodsV0 {
         data_contract: DataContract,
         identity: &PartialIdentity,
         key_id: KeyID,
+        identity_contract_nonce: IdentityContractNonce,
         signer: &S,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,

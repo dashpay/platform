@@ -1,4 +1,5 @@
 use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
+use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;
 use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
@@ -37,11 +38,8 @@ impl DriveHighLevelDocumentOperationConverter for DocumentTransitionAction {
             }
             DocumentTransitionAction::BumpIdentityDataContractNonce(
                 bump_identity_contract_nonce_action,
-            ) => bump_identity_contract_nonce_action.into_high_level_document_drive_operations(
-                epoch,
-                owner_id,
-                platform_version,
-            ),
+            ) => bump_identity_contract_nonce_action
+                .into_high_level_drive_operations(epoch, platform_version),
         }
     }
 }

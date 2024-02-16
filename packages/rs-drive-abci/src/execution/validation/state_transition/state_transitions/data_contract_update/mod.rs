@@ -1,3 +1,4 @@
+mod identity_contract_nonce;
 mod state;
 mod structure;
 
@@ -44,55 +45,6 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
             0 => self.transform_into_action_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: transform_into_action".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
-    }
-}
-
-impl StateTransitionBasicStructureValidationV0 for DataContractUpdateTransition {
-    fn validate_basic_structure(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, Error> {
-        match platform_version
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .contract_update_state_transition
-            .base_structure
-        {
-            0 => self.validate_base_structure_v0(platform_version),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "data contract update transition: validate_basic_structure".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
-    }
-}
-
-impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
-    fn validate_state<C: CoreRPCLike>(
-        &self,
-        _action: Option<StateTransitionAction>,
-        platform: &PlatformRef<C>,
-        _execution_context: &mut StateTransitionExecutionContext,
-        tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
-        match platform_version
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .contract_update_state_transition
-            .state
-        {
-            0 => self.validate_state_v0(platform, tx, platform_version),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "data contract update transition: validate_state".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -226,6 +178,7 @@ mod tests {
                 .expect("to be able to set document schema");
 
             let state_transition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce: 1,
                 data_contract: DataContractInSerializationFormat::try_from_platform_versioned(
                     data_contract,
                     platform_version,
@@ -304,6 +257,7 @@ mod tests {
 
             // TODO: add a data contract stop transition
             let state_transition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce: 1,
                 data_contract: DataContractInSerializationFormat::try_from_platform_versioned(
                     data_contract.clone(),
                     platform_version,
@@ -456,7 +410,7 @@ mod tests {
             // It should be not possible to modify this
             data_contract.config_mut().set_keeps_history(false);
 
-            let state_transition: DataContractUpdateTransitionV0 = data_contract
+            let state_transition: DataContractUpdateTransitionV0 = (data_contract, 1)
                 .try_into_platform_versioned(LATEST_PLATFORM_VERSION)
                 .expect("expected an update transition");
 

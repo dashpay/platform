@@ -1,0 +1,2 @@
+/// bump_identity_data_contract_nonce_action
+pub mod bump_identity_data_contract_nonce_action;

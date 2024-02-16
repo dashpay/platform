@@ -20,6 +20,7 @@ impl TryFromPlatformVersioned<DataContractUpdateTransitionV0>
                 true,
                 platform_version,
             )?,
+            identity_contract_nonce: value.identity_contract_nonce,
         })
     }
 }
@@ -39,6 +40,7 @@ impl TryFromPlatformVersioned<&DataContractUpdateTransitionV0>
                 true,
                 platform_version,
             )?,
+            identity_contract_nonce: value.identity_contract_nonce,
         })
     }
 }

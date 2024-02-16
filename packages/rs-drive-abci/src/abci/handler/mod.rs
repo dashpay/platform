@@ -87,7 +87,7 @@ where
 
         if !tenderdash_abci::check_version(&request.abci_version) {
             return Err(proto::ResponseException::from(format!(
-                "tenderdash requires ABCI version {}, our version is {}",
+                "tenderdash requires protobuf definitions version {}, our version is {}",
                 request.abci_version,
                 tenderdash_abci::proto::ABCI_VERSION
             )));

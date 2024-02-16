@@ -13,7 +13,7 @@ use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::processor::process_state_transition;
-use crate::execution::validation::state_transition::processor::v0::{StateTransitionBasicStructureValidationV0, StateTransitionRevisionValidationV0, StateTransitionSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0};
+use crate::execution::validation::state_transition::processor::v0::{StateTransitionBasicStructureValidationV0, StateTransitionIdentityContractNonceValidationV0, StateTransitionSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0};
 
 /// A trait for validating state transitions within a blockchain.
 pub(crate) trait StateTransitionCheckTxValidationV0 {

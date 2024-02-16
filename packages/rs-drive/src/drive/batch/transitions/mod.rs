@@ -6,7 +6,9 @@
 mod contract;
 mod document;
 mod identity;
+mod system;
 
+use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;
 use crate::state_transition_action::StateTransitionAction;
@@ -57,6 +59,10 @@ impl<'s> DriveHighLevelOperationConverter for StateTransitionAction {
             StateTransitionAction::IdentityCreditTransferAction(
                 identity_credit_transfer_transition,
             ) => identity_credit_transfer_transition
+                .into_high_level_drive_operations(epoch, platform_version),
+            StateTransitionAction::BumpIdentityDataContractNonceAction(
+                bump_identity_credit_transfer_transition,
+            ) => bump_identity_credit_transfer_transition
                 .into_high_level_drive_operations(epoch, platform_version),
         }
     }

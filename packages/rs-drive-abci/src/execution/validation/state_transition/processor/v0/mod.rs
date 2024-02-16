@@ -109,6 +109,18 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
 
     let maybe_identity = result.into_data()?;
 
+    // Validating identity contract nonce, this must happen after validating the signature
+    let result = state_transition.validate_identity_contract_nonces(
+        &platform.into(),
+        platform.block_info,
+        transaction,
+        platform_version,
+    )?;
+
+    if !result.is_valid() {
+        return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+    }
+
     // Validating state
     let result = state_transition.validate_state(
         action,
@@ -179,7 +191,7 @@ pub(crate) trait StateTransitionBasicStructureValidationV0 {
 }
 
 /// A trait for validating state transitions within a blockchain.
-pub(crate) trait StateTransitionRevisionValidationV0 {
+pub(crate) trait StateTransitionIdentityContractNonceValidationV0 {
     /// Validates the structure of a transaction by checking its basic elements.
     ///
     /// # Arguments
@@ -277,7 +289,7 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
     }
 }
 
-impl StateTransitionRevisionValidationV0 for StateTransition {
+impl StateTransitionIdentityContractNonceValidationV0 for StateTransition {
     fn validate_identity_contract_nonces(
         &self,
         platform: &PlatformStateRef,
@@ -287,6 +299,9 @@ impl StateTransitionRevisionValidationV0 for StateTransition {
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
             StateTransition::DocumentsBatch(st) => {
+                st.validate_identity_contract_nonces(platform, block_info, tx, platform_version)
+            }
+            StateTransition::DataContractUpdate(st) => {
                 st.validate_identity_contract_nonces(platform, block_info, tx, platform_version)
             }
             _ => Ok(SimpleConsensusValidationResult::new()),
@@ -474,9 +489,11 @@ impl StateTransitionStateValidationV0 for StateTransition {
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
+            // The replay attack is prevented by checking if a data contract exists with this id first
             StateTransition::DataContractCreate(st) => {
                 st.validate_state(action, platform, execution_context, tx)
             }
+            // The replay attack is prevented by identity data contract nonce
             StateTransition::DataContractUpdate(st) => {
                 st.validate_state(action, platform, execution_context, tx)
             }
@@ -492,6 +509,7 @@ impl StateTransitionStateValidationV0 for StateTransition {
             StateTransition::IdentityCreditWithdrawal(st) => {
                 st.validate_state(action, platform, execution_context, tx)
             }
+            // The replay attack is prevented by identity data contract nonce
             StateTransition::DocumentsBatch(st) => {
                 st.validate_state(action, platform, execution_context, tx)
             }

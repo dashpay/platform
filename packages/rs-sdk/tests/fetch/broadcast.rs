@@ -1,7 +1,7 @@
 #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
 /// Tests that require connectivity to the server
 mod online {
-    use crate::{common::setup_logs, config::Config};
+    use crate::fetch::{common::setup_logs, config::Config};
     use dapi_grpc::platform::v0::{
         wait_for_state_transition_result_request::WaitForStateTransitionResultRequestV0,
         WaitForStateTransitionResultRequest,

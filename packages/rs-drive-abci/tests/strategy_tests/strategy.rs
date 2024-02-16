@@ -429,6 +429,7 @@ impl NetworkStrategy {
         current_identities: &Vec<Identity>,
         block_height: u64,
         signer: &SimpleSigner,
+        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
         self.strategy
@@ -448,10 +449,16 @@ impl NetworkStrategy {
                     .clone()
                     .into_partial_identity_info();
 
+                let identity_contract_nonce = contract_nonce_counter
+                    .entry((identity.id, contract_update.data_contract().id()))
+                    .or_default();
+                *identity_contract_nonce += 1;
+
                 let state_transition = DataContractUpdateTransition::new_from_data_contract(
                     contract_update.data_contract().clone(),
                     &identity,
                     1, //key id 1 should always be a high or critical auth key in these tests
+                    *identity_contract_nonce,
                     signer,
                     platform_version,
                     None,
@@ -508,6 +515,7 @@ impl NetworkStrategy {
                 current_identities,
                 block_info.height,
                 signer,
+                contract_nonce_counter,
                 platform_version,
             );
             state_transitions.append(&mut contract_update_state_transitions);
