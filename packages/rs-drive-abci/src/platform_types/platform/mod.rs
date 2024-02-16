@@ -52,9 +52,8 @@ pub struct PlatformRef<'a, C> {
     pub config: &'a PlatformConfig,
     /// Core RPC Client
     pub core_rpc: &'a C,
-    // TODO: Try to keep it as a reference to avoid cloning
     /// Block info
-    pub block_info: BlockInfo,
+    pub block_info: &'a BlockInfo,
 }
 
 // @append_only
@@ -68,9 +67,8 @@ pub struct PlatformStateRef<'a> {
     pub version: &'a PlatformVersion,
     /// Configuration
     pub config: &'a PlatformConfig,
-    // TODO: Try to keep it as a reference to avoid cloning
     /// Block info
-    pub block_info: BlockInfo,
+    pub block_info: &'a BlockInfo,
 }
 
 impl<'a> Debug for PlatformStateRef<'a> {
@@ -99,7 +97,7 @@ impl<'a, C> From<&PlatformRef<'a, C>> for PlatformStateRef<'a> {
             state,
             config,
             version,
-            block_info: block_info.clone(),
+            block_info,
         }
     }
 }

@@ -386,7 +386,7 @@ mod test {
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &platform.state,
-            block_info: state_read_guard.any_block_info().clone(),
+            block_info: state_read_guard.any_block_info(),
             version: state_read_guard
                 .current_platform_version()
                 .expect("should return current protocol version"),

@@ -365,7 +365,7 @@ mod test {
             state: &platform.state,
             version: platform_version,
             config: &platform.config,
-            block_info: block_info.clone(),
+            block_info: &block_info,
         };
 
         for (i, document) in documents.iter().enumerate() {
@@ -469,7 +469,7 @@ mod test {
             state: &platform.state,
             version: platform_version,
             config: &platform.config,
-            block_info: block_info.clone(),
+            block_info: &block_info,
         };
 
         let execution_context =
@@ -527,7 +527,7 @@ mod test {
             state: &platform.state,
             version: platform_version,
             config: &platform.config,
-            block_info: block_info.clone(),
+            block_info: &block_info,
         };
 
         let execution_context =
@@ -579,7 +579,7 @@ mod test {
             state: &platform.state,
             version: platform_version,
             config: &platform.config,
-            block_info: block_info.clone(),
+            block_info: &block_info,
         };
 
         let mut identity = Identity::random_identity(2, Some(9), platform_version)
@@ -644,7 +644,7 @@ mod test {
             state: &platform.state,
             version: platform_version,
             config: &platform.config,
-            block_info: block_info.clone(),
+            block_info: &block_info,
         };
 
         let document_type = data_contract
@@ -763,7 +763,7 @@ mod test {
                 .current_platform_version()
                 .expect("should return current protocol version"),
             config: &platform.config,
-            block_info: state_write_guard.any_block_info().clone(),
+            block_info: state_write_guard.any_block_info(),
         };
 
         let mut execution_context =

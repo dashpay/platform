@@ -157,7 +157,7 @@ mod test {
             version: state_read_guard
                 .current_platform_version()
                 .expect("should return current protocol version"),
-            block_info: state_read_guard.any_block_info().clone(),
+            block_info: state_read_guard.any_block_info(),
             config: &platform.config,
         };
         let protocol_version = state_read_guard.current_protocol_version_in_consensus();
@@ -242,7 +242,7 @@ mod test {
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &platform.state,
-            block_info: state_write_guard.any_block_info().clone(),
+            block_info: state_write_guard.any_block_info(),
             version: state_write_guard
                 .current_platform_version()
                 .expect("should return current protocol version"),
@@ -359,7 +359,7 @@ mod test {
             version: state_write_guard
                 .current_platform_version()
                 .expect("should return current protocol version"),
-            block_info: state_write_guard.any_block_info().clone(),
+            block_info: state_write_guard.any_block_info(),
             config: &platform.config,
         };
         let protocol_version = state_write_guard.current_protocol_version_in_consensus();

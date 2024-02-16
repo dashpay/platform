@@ -46,7 +46,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
             .expect("expected a version"),
         config: &abci_app.platform.config,
         core_rpc: &abci_app.platform.core_rpc,
-        block_info: block_info.clone(),
+        block_info,
     };
 
     //actions are easier to transform to queries
