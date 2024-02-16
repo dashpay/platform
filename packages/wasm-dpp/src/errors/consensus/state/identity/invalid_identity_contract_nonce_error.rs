@@ -1,6 +1,7 @@
 use crate::buffer::Buffer;
 
 use dpp::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityContractNonceError;
+use dpp::consensus::ConsensusError;
 use dpp::identity::identity_contract_nonce::MergeIdentityContractNonceResult;
 use wasm_bindgen::prelude::*;
 
@@ -53,5 +54,10 @@ impl InvalidIdentityContractNonceErrorWasm {
                 js_sys::Error::new("no error")
             }
         }
+    }
+
+    #[wasm_bindgen(js_name=getCode)]
+    pub fn get_code(&self) -> u32 {
+        ConsensusError::from(self.inner.clone()).code()
     }
 }
