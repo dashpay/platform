@@ -94,7 +94,7 @@ mod platform_state;
 #[cfg(feature = "full")]
 mod prove;
 /// Contains a set of useful grovedb proof verification functions
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "verify")]
 pub mod verify;
 
 #[cfg(feature = "full")]

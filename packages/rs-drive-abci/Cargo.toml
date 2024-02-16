@@ -22,7 +22,7 @@ serde_with = { version = "3.1.0", features = [
     "hex",
     "macros",
 ], default-features = false }
-drive = { path = "../rs-drive", features = [
+drive = { path = "../rs-drive", default-features = false, features = [
     "full",
     "grovedb_operations_logging",
 ] }

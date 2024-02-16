@@ -12,7 +12,9 @@ license = "MIT"
 
 [dependencies]
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-drive = { path = "../rs-drive" }
+drive = { path = "../rs-drive", default-features = false, features = [
+    "verify",
+] }
 rand = "0.8.5"
 hex = "0.4.3"
 dpp = { path = "../rs-dpp", features = [
