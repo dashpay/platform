@@ -7,11 +7,13 @@ use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::PrivateKey;
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+use dpp::data_contract::document_type::v0::DocumentTypeV0;
 use dpp::data_contract::DataContract;
 
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::{Identity, KeyType, PartialIdentity, Purpose, SecurityLevel};
+use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
     PlatformSerializableWithPlatformVersion,
@@ -24,9 +26,11 @@ use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+use operations::{DataContractUpdateAction, DataContractUpdateOp};
+use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
 use rand::Rng;
-use tracing::error;
+use tracing::{error, info};
 use std::collections::{BTreeMap, HashSet, HashMap};
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -548,6 +552,7 @@ impl Strategy {
         create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
+        known_contracts: &mut BTreeMap<String, DataContract>,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
@@ -972,7 +977,7 @@ impl Strategy {
                             IdentityUpdateOp::IdentityUpdateAddKeys(keys_count) => {
                                 (0..count).for_each(|_| {
                                     current_identities.iter_mut().enumerate().for_each(|(i, random_identity)| {
-                                        if i >= count.into() { return; } // Ensure we do not exceed the count
+                                        if i >= count.into() { return; }
                     
                                         let (state_transition, keys_to_add_at_end_block) =
                                             crate::transitions::create_identity_update_transition_add_keys(
@@ -993,7 +998,7 @@ impl Strategy {
                             IdentityUpdateOp::IdentityUpdateDisableKey(keys_count) => {
                                 (0..count).for_each(|_| {
                                     current_identities.iter_mut().enumerate().for_each(|(i, random_identity)| {
-                                        if i >= count.into() { return; } // Ensure we do not exceed the count
+                                        if i >= count.into() { return; }
                     
                                         if let Some(state_transition) =
                                             crate::transitions::create_identity_update_transition_disable_keys(
@@ -1015,7 +1020,7 @@ impl Strategy {
                     // Generate state transition for identity withdrawal operation
                     OperationType::IdentityWithdrawal if !current_identities.is_empty() => {
                         for i in 0..count {
-                            let index = (i as usize) % current_identities.len(); // Ensure index is usize
+                            let index = (i as usize) % current_identities.len();
                             let random_identity = &mut current_identities[index];
                             let state_transition =
                                 crate::transitions::create_identity_withdrawal_transition(
@@ -1050,10 +1055,56 @@ impl Strategy {
                     //
                     //     DocumentType::random_document()
                     // }
-                    // OperationType::ContractUpdate(DataContractNewDocumentTypes(count))
-                    //     if !current_identities.is_empty() => {
-                    //
-                    // }
+                    OperationType::ContractUpdate(DataContractUpdateOp {
+                        action: DataContractUpdateAction::DataContractNewDocumentTypes(params),
+                        contract,
+                        document_type: None,
+                    }) => {
+                        let contract_key = contract.id().to_string(Encoding::Base58);
+
+                        for _ in 0..count {
+                            if let Some(DataContract::V0(contract_ref)) = known_contracts.get_mut(&contract_key) {
+                                match DocumentTypeV0::random_document_type(params.clone(), contract_ref.id(), rng, platform_version) {
+                                    Ok(new_document_type) => {
+                                        let document_type_name = format!("doc_type_{}", rng.gen::<u16>());
+                                        
+                                        // Update the document types and increment the version
+                                        contract_ref.document_types.insert(document_type_name, DocumentType::V0(new_document_type));
+                                        contract_ref.increment_version();
+                                        
+                                        // Prepare the DataContractUpdateTransition with the updated contract_ref
+                                        match DataContractUpdateTransition::try_from_platform_versioned(DataContract::V0(contract_ref.clone()), platform_version) {
+                                            Ok(data_contract_update_transition) => {
+                                                let identity_public_key = current_identities[0]
+                                                    .get_first_public_key_matching(
+                                                        Purpose::AUTHENTICATION,
+                                                        HashSet::from([SecurityLevel::CRITICAL]),
+                                                        HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                                                    )
+                                                    .expect("expected to get a signing key with CRITICAL security level");
+                        
+                                                let mut state_transition = StateTransition::DataContractUpdate(data_contract_update_transition);
+                                                state_transition.sign_external(
+                                                    identity_public_key,
+                                                    signer,
+                                                    Some(|_data_contract_id, _document_type_name| {
+                                                        Ok(SecurityLevel::CRITICAL)
+                                                    }),
+                                                )
+                                                .expect("expected to sign the contract update transition with a CRITICAL level key");
+                                                
+                                                operations.push(state_transition);
+                                            },
+                                            Err(e) => error!("Error converting data contract to update transition: {:?}", e),
+                                        }
+                                    },
+                                    Err(e) => error!("Error generating random document type: {:?}", e),
+                                }
+                            } else {
+                                // Handle the case where the contract is not found in known_contracts
+                            }    
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1098,6 +1149,7 @@ impl Strategy {
         create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
+        known_contracts: &mut BTreeMap<String, DataContract>,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
         config: &StrategyConfig,
@@ -1138,6 +1190,7 @@ impl Strategy {
                     create_asset_lock,
                     block_info,
                     current_identities,
+                    known_contracts,
                     signer,
                     rng,
                     platform_version,
