@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::drive::contract::paths::{contract_keeping_history_storage_path, contract_root_path};
+use crate::drive::contract::paths::{contract_keeping_history_root_path, contract_root_path};
 use crate::drive::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
@@ -87,7 +87,7 @@ impl Drive {
         if proved_key_values.len() == 1 {
             let (path, key, maybe_element) = proved_key_values.remove(0);
             if contract_known_keeps_history.unwrap_or_default() {
-                if path != contract_keeping_history_storage_path(&contract_id) {
+                if path != contract_keeping_history_root_path(&contract_id) {
                     return Err(Error::Proof(ProofError::CorruptedProof(
                         "we did not get back an element for the correct path for the historical contract".to_string(),
                     )));
