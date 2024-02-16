@@ -25,8 +25,14 @@ export default async function update(
 
   updatedDataContract.incrementVersion();
 
+  const identityId = identity.getId();
+  const dataContractId = dataContract.getId();
+
+  const { identityContractNonce } = await this.client.getDAPIClient().platform
+    .getIdentityContractNonce(identityId, dataContractId);
+
   const dataContractUpdateTransition = dpp.dataContract
-    .createDataContractUpdateTransition(updatedDataContract);
+    .createDataContractUpdateTransition(updatedDataContract, BigInt(identityContractNonce + 1));
 
   this.logger.silly(`[DataContract#update] Created data contract update transition ${dataContract.getId()}`);
 

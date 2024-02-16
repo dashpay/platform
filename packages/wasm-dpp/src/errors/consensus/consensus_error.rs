@@ -26,7 +26,7 @@ use crate::errors::consensus::basic::identity::{
 
 use crate::errors::consensus::state::identity::{
     DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
-    MissingIdentityPublicKeyIdsErrorWasm,
+    InvalidIdentityContractNonceErrorWasm, MissingIdentityPublicKeyIdsErrorWasm,
 };
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::BasicError::{
@@ -65,8 +65,9 @@ use crate::errors::consensus::basic::data_contract::{
 };
 use crate::errors::consensus::basic::document::{
     DuplicateDocumentTransitionsWithIdsErrorWasm, DuplicateDocumentTransitionsWithIndicesErrorWasm,
-    InvalidDocumentTransitionActionErrorWasm, InvalidDocumentTransitionIdErrorWasm,
-    MissingDataContractIdErrorWasm, MissingDocumentTypeErrorWasm,
+    IdentityContractNonceOutOfBoundsErrorWasm, InvalidDocumentTransitionActionErrorWasm,
+    InvalidDocumentTransitionIdErrorWasm, MissingDataContractIdErrorWasm,
+    MissingDocumentTypeErrorWasm,
 };
 use crate::errors::consensus::basic::state_transition::{
     InvalidStateTransitionTypeErrorWasm, MissingStateTransitionTypeErrorWasm,
@@ -211,6 +212,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::InvalidAssetLockProofValueError(e) => {
             InvalidAssetLockProofValueErrorWasm::from(e).into()
         }
+        StateError::InvalidIdentityContractNonceError(e) => {
+            InvalidIdentityContractNonceErrorWasm::from(e).into()
+        }
         // TODO(versioning): restore
         _ => todo!(),
     }
@@ -314,6 +318,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::IdentityCreditTransferToSelfError(err) => {
             IdentityCreditTransferToSelfErrorWasm::from(err).into()
+        }
+        BasicError::IdentityContractNonceOutOfBoundsError(err) => {
+            IdentityContractNonceOutOfBoundsErrorWasm::from(err).into()
         }
         ProtocolVersionParsingError(e) => ProtocolVersionParsingErrorWasm::from(e).into(),
         SerializedObjectParsingError(e) => SerializedObjectParsingErrorWasm::from(e).into(),
