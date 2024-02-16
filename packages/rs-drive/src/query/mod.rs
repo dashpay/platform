@@ -1707,7 +1707,7 @@ impl<'a> DriveQuery<'a> {
         )
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(all(feature = "full", feature = "verify"))]
     /// Executes a query with proof and returns the root hash, items, and fee.
     pub fn execute_with_proof_only_get_elements(
         self,
@@ -1738,7 +1738,7 @@ impl<'a> DriveQuery<'a> {
         Ok((root_hash, items, cost))
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(all(feature = "full", feature = "verify"))]
     /// Executes an internal query with proof and returns the root hash and values.
     pub(crate) fn execute_with_proof_only_get_elements_internal(
         self,
