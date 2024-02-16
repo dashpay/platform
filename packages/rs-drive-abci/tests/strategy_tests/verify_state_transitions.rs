@@ -40,10 +40,13 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     let state = abci_app.platform.state.read().unwrap();
     let platform = PlatformRef {
         drive: &abci_app.platform.drive,
-        state: &state,
+        state: &abci_app.platform.state,
+        version: state
+            .current_platform_version()
+            .expect("expected a version"),
         config: &abci_app.platform.config,
         core_rpc: &abci_app.platform.core_rpc,
-        block_info,
+        block_info: block_info.clone(),
     };
 
     //actions are easier to transform to queries
@@ -141,10 +144,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     )
                     .expect("expected to verify contract");
                     assert_eq!(
-                        &root_hash,
-                        expected_root_hash,
+                        &root_hash, expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.last_committed_block_info()
+                        platform.block_info
                     );
 
                     if *was_executed {
@@ -195,10 +197,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     )
                     .expect("expected to verify full identity");
                     assert_eq!(
-                        &root_hash,
-                        expected_root_hash,
+                        &root_hash, expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.last_committed_block_info()
+                        platform.block_info
                     );
                     if *was_executed {
                         assert_eq!(
@@ -304,10 +305,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             .expect("expected to verify a document");
 
                         assert_eq!(
-                            &root_hash,
-                            expected_root_hash,
+                            &root_hash, expected_root_hash,
                             "state last block info {:?}",
-                            platform.state.last_committed_block_info()
+                            platform.block_info
                         );
 
                         match document_transition_action {
@@ -412,10 +412,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     )
                     .expect("expected to verify full identity");
                     assert_eq!(
-                        &root_hash,
-                        expected_root_hash,
+                        &root_hash, expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.last_committed_block_info()
+                        platform.block_info
                     );
                     if *was_executed {
                         // other state transitions might have happened in the same block the identity
@@ -468,10 +467,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     .expect("expected to verify balance identity");
                     let balance = balance.expect("expected a balance");
                     assert_eq!(
-                        &root_hash,
-                        expected_root_hash,
+                        &root_hash, expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.last_committed_block_info()
+                        platform.block_info
                     );
 
                     if *was_executed {
@@ -534,10 +532,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     .expect("expected to verify balance identity");
                     let _balance = balance.expect("expected a balance");
                     assert_eq!(
-                        &root_hash,
-                        expected_root_hash,
+                        &root_hash, expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.last_committed_block_info()
+                        platform.block_info
                     );
 
                     //todo: we need to do more here
@@ -585,10 +582,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     .expect("expected to verify identity keys");
                     let identity = identity.expect("expected an identity");
                     assert_eq!(
-                        &root_hash,
-                        expected_root_hash,
+                        &root_hash, expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.last_committed_block_info()
+                        platform.block_info
                     );
                     // we need to verify that the partial identity has all keys we added
                     let has_all_keys = identity_update_transition
@@ -653,10 +649,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         .expect("expected to verify balance identity");
 
                     assert_eq!(
-                        &root_hash_identity,
-                        expected_root_hash,
+                        &root_hash_identity, expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.last_committed_block_info()
+                        platform.block_info
                     );
 
                     let (root_hash_recipient, balance_recipient) =
@@ -669,10 +664,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         .expect("expected to verify balance recipient");
 
                     assert_eq!(
-                        &root_hash_recipient,
-                        expected_root_hash,
+                        &root_hash_recipient, expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.last_committed_block_info()
+                        platform.block_info
                     );
 
                     if *was_executed {

@@ -45,13 +45,16 @@ pub struct PlatformRef<'a, C> {
     /// Drive
     pub drive: &'a Drive,
     /// State
-    pub state: &'a PlatformState,
+    pub state: &'a RwLock<PlatformState>,
+    /// Version
+    pub version: &'a PlatformVersion,
     /// Configuration
     pub config: &'a PlatformConfig,
     /// Core RPC Client
     pub core_rpc: &'a C,
+    // TODO: Try to keep it as a reference to avoid cloning
     /// Block info
-    pub block_info: &'a BlockInfo,
+    pub block_info: BlockInfo,
 }
 
 // @append_only
@@ -60,15 +63,21 @@ pub struct PlatformStateRef<'a> {
     /// Drive
     pub drive: &'a Drive,
     /// State
-    pub state: &'a PlatformState,
+    pub state: &'a RwLock<PlatformState>,
+    /// Current platform version
+    pub version: &'a PlatformVersion,
     /// Configuration
     pub config: &'a PlatformConfig,
+    // TODO: Try to keep it as a reference to avoid cloning
+    /// Block info
+    pub block_info: BlockInfo,
 }
 
 impl<'a> Debug for PlatformStateRef<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("platform_state_ref")
-            .field("state", self.state)
+            .field("block_info", &self.block_info)
+            .field("version", self.version)
             .field("config", self.config)
             .finish()
     }
@@ -80,6 +89,8 @@ impl<'a, C> From<&PlatformRef<'a, C>> for PlatformStateRef<'a> {
             drive,
             state,
             config,
+            version,
+            block_info,
             ..
         } = value;
 
@@ -87,6 +98,8 @@ impl<'a, C> From<&PlatformRef<'a, C>> for PlatformStateRef<'a> {
             drive,
             state,
             config,
+            version,
+            block_info: block_info.clone(),
         }
     }
 }
@@ -178,50 +191,6 @@ impl<C> Platform<C> {
 
         let (drive, current_protocol_version) =
             Drive::open(path, Some(config.drive.clone())).map_err(Error::Drive)?;
-
-        if let Some(protocol_version) = current_protocol_version {
-            let platform_version = PlatformVersion::get(protocol_version)?;
-
-            let Some(execution_state) =
-                Platform::<C>::fetch_platform_state(&drive, None, platform_version)?
-            else {
-                return Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                    "execution state should be stored as well as protocol version",
-                )));
-            };
-
-            return Platform::open_with_client_saved_state::<P>(
-                drive,
-                core_rpc,
-                config,
-                execution_state,
-            );
-        }
-
-        Platform::open_with_client_no_saved_state::<P>(
-            drive,
-            core_rpc,
-            config,
-            INITIAL_PROTOCOL_VERSION,
-            INITIAL_PROTOCOL_VERSION,
-        )
-    }
-
-    /// Open Platform with Drive and block execution context.
-    pub fn open_secondary_with_client<P: AsRef<Path>>(
-        primary_path: P,
-        secondary_path: P,
-        config: Option<PlatformConfig>,
-        core_rpc: C,
-    ) -> Result<Platform<C>, Error>
-    where
-        C: CoreRPCLike,
-    {
-        let config = config.unwrap_or(PlatformConfig::default_testnet());
-
-        let (drive, current_protocol_version) =
-            Drive::open_secondary(primary_path, secondary_path, Some(config.drive.clone()))
-                .map_err(Error::Drive)?;
 
         if let Some(protocol_version) = current_protocol_version {
             let platform_version = PlatformVersion::get(protocol_version)?;

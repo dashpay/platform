@@ -66,6 +66,7 @@ impl<'a, C> TransactionalApplication<'a> for ConsensusAbciApplication<'a, C> {
             .ok_or(Error::Execution(ExecutionError::NotInTransaction(
                 "trying to commit a transaction, but we are not in one",
             )))?;
+
         let platform_state = self.platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version()?;
         self.platform

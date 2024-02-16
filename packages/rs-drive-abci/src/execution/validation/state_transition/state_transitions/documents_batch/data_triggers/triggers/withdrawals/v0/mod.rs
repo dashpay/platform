@@ -142,6 +142,7 @@ mod tests {
     use dpp::withdrawal::Pooling;
     use drive::drive::contract::DataContractFetchInfo;
     use crate::execution::types::state_transition_execution_context::v0::StateTransitionExecutionContextV0;
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
     #[test]
     fn should_throw_error_if_withdrawal_not_found() {
@@ -151,8 +152,12 @@ mod tests {
         let state_read_guard = platform.state.read().unwrap();
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_read_guard,
+            state: &platform.state,
+            version: state_read_guard
+                .current_platform_version()
+                .expect("should return current protocol version"),
             config: &platform.config,
+            block_info: state_read_guard.any_block_info().clone(),
         };
         let platform_version = state_read_guard.current_platform_version().unwrap();
 
@@ -241,8 +246,12 @@ mod tests {
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_read_guard,
+            state: &platform.state,
+            version: state_read_guard
+                .current_platform_version()
+                .expect("should return current protocol version"),
             config: &platform.config,
+            block_info: state_read_guard.any_block_info().clone(),
         };
 
         let transition_execution_context =

@@ -36,34 +36,6 @@ impl Drive {
         Self::new_drive_with_grovedb_and_config(grove, config)
     }
 
-    /// Opens GroveDB secondary database
-    ///
-    /// This is a non-versioned method which opens a specified path as a GroveDB instance and returns a `Drive`
-    /// instance with this GroveDB, cache and other configurations.
-    ///
-    /// # Arguments
-    ///
-    /// * `primary_path` - A reference that implements the `AsRef<Path>` trait. This represents the path to the
-    ///    primary GroveDB database.
-    /// * `secondary_path` - A reference that implements the `AsRef<Path>` trait. This represents the path to the
-    ///    secondary GroveDB database.
-    /// * `config` - An `Option` which contains `DriveConfig`. If not specified, default configuration is used.
-    /// * `drive_version` - A `DriveVersion` reference that dictates which version of the method to call.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self, Error>` - On success, returns `Ok(Self)`, where `Self` is a `Drive` instance. On error, returns an `Error`.
-    ///
-    pub fn open_secondary<P: AsRef<Path>>(
-        primary_path: P,
-        secondary_path: P,
-        config: Option<DriveConfig>,
-    ) -> Result<(Self, Option<ProtocolVersion>), Error> {
-        let grove = GroveDb::open_secondary(primary_path, secondary_path)?;
-
-        Self::new_drive_with_grovedb_and_config(grove, config)
-    }
-
     fn new_drive_with_grovedb_and_config(
         grove: GroveDb,
         config: Option<DriveConfig>,

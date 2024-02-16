@@ -35,10 +35,12 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 #[cfg(any(feature = "mocks", test))]
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::fixture::abci::static_system_identity_public_keys_v0;
 use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
+use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use tempfile::TempDir;
 
@@ -130,6 +132,12 @@ impl TempPlatform<MockCoreRPCLike> {
                 PlatformVersion::latest(),
             )
             .expect("should create root tree successfully");
+
+        let block_info = BlockInfo::default_with_current_time();
+
+        let mut platform_state = self.platform.state.write().unwrap();
+        platform_state.set_genesis_block_info(Some(block_info));
+        drop(platform_state);
 
         self
     }

@@ -67,9 +67,6 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
-        // Start by getting information from the state
-        let state = self.state.read().unwrap();
-
         tracing::trace!(
             method = "run_block_proposal_v0",
             ?block_proposal,
@@ -78,6 +75,9 @@ where
             block_proposal.height,
             block_proposal.round,
         );
+
+        // Start by getting information from the state
+        let state = self.state.read().unwrap();
 
         let last_block_time_ms = state.last_committed_block_time_ms();
         let last_block_height =

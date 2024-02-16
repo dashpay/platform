@@ -1,6 +1,7 @@
 use crate::block::epoch::{Epoch, EPOCH_0};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use std::time::SystemTime;
 
 pub const DEFAULT_BLOCK_INFO: BlockInfo = BlockInfo {
     time_ms: 0,
@@ -37,6 +38,20 @@ impl BlockInfo {
 
     /// Create default block with specified time
     pub fn default_with_time(time_ms: u64) -> BlockInfo {
+        BlockInfo {
+            time_ms,
+            ..Default::default()
+        }
+    }
+
+    /// Create default block with current time
+    pub fn default_with_current_time() -> BlockInfo {
+        let now = SystemTime::now();
+        let time_ms = now
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
         BlockInfo {
             time_ms,
             ..Default::default()

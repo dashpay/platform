@@ -28,8 +28,8 @@ pub(in crate::execution) fn process_state_transition<'a, C: CoreRPCLike>(
     state_transition: StateTransition,
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
-    let platform_version = platform.state.current_platform_version()?;
-    match platform_version
+    match platform
+        .version
         .drive_abci
         .validation_and_processing
         .process_state_transition
@@ -38,7 +38,7 @@ pub(in crate::execution) fn process_state_transition<'a, C: CoreRPCLike>(
             platform,
             state_transition,
             transaction,
-            platform_version,
+            platform.version,
         ),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "process_state_transition".to_string(),

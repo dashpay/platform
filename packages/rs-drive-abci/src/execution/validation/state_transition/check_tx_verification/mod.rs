@@ -26,8 +26,8 @@ pub(in crate::execution) fn state_transition_to_execution_event_for_check_tx<'a,
     state_transition: StateTransition,
     check_tx_level: CheckTxLevel,
 ) -> Result<ConsensusValidationResult<Option<ExecutionEvent<'a>>>, Error> {
-    let platform_version = platform.state.current_platform_version()?;
-    match platform_version
+    match platform
+        .version
         .drive_abci
         .validation_and_processing
         .state_transition_to_execution_event_for_check_tx
@@ -36,7 +36,7 @@ pub(in crate::execution) fn state_transition_to_execution_event_for_check_tx<'a,
             platform,
             state_transition,
             check_tx_level,
-            platform_version,
+            platform.version,
         ),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "state_transition_to_execution_event_for_check_tx".to_string(),

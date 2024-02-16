@@ -123,16 +123,8 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
             if let Some(disabled_at_ms) = self.public_keys_disabled_at() {
                 // We need to verify the time the keys were disabled
 
-                let last_block_time =
-                    platform
-                        .state
-                        .last_committed_block_time_ms()
-                        .ok_or(Error::Execution(ExecutionError::StateNotInitialized(
-                            "expected a last platform block during identity update validation",
-                        )))?;
-
                 let window_validation_result = validate_time_in_block_time_window(
-                    last_block_time,
+                    platform.block_info.time_ms,
                     disabled_at_ms,
                     platform.config.block_spacing_ms,
                     platform_version,

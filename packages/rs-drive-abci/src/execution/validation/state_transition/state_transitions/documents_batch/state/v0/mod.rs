@@ -82,7 +82,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
             let data_triggers_validation_result = execute_data_triggers(
                 state_transition_action.transitions(),
                 &data_trigger_execution_context,
-                platform.state.current_platform_version()?,
+                platform.version,
             )?;
 
             validation_result.add_errors_into(data_triggers_validation_result.errors);
@@ -99,9 +99,8 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
         validate: bool,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version = platform.state.current_platform_version()?;
         let mut execution_context =
-            StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
+            StateTransitionExecutionContext::default_for_platform_version(platform.version)?;
         let validation_result =
             self.try_into_action_v0(platform, validate, tx, &mut execution_context)?;
         Ok(validation_result.map(Into::into))

@@ -39,6 +39,7 @@ where
         let state = self.state.read().expect("expected to get state");
         let current_protocol_version = state.current_protocol_version_in_consensus();
         drop(state);
+
         let platform_version = PlatformVersion::get(current_protocol_version)?;
         match platform_version
             .drive_abci

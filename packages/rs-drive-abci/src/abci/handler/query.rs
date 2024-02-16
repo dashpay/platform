@@ -18,6 +18,8 @@ where
 
     let proto::RequestQuery { data, path, .. } = &request;
 
+    let last_committed_height = app.platform().state.read().unwrap().last_committed_height() as i64;
+
     // TODO: It must be proto::ResponseException
     let Some(platform_version) = PlatformVersion::get_maybe_current() else {
         let handler_error = HandlerError::Unavailable("platform is not initialized".to_string());
@@ -30,7 +32,7 @@ where
             key: vec![],
             value: vec![],
             proof_ops: None,
-            height: app.platform().state.read().unwrap().last_committed_height() as i64,
+            height: last_committed_height,
             codespace: "".to_string(),
         };
 
@@ -66,7 +68,7 @@ where
         key: vec![],
         value: data,
         proof_ops: None,
-        height: app.platform().state.read().unwrap().last_committed_height() as i64,
+        height: last_committed_height,
         codespace: "".to_string(),
     };
 

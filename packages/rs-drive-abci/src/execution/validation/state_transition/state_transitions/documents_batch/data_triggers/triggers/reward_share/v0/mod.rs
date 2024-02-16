@@ -73,11 +73,14 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
         .map_err(ProtocolError::ValueError)?;
 
     if !is_dry_run {
-        let valid_masternodes_list = &context.platform.state.hpmn_masternode_list();
+        let platform_state = context.platform.state.read().unwrap();
 
-        let owner_id_in_sml = valid_masternodes_list
+        let owner_id_in_sml = platform_state
+            .hpmn_masternode_list()
             .get(context.owner_id.as_slice())
             .is_some();
+
+        drop(platform_state);
 
         if !owner_id_in_sml {
             let err = DataTriggerConditionError::new(
@@ -200,7 +203,6 @@ mod test {
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::{ProTxHash, Txid};
     use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
-    use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::DataContract;
     use dpp::document::{Document, DocumentV0Setters};
@@ -333,12 +335,15 @@ mod test {
     fn should_return_an_error_if_percentage_greater_than_10000() {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
-            .set_initial_state_structure();
+            .set_genesis_state();
+
         let mut state_write_guard = platform.state.write().unwrap();
 
         let platform_version = state_write_guard
             .current_platform_version()
             .expect("should return a platform version");
+
+        let block_info = state_write_guard.any_block_info().clone();
 
         let TestData {
             mut document_create_transition,
@@ -349,28 +354,21 @@ mod test {
             ..
         } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
 
+        drop(state_write_guard);
+
         let document_type = data_contract
             .document_type_for_name(document_type_name.as_str())
             .expect("expected the rewards document type");
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_write_guard,
+            state: &platform.state,
+            version: platform_version,
             config: &platform.config,
+            block_info: block_info.clone(),
         };
 
         for (i, document) in documents.iter().enumerate() {
-            platform_ref
-                .drive
-                .apply_contract(
-                    &data_contract,
-                    BlockInfo::default(),
-                    true,
-                    None,
-                    None,
-                    platform_version,
-                )
-                .expect("expected to apply contract");
             let mut identity =
                 Identity::random_identity(2, Some(i as u64), platform_version).unwrap();
 
@@ -378,14 +376,7 @@ mod test {
 
             platform_ref
                 .drive
-                .add_new_identity(
-                    identity,
-                    false,
-                    &BlockInfo::default(),
-                    true,
-                    None,
-                    state_write_guard.current_platform_version().unwrap(),
-                )
+                .add_new_identity(identity, false, &block_info, true, None, platform_version)
                 .expect("expected to add an identity");
 
             let mut identity = Identity::random_identity(2, Some(100 - i as u64), platform_version)
@@ -399,16 +390,7 @@ mod test {
 
             platform_ref
                 .drive
-                .add_new_identity(
-                    identity,
-                    false,
-                    &BlockInfo::default(),
-                    true,
-                    None,
-                    state_write_guard
-                        .current_platform_version()
-                        .expect("expected a platform version"),
-                )
+                .add_new_identity(identity, false, &block_info, true, None, platform_version)
                 .expect("expected to add an identity");
 
             platform_ref
@@ -423,7 +405,7 @@ mod test {
                         document_type,
                     },
                     false,
-                    BlockInfo::default(),
+                    block_info.clone(),
                     true,
                     None,
                     platform_version,
@@ -463,13 +445,15 @@ mod test {
     fn should_return_an_error_if_pay_to_id_does_not_exists() {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
-            .set_initial_state_structure();
+            .set_genesis_state();
 
         let mut state_write_guard = platform.state.write().unwrap();
 
         let platform_version = state_write_guard
             .current_platform_version()
             .expect("should return a platform version");
+
+        let block_info = state_write_guard.any_block_info().clone();
 
         let TestData {
             document_create_transition,
@@ -478,10 +462,14 @@ mod test {
             ..
         } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
 
+        drop(state_write_guard);
+
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_write_guard,
+            state: &platform.state,
+            version: platform_version,
             config: &platform.config,
+            block_info: block_info.clone(),
         };
 
         let execution_context =
@@ -517,7 +505,7 @@ mod test {
     fn should_return_an_error_if_owner_id_is_not_a_masternode_identity() {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
-            .set_initial_state_structure();
+            .set_genesis_state();
 
         let mut state_write_guard = platform.state.write().unwrap();
 
@@ -525,15 +513,21 @@ mod test {
             .current_platform_version()
             .expect("should return a platform version");
 
+        let block_info = state_write_guard.any_block_info().clone();
+
         let TestData {
             document_create_transition,
             ..
         } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
 
+        drop(state_write_guard);
+
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_write_guard,
+            state: &platform.state,
+            version: platform_version,
             config: &platform.config,
+            block_info: block_info.clone(),
         };
 
         let execution_context =
@@ -562,13 +556,14 @@ mod test {
     fn should_pass() {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
-            .set_initial_state_structure();
+            .set_genesis_state();
 
         let mut state_write_guard = platform.state.write().unwrap();
 
         let platform_version = state_write_guard
             .current_platform_version()
             .expect("should return a platform version");
+        let block_info = state_write_guard.any_block_info().clone();
 
         let TestData {
             document_create_transition,
@@ -577,18 +572,18 @@ mod test {
             ..
         } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
 
+        drop(state_write_guard);
+
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_write_guard,
+            state: &platform.state,
+            version: platform_version,
             config: &platform.config,
+            block_info: block_info.clone(),
         };
 
-        let mut identity = Identity::random_identity(
-            2,
-            Some(9),
-            state_write_guard.current_platform_version().unwrap(),
-        )
-        .expect("expected a platform identity");
+        let mut identity = Identity::random_identity(2, Some(9), platform_version)
+            .expect("expected a platform identity");
         identity.set_id(
             document_create_transition
                 .data()
@@ -598,25 +593,20 @@ mod test {
 
         platform_ref
             .drive
-            .add_new_identity(
-                identity,
-                false,
-                &BlockInfo::default(),
-                true,
-                None,
-                state_write_guard.current_platform_version().unwrap(),
-            )
+            .add_new_identity(identity, false, &block_info, true, None, platform_version)
             .expect("expected to add an identity");
 
         let execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)
                 .unwrap();
+
         let context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id: &top_level_identifier,
             state_transition_execution_context: &execution_context,
             transaction: None,
         };
+
         let result = create_masternode_reward_shares_data_trigger_v0(
             &document_create_transition.into(),
             &context,
@@ -630,9 +620,15 @@ mod test {
     fn should_return_error_if_there_are_16_stored_shares() {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
-            .set_initial_state_structure();
+            .set_genesis_state();
 
         let mut state_write_guard = platform.state.write().unwrap();
+
+        let platform_version = state_write_guard
+            .current_platform_version()
+            .expect("should return platform version");
+
+        let block_info = state_write_guard.any_block_info().clone();
 
         let TestData {
             document_create_transition,
@@ -641,27 +637,15 @@ mod test {
             ..
         } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
 
-        let platform_version = state_write_guard
-            .current_platform_version()
-            .expect("should return platform version");
+        drop(state_write_guard);
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_write_guard,
+            state: &platform.state,
+            version: platform_version,
             config: &platform.config,
+            block_info: block_info.clone(),
         };
-
-        platform_ref
-            .drive
-            .apply_contract(
-                &data_contract,
-                BlockInfo::default(),
-                true,
-                None,
-                None,
-                platform_version,
-            )
-            .expect("expected to apply contract");
 
         let document_type = data_contract
             .document_type_for_name(document_create_transition.base().document_type_name())
@@ -682,7 +666,7 @@ mod test {
             .add_new_identity(
                 main_identity,
                 false,
-                &BlockInfo::default(),
+                &block_info,
                 true,
                 None,
                 platform_version,
@@ -707,14 +691,7 @@ mod test {
 
             platform_ref
                 .drive
-                .add_new_identity(
-                    identity,
-                    false,
-                    &BlockInfo::default(),
-                    true,
-                    None,
-                    platform_version,
-                )
+                .add_new_identity(identity, false, &block_info, true, None, platform_version)
                 .expect("expected to add an identity");
 
             platform
@@ -729,7 +706,7 @@ mod test {
                         document_type,
                     },
                     false,
-                    BlockInfo::genesis(),
+                    block_info.clone(),
                     true,
                     None,
                     platform_version,
@@ -781,8 +758,12 @@ mod test {
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_write_guard,
+            state: &platform.state,
+            version: state_write_guard
+                .current_platform_version()
+                .expect("should return current protocol version"),
             config: &platform.config,
+            block_info: state_write_guard.any_block_info().clone(),
         };
 
         let mut execution_context =

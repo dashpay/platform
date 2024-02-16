@@ -12,8 +12,6 @@ where
     A: PlatformApplication<C>,
     C: CoreRPCLike,
 {
-    let state_guard = app.platform().state.read().unwrap();
-
     if !tenderdash_abci::check_version(&request.abci_version) {
         return Err(proto::ResponseException::from(format!(
             "tenderdash requires ABCI version {}, our version is {}",
@@ -21,6 +19,8 @@ where
             tenderdash_abci::proto::ABCI_VERSION
         )));
     }
+
+    let state_guard = app.platform().state.read().unwrap();
 
     let state_app_hash = state_guard
         .last_committed_block_app_hash()

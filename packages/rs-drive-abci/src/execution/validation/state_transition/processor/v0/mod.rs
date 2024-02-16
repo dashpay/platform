@@ -54,7 +54,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let result = state_transition.validate_structure(
         &platform.into(),
         action.as_ref(),
-        platform.state.current_protocol_version_in_consensus(),
+        platform.version.protocol_version,
     )?;
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
@@ -110,7 +110,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         ExecutionEvent::create_from_state_transition_action(
             action,
             maybe_identity,
-            platform.state.last_committed_block_epoch_ref(),
+            &platform.block_info.epoch,
             state_transition_execution_context,
             platform_version,
         )

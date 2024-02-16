@@ -32,6 +32,7 @@ impl<'a, C> FullAbciApplication<'a, C> {
     }
 }
 
+// TODO: Duplicated with ConsensusAbciApplication implementation
 impl<'a, C> PlatformApplication<C> for FullAbciApplication<'a, C> {
     fn platform(&self) -> &Platform<C> {
         self.platform
