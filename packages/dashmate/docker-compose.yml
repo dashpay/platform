@@ -67,6 +67,7 @@ services:
       - CHAIN_LOCK_QUORUM_TYPE=${PLATFORM_DRIVE_ABCI_CHAIN_LOCK_LLMQ_TYPE:?err}
       - CHAIN_LOCK_QUORUM_WINDOW=${PLATFORM_DRIVE_ABCI_CHAIN_LOCK_DKG_INTERVAL:?err}
       - CHAIN_LOCK_QUORUM_SIZE=${PLATFORM_DRIVE_ABCI_CHAIN_LOCK_LLMQ_SIZE:?err}
+      - DB_PATH=/var/lib/dash/rs-drive-abci/db
     stop_grace_period: 30s
     env_file:
       # Logger settings

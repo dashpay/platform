@@ -14,12 +14,9 @@ use tokio_util::sync::CancellationToken;
 pub fn start_abci_apps(config: PlatformConfig, cancel: CancellationToken) -> Result<(), Error> {
     let core_rpc = new_core_rpc(&config).expect("Failed to create core RPC client");
 
-    let platform: Platform<DefaultCoreRPC> = Platform::open_with_client(
-        config.primary_db_path.clone(),
-        Some(config.clone()),
-        core_rpc,
-    )
-    .expect("Failed to open platform");
+    let platform: Platform<DefaultCoreRPC> =
+        Platform::open_with_client(config.db_path.clone(), Some(config.clone()), core_rpc)
+            .expect("Failed to open platform");
 
     let platform_ref = &platform;
     let cancel_ref = &cancel;

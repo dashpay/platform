@@ -86,7 +86,7 @@ impl Cli {
     fn run(self, config: PlatformConfig, cancel: CancellationToken) -> Result<(), String> {
         match self.command {
             Commands::Start => {
-                verify_grovedb(&config.primary_db_path, false)?;
+                verify_grovedb(&config.db_path, false)?;
 
                 let core_rpc = DefaultCoreRPC::open(
                     config.core.rpc.url().as_str(),
@@ -112,7 +112,7 @@ impl Cli {
             }
             Commands::Config => dump_config(&config)?,
             Commands::Status => check_status(&config)?,
-            Commands::Verify => verify_grovedb(&config.primary_db_path, true)?,
+            Commands::Verify => verify_grovedb(&config.db_path, true)?,
         };
 
         Ok(())
