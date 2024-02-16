@@ -124,7 +124,7 @@ pub struct DriveAbciStateTransitionValidationVersion {
     pub base_structure: FeatureVersion,
     pub advanced_structure: OptionalFeatureVersion,
     pub identity_signatures: OptionalFeatureVersion,
-    pub identity_contract_nonce: OptionalFeatureVersion,
+    pub nonce: OptionalFeatureVersion,
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,
 }

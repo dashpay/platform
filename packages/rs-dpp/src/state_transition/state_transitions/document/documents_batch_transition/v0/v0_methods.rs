@@ -2,7 +2,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0Getters};
 use crate::identity::signer::Signer;
 use crate::identity::SecurityLevel;
-use crate::prelude::{IdentityContractNonce, IdentityPublicKey};
+use crate::prelude::{IdentityNonce, IdentityPublicKey};
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
 use crate::state_transition::documents_batch_transition::document_transition::{
@@ -33,7 +33,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         document_type: DocumentTypeRef,
         entropy: [u8; 32],
         identity_public_key: &IdentityPublicKey,
-        identity_contract_nonce: IdentityContractNonce,
+        identity_contract_nonce: IdentityNonce,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
@@ -71,7 +71,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         document: Document,
         document_type: DocumentTypeRef,
         identity_public_key: &IdentityPublicKey,
-        identity_contract_nonce: IdentityContractNonce,
+        identity_contract_nonce: IdentityNonce,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
@@ -107,7 +107,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         self.transitions = transitions;
     }
 
-    fn set_identity_contract_nonce(&mut self, identity_contract_nonce: IdentityContractNonce) {
+    fn set_identity_contract_nonce(&mut self, identity_contract_nonce: IdentityNonce) {
         self.transitions
             .iter_mut()
             .for_each(|transition| transition.set_identity_contract_nonce(identity_contract_nonce));

@@ -322,16 +322,18 @@ pub(crate) fn identity_query_keys_full_tree_path<'a>(
 #[repr(u8)]
 #[derive(Copy, Clone)]
 pub enum IdentityRootStructure {
-    /// The revision of identity data
+    /// The revision of the identity
     IdentityTreeRevision = 0,
+    /// The nonce of the identity, it is used to prevent replay attacks
+    IdentityTreeNonce = 1,
     /// The keys that an identity has
-    IdentityTreeKeys = 1,
+    IdentityTreeKeys = 2,
     /// A Way to search for specific keys
-    IdentityTreeKeyReferences = 2,
+    IdentityTreeKeyReferences = 3,
     /// Owed processing fees
-    IdentityTreeNegativeCredit = 3,
+    IdentityTreeNegativeCredit = 4,
     /// Identity contract information
-    IdentityContractInfo = 4,
+    IdentityContractInfo = 5,
 }
 
 #[cfg(feature = "full")]

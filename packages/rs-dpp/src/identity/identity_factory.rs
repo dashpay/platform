@@ -210,7 +210,7 @@ impl IdentityFactory {
             identity_id: identity.id(),
             recipient_id,
             amount,
-            revision: identity.revision() + 1,
+            nonce: identity.revision() + 1,
             ..Default::default()
         };
 
@@ -236,7 +236,7 @@ impl IdentityFactory {
         identity_credit_withdrawal_transition.core_fee_per_byte = core_fee_per_byte;
         identity_credit_withdrawal_transition.pooling = pooling;
         identity_credit_withdrawal_transition.output_script = output_script;
-        identity_credit_withdrawal_transition.revision = revision;
+        identity_credit_withdrawal_transition.nonce = revision;
 
         Ok(IdentityCreditWithdrawalTransition::from(
             identity_credit_withdrawal_transition,

@@ -171,7 +171,7 @@ impl ErrorWithCode for StateError {
             Self::IdentityPublicKeyIsReadOnlyError { .. } => 4017,
             Self::InvalidIdentityPublicKeyIdError { .. } => 4018,
             Self::InvalidIdentityRevisionError { .. } => 4019,
-            Self::InvalidIdentityContractNonceError(_) => 4020,
+            Self::InvalidIdentityNonceError(_) => 4020,
             Self::MaxIdentityPublicKeyLimitReachedError { .. } => 4021,
             Self::DuplicatedIdentityPublicKeyStateError { .. } => 4022,
             Self::DuplicatedIdentityPublicKeyIdStateError { .. } => 4023,

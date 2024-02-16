@@ -23,6 +23,7 @@ use crate::{
     prelude::{Identifier, Revision, TimestampMillis},
     ProtocolError,
 };
+use crate::prelude::IdentityNonce;
 
 impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
@@ -32,6 +33,7 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
         add_public_keys: Vec<IdentityPublicKey>,
         disable_public_keys: Vec<KeyID>,
         public_keys_disabled_at: Option<u64>,
+        nonce: IdentityNonce,
         signer: &S,
         _platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
@@ -46,6 +48,7 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
             signature_public_key_id: 0,
             identity_id: identity.id(),
             revision: identity.revision(),
+            nonce,
             add_public_keys: add_public_keys_in_creation,
             disable_public_keys,
             public_keys_disabled_at,
@@ -112,6 +115,14 @@ impl IdentityUpdateTransitionAccessorsV0 for IdentityUpdateTransitionV0 {
 
     fn revision(&self) -> Revision {
         self.revision
+    }
+
+    fn set_nonce(&mut self, nonce: IdentityNonce) {
+        self.nonce = nonce;
+    }
+
+    fn nonce(&self) -> IdentityNonce {
+        self.nonce
     }
 
     fn set_public_keys_to_add(&mut self, add_public_keys: Vec<IdentityPublicKeyInCreation>) {

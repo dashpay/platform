@@ -4,7 +4,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
-use dpp::prelude::{IdentityContractNonce, Revision};
+use dpp::prelude::{IdentityNonce, Revision};
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -84,7 +84,7 @@ pub enum IdentityOperationType {
         /// The contract id
         contract_id: [u8; 32],
         /// The nonce we are updating to
-        nonce: IdentityContractNonce,
+        nonce: IdentityNonce,
     },
 }
 

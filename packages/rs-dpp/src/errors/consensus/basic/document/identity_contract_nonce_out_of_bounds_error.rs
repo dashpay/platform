@@ -1,7 +1,7 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use crate::prelude::IdentityContractNonce;
+use crate::prelude::IdentityNonce;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
@@ -20,17 +20,17 @@ pub struct IdentityContractNonceOutOfBoundsError {
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    identity_contract_nonce: IdentityContractNonce,
+    identity_contract_nonce: IdentityNonce,
 }
 
 impl IdentityContractNonceOutOfBoundsError {
-    pub fn new(identity_contract_nonce: IdentityContractNonce) -> Self {
+    pub fn new(identity_contract_nonce: IdentityNonce) -> Self {
         Self {
             identity_contract_nonce,
         }
     }
 
-    pub fn identity_contract_nonce(&self) -> IdentityContractNonce {
+    pub fn identity_contract_nonce(&self) -> IdentityNonce {
         self.identity_contract_nonce
     }
 }

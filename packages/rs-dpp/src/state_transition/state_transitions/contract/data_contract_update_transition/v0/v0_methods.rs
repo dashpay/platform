@@ -3,7 +3,7 @@ use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
 use crate::serialization::Signable;
 
-use crate::prelude::IdentityContractNonce;
+use crate::prelude::IdentityNonce;
 use crate::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionV0,
@@ -19,7 +19,7 @@ impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransitionV0 {
         data_contract: DataContract,
         identity: &PartialIdentity,
         key_id: KeyID,
-        identity_contract_nonce: IdentityContractNonce,
+        identity_contract_nonce: IdentityNonce,
         signer: &S,
         platform_version: &PlatformVersion,
         _feature_version: Option<FeatureVersion>,

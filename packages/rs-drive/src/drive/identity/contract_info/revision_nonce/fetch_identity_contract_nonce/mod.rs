@@ -5,7 +5,7 @@ use crate::error::{drive::DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
-use dpp::prelude::{IdentityContractNonce, Revision};
+use dpp::prelude::{IdentityNonce, Revision};
 
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
@@ -33,7 +33,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<IdentityContractNonce>, Error> {
+    ) -> Result<Option<IdentityNonce>, Error> {
         match platform_version
             .drive
             .methods
@@ -130,7 +130,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<(Option<IdentityContractNonce>, FeeResult), Error> {
+    ) -> Result<(Option<IdentityNonce>, FeeResult), Error> {
         match platform_version
             .drive
             .methods

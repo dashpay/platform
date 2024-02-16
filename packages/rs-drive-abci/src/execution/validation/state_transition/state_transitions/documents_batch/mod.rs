@@ -26,7 +26,7 @@ use crate::execution::validation::state_transition::documents_batch::identity_co
 use crate::execution::validation::state_transition::documents_batch::state::v0::DocumentsBatchStateTransitionStateValidationV0;
 
 use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionBasicStructureValidationV0, StateTransitionIdentityContractNonceValidationV0,
+    StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0,
     StateTransitionStateValidationV0, StateTransitionStructureKnownInStateValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
@@ -83,8 +83,8 @@ impl StateTransitionBasicStructureValidationV0 for DocumentsBatchTransition {
     }
 }
 
-impl StateTransitionIdentityContractNonceValidationV0 for DocumentsBatchTransition {
-    fn validate_identity_contract_nonces(
+impl StateTransitionNonceValidationV0 for DocumentsBatchTransition {
+    fn validate_nonces(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,

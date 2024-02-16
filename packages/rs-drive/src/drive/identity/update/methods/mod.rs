@@ -8,3 +8,4 @@ mod disable_identity_keys;
 mod re_enable_identity_keys;
 mod remove_from_identity_balance;
 mod update_identity_revision;
+mod update_identity_nonce;

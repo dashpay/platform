@@ -110,7 +110,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let maybe_identity = result.into_data()?;
 
     // Validating identity contract nonce, this must happen after validating the signature
-    let result = state_transition.validate_identity_contract_nonces(
+    let result = state_transition.validate_nonces(
         &platform.into(),
         platform.block_info,
         transaction,
@@ -191,7 +191,7 @@ pub(crate) trait StateTransitionBasicStructureValidationV0 {
 }
 
 /// A trait for validating state transitions within a blockchain.
-pub(crate) trait StateTransitionIdentityContractNonceValidationV0 {
+pub(crate) trait StateTransitionNonceValidationV0 {
     /// Validates the structure of a transaction by checking its basic elements.
     ///
     /// # Arguments
@@ -201,7 +201,7 @@ pub(crate) trait StateTransitionIdentityContractNonceValidationV0 {
     /// # Returns
     ///
     /// * `Result<SimpleConsensusValidationResult, Error>` - A result with either a SimpleConsensusValidationResult or an Error.
-    fn validate_identity_contract_nonces(
+    fn validate_nonces(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -289,8 +289,8 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
     }
 }
 
-impl StateTransitionIdentityContractNonceValidationV0 for StateTransition {
-    fn validate_identity_contract_nonces(
+impl StateTransitionNonceValidationV0 for StateTransition {
+    fn validate_nonces(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -299,10 +299,19 @@ impl StateTransitionIdentityContractNonceValidationV0 for StateTransition {
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
             StateTransition::DocumentsBatch(st) => {
-                st.validate_identity_contract_nonces(platform, block_info, tx, platform_version)
+                st.validate_nonces(platform, block_info, tx, platform_version)
             }
             StateTransition::DataContractUpdate(st) => {
-                st.validate_identity_contract_nonces(platform, block_info, tx, platform_version)
+                st.validate_nonces(platform, block_info, tx, platform_version)
+            }
+            StateTransition::IdentityUpdate(st) => {
+                st.validate_nonces(platform, block_info, tx, platform_version)
+            }
+            StateTransition::IdentityCreditTransfer(st) => {
+                st.validate_nonces(platform, block_info, tx, platform_version)
+            }
+            StateTransition::IdentityCreditWithdrawal(st) => {
+                st.validate_nonces(platform, block_info, tx, platform_version)
             }
             _ => Ok(SimpleConsensusValidationResult::new()),
         }

@@ -2,7 +2,7 @@ mod from_document;
 pub mod v0_methods;
 
 use crate::identity::TimestampMillis;
-use crate::prelude::{IdentityContractNonce, Revision};
+use crate::prelude::{IdentityNonce, Revision};
 use bincode::{Decode, Encode};
 use derive_more::Display;
 

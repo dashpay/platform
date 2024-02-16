@@ -17,9 +17,9 @@ use dapi_grpc::platform::v0::get_identity_contract_nonce_response::Version;
 use dapi_grpc::platform::v0::{
     GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, Proof,
 };
-use dpp::identity::identity_contract_nonce::IDENTITY_CONTRACT_NONCE_VALUE_FILTER;
+use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
 use dpp::prelude;
-use dpp::prelude::IdentityContractNonce;
+use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive_proof_verifier::types::IdentityContractNonceFetcher;
 #[cfg(feature = "mocks")]
@@ -218,7 +218,7 @@ impl Sdk {
         contract_id: Identifier,
         bump_first: bool,
         settings: &RequestSettings,
-    ) -> Result<IdentityContractNonce, Error> {
+    ) -> Result<IdentityNonce, Error> {
         let current_time_s = match SystemTime::now().duration_since(UNIX_EPOCH) {
             Ok(n) => n.as_secs(),
             Err(_) => panic!("SystemTime before UNIX EPOCH!"),
@@ -259,7 +259,7 @@ impl Sdk {
                         platform_nonce
                     };
                     e.insert((insert_nonce, current_time_s));
-                    Ok(insert_nonce & IDENTITY_CONTRACT_NONCE_VALUE_FILTER)
+                    Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
                 }
                 Entry::Occupied(mut e) => {
                     let (current_nonce, _) = e.get();
@@ -277,7 +277,7 @@ impl Sdk {
                         }
                     };
                     e.insert((insert_nonce, current_time_s));
-                    Ok(insert_nonce & IDENTITY_CONTRACT_NONCE_VALUE_FILTER)
+                    Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
                 }
             }
         } else {
@@ -290,9 +290,9 @@ impl Sdk {
                     if bump_first {
                         let insert_nonce = current_nonce + 1;
                         e.insert((insert_nonce, current_time_s));
-                        Ok(insert_nonce & IDENTITY_CONTRACT_NONCE_VALUE_FILTER)
+                        Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
                     } else {
-                        Ok(*current_nonce & IDENTITY_CONTRACT_NONCE_VALUE_FILTER)
+                        Ok(*current_nonce & IDENTITY_NONCE_VALUE_FILTER)
                     }
                 }
             }

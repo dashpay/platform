@@ -2,7 +2,7 @@ use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::platform_value::Identifier;
 
-use dpp::prelude::IdentityContractNonce;
+use dpp::prelude::IdentityNonce;
 
 /// transformer module
 pub mod transformer;
@@ -30,7 +30,7 @@ impl BumpIdentityDataContractNonceActionAccessorsV0 for BumpIdentityDataContract
         }
     }
 
-    fn identity_contract_nonce(&self) -> IdentityContractNonce {
+    fn identity_contract_nonce(&self) -> IdentityNonce {
         match self {
             BumpIdentityDataContractNonceAction::V0(v0) => v0.identity_contract_nonce,
         }

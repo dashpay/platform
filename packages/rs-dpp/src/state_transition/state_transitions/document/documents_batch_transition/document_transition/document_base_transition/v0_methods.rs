@@ -2,7 +2,7 @@ use crate::state_transition::documents_batch_transition::document_base_transitio
 
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 
-use crate::prelude::IdentityContractNonce;
+use crate::prelude::IdentityNonce;
 use platform_value::Identifier;
 
 impl DocumentBaseTransitionV0Methods for DocumentBaseTransition {
@@ -48,13 +48,13 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransition {
         }
     }
 
-    fn identity_contract_nonce(&self) -> IdentityContractNonce {
+    fn identity_contract_nonce(&self) -> IdentityNonce {
         match self {
             DocumentBaseTransition::V0(v0) => v0.identity_contract_nonce,
         }
     }
 
-    fn set_identity_contract_nonce(&mut self, identity_contract_nonce: IdentityContractNonce) {
+    fn set_identity_contract_nonce(&mut self, identity_contract_nonce: IdentityNonce) {
         match self {
             DocumentBaseTransition::V0(v0) => v0.identity_contract_nonce = identity_contract_nonce,
         }

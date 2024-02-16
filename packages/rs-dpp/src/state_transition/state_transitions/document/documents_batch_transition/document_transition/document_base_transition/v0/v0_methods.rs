@@ -1,6 +1,6 @@
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 
-use crate::prelude::IdentityContractNonce;
+use crate::prelude::IdentityNonce;
 use platform_value::Identifier;
 
 /// A trait that contains getter and setter methods for `DocumentBaseTransitionV0`
@@ -23,8 +23,8 @@ pub trait DocumentBaseTransitionV0Methods {
 
     /// Sets the data contract ID.
     fn set_data_contract_id(&mut self, data_contract_id: Identifier);
-    fn identity_contract_nonce(&self) -> IdentityContractNonce;
-    fn set_identity_contract_nonce(&mut self, identity_contract_nonce: IdentityContractNonce);
+    fn identity_contract_nonce(&self) -> IdentityNonce;
+    fn set_identity_contract_nonce(&mut self, identity_contract_nonce: IdentityNonce);
 }
 
 impl DocumentBaseTransitionV0Methods for DocumentBaseTransitionV0 {
@@ -56,11 +56,11 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransitionV0 {
         self.data_contract_id = data_contract_id;
     }
 
-    fn identity_contract_nonce(&self) -> IdentityContractNonce {
+    fn identity_contract_nonce(&self) -> IdentityNonce {
         self.identity_contract_nonce
     }
 
-    fn set_identity_contract_nonce(&mut self, identity_contract_nonce: IdentityContractNonce) {
+    fn set_identity_contract_nonce(&mut self, identity_contract_nonce: IdentityNonce) {
         self.identity_contract_nonce = identity_contract_nonce;
     }
 }

@@ -17,7 +17,7 @@ use crate::utils::{
 use dpp::ProtocolError;
 use std::sync::Arc;
 
-use dpp::prelude::IdentityContractNonce;
+use dpp::prelude::IdentityNonce;
 use wasm_bindgen::prelude::*;
 
 impl From<DataContractFacade> for DataContractFacadeWasm {
@@ -126,7 +126,7 @@ impl DataContractFacadeWasm {
     pub fn create_data_contract_update_transition(
         &self,
         data_contract: &DataContractWasm,
-        identity_contract_nonce: IdentityContractNonce,
+        identity_contract_nonce: IdentityNonce,
     ) -> Result<DataContractUpdateTransitionWasm, JsValue> {
         self.0
             .create_data_contract_update_transition(

@@ -3,12 +3,15 @@ use crate::{
     identity::KeyID,
     prelude::{Identifier, Revision, TimestampMillis},
 };
+use crate::prelude::IdentityNonce;
 
 pub trait IdentityUpdateTransitionAccessorsV0 {
     fn set_identity_id(&mut self, id: Identifier);
     fn identity_id(&self) -> Identifier;
     fn set_revision(&mut self, revision: Revision);
     fn revision(&self) -> Revision;
+    fn set_nonce(&mut self, nonce: IdentityNonce);
+    fn nonce(&self) -> IdentityNonce;
     fn set_public_keys_to_add(&mut self, add_public_keys: Vec<IdentityPublicKeyInCreation>);
     fn public_keys_to_add(&self) -> &[IdentityPublicKeyInCreation];
     fn public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKeyInCreation];

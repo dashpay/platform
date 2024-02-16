@@ -21,6 +21,7 @@ use crate::{
     withdrawal::Pooling,
     ProtocolError,
 };
+use crate::prelude::IdentityNonce;
 
 // TODO: unsafe - we must use actual relay fee from core
 /// Minimal core per byte. Must be a fibonacci number
@@ -43,7 +44,7 @@ pub struct IdentityCreditWithdrawalTransitionV0 {
     pub core_fee_per_byte: u32,
     pub pooling: Pooling,
     pub output_script: CoreScript,
-    pub revision: Revision,
+    pub nonce: IdentityNonce,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]

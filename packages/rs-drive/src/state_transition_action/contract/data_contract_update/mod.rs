@@ -6,7 +6,7 @@ pub mod v0;
 use crate::state_transition_action::contract::data_contract_update::v0::DataContractUpdateTransitionActionV0;
 use derive_more::From;
 use dpp::data_contract::DataContract;
-use dpp::prelude::IdentityContractNonce;
+use dpp::prelude::IdentityNonce;
 
 /// data contract update transition action
 #[derive(Debug, Clone, From)]
@@ -30,7 +30,7 @@ impl DataContractUpdateTransitionAction {
     }
 
     /// identity contract nonce
-    pub fn identity_contract_nonce(&self) -> IdentityContractNonce {
+    pub fn identity_contract_nonce(&self) -> IdentityNonce {
         match self {
             DataContractUpdateTransitionAction::V0(transition) => {
                 transition.identity_contract_nonce

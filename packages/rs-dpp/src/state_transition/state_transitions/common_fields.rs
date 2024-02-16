@@ -6,4 +6,6 @@ pub mod property_names {
     pub const SIGNATURE: &str = "signature";
     pub const TRANSITION_TYPE: &str = "type";
     pub const REVISION: &str = "revision";
+
+    pub const NONCE: &str = "nonce";
 }

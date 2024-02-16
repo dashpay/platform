@@ -5,6 +5,7 @@ use crate::identity::{Identity, IdentityPublicKey};
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::{identity::KeyID, state_transition::StateTransitionType, ProtocolError};
+use crate::prelude::IdentityNonce;
 
 pub trait IdentityUpdateTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
@@ -14,6 +15,7 @@ pub trait IdentityUpdateTransitionMethodsV0 {
         add_public_keys: Vec<IdentityPublicKey>,
         disable_public_keys: Vec<KeyID>,
         public_keys_disabled_at: Option<u64>,
+        nonce: IdentityNonce,
         signer: &S,
         platform_version: &PlatformVersion,
         version: Option<FeatureVersion>,

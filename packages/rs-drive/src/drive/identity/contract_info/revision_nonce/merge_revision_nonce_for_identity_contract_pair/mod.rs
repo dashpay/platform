@@ -4,8 +4,8 @@ use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
-use dpp::identity::identity_contract_nonce::MergeIdentityContractNonceResult;
-use dpp::prelude::IdentityContractNonce;
+use dpp::identity::identity_nonce::MergeIdentityNonceResult;
+use dpp::prelude::IdentityNonce;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
@@ -17,7 +17,7 @@ pub(crate) trait MergeIdentityContractNonceResultToResult {
     fn to_result(self) -> Result<(), Error>;
 }
 
-impl MergeIdentityContractNonceResultToResult for MergeIdentityContractNonceResult {
+impl MergeIdentityContractNonceResultToResult for MergeIdentityNonceResult {
     /// Gives a result from the enum
     fn to_result(self) -> Result<(), Error> {
         if let Some(error_message) = self.error_message() {
@@ -36,13 +36,13 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         contract_id: [u8; 32],
-        revision_nonce: IdentityContractNonce,
+        revision_nonce: IdentityNonce,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<MergeIdentityContractNonceResult, Error> {
+    ) -> Result<MergeIdentityNonceResult, Error> {
         match platform_version
             .drive
             .methods
@@ -73,7 +73,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         contract_id: [u8; 32],
-        revision_nonce: IdentityContractNonce,
+        revision_nonce: IdentityNonce,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -82,7 +82,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<
         (
-            MergeIdentityContractNonceResult,
+            MergeIdentityNonceResult,
             Vec<LowLevelDriveOperation>,
         ),
         Error,

@@ -1,6 +1,6 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
-use crate::prelude::IdentityContractNonce;
+use crate::prelude::IdentityNonce;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::ProtocolError;
@@ -10,7 +10,7 @@ impl DocumentBaseTransition {
     pub fn from_document(
         document: &Document,
         document_type: DocumentTypeRef,
-        identity_contract_nonce: IdentityContractNonce,
+        identity_contract_nonce: IdentityNonce,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
     ) -> Result<Self, ProtocolError> {

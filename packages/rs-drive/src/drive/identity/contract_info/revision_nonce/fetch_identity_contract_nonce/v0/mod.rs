@@ -7,7 +7,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
-use dpp::prelude::{IdentityContractNonce, Revision};
+use dpp::prelude::{IdentityNonce, Revision};
 
 use crate::drive::identity::contract_info::ContractInfoStructure::IdentityContractNonceKey;
 use dpp::version::PlatformVersion;
@@ -24,7 +24,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<IdentityContractNonce>, Error> {
+    ) -> Result<Option<IdentityNonce>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_identity_contract_nonce_operations_v0(
             identity_id,
@@ -46,7 +46,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<IdentityContractNonce>, Error> {
+    ) -> Result<Option<IdentityNonce>, Error> {
         let direct_query_type = if apply {
             DirectQueryType::StatefulDirectQuery
         } else {
@@ -96,7 +96,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<(Option<IdentityContractNonce>, FeeResult), Error> {
+    ) -> Result<(Option<IdentityNonce>, FeeResult), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let value = self.fetch_identity_contract_nonce_operations_v0(
             identity_id,

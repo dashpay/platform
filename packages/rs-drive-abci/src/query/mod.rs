@@ -474,11 +474,11 @@ mod tests {
         use dpp::data_contract::document_type::random_document::CreateRandomDocument;
         use dpp::identifier::Identifier;
         use dpp::identity::accessors::IdentityGettersV0;
-        use dpp::identity::identity_contract_nonce::{
-            IDENTITY_CONTRACT_NONCE_VALUE_FILTER, IDENTITY_CONTRACT_NONCE_VALUE_FILTER_MAX_BYTES,
+        use dpp::identity::identity_nonce::{
+            IDENTITY_NONCE_VALUE_FILTER, IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES,
         };
         use dpp::identity::{Identity, IdentityV0};
-        use dpp::prelude::IdentityContractNonce;
+        use dpp::prelude::IdentityNonce;
         use drive::common::identities::{
             create_test_identities_with_rng, create_test_identity_with_rng,
         };
@@ -759,8 +759,8 @@ mod tests {
                 }
             };
 
-            assert_eq!(nonce & IDENTITY_CONTRACT_NONCE_VALUE_FILTER, 3);
-            assert_eq!(nonce >> IDENTITY_CONTRACT_NONCE_VALUE_FILTER_MAX_BYTES, 1);
+            assert_eq!(nonce & IDENTITY_NONCE_VALUE_FILTER, 3);
+            assert_eq!(nonce >> IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES, 1);
             // the previous last one was not there
         }
 

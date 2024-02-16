@@ -28,7 +28,7 @@ use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use crate::data_contract::DataContract;
 
 use crate::identity::state_transition::OptionallyAssetLockProved;
-use crate::prelude::IdentityContractNonce;
+use crate::prelude::IdentityNonce;
 pub use v0::*;
 
 pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
@@ -59,13 +59,13 @@ pub enum DataContractUpdateTransition {
     V0(DataContractUpdateTransitionV0),
 }
 
-impl TryFromPlatformVersioned<(DataContract, IdentityContractNonce)>
+impl TryFromPlatformVersioned<(DataContract, IdentityNonce)>
     for DataContractUpdateTransition
 {
     type Error = ProtocolError;
 
     fn try_from_platform_versioned(
-        value: (DataContract, IdentityContractNonce),
+        value: (DataContract, IdentityNonce),
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
         match platform_version

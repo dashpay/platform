@@ -28,7 +28,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
             core_fee_per_byte,
             pooling,
             output_script,
-            revision: identity.revision() + 1,
+            nonce: identity.revision() + 1,
             signature_public_key_id: 0,
             signature: Default::default(),
         }

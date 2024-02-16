@@ -1,7 +1,7 @@
 use crate::platform::Identifier;
 use crate::sdk::LastQueryTimestamp;
 use dpp::prelude;
-use dpp::prelude::IdentityContractNonce;
+use dpp::prelude::IdentityNonce;
 use std::collections::BTreeMap;
 use tokio::sync::Mutex;
 
@@ -16,7 +16,7 @@ pub struct InternalSdkCache {
     /// If the sdk user requests to put a state transition the counter is checked and either
     /// returns an error or is updated.
     pub(crate) identity_contract_nonce_counter: tokio::sync::Mutex<
-        BTreeMap<(Identifier, Identifier), (prelude::IdentityContractNonce, LastQueryTimestamp)>,
+        BTreeMap<(Identifier, Identifier), (prelude::IdentityNonce, LastQueryTimestamp)>,
     >,
 }
 
@@ -25,7 +25,7 @@ impl Default for InternalSdkCache {
         InternalSdkCache {
             identity_contract_nonce_counter: Mutex::new(BTreeMap::<
                 (Identifier, Identifier),
-                (IdentityContractNonce, LastQueryTimestamp),
+                (IdentityNonce, LastQueryTimestamp),
             >::new()),
         }
     }

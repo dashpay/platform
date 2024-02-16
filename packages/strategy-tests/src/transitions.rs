@@ -463,7 +463,7 @@ pub fn create_identity_withdrawal_transition(
         core_fee_per_byte: MIN_CORE_FEE_PER_BYTE,
         pooling: Pooling::Never,
         output_script: CoreScript::random_p2sh(rng),
-        revision: identity.revision(),
+        nonce: identity.revision(),
         signature_public_key_id: 0,
         signature: Default::default(),
     }
@@ -530,7 +530,7 @@ pub fn create_identity_credit_transfer_transition(
         identity_id: identity.id(),
         recipient_id: recipient.id(),
         amount,
-        revision: identity.revision() + 1,
+        nonce: identity.revision() + 1,
         signature_public_key_id: 0,
         signature: Default::default(),
     }

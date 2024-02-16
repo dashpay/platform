@@ -4,7 +4,7 @@ pub mod transformer;
 use std::sync::Arc;
 
 use dpp::identifier::Identifier;
-use dpp::prelude::IdentityContractNonce;
+use dpp::prelude::IdentityNonce;
 
 use crate::drive::contract::DataContractFetchInfo;
 
@@ -14,7 +14,7 @@ pub struct DocumentBaseTransitionActionV0 {
     /// The document Id
     pub id: Identifier,
     /// The identity contract nonce, this is used to stop replay attacks
-    pub identity_contract_nonce: IdentityContractNonce,
+    pub identity_contract_nonce: IdentityNonce,
     /// Name of document type found int the data contract associated with the `data_contract_id`
     pub document_type_name: String,
     /// A potential data contract
@@ -34,5 +34,5 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
     /// Data contract
     fn data_contract_fetch_info(&self) -> Arc<DataContractFetchInfo>;
     /// Identity contract nonce
-    fn identity_contract_nonce(&self) -> IdentityContractNonce;
+    fn identity_contract_nonce(&self) -> IdentityNonce;
 }

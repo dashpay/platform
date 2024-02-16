@@ -5,27 +5,27 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
 
-use crate::prelude::{Identifier, IdentityContractNonce, Revision};
+use crate::prelude::{Identifier, IdentityNonce, Revision};
 
-use crate::identity::identity_contract_nonce::MergeIdentityContractNonceResult;
+use crate::identity::identity_nonce::MergeIdentityNonceResult;
 use bincode::{Decode, Encode};
 
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[platform_serialize(unversioned)]
-pub struct InvalidIdentityContractNonceError {
+pub struct InvalidIdentityNonceError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
     pub identity_id: Identifier,
-    pub current_identity_contract_nonce: Option<IdentityContractNonce>,
-    pub setting_identity_contract_nonce: IdentityContractNonce,
-    pub error: MergeIdentityContractNonceResult,
+    pub current_identity_contract_nonce: Option<IdentityNonce>,
+    pub setting_identity_contract_nonce: IdentityNonce,
+    pub error: MergeIdentityNonceResult,
 }
-impl Display for InvalidIdentityContractNonceError {
+impl Display for InvalidIdentityNonceError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         // Pre-calculate the `current_identity_contract_nonce` value
         let current_nonce = self
@@ -39,12 +39,12 @@ impl Display for InvalidIdentityContractNonceError {
     }
 }
 
-impl InvalidIdentityContractNonceError {
+impl InvalidIdentityNonceError {
     pub fn new(
         identity_id: Identifier,
-        current_identity_contract_nonce: Option<IdentityContractNonce>,
-        setting_identity_contract_nonce: IdentityContractNonce,
-        error: MergeIdentityContractNonceResult,
+        current_identity_contract_nonce: Option<IdentityNonce>,
+        setting_identity_contract_nonce: IdentityNonce,
+        error: MergeIdentityNonceResult,
     ) -> Self {
         Self {
             identity_id,
@@ -57,20 +57,20 @@ impl InvalidIdentityContractNonceError {
     pub fn identity_id(&self) -> &Identifier {
         &self.identity_id
     }
-    pub fn current_identity_contract_nonce(&self) -> Option<&IdentityContractNonce> {
+    pub fn current_identity_contract_nonce(&self) -> Option<&IdentityNonce> {
         self.current_identity_contract_nonce.as_ref()
     }
 
-    pub fn setting_identity_contract_nonce(&self) -> &IdentityContractNonce {
+    pub fn setting_identity_contract_nonce(&self) -> &IdentityNonce {
         &self.setting_identity_contract_nonce
     }
 
-    pub fn error(&self) -> &MergeIdentityContractNonceResult {
+    pub fn error(&self) -> &MergeIdentityNonceResult {
         &self.error
     }
 }
-impl From<InvalidIdentityContractNonceError> for ConsensusError {
-    fn from(err: InvalidIdentityContractNonceError) -> Self {
-        Self::StateError(StateError::InvalidIdentityContractNonceError(err))
+impl From<InvalidIdentityNonceError> for ConsensusError {
+    fn from(err: InvalidIdentityNonceError) -> Self {
+        Self::StateError(StateError::InvalidIdentityNonceError(err))
     }
 }

@@ -40,7 +40,7 @@ pub fn to_object_struct(
         core_fee_per_byte: transition.core_fee_per_byte(),
         pooling: transition.pooling(),
         output_script: transition.output_script(),
-        revision: transition.revision(),
+        revision: transition.nonce(),
         ..ToObject::default()
     };
 

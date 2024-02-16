@@ -19,7 +19,7 @@ use crate::state_transition::data_contract_create_transition::DataContractCreate
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
-use crate::prelude::IdentityContractNonce;
+use crate::prelude::IdentityNonce;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::version::PlatformVersion;
 use crate::{errors::ProtocolError, prelude::Identifier};
@@ -193,7 +193,7 @@ impl DataContractFactoryV0 {
     pub fn create_unsigned_data_contract_update_transition(
         &self,
         data_contract: DataContract,
-        identity_contract_nonce: IdentityContractNonce,
+        identity_contract_nonce: IdentityNonce,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
         DataContractUpdateTransition::try_from_platform_versioned(
             (data_contract, identity_contract_nonce),

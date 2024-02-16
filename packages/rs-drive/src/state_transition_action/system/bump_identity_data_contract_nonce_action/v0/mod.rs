@@ -2,7 +2,7 @@
 pub mod transformer;
 
 use dpp::identifier::Identifier;
-use dpp::prelude::IdentityContractNonce;
+use dpp::prelude::IdentityNonce;
 
 #[derive(Debug, Clone)]
 /// Version 0 of the bump identity data contract nonce action
@@ -13,7 +13,7 @@ pub struct BumpIdentityDataContractNonceActionV0 {
     /// The contract id
     pub data_contract_id: Identifier,
     /// The identity contract nonce, this is used to stop replay attacks
-    pub identity_contract_nonce: IdentityContractNonce,
+    pub identity_contract_nonce: IdentityNonce,
 }
 
 /// document base transition action accessors v0
@@ -23,5 +23,5 @@ pub trait BumpIdentityDataContractNonceActionAccessorsV0 {
     /// The contract id
     fn data_contract_id(&self) -> Identifier;
     /// Identity contract nonce
-    fn identity_contract_nonce(&self) -> IdentityContractNonce;
+    fn identity_contract_nonce(&self) -> IdentityNonce;
 }

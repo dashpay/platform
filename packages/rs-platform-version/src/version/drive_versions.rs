@@ -502,6 +502,7 @@ pub struct DriveIdentityFetchPublicKeyHashesMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityFetchAttributesMethodVersions {
     pub revision: FeatureVersion,
+    pub nonce: FeatureVersion,
     pub identity_contract_nonce: FeatureVersion,
     pub balance: FeatureVersion,
     pub balance_include_debt: FeatureVersion,
@@ -583,6 +584,7 @@ pub struct DriveIdentityInsertMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityUpdateMethodVersions {
     pub update_identity_revision: FeatureVersion,
+    pub update_identity_nonce: FeatureVersion,
     pub update_identity_negative_credit_operation: FeatureVersion,
     pub initialize_identity_revision: FeatureVersion,
     pub disable_identity_keys: FeatureVersion,

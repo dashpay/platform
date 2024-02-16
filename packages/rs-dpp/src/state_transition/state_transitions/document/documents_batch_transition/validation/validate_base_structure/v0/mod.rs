@@ -4,7 +4,7 @@ use crate::consensus::basic::document::{
 };
 use crate::consensus::basic::BasicError;
 
-use crate::identity::identity_contract_nonce::MISSING_IDENTITY_CONTRACT_REVISIONS_FILTER;
+use crate::identity::identity_nonce::MISSING_IDENTITY_REVISIONS_FILTER;
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::{
@@ -61,7 +61,7 @@ impl DocumentsBatchTransition {
             for transition in transitions {
                 // We need to make sure that the identity contract nonce is within the allowed bounds
                 // This means that it is stored on 40 bits
-                if transition.identity_contract_nonce() & MISSING_IDENTITY_CONTRACT_REVISIONS_FILTER
+                if transition.identity_contract_nonce() & MISSING_IDENTITY_REVISIONS_FILTER
                     > 0
                 {
                     result.add_error(BasicError::IdentityContractNonceOutOfBoundsError(
