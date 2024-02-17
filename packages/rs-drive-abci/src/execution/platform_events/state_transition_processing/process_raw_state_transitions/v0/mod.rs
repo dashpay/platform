@@ -11,6 +11,7 @@ use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
 use dpp::{dashcore, ProtocolError};
+use std::sync::{RwLock, RwLockReadGuard};
 
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::state_transitions_processing_result::{
@@ -54,15 +55,17 @@ where
     pub(super) fn process_raw_state_transitions_v0(
         &self,
         raw_state_transitions: &Vec<Vec<u8>>,
-        block_platform_state: &PlatformState,
+        block_platform_state: PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-    ) -> Result<StateTransitionsProcessingResult, Error> {
+    ) -> Result<(StateTransitionsProcessingResult, PlatformState), Error> {
+        let state_lock = RwLock::new(block_platform_state);
+
         let platform_ref = PlatformRef {
             drive: &self.drive,
-            state: &self.state, // TODO: This is wrong. It must be block state
-            version: block_platform_state.current_platform_version()?,
+            state: &state_lock,
+            version: platform_version,
             config: &self.config,
             core_rpc: &self.core_rpc,
             block_info,
@@ -102,7 +105,7 @@ where
             processing_result.add(execution_result)?;
         }
 
-        Ok(processing_result)
+        Ok((processing_result, state_lock.into_inner().unwrap()))
     }
 
     fn process_raw_state_transition(

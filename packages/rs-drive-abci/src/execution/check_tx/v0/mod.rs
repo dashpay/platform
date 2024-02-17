@@ -277,7 +277,7 @@ mod tests {
             .platform
             .process_raw_state_transitions(
                 &vec![tx.clone()],
-                &state,
+                state.clone(),
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
@@ -368,7 +368,7 @@ mod tests {
             .platform
             .process_raw_state_transitions(
                 &vec![serialized.clone()],
-                &state,
+                state.clone(),
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
@@ -472,7 +472,7 @@ mod tests {
             .platform
             .process_raw_state_transitions(
                 &vec![serialized.clone()],
-                &state,
+                state.clone(),
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
