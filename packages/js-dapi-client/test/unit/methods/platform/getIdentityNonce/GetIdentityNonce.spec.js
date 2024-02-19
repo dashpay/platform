@@ -1,20 +1,20 @@
 const {
   v0: {
-    GetIdentityContractNonceResponse,
+    GetIdentityNonceResponse,
     ResponseMetadata,
     Proof: ProofResponse,
   },
 } = require('@dashevo/dapi-grpc');
 
-const GetIdentityContractNonceResponseClass = require('../../../../../lib/methods/platform/getIdentityContractNonce/GetIdentityContractNonceResponse');
+const GetIdentityNonceResponseClass = require('../../../../../lib/methods/platform/getIdentityNonce/GetIdentityNonceResponse');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const InvalidResponseError = require('../../../../../lib/methods/platform/response/errors/InvalidResponseError');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
 const Proof = require('../../../../../lib/methods/platform/response/Proof');
 const Metadata = require('../../../../../lib/methods/platform/response/Metadata');
 
-describe('GetIdentityContractNonceResponse', () => {
-  let getIdentityContractNonceResponse;
+describe('GetIdentityNonceResponse', () => {
+  let getIdentityNonceResponse;
   let metadataFixture;
   let nonce;
   let proto;
@@ -25,8 +25,8 @@ describe('GetIdentityContractNonceResponse', () => {
     nonce = 1;
     proofFixture = getProofFixture();
 
-    const { GetIdentityContractNonceResponseV0 } = GetIdentityContractNonceResponse;
-    proto = new GetIdentityContractNonceResponse();
+    const { GetIdentityNonceResponseV0 } = GetIdentityNonceResponse;
+    proto = new GetIdentityNonceResponse();
 
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
@@ -35,37 +35,37 @@ describe('GetIdentityContractNonceResponse', () => {
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     proto.setV0(
-      new GetIdentityContractNonceResponseV0()
-        .setIdentityContractNonce(nonce)
+      new GetIdentityNonceResponseV0()
+        .setIdentityNonce(nonce)
         .setMetadata(metadata),
 
     );
 
-    getIdentityContractNonceResponse = new GetIdentityContractNonceResponseClass(
+    getIdentityNonceResponse = new GetIdentityNonceResponseClass(
       nonce,
       new Metadata(metadataFixture),
     );
   });
 
   it('should return Identity', () => {
-    const identityContractNonce = getIdentityContractNonceResponse.getIdentityContractNonce();
-    const proof = getIdentityContractNonceResponse.getProof();
+    const IdentityNonce = getIdentityNonceResponse.getIdentityNonce();
+    const proof = getIdentityNonceResponse.getProof();
 
-    expect(identityContractNonce).to.deep.equal(nonce);
+    expect(IdentityNonce).to.deep.equal(nonce);
     expect(proof).to.equal(undefined);
   });
 
   it('should return proof', () => {
-    getIdentityContractNonceResponse = new GetIdentityContractNonceResponseClass(
+    getIdentityNonceResponse = new GetIdentityNonceResponseClass(
       Buffer.alloc(0),
       new Metadata(metadataFixture),
       new Proof(proofFixture),
     );
 
-    const identityContractNonce = getIdentityContractNonceResponse.getIdentityContractNonce();
-    const proof = getIdentityContractNonceResponse.getProof();
+    const IdentityNonce = getIdentityNonceResponse.getIdentityNonce();
+    const proof = getIdentityNonceResponse.getProof();
 
-    expect(identityContractNonce).to.deep.equal(Buffer.alloc(0));
+    expect(IdentityNonce).to.deep.equal(Buffer.alloc(0));
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
@@ -74,19 +74,19 @@ describe('GetIdentityContractNonceResponse', () => {
   });
 
   it('should create an instance from proto', () => {
-    getIdentityContractNonceResponse = GetIdentityContractNonceResponseClass.createFromProto(proto);
-    expect(getIdentityContractNonceResponse).to.be
-      .an.instanceOf(GetIdentityContractNonceResponseClass);
-    expect(getIdentityContractNonceResponse.getIdentityContractNonce()).to.deep.equal(nonce);
+    getIdentityNonceResponse = GetIdentityNonceResponseClass.createFromProto(proto);
+    expect(getIdentityNonceResponse).to.be
+      .an.instanceOf(GetIdentityNonceResponseClass);
+    expect(getIdentityNonceResponse.getIdentityNonce()).to.deep.equal(nonce);
 
-    expect(getIdentityContractNonceResponse.getMetadata())
+    expect(getIdentityNonceResponse.getMetadata())
       .to.be.an.instanceOf(Metadata);
-    expect(getIdentityContractNonceResponse.getMetadata().getHeight())
+    expect(getIdentityNonceResponse.getMetadata().getHeight())
       .to.equal(metadataFixture.height);
-    expect(getIdentityContractNonceResponse.getMetadata().getCoreChainLockedHeight())
+    expect(getIdentityNonceResponse.getMetadata().getCoreChainLockedHeight())
       .to.equal(metadataFixture.coreChainLockedHeight);
 
-    expect(getIdentityContractNonceResponse.getProof()).to.equal(undefined);
+    expect(getIdentityNonceResponse.getProof()).to.equal(undefined);
   });
 
   it('should create an instance with proof from proto', () => {
@@ -97,16 +97,16 @@ describe('GetIdentityContractNonceResponse', () => {
     proofProto.setGrovedbProof(proofFixture.merkleProof);
     proofProto.setRound(proofFixture.round);
 
-    proto.getV0().setIdentityContractNonce(undefined);
+    proto.getV0().setIdentityNonce(undefined);
     proto.getV0().setProof(proofProto);
 
-    getIdentityContractNonceResponse = GetIdentityContractNonceResponseClass.createFromProto(proto);
+    getIdentityNonceResponse = GetIdentityNonceResponseClass.createFromProto(proto);
 
-    expect(getIdentityContractNonceResponse.getIdentityContractNonce())
+    expect(getIdentityNonceResponse.getIdentityNonce())
       .to.deep.equal(0);
-    expect(getIdentityContractNonceResponse.getMetadata()).to.deep.equal(metadataFixture);
+    expect(getIdentityNonceResponse.getMetadata()).to.deep.equal(metadataFixture);
 
-    const proof = getIdentityContractNonceResponse.getProof();
+    const proof = getIdentityNonceResponse.getProof();
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
@@ -118,7 +118,7 @@ describe('GetIdentityContractNonceResponse', () => {
     proto.getV0().setMetadata(undefined);
 
     try {
-      getIdentityContractNonceResponse = GetIdentityContractNonceResponseClass
+      getIdentityNonceResponse = GetIdentityNonceResponseClass
         .createFromProto(proto);
 
       expect.fail('should throw InvalidResponseError');

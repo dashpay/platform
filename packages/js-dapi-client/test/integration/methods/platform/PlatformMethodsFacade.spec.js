@@ -8,6 +8,7 @@ const {
     GetProtocolVersionUpgradeVoteStatusResponse,
     GetProtocolVersionUpgradeStateResponse,
     GetIdentityContractNonceResponse,
+    GetIdentityNonceResponse,
     BroadcastStateTransitionResponse,
     WaitForStateTransitionResultResponse,
   },
@@ -30,6 +31,7 @@ const {
 } = GetProtocolVersionUpgradeVoteStatusResponse;
 const { GetProtocolVersionUpgradeStateResponseV0 } = GetProtocolVersionUpgradeStateResponse;
 const { GetIdentityContractNonceResponseV0 } = GetIdentityContractNonceResponse;
+const { GetIdentityNonceResponseV0 } = GetIdentityNonceResponse;
 
 describe('PlatformMethodsFacade', () => {
   let grpcTransportMock;
@@ -206,8 +208,6 @@ describe('PlatformMethodsFacade', () => {
 
   describe('#getIdentityContractNonce', () => {
     it('should get nonce', async () => {
-      // const { VersionEntry, Versions } = GetProtocolVersionUpgradeStateResponseV0;
-
       const response = new GetIdentityContractNonceResponse();
 
       response.setV0(
@@ -219,6 +219,24 @@ describe('PlatformMethodsFacade', () => {
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.getIdentityContractNonce(Buffer.alloc(32), Buffer.alloc(32));
+
+      expect(grpcTransportMock.request).to.be.calledOnce();
+    });
+  });
+
+  describe('#getIdentityNonce', () => {
+    it('should get nonce', async () => {
+      const response = new GetIdentityNonceResponse();
+
+      response.setV0(
+        new GetIdentityNonceResponseV0()
+          .setIdentityNonce(1)
+          .setMetadata(new ResponseMetadata()),
+      );
+
+      grpcTransportMock.request.resolves(response);
+
+      await platformMethods.getIdentityNonce(Buffer.alloc(32), Buffer.alloc(32));
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });
