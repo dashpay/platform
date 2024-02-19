@@ -106,6 +106,8 @@ pub mod get_identity_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
+#[grpc_versions(0)]
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -405,6 +407,11 @@ pub mod get_identities_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(
+    ::dapi_grpc_macros::VersionedGrpcMessage,
+    ::dapi_grpc_macros::VersionedGrpcResponse
+)]
+#[grpc_versions(0)]
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
