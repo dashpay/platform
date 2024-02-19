@@ -31,13 +31,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        match platform_version
-            .drive
-            .methods
-            .identity
-            .prove
-            .identity_nonce
-        {
+        match platform_version.drive.methods.identity.prove.identity_nonce {
             0 => self.prove_identity_nonce_v0(identity_id, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_identity_nonce".to_string(),

@@ -6,9 +6,7 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identity_nonce_request::GetIdentityNonceRequestV0;
 use dapi_grpc::platform::v0::get_identity_nonce_response::GetIdentityNonceResponseV0;
-use dapi_grpc::platform::v0::{
-    get_identity_nonce_response, GetIdentityNonceResponse, Proof,
-};
+use dapi_grpc::platform::v0::{get_identity_nonce_response, GetIdentityNonceResponse, Proof};
 use dapi_grpc::Message;
 use dpp::check_validation_result_with_data;
 use dpp::platform_value::Identifier;
@@ -25,21 +23,16 @@ impl<C> Platform<C> {
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
         let quorum_type = self.config.validator_set_quorum_type() as u32;
-        let GetIdentityNonceRequestV0 {
-            identity_id,
-            prove,
-        } = request;
+        let GetIdentityNonceRequestV0 { identity_id, prove } = request;
         let identity_id = check_validation_result_with_data!(Identifier::from_vec(identity_id)
             .map(|bytes| bytes.0)
             .map_err(|_| QueryError::InvalidArgument(
                 "identity id must be 32 bytes long".to_string()
             )));
         let response_data = if prove {
-            let proof = self.drive.prove_identity_nonce(
-                identity_id.0,
-                None,
-                platform_version,
-            )?;
+            let proof = self
+                .drive
+                .prove_identity_nonce(identity_id.0, None, platform_version)?;
 
             GetIdentityNonceResponse {
                 version: Some(get_identity_nonce_response::Version::V0(GetIdentityNonceResponseV0 {
@@ -55,12 +48,9 @@ impl<C> Platform<C> {
                 })),
             }.encode_to_vec()
         } else {
-            let maybe_identity = self.drive.fetch_identity_nonce(
-                identity_id.0,
-                true,
-                None,
-                platform_version,
-            )?;
+            let maybe_identity =
+                self.drive
+                    .fetch_identity_nonce(identity_id.0, true, None, platform_version)?;
 
             // default here is 0;
             let identity_nonce = maybe_identity.unwrap_or_default();

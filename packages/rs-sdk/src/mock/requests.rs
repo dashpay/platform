@@ -151,27 +151,43 @@ impl MockResponse for Document {
 
 impl MockResponse for drive_proof_verifier::types::IdentityBalance {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        (*self).to_le_bytes().to_vec()
+        (*self).to_be_bytes().to_vec()
     }
 
     fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
     where
         Self: Sized,
     {
-        Self::from_le_bytes(buf.try_into().expect("balance should be 8 bytes"))
+        Self::from_be_bytes(buf.try_into().expect("balance should be 8 bytes"))
+    }
+}
+
+impl MockResponse for drive_proof_verifier::types::IdentityNonceFetcher {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        (self.0).to_be_bytes().to_vec()
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        drive_proof_verifier::types::IdentityNonceFetcher(u64::from_be_bytes(
+            buf.try_into()
+                .expect("identity contract nonce should be should be 8 bytes"),
+        ))
     }
 }
 
 impl MockResponse for drive_proof_verifier::types::IdentityContractNonceFetcher {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        (self.0).to_le_bytes().to_vec()
+        (self.0).to_be_bytes().to_vec()
     }
 
     fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
     where
         Self: Sized,
     {
-        drive_proof_verifier::types::IdentityContractNonceFetcher(u64::from_le_bytes(
+        drive_proof_verifier::types::IdentityContractNonceFetcher(u64::from_be_bytes(
             buf.try_into()
                 .expect("identity contract nonce should be should be 8 bytes"),
         ))

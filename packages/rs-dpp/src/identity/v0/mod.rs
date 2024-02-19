@@ -94,7 +94,6 @@ impl IdentityV0 {
             loaded_public_keys: public_keys,
             balance: Some(balance),
             revision: Some(revision),
-            contract_revisions: Default::default(),
             not_found_public_keys: Default::default(),
         }
     }
@@ -112,7 +111,6 @@ impl IdentityV0 {
             loaded_public_keys: public_keys,
             balance: None,
             revision: Some(revision),
-            contract_revisions: Default::default(),
             not_found_public_keys: Default::default(),
         }
     }

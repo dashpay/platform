@@ -128,7 +128,6 @@ impl Drive {
             revision,
             loaded_public_keys,
             not_found_public_keys: Default::default(),
-            contract_revisions: Default::default(),
         });
 
         Ok((root_hash, maybe_identity))

@@ -21,7 +21,7 @@ use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
 use dpp::prelude;
 use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
-use drive_proof_verifier::types::IdentityContractNonceFetcher;
+use drive_proof_verifier::types::{IdentityContractNonceFetcher, IdentityNonceFetcher};
 #[cfg(feature = "mocks")]
 use drive_proof_verifier::MockContextProvider;
 use drive_proof_verifier::{types, ContextProvider, FromProof};
@@ -33,7 +33,7 @@ pub use rs_dapi_client::AddressList;
 pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
-    DapiClient, DapiClientError, DapiRequestExecutor, DEFAULT_IDENTITY_CONTRACT_NONCE_STALE_TIME_S,
+    DapiClient, DapiClientError, DapiRequestExecutor, DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
 };
 #[cfg(feature = "mocks")]
 use std::path::{Path, PathBuf};
@@ -209,6 +209,90 @@ impl Sdk {
         }
     }
 
+    /// Updates or fetches the nonce for a given identity from the cache,
+    /// querying Platform if the cached value is stale or absent. Optionally
+    /// increments the nonce before storing it, based on the provided settings.
+    pub async fn get_identity_nonce(
+        &self,
+        identity_id: Identifier,
+        bump_first: bool,
+        settings: &RequestSettings,
+    ) -> Result<IdentityNonce, Error> {
+        let current_time_s = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(n) => n.as_secs(),
+            Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+        };
+
+        // we start by only using a read lock, as this speeds up the system
+        let mut identity_nonce_counter = self.internal_cache.identity_nonce_counter.lock().await;
+        let entry = identity_nonce_counter.entry(identity_id);
+
+        let should_query_platform = match &entry {
+            Entry::Vacant(e) => true,
+            Entry::Occupied(e) => {
+                let (_, last_query_time) = e.get();
+                *last_query_time
+                    < current_time_s.saturating_sub(
+                        settings
+                            .identity_nonce_stale_time_s
+                            .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
+                    )
+            }
+        };
+
+        if should_query_platform {
+            let platform_nonce = IdentityNonceFetcher::fetch(&self, identity_id)
+                .await?
+                .unwrap_or(IdentityNonceFetcher(0))
+                .0;
+            match entry {
+                Entry::Vacant(e) => {
+                    let insert_nonce = if bump_first {
+                        platform_nonce + 1
+                    } else {
+                        platform_nonce
+                    };
+                    e.insert((insert_nonce, current_time_s));
+                    Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                }
+                Entry::Occupied(mut e) => {
+                    let (current_nonce, _) = e.get();
+                    let insert_nonce = if platform_nonce > *current_nonce {
+                        if bump_first {
+                            platform_nonce + 1
+                        } else {
+                            platform_nonce
+                        }
+                    } else {
+                        if bump_first {
+                            *current_nonce + 1
+                        } else {
+                            *current_nonce
+                        }
+                    };
+                    e.insert((insert_nonce, current_time_s));
+                    Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                }
+            }
+        } else {
+            match entry {
+                Entry::Vacant(_) => {
+                    panic!("this can not happen, vacant entry not possible");
+                }
+                Entry::Occupied(mut e) => {
+                    let (current_nonce, _) = e.get();
+                    if bump_first {
+                        let insert_nonce = current_nonce + 1;
+                        e.insert((insert_nonce, current_time_s));
+                        Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                    } else {
+                        Ok(*current_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                    }
+                }
+            }
+        }
+    }
+
     /// Updates or fetches the nonce for a given identity and contract pair from a cache,
     /// querying Platform if the cached value is stale or absent. Optionally
     /// increments the nonce before storing it, based on the provided settings.
@@ -239,8 +323,8 @@ impl Sdk {
                 *last_query_time
                     < current_time_s.saturating_sub(
                         settings
-                            .identity_contract_nonce_stale_time_s
-                            .unwrap_or(DEFAULT_IDENTITY_CONTRACT_NONCE_STALE_TIME_S),
+                            .identity_nonce_stale_time_s
+                            .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
                     )
             }
         };

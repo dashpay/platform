@@ -7,8 +7,8 @@ const DEFAULT_CONNECT_TIMEOUT: Option<Duration> = None;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_RETRIES: usize = 5;
 const DEFAULT_BAN_FAILED_ADDRESS: bool = true;
-/// The default identity contract nonce stale time in seconds
-pub const DEFAULT_IDENTITY_CONTRACT_NONCE_STALE_TIME_S: u64 = 1200; //20 mins
+/// The default identity nonce stale time in seconds
+pub const DEFAULT_IDENTITY_NONCE_STALE_TIME_S: u64 = 1200; //20 mins
 
 /// DAPI request settings.
 ///
@@ -27,12 +27,12 @@ pub struct RequestSettings {
     pub retries: Option<usize>,
     /// Ban DAPI address if node not responded or responded with error.
     pub ban_failed_address: Option<bool>,
-    /// The amount of time after which an identity contract nonce becomes stale
+    /// The amount of time after which an identity nonce becomes stale
     /// If it is stale we check platform before bumping the version
     /// Setting Some(0) means that we always recheck
     /// Setting a very high number means that we would never recheck
     /// Setting None uses default which is 20 mins
-    pub identity_contract_nonce_stale_time_s: Option<u64>,
+    pub identity_nonce_stale_time_s: Option<u64>,
 }
 
 impl RequestSettings {
@@ -44,9 +44,7 @@ impl RequestSettings {
             timeout: None,
             retries: None,
             ban_failed_address: None,
-            identity_contract_nonce_stale_time_s: Some(
-                DEFAULT_IDENTITY_CONTRACT_NONCE_STALE_TIME_S,
-            ),
+            identity_nonce_stale_time_s: Some(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
         }
     }
 
@@ -59,9 +57,9 @@ impl RequestSettings {
             timeout: rhs.timeout.or(self.timeout),
             retries: rhs.retries.or(self.retries),
             ban_failed_address: rhs.ban_failed_address.or(self.ban_failed_address),
-            identity_contract_nonce_stale_time_s: rhs
-                .identity_contract_nonce_stale_time_s
-                .or(self.identity_contract_nonce_stale_time_s),
+            identity_nonce_stale_time_s: rhs
+                .identity_nonce_stale_time_s
+                .or(self.identity_nonce_stale_time_s),
         }
     }
 
@@ -75,8 +73,8 @@ impl RequestSettings {
                 .ban_failed_address
                 .unwrap_or(DEFAULT_BAN_FAILED_ADDRESS),
             identity_contract_nonce_stale_time_s: self
-                .identity_contract_nonce_stale_time_s
-                .unwrap_or(DEFAULT_IDENTITY_CONTRACT_NONCE_STALE_TIME_S),
+                .identity_nonce_stale_time_s
+                .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
         }
     }
 }

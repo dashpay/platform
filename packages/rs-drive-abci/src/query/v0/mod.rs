@@ -21,9 +21,7 @@ impl<C> Platform<C> {
             "/identity/contractNonce" => {
                 self.query_identity_contract_nonce(&state, query_data, platform_version)
             }
-            "/identity/nonce" => {
-                self.query_identity_nonce(&state, query_data, platform_version)
-            }
+            "/identity/nonce" => self.query_identity_nonce(&state, query_data, platform_version),
             "/identity/balance" => self.query_balance(&state, query_data, platform_version),
             "/identity/balanceAndRevision" => {
                 self.query_balance_and_revision(&state, query_data, platform_version)

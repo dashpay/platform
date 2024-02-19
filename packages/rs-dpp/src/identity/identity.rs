@@ -43,7 +43,6 @@ pub struct PartialIdentity {
     pub loaded_public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     pub balance: Option<Credits>,
     pub revision: Option<Revision>,
-    pub contract_revisions: BTreeMap<Identifier, Revision>,
     /// These are keys that were requested but didn't exist
     pub not_found_public_keys: BTreeSet<KeyID>,
 }

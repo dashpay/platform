@@ -456,7 +456,6 @@ mod tests {
         }
     }
 
-
     mod identity_nonce {
         use crate::error::query::QueryError;
 
@@ -464,7 +463,9 @@ mod tests {
             GetIdentityNonceRequestV0, Version,
         };
         use dapi_grpc::platform::v0::get_identity_nonce_response::get_identity_nonce_response_v0;
-        use dapi_grpc::platform::v0::{get_identity_nonce_response, GetIdentityNonceRequest, GetIdentityNonceResponse};
+        use dapi_grpc::platform::v0::{
+            get_identity_nonce_response, GetIdentityNonceRequest, GetIdentityNonceResponse,
+        };
         use dapi_grpc::Message;
         use dpp::block::block_info::BlockInfo;
         use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -472,9 +473,7 @@ mod tests {
         use dpp::identity::identity_nonce::{
             IDENTITY_NONCE_VALUE_FILTER, IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES,
         };
-        use drive::common::identities::{
-            create_test_identity_with_rng,
-        };
+        use drive::common::identities::create_test_identity_with_rng;
         use rand::prelude::StdRng;
         use rand::{Rng, SeedableRng};
 
@@ -490,7 +489,7 @@ mod tests {
                     prove: false,
                 })),
             }
-                .encode_to_vec();
+            .encode_to_vec();
 
             let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
@@ -511,7 +510,7 @@ mod tests {
                     prove: false,
                 })),
             }
-                .encode_to_vec();
+            .encode_to_vec();
 
             let validation_result = platform
                 .query(QUERY_PATH, &request, version)
@@ -530,9 +529,7 @@ mod tests {
             };
 
             let nonce = match v0.result.unwrap() {
-                get_identity_nonce_response_v0::Result::IdentityNonce(nonce) => {
-                    nonce
-                }
+                get_identity_nonce_response_v0::Result::IdentityNonce(nonce) => nonce,
                 get_identity_nonce_response_v0::Result::Proof(_) => {
                     panic!("expected non proved")
                 }
@@ -556,7 +553,7 @@ mod tests {
                     prove: false,
                 })),
             }
-                .encode_to_vec();
+            .encode_to_vec();
 
             let validation_result = platform
                 .query(QUERY_PATH, &request, version)
@@ -575,9 +572,7 @@ mod tests {
             };
 
             let nonce = match v0.result.unwrap() {
-                get_identity_nonce_response_v0::Result::IdentityNonce(nonce) => {
-                    nonce
-                }
+                get_identity_nonce_response_v0::Result::IdentityNonce(nonce) => nonce,
                 get_identity_nonce_response_v0::Result::Proof(_) => {
                     panic!("expected non proved")
                 }
@@ -629,7 +624,7 @@ mod tests {
                     prove: false,
                 })),
             }
-                .encode_to_vec();
+            .encode_to_vec();
 
             let validation_result = platform
                 .query(QUERY_PATH, &request, version)
@@ -648,9 +643,7 @@ mod tests {
             };
 
             let nonce = match v0.result.unwrap() {
-                get_identity_nonce_response_v0::Result::IdentityNonce(nonce) => {
-                    nonce
-                }
+                get_identity_nonce_response_v0::Result::IdentityNonce(nonce) => nonce,
                 get_identity_nonce_response_v0::Result::Proof(_) => {
                     panic!("expected non proved")
                 }
@@ -713,7 +706,7 @@ mod tests {
                     prove: false,
                 })),
             }
-                .encode_to_vec();
+            .encode_to_vec();
 
             let validation_result = platform
                 .query(QUERY_PATH, &request, version)
@@ -732,9 +725,7 @@ mod tests {
             };
 
             let nonce = match v0.result.unwrap() {
-                get_identity_nonce_response_v0::Result::IdentityNonce(nonce) => {
-                    nonce
-                }
+                get_identity_nonce_response_v0::Result::IdentityNonce(nonce) => nonce,
                 get_identity_nonce_response_v0::Result::Proof(_) => {
                     panic!("expected non proved")
                 }
@@ -755,14 +746,13 @@ mod tests {
                     prove: true,
                 })),
             }
-                .encode_to_vec();
+            .encode_to_vec();
 
             let result = platform.query(QUERY_PATH, &request, version);
             let validation_result = result.unwrap();
-            let response = GetIdentityNonceResponse::decode(
-                validation_result.data.unwrap().as_slice(),
-            )
-                .unwrap();
+            let response =
+                GetIdentityNonceResponse::decode(validation_result.data.unwrap().as_slice())
+                    .unwrap();
 
             assert!(matches!(
                 extract_single_variant_or_panic!(
