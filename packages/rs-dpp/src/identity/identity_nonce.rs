@@ -65,8 +65,8 @@ pub fn validate_new_identity_nonce(
         SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(
             StateError::InvalidIdentityNonceError(InvalidIdentityNonceError {
                 identity_id,
-                current_identity_contract_nonce: None,
-                setting_identity_contract_nonce: new_revision_nonce,
+                current_identity_nonce: None,
+                setting_identity_nonce: new_revision_nonce,
                 error: MergeIdentityNonceResult::NonceTooFarInPast,
             }),
         ))
@@ -86,8 +86,8 @@ pub fn validate_identity_nonce_update(
         return SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(
             StateError::InvalidIdentityNonceError(InvalidIdentityNonceError {
                 identity_id,
-                current_identity_contract_nonce: Some(existing_nonce),
-                setting_identity_contract_nonce: new_revision_nonce,
+                current_identity_nonce: Some(existing_nonce),
+                setting_identity_nonce: new_revision_nonce,
                 error: MergeIdentityNonceResult::NonceAlreadyPresentAtTip,
             }),
         ));
@@ -97,8 +97,8 @@ pub fn validate_identity_nonce_update(
             return SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(
                 StateError::InvalidIdentityNonceError(InvalidIdentityNonceError {
                     identity_id,
-                    current_identity_contract_nonce: Some(existing_nonce),
-                    setting_identity_contract_nonce: new_revision_nonce,
+                    current_identity_nonce: Some(existing_nonce),
+                    setting_identity_nonce: new_revision_nonce,
                     error: MergeIdentityNonceResult::NonceTooFarInFuture,
                 }),
             ));
@@ -110,8 +110,8 @@ pub fn validate_identity_nonce_update(
             return SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(
                 StateError::InvalidIdentityNonceError(InvalidIdentityNonceError {
                     identity_id,
-                    current_identity_contract_nonce: Some(existing_nonce),
-                    setting_identity_contract_nonce: new_revision_nonce,
+                    current_identity_nonce: Some(existing_nonce),
+                    setting_identity_nonce: new_revision_nonce,
                     error: MergeIdentityNonceResult::NonceTooFarInPast,
                 }),
             ));
@@ -126,8 +126,8 @@ pub fn validate_identity_nonce_update(
                     ConsensusError::StateError(StateError::InvalidIdentityNonceError(
                         InvalidIdentityNonceError {
                             identity_id,
-                            current_identity_contract_nonce: Some(existing_nonce),
-                            setting_identity_contract_nonce: new_revision_nonce,
+                            current_identity_nonce: Some(existing_nonce),
+                            setting_identity_nonce: new_revision_nonce,
                             error: MergeIdentityNonceResult::NonceAlreadyPresentInPast(
                                 previous_revision_position_from_top,
                             ),

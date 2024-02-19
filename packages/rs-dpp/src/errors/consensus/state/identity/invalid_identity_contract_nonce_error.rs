@@ -21,21 +21,21 @@ pub struct InvalidIdentityNonceError {
 
     */
     pub identity_id: Identifier,
-    pub current_identity_contract_nonce: Option<IdentityNonce>,
-    pub setting_identity_contract_nonce: IdentityNonce,
+    pub current_identity_nonce: Option<IdentityNonce>,
+    pub setting_identity_nonce: IdentityNonce,
     pub error: MergeIdentityNonceResult,
 }
 impl Display for InvalidIdentityNonceError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         // Pre-calculate the `current_identity_contract_nonce` value
         let current_nonce = self
-            .current_identity_contract_nonce
+            .current_identity_nonce
             .as_ref()
             .unwrap_or(&Default::default()) // Assuming `IdentityContractNonce` implements `Default`
             .to_string(); // Assuming `IdentityContractNonce` implements `ToString` or has a similar method for representation
 
         // Format the error message with pre-calculated `current_nonce`
-        write!(f, "Identity {} is trying to set an invalid identity contract nonce. The current identity contract nonce is {}, we are setting {}, error is {}", self.identity_id, current_nonce, self.setting_identity_contract_nonce, self.error)
+        write!(f, "Identity {} is trying to set an invalid identity nonce. The current identity nonce is {}, we are setting {}, error is {}", self.identity_id, current_nonce, self.setting_identity_nonce, self.error)
     }
 }
 
@@ -48,8 +48,8 @@ impl InvalidIdentityNonceError {
     ) -> Self {
         Self {
             identity_id,
-            current_identity_contract_nonce,
-            setting_identity_contract_nonce,
+            current_identity_nonce: current_identity_contract_nonce,
+            setting_identity_nonce: setting_identity_contract_nonce,
             error,
         }
     }
@@ -58,11 +58,11 @@ impl InvalidIdentityNonceError {
         &self.identity_id
     }
     pub fn current_identity_contract_nonce(&self) -> Option<&IdentityNonce> {
-        self.current_identity_contract_nonce.as_ref()
+        self.current_identity_nonce.as_ref()
     }
 
     pub fn setting_identity_contract_nonce(&self) -> &IdentityNonce {
-        &self.setting_identity_contract_nonce
+        &self.setting_identity_nonce
     }
 
     pub fn error(&self) -> &MergeIdentityNonceResult {
