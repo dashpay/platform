@@ -26,7 +26,7 @@ use crate::errors::consensus::basic::identity::{
 
 use crate::errors::consensus::state::identity::{
     DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
-    InvalidIdentityContractNonceErrorWasm, MissingIdentityPublicKeyIdsErrorWasm,
+    InvalidIdentityNonceErrorWasm, MissingIdentityPublicKeyIdsErrorWasm,
 };
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::BasicError::{
@@ -212,9 +212,7 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::InvalidAssetLockProofValueError(e) => {
             InvalidAssetLockProofValueErrorWasm::from(e).into()
         }
-        StateError::InvalidIdentityContractNonceError(e) => {
-            InvalidIdentityContractNonceErrorWasm::from(e).into()
-        }
+        StateError::InvalidIdentityNonceError(e) => InvalidIdentityNonceErrorWasm::from(e).into(),
         // TODO(versioning): restore
         _ => todo!(),
     }
