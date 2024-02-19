@@ -1,9 +1,11 @@
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Address;
+use dpp::identity::accessors::IdentityGettersV0;
 
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::signer::Signer;
 use dpp::identity::Identity;
+use dpp::prelude::IdentityNonce;
 
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
@@ -24,6 +26,7 @@ pub trait WithdrawFromIdentity {
         amount: u64,
         core_fee_per_byte: Option<u32>,
         signer: S,
+        settings: RequestSettings,
     ) -> Result<u64, Error>;
 }
 
@@ -36,7 +39,10 @@ impl WithdrawFromIdentity for Identity {
         amount: u64,
         core_fee_per_byte: Option<u32>,
         signer: S,
+        settings: RequestSettings,
     ) -> Result<u64, Error> {
+        let new_identity_contract_nonce =
+            sdk.get_identity_nonce(self.id(), true, &settings).await?;
         let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
             self,
             CoreScript::new(address.script_pubkey()),
@@ -44,6 +50,7 @@ impl WithdrawFromIdentity for Identity {
             Pooling::Never,
             core_fee_per_byte.unwrap_or(1),
             signer,
+            new_identity_contract_nonce,
             sdk.version(),
             None,
         )?;

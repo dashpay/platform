@@ -186,11 +186,8 @@ impl Drive {
     }
 
     /// The query for proving an identity's nonce.
-    pub fn identity_nonce_query(
-        identity_id: [u8; 32],
-    ) -> PathQuery {
-        let identity_path =
-            identity_path_vec(identity_id.as_slice());
+    pub fn identity_nonce_query(identity_id: [u8; 32]) -> PathQuery {
+        let identity_path = identity_path_vec(identity_id.as_slice());
         PathQuery::new_single_key(identity_path, vec![IdentityTreeNonce as u8])
     }
 

@@ -199,6 +199,14 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    platform_proto::GetIdentityNonceRequest,
+    platform_proto::GetIdentityNonceResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identity_nonce
+);
+
+impl_transport_request_grpc!(
     platform_proto::GetIdentityContractNonceRequest,
     platform_proto::GetIdentityContractNonceResponse,
     PlatformGrpcClient,

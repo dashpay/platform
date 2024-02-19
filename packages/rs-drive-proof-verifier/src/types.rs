@@ -49,6 +49,10 @@ pub type IdentityBalance = u64;
 /// Identity balance and revision of the identity.
 pub type IdentityBalanceAndRevision = (u64, Revision);
 
+/// An identity nonce
+#[derive(Debug)]
+pub struct IdentityNonceFetcher(pub IdentityNonce);
+
 /// An identity contract nonce
 #[derive(Debug)]
 pub struct IdentityContractNonceFetcher(pub IdentityNonce);

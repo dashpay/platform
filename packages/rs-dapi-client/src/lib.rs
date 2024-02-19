@@ -21,7 +21,7 @@ pub use dapi_client::{DapiClient, DapiClientError};
 #[cfg(feature = "dump")]
 pub use dump::DumpData;
 pub use request_settings::RequestSettings;
-pub use request_settings::DEFAULT_IDENTITY_CONTRACT_NONCE_STALE_TIME_S;
+pub use request_settings::DEFAULT_IDENTITY_NONCE_STALE_TIME_S;
 
 /// A DAPI request could be executed with an initialized [DapiClient].
 ///

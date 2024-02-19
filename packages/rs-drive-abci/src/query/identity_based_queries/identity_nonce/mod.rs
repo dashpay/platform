@@ -28,9 +28,7 @@ impl<C> Platform<C> {
 
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
-                QueryError::DecodingError(
-                    "could not decode identity nonce query".to_string(),
-                ),
+                QueryError::DecodingError("could not decode identity nonce query".to_string()),
             ));
         };
 
@@ -55,12 +53,9 @@ impl<C> Platform<C> {
             ));
         }
         match version {
-            Version::V0(get_identity_nonce_request) => self
-                .query_identity_nonce_v0(
-                    state,
-                    get_identity_nonce_request,
-                    platform_version,
-                ),
+            Version::V0(get_identity_nonce_request) => {
+                self.query_identity_nonce_v0(state, get_identity_nonce_request, platform_version)
+            }
         }
     }
 }

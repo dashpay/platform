@@ -260,6 +260,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     verify_identity_id_by_public_key_hash: 0,
                     verify_identity_ids_by_public_key_hashes: 0,
                     verify_identity_keys_by_identity_id: 0,
+                    verify_identity_nonce: 0,
                     verify_identity_contract_nonce: 0,
                 },
                 single_document: DriveVerifySingleDocumentMethodVersions {
