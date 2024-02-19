@@ -135,6 +135,7 @@ impl IdentityFacade {
     pub fn create_identity_update_transition(
         &self,
         identity: Identity,
+        identity_nonce: u64,
         add_public_keys: Option<Vec<IdentityPublicKeyInCreation>>,
         public_key_ids_to_disable: Option<Vec<KeyID>>,
         // Pass disable time as argument because SystemTime::now() does not work for wasm target
@@ -143,6 +144,7 @@ impl IdentityFacade {
     ) -> Result<IdentityUpdateTransition, ProtocolError> {
         self.factory.create_identity_update_transition(
             identity,
+            identity_nonce,
             add_public_keys,
             public_key_ids_to_disable,
             disable_time,

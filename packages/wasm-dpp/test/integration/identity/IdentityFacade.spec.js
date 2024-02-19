@@ -177,6 +177,8 @@ describe('IdentityFacade', () => {
       const stateTransition = dpp.identity
         .createIdentityUpdateTransition(
           identity,
+          // eslint-disable-next-line
+          BigInt(1),
           publicKeys,
         );
 

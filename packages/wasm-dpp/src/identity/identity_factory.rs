@@ -235,6 +235,7 @@ impl IdentityFactoryWasm {
     pub fn create_identity_update_transition(
         &self,
         identity: &IdentityWasm,
+        identity_nonce: u64,
         public_keys: &JsValue,
     ) -> Result<IdentityUpdateTransitionWasm, JsValue> {
         let (add_public_keys, disable_public_keys) =
@@ -245,6 +246,7 @@ impl IdentityFactoryWasm {
         self.0
             .create_identity_update_transition(
                 identity.to_owned().into(),
+                identity_nonce,
                 add_public_keys,
                 disable_public_keys,
                 Some(now),

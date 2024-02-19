@@ -247,6 +247,7 @@ impl IdentityFactory {
     pub fn create_identity_update_transition(
         &self,
         identity: Identity,
+        identity_nonce: u64,
         add_public_keys: Option<Vec<IdentityPublicKeyInCreation>>,
         public_key_ids_to_disable: Option<Vec<KeyID>>,
         // Pass disable time as argument because SystemTime::now() does not work for wasm target
@@ -256,6 +257,7 @@ impl IdentityFactory {
         let mut identity_update_transition = IdentityUpdateTransitionV0::default();
         identity_update_transition.set_identity_id(identity.id().to_owned());
         identity_update_transition.set_revision(identity.revision() + 1);
+        identity_update_transition.set_nonce(identity_nonce);
 
         if let Some(add_public_keys) = add_public_keys {
             identity_update_transition.set_public_keys_to_add(add_public_keys);
