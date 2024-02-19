@@ -661,7 +661,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 documents_batch_state_transition:
                     DriveAbciDocumentsStateTransitionValidationVersions {
                         basic_structure: 0,
-                        advance_structure: 0,
+                        advanced_structure: 0,
                         state: 0,
                         revision: 0,
                         transform_into_action: 0,

@@ -125,7 +125,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
             .validation_and_processing
             .state_transitions
             .documents_batch_state_transition
-            .advance_structure
+            .advanced_structure
         {
             0 => {
                 let action =
