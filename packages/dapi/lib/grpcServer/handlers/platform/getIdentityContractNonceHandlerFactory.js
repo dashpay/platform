@@ -21,7 +21,7 @@ function getIdentityContractNonceHandlerFactory(driveClient) {
     const { request } = call;
 
     const identityContractNonceBuffer = await driveClient
-      .fetchIdentityContractNonceRequest(request);
+      .fetchIdentityContractNonce(request);
 
     return GetIdentityContractNonceResponse
       .deserializeBinary(identityContractNonceBuffer);

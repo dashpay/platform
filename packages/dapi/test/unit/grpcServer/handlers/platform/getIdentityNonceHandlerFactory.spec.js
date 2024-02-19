@@ -1,18 +1,18 @@
 const {
   v0: {
-    GetIdentityContractNonceResponse,
+    GetIdentityNonceResponse,
     Proof,
   },
 } = require('@dashevo/dapi-grpc');
 
-const getIdentityContractNonceHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/getIdentityContractNonceHandlerFactory');
+const getIdentityNonceHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/getIdentityNonceHandlerFactory');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
-describe('getIdentityContractNonceHandlerFactory', () => {
+describe('getIdentityNonceHandlerFactory', () => {
   let call;
   let driveStateRepositoryMock;
-  let getIdentityContractNonceHandler;
+  let getIdentityNonceHandler;
   let nonce;
   let proofFixture;
   let proofMock;
@@ -36,35 +36,35 @@ describe('getIdentityContractNonceHandlerFactory', () => {
     proofMock.setGrovedbProof(proofFixture.merkleProof);
 
     nonce = 1;
-    const { GetIdentityContractNonceResponseV0 } = GetIdentityContractNonceResponse;
-    response = new GetIdentityContractNonceResponse();
+    const { GetIdentityNonceResponseV0 } = GetIdentityNonceResponse;
+    response = new GetIdentityNonceResponse();
     response.setV0(
-      new GetIdentityContractNonceResponseV0()
-        .setIdentityContractNonce(1),
+      new GetIdentityNonceResponseV0()
+        .setIdentityNonce(1),
     );
 
-    proofResponse = new GetIdentityContractNonceResponse();
+    proofResponse = new GetIdentityNonceResponse();
     proofResponse.setV0(
-      new GetIdentityContractNonceResponseV0()
+      new GetIdentityNonceResponseV0()
         .setProof(proofMock),
     );
 
     driveStateRepositoryMock = {
-      fetchIdentityContractNonce: this.sinon.stub().resolves(response.serializeBinary()),
+      fetchIdentityNonceRequest: this.sinon.stub().resolves(response.serializeBinary()),
     };
 
-    getIdentityContractNonceHandler = getIdentityContractNonceHandlerFactory(
+    getIdentityNonceHandler = getIdentityNonceHandlerFactory(
       driveStateRepositoryMock,
     );
   });
 
   it('should return valid result', async () => {
-    const result = await getIdentityContractNonceHandler(call);
+    const result = await getIdentityNonceHandler(call);
 
-    expect(result).to.be.an.instanceOf(GetIdentityContractNonceResponse);
+    expect(result).to.be.an.instanceOf(GetIdentityNonceResponse);
     expect(result.getV0()
-      .getIdentityContractNonce()).to.deep.equal(nonce);
-    expect(driveStateRepositoryMock.fetchIdentityContractNonce)
+      .getIdentityNonce()).to.deep.equal(nonce);
+    expect(driveStateRepositoryMock.fetchIdentityNonceRequest)
       .to.be.calledOnceWith(call.request);
 
     const proof = result.getV0().getProof();
@@ -74,12 +74,12 @@ describe('getIdentityContractNonceHandlerFactory', () => {
   it('should return proof', async () => {
     request.getProve.returns(true);
 
-    driveStateRepositoryMock.fetchIdentityContractNonce
+    driveStateRepositoryMock.fetchIdentityNonceRequest
       .resolves(proofResponse.serializeBinary());
 
-    const result = await getIdentityContractNonceHandler(call);
+    const result = await getIdentityNonceHandler(call);
 
-    expect(result).to.be.an.instanceOf(GetIdentityContractNonceResponse);
+    expect(result).to.be.an.instanceOf(GetIdentityNonceResponse);
 
     const proof = result.getV0().getProof();
 
@@ -88,22 +88,22 @@ describe('getIdentityContractNonceHandlerFactory', () => {
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 
-    expect(driveStateRepositoryMock.fetchIdentityContractNonce)
+    expect(driveStateRepositoryMock.fetchIdentityNonceRequest)
       .to.be.calledOnceWith(call.request);
   });
 
-  it('should throw an error when fetchIdentityContractNonce throws unknown error', async () => {
+  it('should throw an error when fetchIdentityNonceRequest throws unknown error', async () => {
     const error = new Error('Unknown error');
 
-    driveStateRepositoryMock.fetchIdentityContractNonce.throws(error);
+    driveStateRepositoryMock.fetchIdentityNonceRequest.throws(error);
 
     try {
-      await getIdentityContractNonceHandler(call);
+      await getIdentityNonceHandler(call);
 
       expect.fail('should throw an error');
     } catch (e) {
       expect(e).to.equal(error);
-      expect(driveStateRepositoryMock.fetchIdentityContractNonce)
+      expect(driveStateRepositoryMock.fetchIdentityNonceRequest)
         .to.be.calledOnceWith(call.request);
     }
   });

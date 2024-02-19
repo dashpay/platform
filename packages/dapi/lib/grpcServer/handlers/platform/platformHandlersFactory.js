@@ -32,6 +32,7 @@ const {
     GetProtocolVersionUpgradeVoteStatusRequest,
     GetProtocolVersionUpgradeStateRequest,
     GetIdentityContractNonceRequest,
+    GetIdentityNonceRequest,
     pbjs: {
       BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
       BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
@@ -69,6 +70,8 @@ const {
       GetProtocolVersionUpgradeStateResponse: PBJSGetProtocolVersionUpgradeStateResponse,
       GetIdentityContractNonceRequest: PBJSGetIdentityContractNonceRequest,
       GetIdentityContractNonceResponse: PBJSGetIdentityContractNonceResponse,
+      GetIdentityNonceRequest: PBJSGetIdentityNonceRequest,
+      GetIdentityNonceResponse: PBJSGetIdentityNonceResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -136,6 +139,10 @@ const getProtocolVersionUpgradeStateHandlerFactory = require(
 
 const getIdentityContractNonceHandlerFactory = require(
   './getIdentityContractNonceHandlerFactory',
+);
+
+const getIdentityNonceHandlerFactory = require(
+  './getIdentityNonceHandlerFactory',
 );
 
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
@@ -480,6 +487,21 @@ function platformHandlersFactory(
     wrapInErrorHandler(getIdentityContractNonceHandler),
   );
 
+  const getIdentityNonceHandler = getIdentityNonceHandlerFactory(
+    driveClient,
+  );
+
+  const wrappedGetIdentityNonceHandler = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetIdentityNonceRequest,
+      PBJSGetIdentityNonceRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetIdentityNonceResponse,
+    ),
+    wrapInErrorHandler(getIdentityNonceHandler),
+  );
+
   return {
     broadcastStateTransition: wrappedBroadcastStateTransition,
     getIdentity: wrappedGetIdentity,
@@ -500,6 +522,7 @@ function platformHandlersFactory(
     getProtocolVersionUpgradeVoteStatus: wrappedGetProtocolVersionUpgradeVoteStatus,
     getProtocolVersionUpgradeState: wrappedGetProtocolVersionUpgradeState,
     getIdentityContractNonce: wrappedGetIdentityContractNonceHandler,
+    getIdentityNonce: wrappedGetIdentityNonceHandler,
   };
 }
 
