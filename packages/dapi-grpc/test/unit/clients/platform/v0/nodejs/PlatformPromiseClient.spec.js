@@ -19,6 +19,7 @@ describe('PlatformPromiseClient', () => {
       getProtocolVersionUpgradeVoteStatus: this.sinon.stub().resolves(response),
       getProtocolVersionUpgradeState: this.sinon.stub().resolves(response),
       getIdentityContractNonce: this.sinon.stub().resolves(response),
+      getIdentityNonce: this.sinon.stub().resolves(response),
     };
   });
 
@@ -124,6 +125,16 @@ describe('PlatformPromiseClient', () => {
 
       expect(result).to.equal(response);
       expect(platformPromiseClient.client.getIdentityContractNonce)
+        .to.be.calledOnceWith(request);
+    });
+  });
+
+  describe('#getIdentityNonce', () => {
+    it('should get identity nonce', async () => {
+      const result = await platformPromiseClient.getIdentityNonce(request);
+
+      expect(result).to.equal(response);
+      expect(platformPromiseClient.client.getIdentityNonce)
         .to.be.calledOnceWith(request);
     });
   });

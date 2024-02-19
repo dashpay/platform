@@ -50,6 +50,8 @@ const {
             GetProtocolVersionUpgradeStateResponse: PBJSGetProtocolVersionUpgradeStateResponse,
             GetIdentityContractNonceRequest: PBJSGetIdentityContractNonceRequest,
             GetIdentityContractNonceResponse: PBJSGetIdentityContractNonceResponse,
+            GetIdentityNonceRequest: PBJSGetIdentityNonceRequest,
+            GetIdentityNonceResponse: PBJSGetIdentityNonceResponse,
           },
         },
       },
@@ -70,6 +72,7 @@ const {
   GetProtocolVersionUpgradeVoteStatusResponse: ProtocGetProtocolVersionUpgradeVoteStatusResponse,
   GetProtocolVersionUpgradeStateResponse: ProtocGetProtocolVersionUpgradeStateResponse,
   GetIdentityContractNonceResponse: ProtocGetIdentityContractNonceResponse,
+  GetIdentityNonceResponse: ProtocGetIdentityNonceResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -142,6 +145,10 @@ class PlatformPromiseClient {
 
     this.client.getIdentityContractNonce = promisify(
       this.client.getIdentityContractNonce.bind(this.client),
+    );
+
+    this.client.getIdentityNonce = promisify(
+      this.client.getIdentityNonce.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -530,6 +537,35 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetIdentityContractNonceRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  getIdentityNonce(
+    getIdentityNonceRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getIdentityNonce(
+      getIdentityNonceRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetIdentityNonceResponse,
+              PBJSGetIdentityNonceResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetIdentityNonceRequest,
             ),
           ),
         ],
