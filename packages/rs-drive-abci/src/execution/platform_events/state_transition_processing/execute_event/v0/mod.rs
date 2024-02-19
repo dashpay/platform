@@ -62,6 +62,7 @@ where
                 identity,
                 operations,
                 execution_operations,
+                ..
             } => {
                 if fee_validation_result.is_valid_with_data() {
                     //todo: make this into an atomic event with partial batches

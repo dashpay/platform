@@ -107,7 +107,20 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
     }
 
-    let maybe_identity = result.into_data()?;
+    let mut maybe_identity = result.into_data()?;
+
+    // Validating identity contract nonce, this must happen after validating the signature
+    let result = state_transition.validate_balance(
+        maybe_identity.as_mut(),
+        &platform.into(),
+        platform.block_info,
+        transaction,
+        platform_version,
+    )?;
+
+    if !result.is_valid() {
+        return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+    }
 
     // Validating identity contract nonce, this must happen after validating the signature
     let result = state_transition.validate_nonces(
@@ -237,6 +250,32 @@ pub(crate) trait StateTransitionStructureKnownInStateValidationV0 {
 }
 
 /// A trait for validating state transitions within a blockchain.
+pub(crate) trait StateTransitionBalanceValidationV0 {
+    /// Validates the state transition by analyzing the changes in the platform state after applying the transaction.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform` - A reference to the platform containing the state data.
+    /// * `tx` - The transaction argument to be applied.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `C: CoreRPCLike` - A type constraint indicating that C should implement `CoreRPCLike`.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<ConsensusValidationResult<StateTransitionAction>, Error>` - A result with either a ConsensusValidationResult containing a StateTransitionAction or an Error.
+    fn validate_balance(
+        &self,
+        identity: Option<&mut PartialIdentity>,
+        platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error>;
+}
+
+/// A trait for validating state transitions within a blockchain.
 pub(crate) trait StateTransitionStateValidationV0:
     StateTransitionActionTransformerV0
 {
@@ -312,6 +351,27 @@ impl StateTransitionNonceValidationV0 for StateTransition {
             }
             StateTransition::IdentityCreditWithdrawal(st) => {
                 st.validate_nonces(platform, block_info, tx, platform_version)
+            }
+            _ => Ok(SimpleConsensusValidationResult::new()),
+        }
+    }
+}
+
+impl StateTransitionBalanceValidationV0 for StateTransition {
+    fn validate_balance(
+        &self,
+        identity: Option<&mut PartialIdentity>,
+        platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        match self {
+            StateTransition::IdentityCreditTransfer(st) => {
+                st.validate_balance(identity, platform, block_info, tx, platform_version)
+            }
+            StateTransition::IdentityCreditWithdrawal(st) => {
+                st.validate_balance(identity, platform, block_info, tx, platform_version)
             }
             _ => Ok(SimpleConsensusValidationResult::new()),
         }

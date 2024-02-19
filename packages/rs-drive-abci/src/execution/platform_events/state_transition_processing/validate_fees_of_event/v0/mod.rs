@@ -93,12 +93,15 @@ where
             }
             ExecutionEvent::PaidDriveEvent {
                 identity,
+                removed_balance,
                 operations,
                 execution_operations,
             } => {
                 let balance = identity.balance.ok_or(Error::Execution(
                     ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
                 ))?;
+                let balance_after_principal_operation =
+                    balance.saturating_sub(removed_balance.unwrap_or_default());
                 let mut estimated_fee_result = self
                     .drive
                     .apply_drive_operations(
@@ -119,7 +122,7 @@ where
 
                 // TODO: Should take into account refunds as well
                 let required_balance = estimated_fee_result.total_base_fee();
-                if balance >= required_balance {
+                if balance_after_principal_operation >= required_balance {
                     Ok(ConsensusValidationResult::new_with_data(
                         estimated_fee_result,
                     ))

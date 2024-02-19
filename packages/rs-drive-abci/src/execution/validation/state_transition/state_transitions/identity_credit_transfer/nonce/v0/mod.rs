@@ -3,7 +3,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::identity::identity_nonce::{validate_identity_nonce_update, validate_new_identity_nonce};
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-use dpp::state_transition::StateTransitionLike;
 
 use dpp::validation::SimpleConsensusValidationResult;
 
@@ -11,7 +10,7 @@ use crate::platform_types::platform::PlatformStateRef;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
-pub(in crate::execution::validation::state_transition::state_transitions) trait IdentityCreditTransferTransitionIdentityContractNonceV0
+pub(in crate::execution::validation::state_transition::state_transitions) trait IdentityCreditTransferTransitionIdentityNonceV0
 {
     fn validate_nonce_v0(
         &self,
@@ -22,7 +21,7 @@ pub(in crate::execution::validation::state_transition::state_transitions) trait 
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl IdentityCreditTransferTransitionIdentityContractNonceV0 for IdentityCreditTransferTransition {
+impl IdentityCreditTransferTransitionIdentityNonceV0 for IdentityCreditTransferTransition {
     fn validate_nonce_v0(
         &self,
         platform: &PlatformStateRef,
