@@ -42,13 +42,20 @@ export default async function broadcast(
     throw new Error('Data contract ID is not found');
   }
 
-  console.log('Fetching nonce for', {
-    identity: identityId.toString('hex'),
-    contract: dataContractId.toString('hex'),
-  });
-
-  const { identityContractNonce } = await this.client.getDAPIClient().platform
+  let identityContractNonce = this.nonceManager
     .getIdentityContractNonce(identityId, dataContractId);
+
+  if (!identityContractNonce) {
+    ({ identityContractNonce } = await this.client.getDAPIClient().platform
+      .getIdentityContractNonce(identityId, dataContractId));
+
+    if (typeof identityContractNonce === 'undefined') {
+      throw new Error('Identity contract nonce is not found');
+    }
+
+    this.nonceManager
+      .setIdentityContractNonce(identityId, dataContractId, identityContractNonce);
+  }
 
   console.log('identityContractNonce', {
     identityId: identityId.toString(),
@@ -68,6 +75,8 @@ export default async function broadcast(
 
   // Broadcast state transition also wait for the result to be obtained
   await broadcastStateTransition(this, documentsBatchTransition);
+
+  this.nonceManager.incrementIdentityContractNonce(identityId, dataContractId);
 
   // Acknowledge documents identifiers to handle retry attempts to mitigate
   // state transition propagation lag

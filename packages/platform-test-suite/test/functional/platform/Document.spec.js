@@ -89,8 +89,6 @@ describe('Platform', () => {
         broadcastError = e;
       }
 
-      console.log(broadcastError);
-
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
       expect(broadcastError.getCause()).to.be.an.instanceOf(InvalidDocumentTypeError);
     });
