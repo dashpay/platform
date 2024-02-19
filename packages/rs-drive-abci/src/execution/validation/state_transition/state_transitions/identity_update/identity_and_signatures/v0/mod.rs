@@ -57,7 +57,7 @@ impl IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0 for Identity
         };
 
         // Check revision
-        if revision + 1 != self.revision() {
+        if revision + 1 != self.nonce() {
             result.add_error(StateError::InvalidIdentityRevisionError(
                 InvalidIdentityRevisionError::new(self.identity_id(), revision),
             ));

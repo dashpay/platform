@@ -255,7 +255,7 @@ impl IdentityFactory {
     ) -> Result<IdentityUpdateTransition, ProtocolError> {
         let mut identity_update_transition = IdentityUpdateTransitionV0::default();
         identity_update_transition.set_identity_id(identity.id().to_owned());
-        identity_update_transition.set_revision(identity.revision() + 1);
+        identity_update_transition.set_nonce(identity.revision() + 1);
 
         if let Some(add_public_keys) = add_public_keys {
             identity_update_transition.set_public_keys_to_add(add_public_keys);
