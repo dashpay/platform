@@ -5,7 +5,7 @@ use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
 use crate::error::Error;
 
 use crate::drive::identity::contract_info::ContractInfoStructure::IdentityContractNonceKey;
-use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
+use crate::drive::identity::IdentityRootStructure::{IdentityTreeNonce, IdentityTreeRevision};
 use crate::drive::identity::{
     identity_contract_info_group_path, identity_contract_info_group_path_vec, identity_path_vec,
 };
@@ -183,6 +183,15 @@ impl Drive {
     pub fn balance_for_identity_id_query(identity_id: [u8; 32]) -> PathQuery {
         let balance_path = balance_path_vec();
         PathQuery::new_single_key(balance_path, identity_id.to_vec())
+    }
+
+    /// The query for proving an identity's nonce.
+    pub fn identity_nonce_query(
+        identity_id: [u8; 32],
+    ) -> PathQuery {
+        let identity_path =
+            identity_path_vec(identity_id.as_slice());
+        PathQuery::new_single_key(identity_path, vec![IdentityTreeNonce as u8])
     }
 
     /// The query for proving the identities nonce for a specific contract.

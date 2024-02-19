@@ -302,6 +302,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 prove: DriveIdentityProveMethodVersions {
                     full_identity: 0,
                     full_identities: 0,
+                    identity_nonce: 0,
                     identity_contract_nonce: 0,
                     prove_full_identities_by_unique_public_key_hashes: 0,
                     prove_full_identity_by_unique_public_key_hash: 0,
@@ -714,6 +715,11 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 keys: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                identity_nonce: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,

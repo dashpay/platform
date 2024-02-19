@@ -527,6 +527,7 @@ pub struct DriveIdentityFetchPartialIdentityMethodVersions {
 pub struct DriveIdentityProveMethodVersions {
     pub full_identity: FeatureVersion,
     pub full_identities: FeatureVersion,
+    pub identity_nonce: FeatureVersion,
     pub identity_contract_nonce: FeatureVersion,
     pub prove_full_identities_by_unique_public_key_hashes: FeatureVersion,
     pub prove_full_identity_by_unique_public_key_hash: FeatureVersion,

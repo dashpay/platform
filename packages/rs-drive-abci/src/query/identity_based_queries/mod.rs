@@ -6,3 +6,4 @@ mod identity;
 mod identity_by_public_key_hash;
 mod identity_contract_nonce;
 mod keys;
+mod identity_nonce;
