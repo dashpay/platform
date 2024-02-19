@@ -50,7 +50,7 @@ describe('getIdentityNonceHandlerFactory', () => {
     );
 
     driveStateRepositoryMock = {
-      fetchIdentityNonceRequest: this.sinon.stub().resolves(response.serializeBinary()),
+      fetchIdentityNonce: this.sinon.stub().resolves(response.serializeBinary()),
     };
 
     getIdentityNonceHandler = getIdentityNonceHandlerFactory(
@@ -64,7 +64,7 @@ describe('getIdentityNonceHandlerFactory', () => {
     expect(result).to.be.an.instanceOf(GetIdentityNonceResponse);
     expect(result.getV0()
       .getIdentityNonce()).to.deep.equal(nonce);
-    expect(driveStateRepositoryMock.fetchIdentityNonceRequest)
+    expect(driveStateRepositoryMock.fetchIdentityNonce)
       .to.be.calledOnceWith(call.request);
 
     const proof = result.getV0().getProof();
@@ -74,7 +74,7 @@ describe('getIdentityNonceHandlerFactory', () => {
   it('should return proof', async () => {
     request.getProve.returns(true);
 
-    driveStateRepositoryMock.fetchIdentityNonceRequest
+    driveStateRepositoryMock.fetchIdentityNonce
       .resolves(proofResponse.serializeBinary());
 
     const result = await getIdentityNonceHandler(call);
@@ -88,14 +88,14 @@ describe('getIdentityNonceHandlerFactory', () => {
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 
-    expect(driveStateRepositoryMock.fetchIdentityNonceRequest)
+    expect(driveStateRepositoryMock.fetchIdentityNonce)
       .to.be.calledOnceWith(call.request);
   });
 
-  it('should throw an error when fetchIdentityNonceRequest throws unknown error', async () => {
+  it('should throw an error when fetchIdentityNonce throws unknown error', async () => {
     const error = new Error('Unknown error');
 
-    driveStateRepositoryMock.fetchIdentityNonceRequest.throws(error);
+    driveStateRepositoryMock.fetchIdentityNonce.throws(error);
 
     try {
       await getIdentityNonceHandler(call);
@@ -103,7 +103,7 @@ describe('getIdentityNonceHandlerFactory', () => {
       expect.fail('should throw an error');
     } catch (e) {
       expect(e).to.equal(error);
-      expect(driveStateRepositoryMock.fetchIdentityNonceRequest)
+      expect(driveStateRepositoryMock.fetchIdentityNonce)
         .to.be.calledOnceWith(call.request);
     }
   });

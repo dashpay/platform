@@ -28,8 +28,13 @@ export async function update(
 
   const { dpp } = this;
 
+  const identityId = identity.getId();
+  const { identityNonce } = await this.client.getDAPIClient().platform
+    .getIdentityNonce(identityId);
+
   const identityUpdateTransition = dpp.identity.createIdentityUpdateTransition(
     identity,
+    BigInt(identityNonce + 1),
     publicKeys,
   );
 
