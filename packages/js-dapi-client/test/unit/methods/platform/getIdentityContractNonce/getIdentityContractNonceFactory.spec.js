@@ -8,8 +8,6 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
-
 const getIdentityContractNonceFactory = require('../../../../../lib/methods/platform/getIdentityContractNonce/getIdentityContractNonceFactory');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
