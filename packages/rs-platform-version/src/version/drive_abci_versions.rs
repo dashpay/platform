@@ -90,7 +90,7 @@ pub struct DriveAbciPlatformStateStorageMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub basic_structure: FeatureVersion,
-    pub advance_structure: FeatureVersion,
+    pub advanced_structure: FeatureVersion,
     pub revision: FeatureVersion,
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,
