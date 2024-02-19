@@ -216,6 +216,60 @@ export namespace GetIdentityRequest {
   }
 }
 
+export class GetIdentityNonceRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetIdentityNonceRequest.GetIdentityNonceRequestV0 | undefined;
+  setV0(value?: GetIdentityNonceRequest.GetIdentityNonceRequestV0): void;
+
+  getVersionCase(): GetIdentityNonceRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetIdentityNonceRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetIdentityNonceRequest): GetIdentityNonceRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetIdentityNonceRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetIdentityNonceRequest;
+  static deserializeBinaryFromReader(message: GetIdentityNonceRequest, reader: jspb.BinaryReader): GetIdentityNonceRequest;
+}
+
+export namespace GetIdentityNonceRequest {
+  export type AsObject = {
+    v0?: GetIdentityNonceRequest.GetIdentityNonceRequestV0.AsObject,
+  }
+
+  export class GetIdentityNonceRequestV0 extends jspb.Message {
+    getIdentityId(): Uint8Array | string;
+    getIdentityId_asU8(): Uint8Array;
+    getIdentityId_asB64(): string;
+    setIdentityId(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetIdentityNonceRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetIdentityNonceRequestV0): GetIdentityNonceRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetIdentityNonceRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetIdentityNonceRequestV0;
+    static deserializeBinaryFromReader(message: GetIdentityNonceRequestV0, reader: jspb.BinaryReader): GetIdentityNonceRequestV0;
+  }
+
+  export namespace GetIdentityNonceRequestV0 {
+    export type AsObject = {
+      identityId: Uint8Array | string,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class GetIdentityContractNonceRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
@@ -642,6 +696,75 @@ export namespace GetIdentitiesResponse {
     export enum ResultCase {
       RESULT_NOT_SET = 0,
       IDENTITIES = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetIdentityNonceResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetIdentityNonceResponse.GetIdentityNonceResponseV0 | undefined;
+  setV0(value?: GetIdentityNonceResponse.GetIdentityNonceResponseV0): void;
+
+  getVersionCase(): GetIdentityNonceResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetIdentityNonceResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetIdentityNonceResponse): GetIdentityNonceResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetIdentityNonceResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetIdentityNonceResponse;
+  static deserializeBinaryFromReader(message: GetIdentityNonceResponse, reader: jspb.BinaryReader): GetIdentityNonceResponse;
+}
+
+export namespace GetIdentityNonceResponse {
+  export type AsObject = {
+    v0?: GetIdentityNonceResponse.GetIdentityNonceResponseV0.AsObject,
+  }
+
+  export class GetIdentityNonceResponseV0 extends jspb.Message {
+    hasIdentityNonce(): boolean;
+    clearIdentityNonce(): void;
+    getIdentityNonce(): number;
+    setIdentityNonce(value: number): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetIdentityNonceResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetIdentityNonceResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetIdentityNonceResponseV0): GetIdentityNonceResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetIdentityNonceResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetIdentityNonceResponseV0;
+    static deserializeBinaryFromReader(message: GetIdentityNonceResponseV0, reader: jspb.BinaryReader): GetIdentityNonceResponseV0;
+  }
+
+  export namespace GetIdentityNonceResponseV0 {
+    export type AsObject = {
+      identityNonce: number,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      IDENTITY_NONCE = 1,
       PROOF = 2,
     }
   }

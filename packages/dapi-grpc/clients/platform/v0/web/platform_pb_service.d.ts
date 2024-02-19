@@ -40,6 +40,15 @@ type PlatformgetIdentityKeys = {
   readonly responseType: typeof platform_pb.GetIdentityKeysResponse;
 };
 
+type PlatformgetIdentityNonce = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetIdentityNonceRequest;
+  readonly responseType: typeof platform_pb.GetIdentityNonceResponse;
+};
+
 type PlatformgetIdentityContractNonce = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -181,6 +190,7 @@ export class Platform {
   static readonly getIdentity: PlatformgetIdentity;
   static readonly getIdentities: PlatformgetIdentities;
   static readonly getIdentityKeys: PlatformgetIdentityKeys;
+  static readonly getIdentityNonce: PlatformgetIdentityNonce;
   static readonly getIdentityContractNonce: PlatformgetIdentityContractNonce;
   static readonly getIdentityBalance: PlatformgetIdentityBalance;
   static readonly getIdentityBalanceAndRevision: PlatformgetIdentityBalanceAndRevision;
@@ -265,6 +275,15 @@ export class PlatformClient {
   getIdentityKeys(
     requestMessage: platform_pb.GetIdentityKeysRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityKeysResponse|null) => void
+  ): UnaryResponse;
+  getIdentityNonce(
+    requestMessage: platform_pb.GetIdentityNonceRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityNonceResponse|null) => void
+  ): UnaryResponse;
+  getIdentityNonce(
+    requestMessage: platform_pb.GetIdentityNonceRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityNonceResponse|null) => void
   ): UnaryResponse;
   getIdentityContractNonce(
     requestMessage: platform_pb.GetIdentityContractNonceRequest,

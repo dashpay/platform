@@ -42,6 +42,8 @@
 @class GetIdentityContractNonceResponse;
 @class GetIdentityKeysRequest;
 @class GetIdentityKeysResponse;
+@class GetIdentityNonceRequest;
+@class GetIdentityNonceResponse;
 @class GetIdentityRequest;
 @class GetIdentityResponse;
 @class GetProofsRequest;
@@ -97,6 +99,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse)
 
 - (GRPCUnaryProtoCall *)getIdentityKeysWithMessage:(GetIdentityKeysRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse)
+
+- (GRPCUnaryProtoCall *)getIdentityNonceWithMessage:(GetIdentityNonceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse)
 
@@ -192,6 +198,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getIdentityKeysWithRequest:(GetIdentityKeysRequest *)request handler:(void(^)(GetIdentityKeysResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetIdentityKeysWithRequest:(GetIdentityKeysRequest *)request handler:(void(^)(GetIdentityKeysResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse)
+
+- (void)getIdentityNonceWithRequest:(GetIdentityNonceRequest *)request handler:(void(^)(GetIdentityNonceResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetIdentityNonceWithRequest:(GetIdentityNonceRequest *)request handler:(void(^)(GetIdentityNonceResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse)

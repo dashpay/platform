@@ -219,6 +219,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentityNonce}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getIdentityNonceCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetIdentityNonceResponse} [response] GetIdentityNonceResponse
+                         */
+
+                        /**
+                         * Calls getIdentityNonce.
+                         * @function getIdentityNonce
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityNonceRequest} request GetIdentityNonceRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getIdentityNonceCallback} callback Node-style callback called with the error, if any, and GetIdentityNonceResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getIdentityNonce = function getIdentityNonce(request, callback) {
+                            return this.rpcCall(getIdentityNonce, $root.org.dash.platform.dapi.v0.GetIdentityNonceRequest, $root.org.dash.platform.dapi.v0.GetIdentityNonceResponse, request, callback);
+                        }, "name", { value: "getIdentityNonce" });
+
+                        /**
+                         * Calls getIdentityNonce.
+                         * @function getIdentityNonce
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityNonceRequest} request GetIdentityNonceRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetIdentityNonceResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentityContractNonce}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getIdentityContractNonceCallback
@@ -2401,6 +2434,436 @@ $root.org = (function() {
                         })();
 
                         return GetIdentityRequest;
+                    })();
+
+                    v0.GetIdentityNonceRequest = (function() {
+
+                        /**
+                         * Properties of a GetIdentityNonceRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetIdentityNonceRequest
+                         * @property {org.dash.platform.dapi.v0.GetIdentityNonceRequest.IGetIdentityNonceRequestV0|null} [v0] GetIdentityNonceRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetIdentityNonceRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetIdentityNonceRequest.
+                         * @implements IGetIdentityNonceRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityNonceRequest=} [properties] Properties to set
+                         */
+                        function GetIdentityNonceRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetIdentityNonceRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetIdentityNonceRequest.IGetIdentityNonceRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest
+                         * @instance
+                         */
+                        GetIdentityNonceRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentityNonceRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentityNonceRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetIdentityNonceRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityNonceRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityNonceRequest} GetIdentityNonceRequest instance
+                         */
+                        GetIdentityNonceRequest.create = function create(properties) {
+                            return new GetIdentityNonceRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentityNonceRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityNonceRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityNonceRequest} message GetIdentityNonceRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentityNonceRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentityNonceRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityNonceRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityNonceRequest} message GetIdentityNonceRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentityNonceRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetIdentityNonceRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityNonceRequest} GetIdentityNonceRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentityNonceRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityNonceRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetIdentityNonceRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityNonceRequest} GetIdentityNonceRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentityNonceRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetIdentityNonceRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetIdentityNonceRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetIdentityNonceRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityNonceRequest} GetIdentityNonceRequest
+                         */
+                        GetIdentityNonceRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityNonceRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetIdentityNonceRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityNonceRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetIdentityNonceRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetIdentityNonceRequest} message GetIdentityNonceRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetIdentityNonceRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetIdentityNonceRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetIdentityNonceRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetIdentityNonceRequest.GetIdentityNonceRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetIdentityNonceRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest
+                             * @interface IGetIdentityNonceRequestV0
+                             * @property {Uint8Array|null} [identityId] GetIdentityNonceRequestV0 identityId
+                             * @property {boolean|null} [prove] GetIdentityNonceRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetIdentityNonceRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest
+                             * @classdesc Represents a GetIdentityNonceRequestV0.
+                             * @implements IGetIdentityNonceRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentityNonceRequest.IGetIdentityNonceRequestV0=} [properties] Properties to set
+                             */
+                            function GetIdentityNonceRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetIdentityNonceRequestV0 identityId.
+                             * @member {Uint8Array} identityId
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0
+                             * @instance
+                             */
+                            GetIdentityNonceRequestV0.prototype.identityId = $util.newBuffer([]);
+
+                            /**
+                             * GetIdentityNonceRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0
+                             * @instance
+                             */
+                            GetIdentityNonceRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetIdentityNonceRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityNonceRequest.IGetIdentityNonceRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0} GetIdentityNonceRequestV0 instance
+                             */
+                            GetIdentityNonceRequestV0.create = function create(properties) {
+                                return new GetIdentityNonceRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityNonceRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityNonceRequest.IGetIdentityNonceRequestV0} message GetIdentityNonceRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityNonceRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.identityId != null && Object.hasOwnProperty.call(message, "identityId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identityId);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityNonceRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityNonceRequest.IGetIdentityNonceRequestV0} message GetIdentityNonceRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityNonceRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetIdentityNonceRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0} GetIdentityNonceRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityNonceRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.identityId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetIdentityNonceRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0} GetIdentityNonceRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityNonceRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetIdentityNonceRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetIdentityNonceRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                    if (!(message.identityId && typeof message.identityId.length === "number" || $util.isString(message.identityId)))
+                                        return "identityId: buffer expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetIdentityNonceRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0} GetIdentityNonceRequestV0
+                             */
+                            GetIdentityNonceRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0();
+                                if (object.identityId != null)
+                                    if (typeof object.identityId === "string")
+                                        $util.base64.decode(object.identityId, message.identityId = $util.newBuffer($util.base64.length(object.identityId)), 0);
+                                    else if (object.identityId.length >= 0)
+                                        message.identityId = object.identityId;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetIdentityNonceRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0} message GetIdentityNonceRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetIdentityNonceRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.identityId = "";
+                                    else {
+                                        object.identityId = [];
+                                        if (options.bytes !== Array)
+                                            object.identityId = $util.newBuffer(object.identityId);
+                                    }
+                                    object.prove = false;
+                                }
+                                if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                    object.identityId = options.bytes === String ? $util.base64.encode(message.identityId, 0, message.identityId.length) : options.bytes === Array ? Array.prototype.slice.call(message.identityId) : message.identityId;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetIdentityNonceRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetIdentityNonceRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetIdentityNonceRequestV0;
+                        })();
+
+                        return GetIdentityNonceRequest;
                     })();
 
                     v0.GetIdentityContractNonceRequest = (function() {
@@ -5755,6 +6218,494 @@ $root.org = (function() {
                         })();
 
                         return GetIdentitiesResponse;
+                    })();
+
+                    v0.GetIdentityNonceResponse = (function() {
+
+                        /**
+                         * Properties of a GetIdentityNonceResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetIdentityNonceResponse
+                         * @property {org.dash.platform.dapi.v0.GetIdentityNonceResponse.IGetIdentityNonceResponseV0|null} [v0] GetIdentityNonceResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetIdentityNonceResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetIdentityNonceResponse.
+                         * @implements IGetIdentityNonceResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityNonceResponse=} [properties] Properties to set
+                         */
+                        function GetIdentityNonceResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetIdentityNonceResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetIdentityNonceResponse.IGetIdentityNonceResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse
+                         * @instance
+                         */
+                        GetIdentityNonceResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentityNonceResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentityNonceResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetIdentityNonceResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityNonceResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityNonceResponse} GetIdentityNonceResponse instance
+                         */
+                        GetIdentityNonceResponse.create = function create(properties) {
+                            return new GetIdentityNonceResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentityNonceResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityNonceResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityNonceResponse} message GetIdentityNonceResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentityNonceResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentityNonceResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityNonceResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentityNonceResponse} message GetIdentityNonceResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentityNonceResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetIdentityNonceResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityNonceResponse} GetIdentityNonceResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentityNonceResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityNonceResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetIdentityNonceResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityNonceResponse} GetIdentityNonceResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentityNonceResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetIdentityNonceResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetIdentityNonceResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetIdentityNonceResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetIdentityNonceResponse} GetIdentityNonceResponse
+                         */
+                        GetIdentityNonceResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityNonceResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetIdentityNonceResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityNonceResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetIdentityNonceResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetIdentityNonceResponse} message GetIdentityNonceResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetIdentityNonceResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetIdentityNonceResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetIdentityNonceResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetIdentityNonceResponse.GetIdentityNonceResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetIdentityNonceResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse
+                             * @interface IGetIdentityNonceResponseV0
+                             * @property {number|Long|null} [identityNonce] GetIdentityNonceResponseV0 identityNonce
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentityNonceResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentityNonceResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetIdentityNonceResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse
+                             * @classdesc Represents a GetIdentityNonceResponseV0.
+                             * @implements IGetIdentityNonceResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentityNonceResponse.IGetIdentityNonceResponseV0=} [properties] Properties to set
+                             */
+                            function GetIdentityNonceResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetIdentityNonceResponseV0 identityNonce.
+                             * @member {number|Long} identityNonce
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0
+                             * @instance
+                             */
+                            GetIdentityNonceResponseV0.prototype.identityNonce = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * GetIdentityNonceResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0
+                             * @instance
+                             */
+                            GetIdentityNonceResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetIdentityNonceResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0
+                             * @instance
+                             */
+                            GetIdentityNonceResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetIdentityNonceResponseV0 result.
+                             * @member {"identityNonce"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetIdentityNonceResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["identityNonce", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetIdentityNonceResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityNonceResponse.IGetIdentityNonceResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0} GetIdentityNonceResponseV0 instance
+                             */
+                            GetIdentityNonceResponseV0.create = function create(properties) {
+                                return new GetIdentityNonceResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityNonceResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityNonceResponse.IGetIdentityNonceResponseV0} message GetIdentityNonceResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityNonceResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.identityNonce != null && Object.hasOwnProperty.call(message, "identityNonce"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.identityNonce);
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityNonceResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityNonceResponse.IGetIdentityNonceResponseV0} message GetIdentityNonceResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityNonceResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetIdentityNonceResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0} GetIdentityNonceResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityNonceResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.identityNonce = reader.uint64();
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetIdentityNonceResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0} GetIdentityNonceResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityNonceResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetIdentityNonceResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetIdentityNonceResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.identityNonce != null && message.hasOwnProperty("identityNonce")) {
+                                    properties.result = 1;
+                                    if (!$util.isInteger(message.identityNonce) && !(message.identityNonce && $util.isInteger(message.identityNonce.low) && $util.isInteger(message.identityNonce.high)))
+                                        return "identityNonce: integer|Long expected";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetIdentityNonceResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0} GetIdentityNonceResponseV0
+                             */
+                            GetIdentityNonceResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0();
+                                if (object.identityNonce != null)
+                                    if ($util.Long)
+                                        (message.identityNonce = $util.Long.fromValue(object.identityNonce)).unsigned = true;
+                                    else if (typeof object.identityNonce === "string")
+                                        message.identityNonce = parseInt(object.identityNonce, 10);
+                                    else if (typeof object.identityNonce === "number")
+                                        message.identityNonce = object.identityNonce;
+                                    else if (typeof object.identityNonce === "object")
+                                        message.identityNonce = new $util.LongBits(object.identityNonce.low >>> 0, object.identityNonce.high >>> 0).toNumber(true);
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetIdentityNonceResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0} message GetIdentityNonceResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetIdentityNonceResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.identityNonce != null && message.hasOwnProperty("identityNonce")) {
+                                    if (typeof message.identityNonce === "number")
+                                        object.identityNonce = options.longs === String ? String(message.identityNonce) : message.identityNonce;
+                                    else
+                                        object.identityNonce = options.longs === String ? $util.Long.prototype.toString.call(message.identityNonce) : options.longs === Number ? new $util.LongBits(message.identityNonce.low >>> 0, message.identityNonce.high >>> 0).toNumber(true) : message.identityNonce;
+                                    if (options.oneofs)
+                                        object.result = "identityNonce";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetIdentityNonceResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetIdentityNonceResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetIdentityNonceResponseV0;
+                        })();
+
+                        return GetIdentityNonceResponse;
                     })();
 
                     v0.GetIdentityContractNonceResponse = (function() {

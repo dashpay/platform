@@ -12,6 +12,7 @@ service Platform {
   rpc getIdentity(GetIdentityRequest) returns (GetIdentityResponse);
   rpc getIdentities(GetIdentitiesRequest) returns (GetIdentitiesResponse);
   rpc getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
+  rpc getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse);
   rpc getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse);
   rpc getIdentityBalance(GetIdentityBalanceRequest)
       returns (GetIdentityBalanceResponse);
@@ -74,6 +75,17 @@ message GetIdentityRequest {
 
   oneof version { GetIdentityRequestV0 v0 = 1; }
 }
+
+message GetIdentityNonceRequest {
+
+  message GetIdentityNonceRequestV0 {
+    bytes identity_id = 1;
+    bool prove = 2;
+  }
+
+  oneof version { GetIdentityNonceRequestV0 v0 = 1; }
+}
+
 
 message GetIdentityContractNonceRequest {
 
@@ -149,6 +161,19 @@ message GetIdentitiesResponse {
   }
 
   oneof version { GetIdentitiesResponseV0 v0 = 1; }
+}
+
+message GetIdentityNonceResponse {
+
+  message GetIdentityNonceResponseV0 {
+    oneof result {
+      uint64 identity_nonce = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetIdentityNonceResponseV0 v0 = 1; }
 }
 
 message GetIdentityContractNonceResponse {

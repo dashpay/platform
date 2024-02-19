@@ -106,6 +106,38 @@ pub mod get_identity_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIdentityNonceRequest {
+    #[prost(oneof = "get_identity_nonce_request::Version", tags = "1")]
+    pub version: ::core::option::Option<get_identity_nonce_request::Version>,
+}
+/// Nested message and enum types in `GetIdentityNonceRequest`.
+pub mod get_identity_nonce_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetIdentityNonceRequestV0 {
+        #[prost(bytes = "vec", tag = "1")]
+        #[serde(with = "serde_bytes")]
+        pub identity_id: ::prost::alloc::vec::Vec<u8>,
+        #[prost(bool, tag = "2")]
+        pub prove: bool,
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetIdentityNonceRequestV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
 #[derive(::dapi_grpc_macros::Mockable)]
@@ -369,6 +401,50 @@ pub mod get_identities_response {
     pub enum Version {
         #[prost(message, tag = "1")]
         V0(GetIdentitiesResponseV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIdentityNonceResponse {
+    #[prost(oneof = "get_identity_nonce_response::Version", tags = "1")]
+    pub version: ::core::option::Option<get_identity_nonce_response::Version>,
+}
+/// Nested message and enum types in `GetIdentityNonceResponse`.
+pub mod get_identity_nonce_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetIdentityNonceResponseV0 {
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(oneof = "get_identity_nonce_response_v0::Result", tags = "1, 2")]
+        pub result: ::core::option::Option<get_identity_nonce_response_v0::Result>,
+    }
+    /// Nested message and enum types in `GetIdentityNonceResponseV0`.
+    pub mod get_identity_nonce_response_v0 {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(uint64, tag = "1")]
+            IdentityNonce(u64),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetIdentityNonceResponseV0),
     }
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
@@ -2247,6 +2323,36 @@ pub mod platform_client {
                     GrpcMethod::new(
                         "org.dash.platform.dapi.v0.Platform",
                         "getIdentityKeys",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_identity_nonce(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetIdentityNonceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetIdentityNonceResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getIdentityNonce",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getIdentityNonce",
                     ),
                 );
             self.inner.unary(req, path, codec).await

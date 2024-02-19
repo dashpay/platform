@@ -46,6 +46,15 @@ Platform.getIdentityKeys = {
   responseType: platform_pb.GetIdentityKeysResponse
 };
 
+Platform.getIdentityNonce = {
+  methodName: "getIdentityNonce",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetIdentityNonceRequest,
+  responseType: platform_pb.GetIdentityNonceResponse
+};
+
 Platform.getIdentityContractNonce = {
   methodName: "getIdentityContractNonce",
   service: Platform,
@@ -286,6 +295,37 @@ PlatformClient.prototype.getIdentityKeys = function getIdentityKeys(requestMessa
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getIdentityKeys, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getIdentityNonce = function getIdentityNonce(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getIdentityNonce, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
