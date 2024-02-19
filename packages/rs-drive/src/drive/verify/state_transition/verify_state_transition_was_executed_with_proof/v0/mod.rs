@@ -198,7 +198,7 @@ impl Drive {
                         loaded_public_keys: Default::default(),
                         balance: Some(balance),
                         revision: Some(revision),
-                        contract_revisions: Default::default(),
+
                         not_found_public_keys: Default::default(),
                     }),
                 ))
@@ -221,7 +221,7 @@ impl Drive {
                         loaded_public_keys: Default::default(),
                         balance: Some(balance),
                         revision: None,
-                        contract_revisions: Default::default(),
+
                         not_found_public_keys: Default::default(),
                     }),
                 ))
@@ -275,7 +275,7 @@ impl Drive {
                             loaded_public_keys: Default::default(),
                             balance: Some(balance_identity),
                             revision: None,
-                            contract_revisions: Default::default(),
+
                             not_found_public_keys: Default::default(),
                         },
                         PartialIdentity {
@@ -283,7 +283,7 @@ impl Drive {
                             loaded_public_keys: Default::default(),
                             balance: Some(balance_recipient),
                             revision: None,
-                            contract_revisions: Default::default(),
+
                             not_found_public_keys: Default::default(),
                         },
                     ),
