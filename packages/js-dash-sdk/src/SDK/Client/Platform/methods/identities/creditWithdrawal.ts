@@ -79,7 +79,9 @@ export async function creditWithdrawal(
 
   const coreFeePerByte = nearestGreaterFibonacci(minRelayFeePerByte);
 
-  const revision = identity.getRevision();
+  // TODO: Use NonceFetcher
+  const { identityNonce } = await this.client.getDAPIClient().platform
+    .getIdentityNonce(identity.getId());
 
   const identityCreditWithdrawalTransition = dpp.identity
     .createIdentityCreditWithdrawalTransition(
@@ -89,7 +91,7 @@ export async function creditWithdrawal(
       DEFAULT_POOLING,
       // @ts-ignore
       outputScript.toBuffer(),
-      BigInt(revision + 1),
+      BigInt(identityNonce + 1),
     );
 
   this.logger.silly('[Identity#creditWithdrawal] Created IdentityCreditWithdrawalTransition');

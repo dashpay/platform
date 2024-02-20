@@ -208,7 +208,7 @@ impl IdentityFacadeWasm {
         core_fee_per_byte: u32,
         pooling: u8,
         output_script: Vec<u8>,
-        revision: u64,
+        identity_nonce: u64,
     ) -> Result<IdentityCreditWithdrawalTransitionWasm, JsValue> {
         let pooling = match pooling {
             0 => Pooling::Never,
@@ -224,7 +224,7 @@ impl IdentityFacadeWasm {
                 core_fee_per_byte,
                 pooling,
                 CoreScript::from_bytes(output_script),
-                revision as Revision,
+                identity_nonce as IdentityNonce,
             )
             .map(Into::into)
             .with_js_error()
