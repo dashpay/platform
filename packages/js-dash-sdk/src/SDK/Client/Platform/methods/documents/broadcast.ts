@@ -42,20 +42,23 @@ export default async function broadcast(
     throw new Error('Data contract ID is not found');
   }
 
-  let identityContractNonce = this.nonceManager
+  // TODO: Use NonceFetcher
+  // let identityContractNonce = this.nonceManager
+  //   .getIdentityContractNonce(identityId, dataContractId);
+  //
+  // if (!identityContractNonce) {
+  //   ({ identityContractNonce } = await this.client.getDAPIClient().platform
+  //     .getIdentityContractNonce(identityId, dataContractId));
+  //
+  //   if (typeof identityContractNonce === 'undefined') {
+  //     throw new Error('Identity contract nonce is not found');
+  //   }
+  //
+  //   this.nonceManager
+  //     .setIdentityContractNonce(identityId, dataContractId, identityContractNonce);
+  // }
+  const { identityContractNonce } = await this.client.getDAPIClient().platform
     .getIdentityContractNonce(identityId, dataContractId);
-
-  if (!identityContractNonce) {
-    ({ identityContractNonce } = await this.client.getDAPIClient().platform
-      .getIdentityContractNonce(identityId, dataContractId));
-
-    if (typeof identityContractNonce === 'undefined') {
-      throw new Error('Identity contract nonce is not found');
-    }
-
-    this.nonceManager
-      .setIdentityContractNonce(identityId, dataContractId, identityContractNonce);
-  }
 
   console.log('identityContractNonce', {
     identityId: identityId.toString(),
