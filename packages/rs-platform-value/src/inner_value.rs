@@ -19,7 +19,7 @@ impl Value {
     }
 
     pub fn get_value<'a>(&'a self, key: &'a str) -> Result<&'a Value, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::get_from_map(map, key)
     }
 
@@ -29,7 +29,7 @@ impl Value {
     }
 
     pub fn get_optional_value<'a>(&'a self, key: &'a str) -> Result<Option<&'a Value>, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Ok(Self::get_optional_from_map(map, key))
     }
 
@@ -242,7 +242,7 @@ impl Value {
             + TryFrom<u8>
             + TryFrom<i8>,
     {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_optional_integer_value(map, key)
     }
 
@@ -259,37 +259,37 @@ impl Value {
             + TryFrom<u8>
             + TryFrom<i8>,
     {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_integer_value(map, key)
     }
 
     pub fn get_optional_str<'a>(&'a self, key: &'a str) -> Result<Option<&'a str>, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_optional_text_value(map, key)
     }
 
     pub fn get_str<'a>(&'a self, key: &'a str) -> Result<&'a str, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_text_value(map, key)
     }
 
     pub fn get_optional_bool(&self, key: &str) -> Result<Option<bool>, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_optional_bool_value(map, key)
     }
 
     pub fn get_bool<'a>(&'a self, key: &'a str) -> Result<bool, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_bool_value(map, key)
     }
 
     pub fn get_optional_array(&self, key: &str) -> Result<Option<Vec<Value>>, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_optional_array(map, key)
     }
 
     pub fn get_array<'a>(&'a self, key: &'a str) -> Result<Vec<Value>, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_array_owned(map, key)
     }
 
@@ -297,7 +297,7 @@ impl Value {
         &'a self,
         key: &'a str,
     ) -> Result<Option<I>, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_optional_string_ref_map(map, key)
     }
 
@@ -305,7 +305,7 @@ impl Value {
         &'a self,
         key: &'a str,
     ) -> Result<I, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_string_ref_map(map, key)
     }
 
@@ -339,12 +339,12 @@ impl Value {
         &'a self,
         key: &'a str,
     ) -> Result<Option<&'a [Value]>, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_optional_array_slice(map, key)
     }
 
     pub fn get_array_ref<'a>(&'a self, key: &'a str) -> Result<&'a Vec<Value>, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_array_ref(map, key)
     }
 
@@ -362,7 +362,7 @@ impl Value {
     }
 
     pub fn get_array_slice<'a>(&'a self, key: &'a str) -> Result<&[Value], Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_array_slice(map, key)
     }
 
@@ -370,27 +370,27 @@ impl Value {
         &'a self,
         key: &'a str,
     ) -> Result<Option<BinaryData>, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_optional_binary_data_value(map, key)
     }
 
     pub fn get_binary_data<'a>(&'a self, key: &'a str) -> Result<BinaryData, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_binary_data_value(map, key)
     }
 
     pub fn get_optional_bytes<'a>(&'a self, key: &'a str) -> Result<Option<Vec<u8>>, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_optional_bytes_value(map, key)
     }
 
     pub fn get_bytes<'a>(&'a self, key: &'a str) -> Result<Vec<u8>, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_bytes_value(map, key)
     }
 
     pub fn get_optional_bytes_into<T: From<Vec<u8>>>(&self, key: &str) -> Result<Option<T>, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Ok(Self::inner_optional_bytes_value(map, key)?.map(|bytes| bytes.into()))
     }
 
@@ -398,14 +398,14 @@ impl Value {
         &self,
         key: &str,
     ) -> Result<Option<T>, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_optional_bytes_value(map, key)?
             .map(|bytes| bytes.try_into())
             .transpose()
     }
 
     pub fn get_bytes_into<T: From<Vec<u8>>>(&self, key: &str) -> Result<T, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Ok(Self::inner_bytes_value(map, key)?.into())
     }
 
@@ -413,17 +413,17 @@ impl Value {
         &self,
         key: &str,
     ) -> Result<T, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_bytes_value(map, key)?.try_into()
     }
 
     pub fn get_optional_hash256<'a>(&'a self, key: &'a str) -> Result<Option<[u8; 32]>, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_optional_hash256_value(map, key)
     }
 
     pub fn get_identifier<'a>(&'a self, key: &'a str) -> Result<Identifier, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Ok(Identifier::new(Self::inner_hash256_value(map, key)?))
     }
 
@@ -431,17 +431,17 @@ impl Value {
         &'a self,
         key: &'a str,
     ) -> Result<Option<Identifier>, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Ok(Self::inner_optional_hash256_value(map, key)?.map(Identifier::new))
     }
 
     pub fn get_hash256<'a>(&'a self, key: &'a str) -> Result<[u8; 32], Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         Self::inner_hash256_value(map, key)
     }
 
     pub fn get_hash256_as_bs58_string<'a>(&'a self, key: &'a str) -> Result<String, Error> {
-        let map = self.to_map()?;
+        let map = self.to_map_ref()?;
         let value = Self::inner_hash256_value(map, key)?;
         Ok(bs58::encode(value).into_string())
     }

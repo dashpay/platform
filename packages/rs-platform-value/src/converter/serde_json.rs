@@ -212,13 +212,18 @@ impl From<JsonValue> for Value {
                         int.le(&u8_max)
                     })
                 {
-                    //this is an array of bytes
-                    Self::Bytes(
-                        array
-                            .into_iter()
-                            .map(|v| v.as_u64().unwrap() as u8)
-                            .collect(),
-                    )
+                    // this is an array of byte
+                    let bytes_vec: Vec<_> = array
+                        .into_iter()
+                        .map(|v| v.as_u64().unwrap() as u8)
+                        .collect();
+
+                    match len {
+                        20 => Self::Bytes20(bytes_vec.try_into().expect("size is checked")),
+                        32 => Self::Bytes32(bytes_vec.try_into().expect("size is checked")),
+                        36 => Self::Bytes36(bytes_vec.try_into().expect("size is checked")),
+                        _ => Self::Bytes(bytes_vec),
+                    }
                 } else {
                     Self::Array(array.into_iter().map(|v| v.into()).collect())
                 }
@@ -258,8 +263,18 @@ impl From<&JsonValue> for Value {
                         int.le(&u8_max)
                     })
                 {
-                    //this is an array of bytes
-                    Self::Bytes(array.iter().map(|v| v.as_u64().unwrap() as u8).collect())
+                    // this is an array of byte
+                    let bytes_vec: Vec<_> = array
+                        .into_iter()
+                        .map(|v| v.as_u64().unwrap() as u8)
+                        .collect();
+
+                    match len {
+                        20 => Self::Bytes20(bytes_vec.try_into().expect("size is checked")),
+                        32 => Self::Bytes32(bytes_vec.try_into().expect("size is checked")),
+                        36 => Self::Bytes36(bytes_vec.try_into().expect("size is checked")),
+                        _ => Self::Bytes(bytes_vec),
+                    }
                 } else {
                     Self::Array(array.iter().map(|v| v.into()).collect())
                 }

@@ -121,6 +121,7 @@ impl Drive {
                 match transition {
                     DocumentTransition::Create(create_transition) => {
                         let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (create)", create_transition.base().id()))))?;
+
                         let expected_document = Document::try_from_create_transition(
                             create_transition,
                             documents_batch_transition.owner_id(),

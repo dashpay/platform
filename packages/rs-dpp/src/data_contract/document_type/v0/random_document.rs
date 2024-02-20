@@ -32,6 +32,8 @@ impl CreateRandomDocument for DocumentTypeV0 {
     ) -> Result<Vec<Document>, ProtocolError> {
         use anyhow::Context;
 
+        use platform_value::{Value, ValueMapHelper};
+
         use crate::document::{
             extended_document_property_names::FEATURE_VERSION,
             property_names::{ID, OWNER_ID, REVISION},
@@ -90,9 +92,46 @@ impl CreateRandomDocument for DocumentTypeV0 {
         json_documents
             .into_iter()
             .map(|d| {
-                let p_value: platform_value::Value = d.into();
+                let p_value: Value = d.into();
                 let fixed_value = fix_document(p_value);
-                Document::from_platform_value(fixed_value, platform_version)
+
+                // TODO: tl;dr use PlatformDeserialize instead of Deserialize for Documents
+                //
+                // `properties` is a `BTreeMap` with `platform_value::Value` as values, since
+                // `Document::from_platform_value` does deserialization through Serde's data model
+                // it losts some information like distinction between `Value::Bytes` and `Value::Bytes32`;
+                // The solution here is to let deserialize a `Document`, but put `properties` unprocessed
+                // since they were `platform_value::Value` and will be the same type again and no deserialization
+                // is needed, especially that lossy kind.
+                let mut properties = fixed_value
+                    .to_map_ref()
+                    .ok()
+                    .and_then(|m| Value::map_into_btree_string_map(m.clone()).ok())
+                    .unwrap_or_default();
+                let mut document = Document::from_platform_value(fixed_value, platform_version);
+                match document.as_mut() {
+                    Ok(Document::V0(d)) => {
+                        // This moves stored properties back to the document so it could skip unnecessary
+                        // and wrong deserialization part
+                        d.properties.iter_mut().for_each(|(k, v)| {
+                            properties.remove(k).into_iter().for_each(|prop| {
+                                // TODO: schema and internal DocumentType representations are incompatible
+                                // Properties are tweaked though, because the only integer type supported by
+                                // DPP is i64, while `platform_value::Value` distincts them, and json schema is
+                                // even more permissive; however, we want our proofs to work and proofs use the
+                                // DPP model.
+                                *v = match prop {
+                                    Value::U64(x) => Value::I64(x as i64),
+                                    Value::U32(x) => Value::I64(x as i64),
+                                    Value::I32(x) => Value::I64(x as i64),
+                                    x => x,
+                                };
+                            })
+                        });
+                    }
+                    _ => {}
+                }
+                document
             })
             .collect()
     }
