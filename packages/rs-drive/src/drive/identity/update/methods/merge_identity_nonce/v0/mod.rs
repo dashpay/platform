@@ -14,6 +14,7 @@ use dpp::version::PlatformVersion;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 use crate::drive::identity::update::methods::merge_identity_nonce::MergeIdentityContractNonceResultToResult;
+use dpp::identity::identity_nonce::MergeIdentityNonceResult;
 use std::collections::HashMap;
 
 impl Drive {
@@ -26,7 +27,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<FeeResult, Error> {
+    ) -> Result<(MergeIdentityNonceResult, Option<FeeResult>), Error> {
         // TODO: In case of dry run we will get less because we replace the same bytes
 
         let mut estimated_costs_only_with_layer_info = if apply {
@@ -44,26 +45,30 @@ impl Drive {
             platform_version,
         )?;
 
-        result.to_result()?;
-
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        self.apply_batch_low_level_drive_operations(
-            estimated_costs_only_with_layer_info,
-            transaction,
-            batch_operations,
-            &mut drive_operations,
-            &platform_version.drive,
-        )?;
+        let fees = if result.is_error() {
+            None
+        } else {
+            self.apply_batch_low_level_drive_operations(
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+                &mut drive_operations,
+                &platform_version.drive,
+            )?;
 
-        let fees = Drive::calculate_fee(
-            None,
-            Some(drive_operations),
-            &block_info.epoch,
-            self.config.epochs_per_era,
-            platform_version,
-        )?;
+            let fees = Drive::calculate_fee(
+                None,
+                Some(drive_operations),
+                &block_info.epoch,
+                self.config.epochs_per_era,
+                platform_version,
+            )?;
 
-        Ok(fees)
+            Some(fees)
+        };
+
+        Ok((result, fees))
     }
 }

@@ -67,7 +67,7 @@ name = "benchmarks"
 harness = false
 
 [features]
-default = ["full", "verify"]
+default = ["full", "verify", "fixtures-and-mocks"]
 fixtures-and-mocks = ["full", "dpp/fixtures-and-mocks", "verify"]
 full = [
   "grovedb/estimated_costs",

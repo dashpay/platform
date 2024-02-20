@@ -15,7 +15,7 @@ mod v0;
 
 impl Drive {
     /// Merges the given revision into the identity contract pair nonce
-    pub fn merge_revision_nonce_for_identity_contract_pair(
+    pub fn merge_identity_contract_nonce(
         &self,
         identity_id: [u8; 32],
         contract_id: [u8; 32],
@@ -31,9 +31,9 @@ impl Drive {
             .methods
             .identity
             .contract_info
-            .merge_revision_nonce_for_identity_contract_pair
+            .merge_identity_contract_nonce
         {
-            0 => self.merge_revision_nonce_for_identity_contract_pair_v0(
+            0 => self.merge_identity_contract_nonce_v0(
                 identity_id,
                 contract_id,
                 revision_nonce,
@@ -52,7 +52,7 @@ impl Drive {
     }
 
     /// Gives the operations of merging the given revision into the identity contract pair nonce
-    pub fn merge_revision_nonce_for_identity_contract_pair_operations(
+    pub fn merge_identity_contract_nonce_operations(
         &self,
         identity_id: [u8; 32],
         contract_id: [u8; 32],
@@ -69,9 +69,9 @@ impl Drive {
             .methods
             .identity
             .contract_info
-            .merge_revision_nonce_for_identity_contract_pair
+            .merge_identity_contract_nonce
         {
-            0 => self.merge_revision_nonce_for_identity_contract_pair_operations_v0(
+            0 => self.merge_identity_contract_nonce_operations_v0(
                 identity_id,
                 contract_id,
                 revision_nonce,

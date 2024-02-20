@@ -190,16 +190,15 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 contract_id,
                 nonce,
             } => {
-                let (result, operations) = drive
-                    .merge_revision_nonce_for_identity_contract_pair_operations(
-                        identity_id,
-                        contract_id,
-                        nonce,
-                        block_info,
-                        estimated_costs_only_with_layer_info,
-                        transaction,
-                        platform_version,
-                    )?;
+                let (result, operations) = drive.merge_identity_contract_nonce_operations(
+                    identity_id,
+                    contract_id,
+                    nonce,
+                    block_info,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
                 result.to_result()?;
                 Ok(operations)
             }

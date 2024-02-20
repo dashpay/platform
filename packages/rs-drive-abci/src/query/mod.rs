@@ -946,7 +946,7 @@ mod tests {
 
             platform
                 .drive
-                .merge_revision_nonce_for_identity_contract_pair(
+                .merge_identity_contract_nonce(
                     identity.id().to_buffer(),
                     dashpay.id().to_buffer(),
                     1,
@@ -1010,7 +1010,7 @@ mod tests {
 
             platform
                 .drive
-                .merge_revision_nonce_for_identity_contract_pair(
+                .merge_identity_contract_nonce(
                     identity.id().to_buffer(),
                     dashpay.id().to_buffer(),
                     1,
@@ -1024,7 +1024,7 @@ mod tests {
 
             platform
                 .drive
-                .merge_revision_nonce_for_identity_contract_pair(
+                .merge_identity_contract_nonce(
                     identity.id().to_buffer(),
                     dashpay.id().to_buffer(),
                     3,
@@ -1090,7 +1090,7 @@ mod tests {
 
             platform
                 .drive
-                .merge_revision_nonce_for_identity_contract_pair(
+                .merge_identity_contract_nonce(
                     identity.id().to_buffer(),
                     dashpay.id().to_buffer(),
                     1,
@@ -1104,7 +1104,7 @@ mod tests {
 
             platform
                 .drive
-                .merge_revision_nonce_for_identity_contract_pair(
+                .merge_identity_contract_nonce(
                     identity.id().to_buffer(),
                     dashpay.id().to_buffer(),
                     3,
@@ -1119,7 +1119,7 @@ mod tests {
             // we already added 3, and now are adding 2
             platform
                 .drive
-                .merge_revision_nonce_for_identity_contract_pair(
+                .merge_identity_contract_nonce(
                     identity.id().to_buffer(),
                     dashpay.id().to_buffer(),
                     2,
