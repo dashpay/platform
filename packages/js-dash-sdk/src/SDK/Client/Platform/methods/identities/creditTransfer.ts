@@ -16,11 +16,16 @@ export async function creditTransfer(
 
   recipientId = Identifier.from(recipientId);
 
+  // TODO: Use NonceFetcher
+  const { identityNonce } = await this.client.getDAPIClient().platform
+    .getIdentityNonce(identity.getId());
+
   const identityCreditTransferTransition = dpp.identity
     .createIdentityCreditTransferTransition(
       identity,
       recipientId,
       BigInt(amount),
+      BigInt(identityNonce + 1),
     );
 
   this.logger.silly('[Identity#creditTransfer] Created IdentityCreditTransferTransition');
