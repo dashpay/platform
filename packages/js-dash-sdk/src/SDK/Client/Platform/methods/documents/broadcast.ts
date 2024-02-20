@@ -46,12 +46,6 @@ export default async function broadcast(
   const identityContractNonce = await this.nonceManager
     .getIdentityContractNonce(identityId, dataContractId) + 1;
 
-  console.log('identityContractNonce', {
-    identityId: identityId.toString(),
-    dataContractId: dataContractId.toString(),
-    identityContractNonce,
-  });
-
   const documentsBatchTransition = dpp.document.createStateTransition(documents, {
     [identityId.toString()]: {
       [dataContractId.toString()]: identityContractNonce,
