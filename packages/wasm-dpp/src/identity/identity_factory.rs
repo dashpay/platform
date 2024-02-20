@@ -18,7 +18,7 @@ use crate::{
 };
 use dpp::dashcore::{consensus, InstantLock, Transaction};
 
-use dpp::prelude::{Identity, Revision};
+use dpp::prelude::{Identity, IdentityNonce, Revision};
 
 use serde::Deserialize;
 use std::convert::TryInto;
@@ -211,7 +211,7 @@ impl IdentityFactoryWasm {
         core_fee_per_byte: u32,
         pooling: u8,
         output_script: Vec<u8>,
-        revision: u64,
+        identity_nonce: u64,
     ) -> Result<IdentityCreditWithdrawalTransitionWasm, JsValue> {
         let pooling = match pooling {
             0 => Pooling::Never,
@@ -227,7 +227,7 @@ impl IdentityFactoryWasm {
                 core_fee_per_byte,
                 pooling,
                 CoreScript::from_bytes(output_script),
-                revision as Revision,
+                identity_nonce as IdentityNonce,
             )
             .map(Into::into)
             .with_js_error()

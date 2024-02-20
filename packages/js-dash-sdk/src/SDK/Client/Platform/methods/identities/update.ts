@@ -28,9 +28,9 @@ export async function update(
 
   const { dpp } = this;
 
-  const identityId = identity.getId();
+  // TODO: Use NonceFetcher
   const { identityNonce } = await this.client.getDAPIClient().platform
-    .getIdentityNonce(identityId);
+    .getIdentityNonce(identity.getId());
 
   const identityUpdateTransition = dpp.identity.createIdentityUpdateTransition(
     identity,
