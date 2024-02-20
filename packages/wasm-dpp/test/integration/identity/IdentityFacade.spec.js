@@ -206,7 +206,7 @@ describe('IdentityFacade', () => {
           stateTransitionFixture.getCoreFeePerByte(),
           stateTransitionFixture.getPooling(),
           stateTransitionFixture.getOutputScript(),
-          stateTransitionFixture.getRevision(),
+          stateTransitionFixture.getNonce(),
         );
 
       expect(stateTransition.toObject())
