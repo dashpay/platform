@@ -1,4 +1,5 @@
 import { Identity, IdentityPublicKey } from '@dashevo/wasm-dpp';
+import GrpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes';
 import { Platform } from '../../Platform';
 import { signStateTransition } from '../../signStateTransition';
 
@@ -28,13 +29,12 @@ export async function update(
 
   const { dpp } = this;
 
-  // TODO: Use NonceFetcher
-  const { identityNonce } = await this.client.getDAPIClient().platform
-    .getIdentityNonce(identity.getId());
+  const identityNonce = await this.nonceManager
+    .getIdentityNonce(identity.getId()) + 1;
 
   const identityUpdateTransition = dpp.identity.createIdentityUpdateTransition(
     identity,
-    BigInt(identityNonce + 1),
+    BigInt(identityNonce),
     publicKeys,
   );
 
@@ -95,10 +95,21 @@ export async function update(
   // }
   this.logger.silly('[Identity#update] Validated IdentityUpdateTransition');
 
-  // Skipping validation because it's already done above
-  await broadcastStateTransition(this, identityUpdateTransition, {
-    skipValidation: true,
-  });
+  try {
+    // Skipping validation because it's already done above
+    await broadcastStateTransition(this, identityUpdateTransition, {
+      skipValidation: true,
+    });
+    this.nonceManager.setIdentityNonce(identity.getId(), identityNonce);
+  } catch (e) {
+    // Deadline exceeded would mean that state transition didn't make it to the block,
+    // so we will not update nonce in this case
+    if (e.code !== GrpcErrorCodes.DEADLINE_EXCEEDED) {
+      this.nonceManager.setIdentityNonce(identity.getId(), identityNonce);
+    }
+
+    throw e;
+  }
 
   this.logger.silly('[Identity#update] Broadcasted IdentityUpdateTransition');
 

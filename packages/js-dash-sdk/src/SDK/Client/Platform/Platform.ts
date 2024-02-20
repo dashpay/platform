@@ -206,7 +206,7 @@ export class Platform {
     }
 
     this.fetcher = new Fetcher(this.client.getDAPIClient());
-    this.nonceManager = new NonceManager();
+    this.nonceManager = new NonceManager(this.client.getDAPIClient());
   }
 
   async initialize() {

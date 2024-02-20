@@ -1,4 +1,5 @@
 import { ExtendedDocument } from '@dashevo/wasm-dpp';
+import GrpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes';
 import { Platform } from '../../Platform';
 import broadcastStateTransition from '../../broadcastStateTransition';
 import { signStateTransition } from '../../signStateTransition';
@@ -42,23 +43,8 @@ export default async function broadcast(
     throw new Error('Data contract ID is not found');
   }
 
-  // TODO: Use NonceFetcher
-  // let identityContractNonce = this.nonceManager
-  //   .getIdentityContractNonce(identityId, dataContractId);
-  //
-  // if (!identityContractNonce) {
-  //   ({ identityContractNonce } = await this.client.getDAPIClient().platform
-  //     .getIdentityContractNonce(identityId, dataContractId));
-  //
-  //   if (typeof identityContractNonce === 'undefined') {
-  //     throw new Error('Identity contract nonce is not found');
-  //   }
-  //
-  //   this.nonceManager
-  //     .setIdentityContractNonce(identityId, dataContractId, identityContractNonce);
-  // }
-  const { identityContractNonce } = await this.client.getDAPIClient().platform
-    .getIdentityContractNonce(identityId, dataContractId);
+  const identityContractNonce = await this.nonceManager
+    .getIdentityContractNonce(identityId, dataContractId) + 1;
 
   console.log('identityContractNonce', {
     identityId: identityId.toString(),
@@ -68,7 +54,7 @@ export default async function broadcast(
 
   const documentsBatchTransition = dpp.document.createStateTransition(documents, {
     [identityId.toString()]: {
-      [dataContractId.toString()]: identityContractNonce + 1,
+      [dataContractId.toString()]: identityContractNonce,
     },
   });
 
@@ -76,10 +62,21 @@ export default async function broadcast(
 
   await signStateTransition(this, documentsBatchTransition, identity, 1);
 
-  // Broadcast state transition also wait for the result to be obtained
-  await broadcastStateTransition(this, documentsBatchTransition);
+  try {
+    // Broadcast state transition also wait for the result to be obtained
+    await broadcastStateTransition(this, documentsBatchTransition);
+    this.nonceManager
+      .setIdentityContractNonce(identityId, dataContractId, identityContractNonce);
+  } catch (e) {
+    // Deadline exceeded would mean that state transition didn't make it to the block,
+    // so we will not update nonce in this case
+    if (e.code !== GrpcErrorCodes.DEADLINE_EXCEEDED) {
+      this.nonceManager
+        .setIdentityContractNonce(identityId, dataContractId, identityContractNonce);
+    }
 
-  this.nonceManager.incrementIdentityContractNonce(identityId, dataContractId);
+    throw e;
+  }
 
   // Acknowledge documents identifiers to handle retry attempts to mitigate
   // state transition propagation lag

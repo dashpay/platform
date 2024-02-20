@@ -1,48 +1,38 @@
+import DAPIClient from '@dashevo/dapi-client';
 import { Identifier } from '@dashevo/wasm-dpp';
 
 class NonceManager {
+  public dapiClient: DAPIClient;
+
   private identityNonce: Map<Identifier, number>;
 
   private identityContractNonce: Map<Identifier, Map<Identifier, number>>;
 
-  constructor() {
+  constructor(dapiClient: DAPIClient) {
+    this.dapiClient = dapiClient;
+
     this.identityNonce = new Map();
     this.identityContractNonce = new Map();
-  }
-
-  public incrementIdentityNonce(identityId: Identifier) {
-    const nonce = this.identityNonce.get(identityId);
-
-    if (typeof nonce === 'undefined') {
-      this.identityNonce.set(identityId, 1);
-    } else {
-      this.identityNonce.set(identityId, nonce + 1);
-    }
   }
 
   public setIdentityNonce(identityId: Identifier, nonce: number) {
     this.identityNonce.set(identityId, nonce);
   }
 
-  public getIdentityNonce(identityId: Identifier): number | undefined {
-    return this.identityNonce.get(identityId);
-  }
-
-  public incrementIdentityContractNonce(identityId: Identifier, contractId: Identifier) {
-    let contractNonce = this.identityContractNonce.get(identityId);
-
-    if (!contractNonce) {
-      contractNonce = new Map();
-      this.identityContractNonce.set(identityId, contractNonce);
-    }
-
-    const nonce = contractNonce.get(contractId);
+  public async getIdentityNonce(identityId: Identifier): Promise<number> {
+    let nonce = this.identityNonce.get(identityId);
 
     if (typeof nonce === 'undefined') {
-      contractNonce.set(contractId, 1);
-    } else {
-      contractNonce.set(contractId, nonce + 1);
+      ({ identityNonce: nonce } = await this.dapiClient.platform.getIdentityNonce(identityId));
+
+      if (typeof nonce === 'undefined') {
+        throw new Error('Identity nonce is not found');
+      }
+
+      this.identityNonce.set(identityId, nonce);
     }
+
+    return nonce;
   }
 
   public setIdentityContractNonce(identityId: Identifier, contractId: Identifier, nonce: number) {
@@ -56,11 +46,31 @@ class NonceManager {
     contractNonce.set(contractId, nonce);
   }
 
-  public getIdentityContractNonce(
+  public async getIdentityContractNonce(
     identityId: Identifier,
     contractId: Identifier,
-  ): number | undefined {
-    return this.identityContractNonce.get(identityId)?.get(contractId);
+  ): Promise<number> {
+    let contractNonce = this.identityContractNonce.get(identityId);
+
+    if (!contractNonce) {
+      contractNonce = new Map();
+      this.identityContractNonce.set(identityId, contractNonce);
+    }
+
+    let nonce = contractNonce.get(contractId);
+
+    if (typeof nonce === 'undefined') {
+      ({ identityContractNonce: nonce } = await this.dapiClient.platform
+        .getIdentityContractNonce(identityId, contractId));
+
+      if (typeof nonce === 'undefined') {
+        throw new Error('Identity contract nonce is not found');
+      }
+
+      contractNonce.set(identityId, nonce);
+    }
+
+    return nonce;
   }
 }
 
