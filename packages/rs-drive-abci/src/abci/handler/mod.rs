@@ -786,15 +786,19 @@ where
                     (0, "".to_string())
                 };
 
-                let check_tx_result = validation_result
-                    .data.unwrap_or_default();
+                let check_tx_result = validation_result.data.unwrap_or_default();
 
-                let gas_wanted = check_tx_result.fee_result
-                            .map(|fee_result| fee_result.total_base_fee())
-                            .unwrap_or_default();
+                let gas_wanted = check_tx_result
+                    .fee_result
+                    .map(|fee_result| fee_result.total_base_fee())
+                    .unwrap_or_default();
 
                 // Todo: IMPORTANT We need tenderdash to support multiple senders
-                let first_unique_identifier = check_tx_result.unique_identifiers.first().cloned().unwrap_or_default();
+                let first_unique_identifier = check_tx_result
+                    .unique_identifiers
+                    .first()
+                    .cloned()
+                    .unwrap_or_default();
 
                 Ok(ResponseCheckTx {
                     code,

@@ -108,8 +108,12 @@ impl IdentityFacade {
         amount: u64,
         identity_nonce: IdentityNonce,
     ) -> Result<IdentityCreditTransferTransition, ProtocolError> {
-        self.factory
-            .create_identity_credit_transfer_transition(identity, recipient_id, amount, identity_nonce)
+        self.factory.create_identity_credit_transfer_transition(
+            identity,
+            recipient_id,
+            amount,
+            identity_nonce,
+        )
     }
 
     #[cfg(feature = "state-transitions")]

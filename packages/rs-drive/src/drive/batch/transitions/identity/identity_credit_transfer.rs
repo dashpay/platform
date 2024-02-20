@@ -16,12 +16,12 @@ impl DriveHighLevelOperationConverter for IdentityCreditTransferTransitionAction
         let recipient_id = self.recipient_id();
         let identity_id = self.identity_id();
         let transfer_amount = self.transfer_amount();
-        let revision = self.nonce();
+        let nonce = self.nonce();
 
         let drive_operations = vec![
-            IdentityOperation(IdentityOperationType::UpdateIdentityRevision {
+            IdentityOperation(IdentityOperationType::UpdateIdentityNonce {
                 identity_id: identity_id.into_buffer(),
-                revision,
+                nonce,
             }),
             IdentityOperation(IdentityOperationType::RemoveFromIdentityBalance {
                 identity_id: identity_id.to_buffer(),

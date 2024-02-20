@@ -52,6 +52,10 @@ impl StateTransitionLike for IdentityCreditTransferTransitionV0 {
 
     /// We want things to be unique based on the nonce, so we don't add the transition type
     fn unique_identifiers(&self) -> Vec<String> {
-        vec![format!("{}-{:x}", base64::encode(self.identity_id), self.nonce)]
+        vec![format!(
+            "{}-{:x}",
+            base64::encode(self.identity_id),
+            self.nonce
+        )]
     }
 }

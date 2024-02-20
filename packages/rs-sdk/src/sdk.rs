@@ -10,6 +10,7 @@ use crate::internal_cache::InternalSdkCache;
 use crate::mock::MockResponse;
 #[cfg(feature = "mocks")]
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
+use crate::platform::transition::put_document::PutSettings;
 use crate::platform::{Fetch, Identifier};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0;
@@ -40,7 +41,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::Mutex;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
-use crate::platform::transition::put_document::PutSettings;
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
@@ -236,17 +236,22 @@ impl Sdk {
                 let (_, last_query_time) = e.get();
                 *last_query_time
                     < current_time_s.saturating_sub(
-                    settings.identity_nonce_stale_time_s
+                        settings
+                            .identity_nonce_stale_time_s
                             .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
                     )
             }
         };
 
         if should_query_platform {
-            let platform_nonce = IdentityNonceFetcher::fetch_with_settings(&self, identity_id, settings.request_settings)
-                .await?
-                .unwrap_or(IdentityNonceFetcher(0))
-                .0;
+            let platform_nonce = IdentityNonceFetcher::fetch_with_settings(
+                &self,
+                identity_id,
+                settings.request_settings,
+            )
+            .await?
+            .unwrap_or(IdentityNonceFetcher(0))
+            .0;
             match entry {
                 Entry::Vacant(e) => {
                     let insert_nonce = if bump_first {
@@ -325,18 +330,22 @@ impl Sdk {
                 let (_, last_query_time) = e.get();
                 *last_query_time
                     < current_time_s.saturating_sub(
-                    settings.identity_nonce_stale_time_s
+                        settings
+                            .identity_nonce_stale_time_s
                             .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
                     )
             }
         };
 
         if should_query_platform {
-            let platform_nonce =
-                IdentityContractNonceFetcher::fetch_with_settings(&self, (identity_id, contract_id), settings.request_settings)
-                    .await?
-                    .unwrap_or(IdentityContractNonceFetcher(0))
-                    .0;
+            let platform_nonce = IdentityContractNonceFetcher::fetch_with_settings(
+                &self,
+                (identity_id, contract_id),
+                settings.request_settings,
+            )
+            .await?
+            .unwrap_or(IdentityContractNonceFetcher(0))
+            .0;
             match entry {
                 Entry::Vacant(e) => {
                     let insert_nonce = if bump_first {

@@ -5,8 +5,6 @@ use dpp::prelude::IdentityNonce;
 use std::collections::BTreeMap;
 use tokio::sync::Mutex;
 
-mod identity_contract_nonce_counter;
-
 /// This is a cache that is internal to the SDK that the user does not have to worry about
 pub struct InternalSdkCache {
     /// This is the identity nonce counter for the sdk

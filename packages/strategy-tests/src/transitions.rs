@@ -467,14 +467,15 @@ pub fn create_identity_withdrawal_transition(
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
 ) -> StateTransition {
-    identity.bump_revision();
+    let nonce = identity_nonce_counter.entry(identity.id()).or_default();
+    *nonce += 1;
     let mut withdrawal: StateTransition = IdentityCreditWithdrawalTransitionV0 {
         identity_id: identity.id(),
         amount: 100000000, // 0.001 Dash
         core_fee_per_byte: MIN_CORE_FEE_PER_BYTE,
         pooling: Pooling::Never,
         output_script: CoreScript::random_p2sh(rng),
-        nonce: identity.revision(),
+        nonce: *nonce,
         signature_public_key_id: 0,
         signature: Default::default(),
     }

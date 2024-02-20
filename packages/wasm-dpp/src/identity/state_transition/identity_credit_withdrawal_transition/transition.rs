@@ -124,8 +124,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
             .set_output_script(CoreScript::from_bytes(output_script));
     }
 
-    #[wasm_bindgen(js_name=getRevision)]
-    pub fn get_revision(&self) -> u64 {
+    #[wasm_bindgen(js_name=getNonce)]
+    pub fn get_nonce(&self) -> u64 {
         self.0.nonce() as u64
     }
 

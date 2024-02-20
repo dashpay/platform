@@ -46,11 +46,18 @@ impl StateTransitionLike for DocumentsBatchTransitionV0 {
         self.owner_id
     }
 
-
     /// We create a list of unique identifiers for the batch
     fn unique_identifiers(&self) -> Vec<String> {
-        self.transitions.iter().map(|transition| {
-            format!("{}-{}-{:x}", base64::encode(self.owner_id), base64::encode(transition.data_contract_id()), transition.identity_contract_nonce())
-        }).collect()
+        self.transitions
+            .iter()
+            .map(|transition| {
+                format!(
+                    "{}-{}-{:x}",
+                    base64::encode(self.owner_id),
+                    base64::encode(transition.data_contract_id()),
+                    transition.identity_contract_nonce()
+                )
+            })
+            .collect()
     }
 }

@@ -120,11 +120,13 @@ where
         validation_result.and_then_borrowed_validation(|execution_event| {
             if let Some(execution_event) = execution_event {
                 self.validate_fees_of_event(execution_event, block_info, None, platform_version)
-                    .map(|validation_result| validation_result.map(|fee_result| CheckTxResult {
-                        level: check_tx_level,
-                        fee_result: Some(fee_result),
-                        unique_identifiers,
-                    }))
+                    .map(|validation_result| {
+                        validation_result.map(|fee_result| CheckTxResult {
+                            level: check_tx_level,
+                            fee_result: Some(fee_result),
+                            unique_identifiers,
+                        })
+                    })
             } else {
                 Ok(ValidationResult::new_with_data(CheckTxResult {
                     level: check_tx_level,

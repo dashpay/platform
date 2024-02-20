@@ -10,13 +10,13 @@ use dpp::prelude::IdentityNonce;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+use crate::platform::transition::put_document::PutSettings;
 use crate::{Error, Sdk};
 use dpp::state_transition::identity_credit_withdrawal_transition::methods::IdentityCreditWithdrawalTransitionMethodsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::withdrawal::Pooling;
 use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
-use crate::platform::transition::put_document::PutSettings;
 
 #[async_trait::async_trait]
 pub trait WithdrawFromIdentity {
@@ -42,8 +42,7 @@ impl WithdrawFromIdentity for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
-        let new_identity_contract_nonce =
-            sdk.get_identity_nonce(self.id(), true, settings).await?;
+        let new_identity_contract_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
         let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
             self,
             CoreScript::new(address.script_pubkey()),

@@ -131,10 +131,7 @@ where
     ) -> Result<Option<Self>, Error> {
         let request = query.query(sdk.prove())?;
 
-        let response = request
-            .clone()
-            .execute(sdk, settings)
-            .await?;
+        let response = request.clone().execute(sdk, settings).await?;
 
         let object_type = std::any::type_name::<Self>().to_string();
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");

@@ -20,7 +20,7 @@ use rs_dapi_client::{DapiRequest, RequestSettings};
 /// The options when putting something to platform
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PutSettings {
-    pub request_settings : RequestSettings,
+    pub request_settings: RequestSettings,
     pub identity_nonce_stale_time_s: Option<u64>,
 }
 
@@ -61,7 +61,6 @@ pub trait PutDocument<S: Signer> {
 
 #[async_trait::async_trait]
 impl<S: Signer> PutDocument<S> for Document {
-
     async fn put_to_platform(
         &self,
         sdk: &Sdk,
@@ -76,7 +75,7 @@ impl<S: Signer> PutDocument<S> for Document {
                 self.owner_id(),
                 document_type.data_contract_id(),
                 true,
-                settings
+                settings,
             )
             .await?;
         let transition = DocumentsBatchTransition::new_document_creation_transition_from_document(
@@ -94,7 +93,10 @@ impl<S: Signer> PutDocument<S> for Document {
 
         let request = transition.broadcast_request_for_state_transition()?;
 
-        request.clone().execute(sdk, settings.unwrap_or_default().request_settings).await?;
+        request
+            .clone()
+            .execute(sdk, settings.unwrap_or_default().request_settings)
+            .await?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
 

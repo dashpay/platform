@@ -65,15 +65,15 @@ impl Drive {
             drive_operations,
             &platform_version.drive,
         ) {
-            Ok(Some(Item(encoded_revision, _))) => {
-                let revision =
-                    Revision::from_be_bytes(encoded_revision.try_into().map_err(|_| {
+            Ok(Some(Item(encoded_nonce, _))) => {
+                let nonce =
+                    IdentityNonce::from_be_bytes(encoded_nonce.try_into().map_err(|_| {
                         Error::Drive(DriveError::CorruptedElementType(
                             "identity contract nonce was not 8 bytes as expected",
                         ))
                     })?);
 
-                Ok(Some(revision))
+                Ok(Some(nonce))
             }
 
             Ok(None) => Ok(None),
