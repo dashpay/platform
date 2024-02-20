@@ -94,6 +94,8 @@ pub struct DriveVerifyIdentityMethodVersions {
     pub verify_identity_id_by_public_key_hash: FeatureVersion,
     pub verify_identity_ids_by_public_key_hashes: FeatureVersion,
     pub verify_identity_keys_by_identity_id: FeatureVersion,
+    pub verify_identity_nonce: FeatureVersion,
+    pub verify_identity_contract_nonce: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -459,6 +461,7 @@ pub struct DriveIdentityWithdrawalTransactionQueueMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityContractInfoMethodVersions {
     pub add_potential_contract_info_for_contract_bounded_key: FeatureVersion,
+    pub merge_identity_contract_nonce: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -467,6 +470,7 @@ pub struct DriveIdentityCostEstimationMethodVersions {
     pub for_balances: FeatureVersion,
     pub for_contract_info: FeatureVersion,
     pub for_contract_info_group: FeatureVersion,
+    pub for_contract_info_group_keys: FeatureVersion,
     pub for_contract_info_group_key_purpose: FeatureVersion,
     pub for_keys_for_identity_id: FeatureVersion,
     pub for_negative_credit: FeatureVersion,
@@ -500,6 +504,8 @@ pub struct DriveIdentityFetchPublicKeyHashesMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityFetchAttributesMethodVersions {
     pub revision: FeatureVersion,
+    pub nonce: FeatureVersion,
+    pub identity_contract_nonce: FeatureVersion,
     pub balance: FeatureVersion,
     pub balance_include_debt: FeatureVersion,
     pub negative_balance: FeatureVersion,
@@ -522,6 +528,8 @@ pub struct DriveIdentityFetchPartialIdentityMethodVersions {
 pub struct DriveIdentityProveMethodVersions {
     pub full_identity: FeatureVersion,
     pub full_identities: FeatureVersion,
+    pub identity_nonce: FeatureVersion,
+    pub identity_contract_nonce: FeatureVersion,
     pub prove_full_identities_by_unique_public_key_hashes: FeatureVersion,
     pub prove_full_identity_by_unique_public_key_hash: FeatureVersion,
     pub prove_identity_id_by_unique_public_key_hash: FeatureVersion,
@@ -579,6 +587,7 @@ pub struct DriveIdentityInsertMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityUpdateMethodVersions {
     pub update_identity_revision: FeatureVersion,
+    pub merge_identity_nonce: FeatureVersion,
     pub update_identity_negative_credit_operation: FeatureVersion,
     pub initialize_identity_revision: FeatureVersion,
     pub disable_identity_keys: FeatureVersion,

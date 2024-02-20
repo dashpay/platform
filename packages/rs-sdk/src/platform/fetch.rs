@@ -103,9 +103,50 @@ where
         }
     }
 
-    /// Fetch single object from the Platfom by identifier.
+    /// Fetch single object from the Platfom.
     ///
-    /// Conveniance method that allows fetching objects by identifier for types that implement [Query] for [Identifier].
+    /// Fetch object from the platform that satisfies provided [Query].
+    /// Most often, the Query is an [Identifier] of the object to be fetched.
+    ///
+    /// ## Parameters
+    ///
+    /// - `sdk`: An instance of [Sdk].
+    /// - `query`: A query parameter implementing [`crate::platform::query::Query`] to specify the data to be fetched.
+    /// - `settings`: Request settings for the connection to Platform.
+    ///
+    /// ## Returns
+    ///
+    /// Returns:
+    /// * `Ok(Some(Self))` when object is found
+    /// * `Ok(None)` when object is not found
+    /// * [`Err(Error)`](Error) when an error occurs
+    ///
+    /// ## Error Handling
+    ///
+    /// Any errors encountered during the execution are returned as [Error] instances.
+    async fn fetch_with_settings<Q: Query<<Self as Fetch>::Request>>(
+        sdk: &Sdk,
+        query: Q,
+        settings: RequestSettings,
+    ) -> Result<Option<Self>, Error> {
+        let request = query.query(sdk.prove())?;
+
+        let response = request.clone().execute(sdk, settings).await?;
+
+        let object_type = std::any::type_name::<Self>().to_string();
+        tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
+
+        let object: Option<Self> = sdk.parse_proof(request, response)?;
+
+        match object {
+            Some(item) => Ok(item.into()),
+            None => Ok(None),
+        }
+    }
+
+    /// Fetch single object from the Platform by identifier.
+    ///
+    /// Convenience method that allows fetching objects by identifier for types that implement [Query] for [Identifier].
     ///
     /// See [`Fetch::fetch()`] for more details.
     ///
@@ -135,6 +176,14 @@ impl Fetch for Document {
 
 impl Fetch for drive_proof_verifier::types::IdentityBalance {
     type Request = platform_proto::GetIdentityBalanceRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::IdentityNonceFetcher {
+    type Request = platform_proto::GetIdentityNonceRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::IdentityContractNonceFetcher {
+    type Request = platform_proto::GetIdentityContractNonceRequest;
 }
 
 impl Fetch for drive_proof_verifier::types::IdentityBalanceAndRevision {

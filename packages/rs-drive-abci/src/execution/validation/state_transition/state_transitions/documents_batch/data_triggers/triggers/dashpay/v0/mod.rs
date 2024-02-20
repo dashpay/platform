@@ -38,7 +38,12 @@ pub fn create_contact_request_data_trigger_v0(
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
-    let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
+    let data_contract_fetch_info = document_transition
+        .base()
+        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "expecting action to have a base",
+        )))?
+        .data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
     let mut result = DataTriggerExecutionResult::default();
     let is_dry_run = context.state_transition_execution_context.in_dry_run();
@@ -50,7 +55,12 @@ pub fn create_contact_request_data_trigger_v0(
             return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
                 format!(
                     "the Document Transition {} isn't 'CREATE",
-                    document_transition.base().id()
+                    document_transition
+                        .base()
+                        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "expecting action to have a base"
+                        )))?
+                        .id()
                 ),
             )))
         }
@@ -68,7 +78,12 @@ pub fn create_contact_request_data_trigger_v0(
         if owner_id == &to_user_id {
             let err = DataTriggerConditionError::new(
                 data_contract.id(),
-                document_transition.base().id(),
+                document_transition
+                    .base()
+                    .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "expecting action to have a base",
+                    )))?
+                    .id(),
                 format!("Identity {to_user_id} must not be equal to owner id"),
             );
 
@@ -128,6 +143,7 @@ pub fn create_contact_request_data_trigger_v0(
 mod test {
     use dpp::block::block_info::BlockInfo;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
+    use std::collections::BTreeMap;
     use std::sync::Arc;
 
     use dpp::document::{DocumentV0Getters, DocumentV0Setters};
@@ -150,6 +166,8 @@ mod test {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
+
+        let mut nonce_counter = BTreeMap::new();
         let state_read_guard = platform.state.read().unwrap();
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
@@ -175,10 +193,13 @@ mod test {
             .document_type_for_name("contactRequest")
             .expect("expected a contact request");
 
-        let document_transitions = get_document_transitions_fixture([(
-            DocumentTransitionActionType::Create,
-            vec![(contact_request_document, document_type, Bytes32::default())],
-        )]);
+        let document_transitions = get_document_transitions_fixture(
+            [(
+                DocumentTransitionActionType::Create,
+                vec![(contact_request_document, document_type, Bytes32::default())],
+            )],
+            &mut nonce_counter,
+        );
         let document_transition = document_transitions
             .first()
             .expect("document transition should be present");
@@ -217,6 +238,9 @@ mod test {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
+
+        let mut nonce_counter = BTreeMap::new();
+
         let mut state_write_guard = platform.state.write().unwrap();
 
         state_write_guard.set_last_committed_block_info(Some(
@@ -262,10 +286,13 @@ mod test {
             .document_type_for_name("contactRequest")
             .expect("expected a contact request");
 
-        let document_transitions = get_document_transitions_fixture([(
-            DocumentTransitionActionType::Create,
-            vec![(contact_request_document, document_type, Bytes32::default())],
-        )]);
+        let document_transitions = get_document_transitions_fixture(
+            [(
+                DocumentTransitionActionType::Create,
+                vec![(contact_request_document, document_type, Bytes32::default())],
+            )],
+            &mut nonce_counter,
+        );
         let document_transition = document_transitions
             .first()
             .expect("document transition should be present");
@@ -326,6 +353,9 @@ mod test {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
+
+        let mut nonce_counter = BTreeMap::new();
+
         let mut state_write_guard = platform.state.write().unwrap();
 
         state_write_guard.set_last_committed_block_info(Some(
@@ -374,10 +404,13 @@ mod test {
             .get_identifier("toUserId")
             .expect("expected to get toUserId");
 
-        let document_transitions = get_document_transitions_fixture([(
-            DocumentTransitionActionType::Create,
-            vec![(contact_request_document, document_type, Bytes32::default())],
-        )]);
+        let document_transitions = get_document_transitions_fixture(
+            [(
+                DocumentTransitionActionType::Create,
+                vec![(contact_request_document, document_type, Bytes32::default())],
+            )],
+            &mut nonce_counter,
+        );
         let document_transition = document_transitions
             .first()
             .expect("document transition should be present");

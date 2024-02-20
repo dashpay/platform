@@ -67,9 +67,13 @@ CF_EXTERN_C_BEGIN
 @class GetIdentityBalanceResponse_GetIdentityBalanceResponseV0;
 @class GetIdentityByPublicKeyHashRequest_GetIdentityByPublicKeyHashRequestV0;
 @class GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0;
+@class GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0;
+@class GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0;
 @class GetIdentityKeysRequest_GetIdentityKeysRequestV0;
 @class GetIdentityKeysResponse_GetIdentityKeysResponseV0;
 @class GetIdentityKeysResponse_GetIdentityKeysResponseV0_Keys;
+@class GetIdentityNonceRequest_GetIdentityNonceRequestV0;
+@class GetIdentityNonceResponse_GetIdentityNonceResponseV0;
 @class GetIdentityRequest_GetIdentityRequestV0;
 @class GetIdentityResponse_GetIdentityResponseV0;
 @class GetProofsRequest_GetProofsRequestV0;
@@ -280,6 +284,87 @@ typedef GPB_ENUM(GetIdentityRequest_GetIdentityRequestV0_FieldNumber) {
 GPB_FINAL @interface GetIdentityRequest_GetIdentityRequestV0 : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetIdentityNonceRequest
+
+typedef GPB_ENUM(GetIdentityNonceRequest_FieldNumber) {
+  GetIdentityNonceRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentityNonceRequest_Version_OneOfCase) {
+  GetIdentityNonceRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityNonceRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetIdentityNonceRequest : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityNonceRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityNonceRequest_GetIdentityNonceRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentityNonceRequest_ClearVersionOneOfCase(GetIdentityNonceRequest *message);
+
+#pragma mark - GetIdentityNonceRequest_GetIdentityNonceRequestV0
+
+typedef GPB_ENUM(GetIdentityNonceRequest_GetIdentityNonceRequestV0_FieldNumber) {
+  GetIdentityNonceRequest_GetIdentityNonceRequestV0_FieldNumber_IdentityId = 1,
+  GetIdentityNonceRequest_GetIdentityNonceRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetIdentityNonceRequest_GetIdentityNonceRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetIdentityContractNonceRequest
+
+typedef GPB_ENUM(GetIdentityContractNonceRequest_FieldNumber) {
+  GetIdentityContractNonceRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentityContractNonceRequest_Version_OneOfCase) {
+  GetIdentityContractNonceRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityContractNonceRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetIdentityContractNonceRequest : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityContractNonceRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentityContractNonceRequest_ClearVersionOneOfCase(GetIdentityContractNonceRequest *message);
+
+#pragma mark - GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0
+
+typedef GPB_ENUM(GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0_FieldNumber) {
+  GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0_FieldNumber_IdentityId = 1,
+  GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0_FieldNumber_ContractId = 2,
+  GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0_FieldNumber_Prove = 3,
+};
+
+GPB_FINAL @interface GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
 
 @property(nonatomic, readwrite) BOOL prove;
 
@@ -560,6 +645,120 @@ GPB_FINAL @interface GetIdentitiesResponse_GetIdentitiesResponseV0 : GPBMessage
  * Clears whatever value was set for the oneof 'result'.
  **/
 void GetIdentitiesResponse_GetIdentitiesResponseV0_ClearResultOneOfCase(GetIdentitiesResponse_GetIdentitiesResponseV0 *message);
+
+#pragma mark - GetIdentityNonceResponse
+
+typedef GPB_ENUM(GetIdentityNonceResponse_FieldNumber) {
+  GetIdentityNonceResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentityNonceResponse_Version_OneOfCase) {
+  GetIdentityNonceResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityNonceResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetIdentityNonceResponse : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityNonceResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityNonceResponse_GetIdentityNonceResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentityNonceResponse_ClearVersionOneOfCase(GetIdentityNonceResponse *message);
+
+#pragma mark - GetIdentityNonceResponse_GetIdentityNonceResponseV0
+
+typedef GPB_ENUM(GetIdentityNonceResponse_GetIdentityNonceResponseV0_FieldNumber) {
+  GetIdentityNonceResponse_GetIdentityNonceResponseV0_FieldNumber_IdentityNonce = 1,
+  GetIdentityNonceResponse_GetIdentityNonceResponseV0_FieldNumber_Proof = 2,
+  GetIdentityNonceResponse_GetIdentityNonceResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetIdentityNonceResponse_GetIdentityNonceResponseV0_Result_OneOfCase) {
+  GetIdentityNonceResponse_GetIdentityNonceResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityNonceResponse_GetIdentityNonceResponseV0_Result_OneOfCase_IdentityNonce = 1,
+  GetIdentityNonceResponse_GetIdentityNonceResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetIdentityNonceResponse_GetIdentityNonceResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityNonceResponse_GetIdentityNonceResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite) uint64_t identityNonce;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetIdentityNonceResponse_GetIdentityNonceResponseV0_ClearResultOneOfCase(GetIdentityNonceResponse_GetIdentityNonceResponseV0 *message);
+
+#pragma mark - GetIdentityContractNonceResponse
+
+typedef GPB_ENUM(GetIdentityContractNonceResponse_FieldNumber) {
+  GetIdentityContractNonceResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentityContractNonceResponse_Version_OneOfCase) {
+  GetIdentityContractNonceResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityContractNonceResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetIdentityContractNonceResponse : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityContractNonceResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentityContractNonceResponse_ClearVersionOneOfCase(GetIdentityContractNonceResponse *message);
+
+#pragma mark - GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0
+
+typedef GPB_ENUM(GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0_FieldNumber) {
+  GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0_FieldNumber_IdentityContractNonce = 1,
+  GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0_FieldNumber_Proof = 2,
+  GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0_Result_OneOfCase) {
+  GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0_Result_OneOfCase_IdentityContractNonce = 1,
+  GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite) uint64_t identityContractNonce;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0_ClearResultOneOfCase(GetIdentityContractNonceResponse_GetIdentityContractNonceResponseV0 *message);
 
 #pragma mark - GetIdentityBalanceResponse
 

@@ -13,6 +13,7 @@ mod data_contract;
 mod document;
 mod epoch;
 mod identity;
+mod identity_contract_nonce;
 mod mock_fetch;
 mod mock_fetch_many;
 mod protocol_version_vote_count;

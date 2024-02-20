@@ -87,7 +87,7 @@ where
 
         if !tenderdash_abci::check_version(&request.abci_version) {
             return Err(proto::ResponseException::from(format!(
-                "tenderdash requires ABCI version {}, our version is {}",
+                "tenderdash requires protobuf definitions version {}, our version is {}",
                 request.abci_version,
                 tenderdash_abci::proto::ABCI_VERSION
             )));
@@ -289,7 +289,7 @@ where
             let tx_action = match &state_transition_execution_result {
                 StateTransitionExecutionResult::SuccessfulExecution(_, _) => TxAction::Unmodified,
                 // We have identity to pay for the state transition, so we keep it in the block
-                StateTransitionExecutionResult::PaidConsensusError(_) => TxAction::Unmodified,
+                StateTransitionExecutionResult::PaidConsensusError(..) => TxAction::Unmodified,
                 // We don't have any associated identity to pay for the state transition,
                 // so we remove it from the block to prevent spam attacks.
                 // Such state transitions must be invalidated by check tx, but they might
@@ -557,7 +557,7 @@ where
                     matches!(
                         execution_result,
                         StateTransitionExecutionResult::SuccessfulExecution(_, _)
-                            | StateTransitionExecutionResult::PaidConsensusError(_)
+                            | StateTransitionExecutionResult::PaidConsensusError(..)
                     )
                 })
                 .map(|execution_result| {
@@ -786,13 +786,18 @@ where
                     (0, "".to_string())
                 };
 
-                let gas_wanted = validation_result
-                    .data
-                    .map(|fee_result| {
-                        fee_result
-                            .map(|fee_result| fee_result.total_base_fee())
-                            .unwrap_or_default()
-                    })
+                let check_tx_result = validation_result.data.unwrap_or_default();
+
+                let gas_wanted = check_tx_result
+                    .fee_result
+                    .map(|fee_result| fee_result.total_base_fee())
+                    .unwrap_or_default();
+
+                // Todo: IMPORTANT We need tenderdash to support multiple senders
+                let first_unique_identifier = check_tx_result
+                    .unique_identifiers
+                    .first()
+                    .cloned()
                     .unwrap_or_default();
 
                 Ok(ResponseCheckTx {
@@ -801,7 +806,7 @@ where
                     info,
                     gas_wanted: gas_wanted as SignedCredits,
                     codespace: "".to_string(),
-                    sender: "".to_string(),
+                    sender: first_unique_identifier,
                     priority: 0,
                 })
             }

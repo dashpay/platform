@@ -1,17 +1,31 @@
 //! [Sdk] entrypoint to Dash Platform.
 
-use std::sync::Arc;
+use std::collections::btree_map::Entry;
+use std::collections::BTreeMap;
+use std::sync::{Arc, RwLock};
 use std::{fmt::Debug, num::NonZeroUsize, ops::DerefMut};
 
 use crate::error::Error;
+use crate::internal_cache::InternalSdkCache;
 use crate::mock::MockResponse;
 #[cfg(feature = "mocks")]
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
+use crate::platform::transition::put_document::PutSettings;
+use crate::platform::{Fetch, Identifier};
 use dapi_grpc::mock::Mockable;
+use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0;
+use dapi_grpc::platform::v0::get_identity_contract_nonce_response::Version;
+use dapi_grpc::platform::v0::{
+    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, Proof,
+};
+use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
+use dpp::prelude;
+use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use drive_proof_verifier::types::{IdentityContractNonceFetcher, IdentityNonceFetcher};
 #[cfg(feature = "mocks")]
 use drive_proof_verifier::MockContextProvider;
-use drive_proof_verifier::{ContextProvider, FromProof};
+use drive_proof_verifier::{types, ContextProvider, FromProof};
 pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
@@ -23,6 +37,7 @@ use rs_dapi_client::{
 };
 #[cfg(feature = "mocks")]
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::Mutex;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
@@ -31,6 +46,14 @@ use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 /// How many quorum public keys fit in the cache.
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
+/// The default identity nonce stale time in seconds
+pub const DEFAULT_IDENTITY_NONCE_STALE_TIME_S: u64 = 1200; //20 mins
+
+/// a type to represent staleness in seconds
+pub type StalenessInSeconds = u64;
+
+/// The last query timestamp
+pub type LastQueryTimestamp = u64;
 
 /// Dash Platform SDK
 ///
@@ -61,6 +84,9 @@ pub struct Sdk {
     ///
     /// This is set to `true` by default. `false` is not implemented yet.
     proofs: bool,
+
+    /// An internal SDK cache managed exclusively by the SDK
+    internal_cache: InternalSdkCache,
 
     /// Context provider used by the SDK.
     ///
@@ -182,6 +208,189 @@ impl Sdk {
             mock.lock().expect("mock lock poisoned")
         } else {
             panic!("not a mock")
+        }
+    }
+
+    /// Updates or fetches the nonce for a given identity from the cache,
+    /// querying Platform if the cached value is stale or absent. Optionally
+    /// increments the nonce before storing it, based on the provided settings.
+    pub async fn get_identity_nonce(
+        &self,
+        identity_id: Identifier,
+        bump_first: bool,
+        settings: Option<PutSettings>,
+    ) -> Result<IdentityNonce, Error> {
+        let settings = settings.unwrap_or_default();
+        let current_time_s = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(n) => n.as_secs(),
+            Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+        };
+
+        // we start by only using a read lock, as this speeds up the system
+        let mut identity_nonce_counter = self.internal_cache.identity_nonce_counter.lock().await;
+        let entry = identity_nonce_counter.entry(identity_id);
+
+        let should_query_platform = match &entry {
+            Entry::Vacant(e) => true,
+            Entry::Occupied(e) => {
+                let (_, last_query_time) = e.get();
+                *last_query_time
+                    < current_time_s.saturating_sub(
+                        settings
+                            .identity_nonce_stale_time_s
+                            .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
+                    )
+            }
+        };
+
+        if should_query_platform {
+            let platform_nonce = IdentityNonceFetcher::fetch_with_settings(
+                &self,
+                identity_id,
+                settings.request_settings,
+            )
+            .await?
+            .unwrap_or(IdentityNonceFetcher(0))
+            .0;
+            match entry {
+                Entry::Vacant(e) => {
+                    let insert_nonce = if bump_first {
+                        platform_nonce + 1
+                    } else {
+                        platform_nonce
+                    };
+                    e.insert((insert_nonce, current_time_s));
+                    Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                }
+                Entry::Occupied(mut e) => {
+                    let (current_nonce, _) = e.get();
+                    let insert_nonce = if platform_nonce > *current_nonce {
+                        if bump_first {
+                            platform_nonce + 1
+                        } else {
+                            platform_nonce
+                        }
+                    } else {
+                        if bump_first {
+                            *current_nonce + 1
+                        } else {
+                            *current_nonce
+                        }
+                    };
+                    e.insert((insert_nonce, current_time_s));
+                    Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                }
+            }
+        } else {
+            match entry {
+                Entry::Vacant(_) => {
+                    panic!("this can not happen, vacant entry not possible");
+                }
+                Entry::Occupied(mut e) => {
+                    let (current_nonce, _) = e.get();
+                    if bump_first {
+                        let insert_nonce = current_nonce + 1;
+                        e.insert((insert_nonce, current_time_s));
+                        Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                    } else {
+                        Ok(*current_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Updates or fetches the nonce for a given identity and contract pair from a cache,
+    /// querying Platform if the cached value is stale or absent. Optionally
+    /// increments the nonce before storing it, based on the provided settings.
+    pub async fn get_identity_contract_nonce(
+        &self,
+        identity_id: Identifier,
+        contract_id: Identifier,
+        bump_first: bool,
+        settings: Option<PutSettings>,
+    ) -> Result<IdentityNonce, Error> {
+        let settings = settings.unwrap_or_default();
+        let current_time_s = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(n) => n.as_secs(),
+            Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+        };
+
+        // we start by only using a read lock, as this speeds up the system
+        let mut identity_contract_nonce_counter = self
+            .internal_cache
+            .identity_contract_nonce_counter
+            .lock()
+            .await;
+        let entry = identity_contract_nonce_counter.entry((identity_id, contract_id));
+
+        let should_query_platform = match &entry {
+            Entry::Vacant(e) => true,
+            Entry::Occupied(e) => {
+                let (_, last_query_time) = e.get();
+                *last_query_time
+                    < current_time_s.saturating_sub(
+                        settings
+                            .identity_nonce_stale_time_s
+                            .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
+                    )
+            }
+        };
+
+        if should_query_platform {
+            let platform_nonce = IdentityContractNonceFetcher::fetch_with_settings(
+                &self,
+                (identity_id, contract_id),
+                settings.request_settings,
+            )
+            .await?
+            .unwrap_or(IdentityContractNonceFetcher(0))
+            .0;
+            match entry {
+                Entry::Vacant(e) => {
+                    let insert_nonce = if bump_first {
+                        platform_nonce + 1
+                    } else {
+                        platform_nonce
+                    };
+                    e.insert((insert_nonce, current_time_s));
+                    Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                }
+                Entry::Occupied(mut e) => {
+                    let (current_nonce, _) = e.get();
+                    let insert_nonce = if platform_nonce > *current_nonce {
+                        if bump_first {
+                            platform_nonce + 1
+                        } else {
+                            platform_nonce
+                        }
+                    } else {
+                        if bump_first {
+                            *current_nonce + 1
+                        } else {
+                            *current_nonce
+                        }
+                    };
+                    e.insert((insert_nonce, current_time_s));
+                    Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                }
+            }
+        } else {
+            match entry {
+                Entry::Vacant(_) => {
+                    panic!("this can not happen, vacant entry not possible");
+                }
+                Entry::Occupied(mut e) => {
+                    let (current_nonce, _) = e.get();
+                    if bump_first {
+                        let insert_nonce = current_nonce + 1;
+                        e.insert((insert_nonce, current_time_s));
+                        Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                    } else {
+                        Ok(*current_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                    }
+                }
+            }
         }
     }
 
@@ -471,6 +680,7 @@ impl SdkBuilder {
                     cancel_token: self.cancel_token,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
+                    internal_cache: Default::default(),
                 };
                 let sdk = Arc::new(sdk);
 
@@ -517,6 +727,7 @@ impl SdkBuilder {
                     },
                     dump_dir: self.dump_dir,
                     proofs:self.proofs,
+                    internal_cache: Default::default(),
                     context_provider:  std::sync:: Mutex::new( Some(context_provider)),
                     cancel_token: self.cancel_token,
                 };

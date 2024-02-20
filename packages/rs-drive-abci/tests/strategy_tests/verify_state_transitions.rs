@@ -222,18 +222,37 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             proofs_request
                                 .documents
                                 .push(get_proofs_request_v0::DocumentRequest {
-                                    contract_id: transition.base().data_contract_id().to_vec(),
-                                    document_type: transition.base().document_type_name().clone(),
+                                    contract_id: transition
+                                        .base()
+                                        .expect("expected a base for the document transition")
+                                        .data_contract_id()
+                                        .to_vec(),
+                                    document_type: transition
+                                        .base()
+                                        .expect("expected a base for the document transition")
+                                        .document_type_name()
+                                        .clone(),
                                     document_type_keeps_history: transition
                                         .base()
+                                        .expect("expected a base for the document transition")
                                         .data_contract_fetch_info()
                                         .contract
                                         .document_type_for_name(
-                                            transition.base().document_type_name().as_str(),
+                                            transition
+                                                .base()
+                                                .expect(
+                                                    "expected a base for the document transition",
+                                                )
+                                                .document_type_name()
+                                                .as_str(),
                                         )
                                         .expect("get document type")
                                         .documents_keep_history(),
-                                    document_id: transition.base().id().to_vec(),
+                                    document_id: transition
+                                        .base()
+                                        .expect("expected a base for the document transition")
+                                        .id()
+                                        .to_vec(),
                                 });
                         });
                     let versioned_request = GetProofsRequest {
@@ -259,14 +278,17 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     for document_transition_action in
                         documents_batch_transition.transitions().iter()
                     {
-                        let contract_fetch_info =
-                            document_transition_action.base().data_contract_fetch_info();
+                        let contract_fetch_info = document_transition_action
+                            .base()
+                            .expect("expected a base for the document transition")
+                            .data_contract_fetch_info();
 
                         let document_type = contract_fetch_info
                             .contract
                             .document_type_for_name(
                                 document_transition_action
                                     .base()
+                                    .expect("expected a base for the document transition")
                                     .document_type_name()
                                     .as_str(),
                             )
@@ -274,14 +296,20 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         let query = SingleDocumentDriveQuery {
                             contract_id: document_transition_action
                                 .base()
+                                .expect("expected a base for the document transition")
                                 .data_contract_id()
                                 .into_buffer(),
                             document_type_name: document_transition_action
                                 .base()
+                                .expect("expected a base for the document transition")
                                 .document_type_name()
                                 .clone(),
                             document_type_keeps_history: document_type.documents_keep_history(),
-                            document_id: document_transition_action.base().id().into_buffer(),
+                            document_id: document_transition_action
+                                .base()
+                                .expect("expected a base for the document transition")
+                                .id()
+                                .into_buffer(),
                             block_time_ms: None, //None because we want latest
                         };
 
@@ -371,6 +399,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             DocumentTransitionAction::DeleteAction(_) => {
                                 // we expect no document
                                 assert!(document.is_none());
+                            }
+                            DocumentTransitionAction::BumpIdentityDataContractNonce(_) => {
+                                panic!("we should not have a bump identity data contract nonce");
                             }
                         }
                     }
@@ -683,6 +714,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         );
                     }
                 }
+                StateTransitionAction::BumpIdentityNonceAction(_) => {}
+                StateTransitionAction::BumpIdentityDataContractNonceAction(_) => {}
             }
         } else {
             // if we don't have an action this means there was a problem in the validation of the state transition

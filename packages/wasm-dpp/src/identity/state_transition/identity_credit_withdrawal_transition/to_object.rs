@@ -1,7 +1,7 @@
 use dpp::identity::KeyID;
 
 use dpp::identity::core_script::CoreScript;
-use dpp::prelude::Revision;
+use dpp::prelude::{IdentityNonce, Revision};
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::state_transition::StateTransitionIdentitySigned;
@@ -24,7 +24,7 @@ pub struct ToObject {
     pub core_fee_per_byte: u32,
     pub pooling: Pooling,
     pub output_script: CoreScript,
-    pub revision: Revision,
+    pub nonce: IdentityNonce,
     pub signature: Option<Vec<u8>>,
     pub signature_public_key_id: Option<KeyID>,
 }
@@ -40,7 +40,7 @@ pub fn to_object_struct(
         core_fee_per_byte: transition.core_fee_per_byte(),
         pooling: transition.pooling(),
         output_script: transition.output_script(),
-        revision: transition.revision(),
+        nonce: transition.nonce(),
         ..ToObject::default()
     };
 

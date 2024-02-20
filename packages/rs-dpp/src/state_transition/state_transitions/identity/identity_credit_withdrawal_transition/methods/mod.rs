@@ -8,6 +8,7 @@ use crate::identity::signer::Signer;
 use crate::identity::Identity;
 
 use crate::identity::core_script::CoreScript;
+use crate::prelude::IdentityNonce;
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 use crate::state_transition::StateTransition;
 use crate::version::PlatformVersion;
@@ -23,6 +24,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
         pooling: Pooling,
         core_fee_per_byte: u32,
         signer: S,
+        nonce: IdentityNonce,
         platform_version: &PlatformVersion,
         version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
@@ -39,6 +41,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
                 pooling,
                 core_fee_per_byte,
                 signer,
+                nonce,
                 platform_version,
                 version,
             )?),

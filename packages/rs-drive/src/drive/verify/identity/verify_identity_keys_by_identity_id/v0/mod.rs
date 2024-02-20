@@ -121,6 +121,7 @@ impl Drive {
                 )));
             }
         }
+
         let maybe_identity = Some(PartialIdentity {
             id: Identifier::from(identity_id),
             balance,
