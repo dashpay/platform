@@ -111,6 +111,7 @@ mod tests {
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
 
     use tenderdash_abci::Application;
+    use dpp::state_transition::StateTransition;
 
     pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
         let mut quorums = QuorumListExtendedInfo::new();
@@ -1836,6 +1837,217 @@ mod tests {
             ),
             "9d75c6b22b67f31516fe43e570839e654b8c43200861bf19a80e450c7694916c".to_string()
         )
+    }
+
+    #[test]
+    fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_max_nonce_gaps_with_epoch_change(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let created_contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
+            platform_version,
+        )
+            .expect("expected to get contract from a json document");
+
+        let contract = created_contract.data_contract();
+
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let document_deletion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionDelete,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..7,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_deletion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..7,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+                identity_contract_nonce_gaps: Some(Frequency {
+                    times_per_block_range: 24..25,
+                    chance_per_block: Some(1.0),
+                }),
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+        let day_in_ms = 1000 * 60 * 60 * 24;
+        let config = PlatformConfig {
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_rotation_block_count: 100,
+                ..Default::default()
+            },
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+
+        let block_count = 10;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        for tx_results_per_block in outcome.state_transition_results_per_block.values() {
+            for (state_transition, result) in tx_results_per_block {
+                assert_eq!(result.code, 0, "state transition got code {} : {:?}", result.code, state_transition);
+            }
+        }
+    }
+
+    #[test]
+    fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_higher_than_max_nonce_gaps_with_epoch_change(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let created_contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
+            platform_version,
+        )
+            .expect("expected to get contract from a json document");
+
+        let contract = created_contract.data_contract();
+
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let document_deletion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionDelete,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..7,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_deletion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..7,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+                identity_contract_nonce_gaps: Some(Frequency {
+                    times_per_block_range: 25..26,
+                    chance_per_block: Some(1.0),
+                }),
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+        let day_in_ms = 1000 * 60 * 60 * 24;
+        let config = PlatformConfig {
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_rotation_block_count: 100,
+                ..Default::default()
+            },
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+
+        let block_count = 10;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        for tx_results_per_block in outcome.state_transition_results_per_block.values() {
+            for (state_transition, result) in tx_results_per_block {
+                // We can't ever get a documents batch transition, because the proposer will remove it from a block
+                assert!(!matches!(state_transition, StateTransition::DocumentsBatch(_)));
+            }
+        }
     }
 
     #[test]
