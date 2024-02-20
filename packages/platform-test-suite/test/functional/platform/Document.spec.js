@@ -382,7 +382,8 @@ describe('Platform', () => {
 
       documentsBatchTransition.setTransitions(transitions);
       const identityContractNonce = await client.platform
-        .nonceManager.getIdentityContractNonce(identity.getId(), storedDocument.getDataContractId()) + 1;
+        .nonceManager
+        .getIdentityContractNonce(identity.getId(), storedDocument.getDataContractId()) + 1;
 
       documentsBatchTransition.setIdentityContractNonce(identityContractNonce);
       const signedTransition = await signStateTransition(
