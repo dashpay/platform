@@ -1,5 +1,4 @@
 import { ExtendedDocument } from '@dashevo/wasm-dpp';
-import GrpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes';
 import { Platform } from '../../Platform';
 import broadcastStateTransition from '../../broadcastStateTransition';
 import { signStateTransition } from '../../signStateTransition';
