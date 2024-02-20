@@ -56,21 +56,9 @@ export default async function broadcast(
 
   await signStateTransition(this, documentsBatchTransition, identity, 1);
 
-  try {
-    // Broadcast state transition also wait for the result to be obtained
-    await broadcastStateTransition(this, documentsBatchTransition);
-    this.nonceManager
-      .setIdentityContractNonce(identityId, dataContractId, identityContractNonce);
-  } catch (e) {
-    // Deadline exceeded would mean that state transition didn't make it to the block,
-    // so we will not update nonce in this case
-    if (e.code !== GrpcErrorCodes.DEADLINE_EXCEEDED) {
-      this.nonceManager
-        .setIdentityContractNonce(identityId, dataContractId, identityContractNonce);
-    }
-
-    throw e;
-  }
+  this.nonceManager.setIdentityContractNonce(identityId, dataContractId, identityContractNonce);
+  // Broadcast state transition also wait for the result to be obtained
+  await broadcastStateTransition(this, documentsBatchTransition);
 
   // Acknowledge documents identifiers to handle retry attempts to mitigate
   // state transition propagation lag

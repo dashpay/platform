@@ -1,5 +1,4 @@
 import { Identifier, Identity } from '@dashevo/wasm-dpp';
-import GrpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes';
 import broadcastStateTransition from '../../broadcastStateTransition';
 import { Platform } from '../../Platform';
 import { signStateTransition } from '../../signStateTransition';
@@ -33,21 +32,11 @@ export async function creditTransfer(
 
   await signStateTransition(this, identityCreditTransferTransition, identity, signerKeyIndex);
 
-  try {
-    // Skipping validation because it's already done above
-    await broadcastStateTransition(this, identityCreditTransferTransition, {
-      skipValidation: true,
-    });
-    this.nonceManager.setIdentityNonce(identity.getId(), identityNonce);
-  } catch (e) {
-    // Deadline exceeded would mean that state transition didn't make it to the block,
-    // so we will not update nonce in this case
-    if (e.code !== GrpcErrorCodes.DEADLINE_EXCEEDED) {
-      this.nonceManager.setIdentityNonce(identity.getId(), identityNonce);
-    }
-
-    throw e;
-  }
+  this.nonceManager.setIdentityNonce(identity.getId(), identityNonce);
+  // Skipping validation because it's already done above
+  await broadcastStateTransition(this, identityCreditTransferTransition, {
+    skipValidation: true,
+  });
 
   this.logger.silly('[Identity#creditTransfer] Broadcasted IdentityCreditTransferTransition');
 

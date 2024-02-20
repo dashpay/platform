@@ -1,4 +1,3 @@
-import GrpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes';
 import { Platform } from '../../Platform';
 import broadcastStateTransition from '../../broadcastStateTransition';
 import { signStateTransition } from '../../signStateTransition';
@@ -38,21 +37,9 @@ export default async function update(
   this.logger.silly(`[DataContract#update] Created data contract update transition ${dataContract.getId()}`);
 
   await signStateTransition(this, dataContractUpdateTransition, identity, 2);
-  try {
-    // Broadcast state transition also wait for the result to be obtained
-    await broadcastStateTransition(this, dataContractUpdateTransition);
-    this.nonceManager
-      .setIdentityContractNonce(identityId, dataContractId, identityContractNonce);
-  } catch (e) {
-    // Deadline exceeded would mean that state transition didn't make it to the block,
-    // so we will not update nonce in this case
-    if (e.code !== GrpcErrorCodes.DEADLINE_EXCEEDED) {
-      this.nonceManager
-        .setIdentityContractNonce(identityId, dataContractId, identityContractNonce);
-    }
-
-    throw e;
-  }
+  this.nonceManager.setIdentityContractNonce(identityId, dataContractId, identityContractNonce);
+  // Broadcast state transition also wait for the result to be obtained
+  await broadcastStateTransition(this, dataContractUpdateTransition);
 
   this.logger.silly(`[DataContract#update] Broadcasted data contract update transition ${dataContract.getId()}`);
   // Update app with updated data contract if available

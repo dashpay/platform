@@ -1,5 +1,4 @@
 import { Identity, IdentityPublicKey } from '@dashevo/wasm-dpp';
-import GrpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes';
 import { Platform } from '../../Platform';
 import { signStateTransition } from '../../signStateTransition';
 
@@ -95,21 +94,11 @@ export async function update(
   // }
   this.logger.silly('[Identity#update] Validated IdentityUpdateTransition');
 
-  try {
-    // Skipping validation because it's already done above
-    await broadcastStateTransition(this, identityUpdateTransition, {
-      skipValidation: true,
-    });
-    this.nonceManager.setIdentityNonce(identity.getId(), identityNonce);
-  } catch (e) {
-    // Deadline exceeded would mean that state transition didn't make it to the block,
-    // so we will not update nonce in this case
-    if (e.code !== GrpcErrorCodes.DEADLINE_EXCEEDED) {
-      this.nonceManager.setIdentityNonce(identity.getId(), identityNonce);
-    }
-
-    throw e;
-  }
+  this.nonceManager.setIdentityNonce(identity.getId(), identityNonce);
+  // Skipping validation because it's already done above
+  await broadcastStateTransition(this, identityUpdateTransition, {
+    skipValidation: true,
+  });
 
   this.logger.silly('[Identity#update] Broadcasted IdentityUpdateTransition');
 
