@@ -21,6 +21,9 @@ pub const IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES: u64 = 40;
 )]
 /// The result of the merge of the identity contract nonce
 pub enum MergeIdentityNonceResult {
+    /// The nonce is an invalid value
+    /// This could be 0
+    InvalidNonce,
     /// The nonce is too far in the future
     NonceTooFarInFuture,
     /// The nonce is too far in the past
@@ -41,7 +44,7 @@ impl Display for MergeIdentityNonceResult {
 
 impl MergeIdentityNonceResult {
     /// Gives a result from the enum
-    pub fn error_message(self) -> Option<&'static str> {
+    pub fn error_message(&self) -> Option<&'static str> {
         match self {
             MergeIdentityNonceResult::NonceTooFarInFuture => Some("nonce too far in future"),
             MergeIdentityNonceResult::NonceTooFarInPast => Some("nonce too far in past"),
@@ -52,6 +55,15 @@ impl MergeIdentityNonceResult {
                 Some("nonce already present in past")
             }
             MergeIdentityNonceResult::MergeIdentityNonceSuccess(_) => None,
+            MergeIdentityNonceResult::InvalidNonce => Some("nonce is an invalid value"),
+        }
+    }
+
+    /// Is this result an error?
+    pub fn is_error(&self) -> bool {
+        match self {
+            MergeIdentityNonceResult::MergeIdentityNonceSuccess(_) => false,
+            _ => true,
         }
     }
 }

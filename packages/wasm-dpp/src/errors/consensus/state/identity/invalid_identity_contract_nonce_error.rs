@@ -54,6 +54,7 @@ impl InvalidIdentityNonceErrorWasm {
             MergeIdentityNonceResult::MergeIdentityNonceSuccess(_) => {
                 js_sys::Error::new("no error")
             }
+            MergeIdentityNonceResult::InvalidNonce => js_sys::Error::new("invalid nonce"),
         }
     }
 

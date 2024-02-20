@@ -461,7 +461,7 @@ pub struct DriveIdentityWithdrawalTransactionQueueMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityContractInfoMethodVersions {
     pub add_potential_contract_info_for_contract_bounded_key: FeatureVersion,
-    pub merge_revision_nonce_for_identity_contract_pair: FeatureVersion,
+    pub merge_identity_contract_nonce: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

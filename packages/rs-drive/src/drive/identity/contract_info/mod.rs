@@ -1,7 +1,7 @@
 #[cfg(feature = "full")]
-pub mod keys;
+pub(crate) mod identity_contract_nonce;
 #[cfg(feature = "full")]
-pub(crate) mod revision_nonce;
+pub mod keys;
 
 /// The sub elements in the contract space for each identity.
 #[repr(u8)]

@@ -57,7 +57,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<FeeResult, Error> {
+    ) -> Result<(MergeIdentityNonceResult, Option<FeeResult>), Error> {
         match platform_version
             .drive
             .methods
