@@ -183,7 +183,7 @@ class PlatformPromiseClient {
    */
   getIdentityContractNonce(getIdentityContractNonceRequest, metadata = {}) {
     return promisify(
-      this.client.getIdentityContractNonceRequest.bind(this.client),
+      this.client.getIdentityContractNonce.bind(this.client),
     )(
       getIdentityContractNonceRequest,
       metadata,
@@ -197,7 +197,7 @@ class PlatformPromiseClient {
    */
   getIdentityNonce(getIdentityNonceRequest, metadata = {}) {
     return promisify(
-      this.client.getIdentityNonceRequest.bind(this.client),
+      this.client.getIdentityNonce.bind(this.client),
     )(
       getIdentityNonceRequest,
       metadata,
