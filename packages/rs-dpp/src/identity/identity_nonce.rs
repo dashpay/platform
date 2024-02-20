@@ -12,7 +12,7 @@ use platform_value::Identifier;
 
 pub const IDENTITY_NONCE_VALUE_FILTER: u64 = 0xFFFFFFFFFF;
 pub const MISSING_IDENTITY_REVISIONS_FILTER: u64 = 0xFFFFFF0000000000;
-pub const MAX_MISSING_IDENTITY_REVISIONS: u64 = 20;
+pub const MAX_MISSING_IDENTITY_REVISIONS: u64 = 24;
 pub const MISSING_IDENTITY_REVISIONS_MAX_BYTES: u64 = MAX_MISSING_IDENTITY_REVISIONS;
 pub const IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES: u64 = 40;
 
@@ -92,7 +92,7 @@ pub fn validate_identity_nonce_update(
             }),
         ));
     } else if actual_existing_revision < new_revision_nonce {
-        if new_revision_nonce - actual_existing_revision >= MISSING_IDENTITY_REVISIONS_MAX_BYTES {
+        if new_revision_nonce - actual_existing_revision > MISSING_IDENTITY_REVISIONS_MAX_BYTES {
             // we are too far away from the actual revision
             return SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(
                 StateError::InvalidIdentityNonceError(InvalidIdentityNonceError {
@@ -105,7 +105,7 @@ pub fn validate_identity_nonce_update(
         }
     } else {
         let previous_revision_position_from_top = actual_existing_revision - new_revision_nonce;
-        if previous_revision_position_from_top >= MISSING_IDENTITY_REVISIONS_MAX_BYTES {
+        if previous_revision_position_from_top > MISSING_IDENTITY_REVISIONS_MAX_BYTES {
             // we are too far away from the actual revision
             return SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(
                 StateError::InvalidIdentityNonceError(InvalidIdentityNonceError {
@@ -117,10 +117,15 @@ pub fn validate_identity_nonce_update(
             ));
         } else {
             let old_missing_revisions = existing_nonce & MISSING_IDENTITY_REVISIONS_FILTER;
-            let byte_to_unset = 1
-                << (previous_revision_position_from_top - 1
-                    + IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES);
-            let old_revision_already_set = (old_missing_revisions & !byte_to_unset) > 0;
+            let old_revision_already_set = if old_missing_revisions == 0 {
+                true
+            } else {
+                let byte_to_unset = 1
+                    << (previous_revision_position_from_top - 1
+                        + IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES);
+                old_missing_revisions | byte_to_unset != old_missing_revisions
+            };
+
             if old_revision_already_set {
                 return SimpleConsensusValidationResult::new_with_error(
                     ConsensusError::StateError(StateError::InvalidIdentityNonceError(
@@ -138,4 +143,115 @@ pub fn validate_identity_nonce_update(
         }
     }
     SimpleConsensusValidationResult::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::consensus::state::state_error::StateError;
+    use crate::consensus::ConsensusError;
+    use crate::identity::identity_nonce::{
+        validate_identity_nonce_update, MergeIdentityNonceResult,
+    };
+    use platform_value::Identifier;
+
+    #[test]
+    fn validate_identity_nonce_not_changed() {
+        let tip = 50;
+        let new_nonce = tip;
+        let identity_id = Identifier::default();
+        let result = validate_identity_nonce_update(tip, new_nonce, identity_id);
+
+        let Some(ConsensusError::StateError(StateError::InvalidIdentityNonceError(e))) =
+            result.errors.first()
+        else {
+            panic!("expected state error");
+        };
+        assert_eq!(e.error, MergeIdentityNonceResult::NonceAlreadyPresentAtTip);
+    }
+
+    #[test]
+    fn validate_identity_nonce_update_too_far_in_past() {
+        let tip = 50;
+        let new_nonce = tip - 25;
+        let identity_id = Identifier::default();
+        let result = validate_identity_nonce_update(tip, new_nonce, identity_id);
+
+        let Some(ConsensusError::StateError(StateError::InvalidIdentityNonceError(e))) =
+            result.errors.first()
+        else {
+            panic!("expected state error");
+        };
+        assert_eq!(e.error, MergeIdentityNonceResult::NonceTooFarInPast);
+    }
+
+    #[test]
+    fn validate_identity_nonce_update_too_far_in_future() {
+        let tip = 50;
+        let new_nonce = tip + 25;
+        let identity_id = Identifier::default();
+        let result = validate_identity_nonce_update(tip, new_nonce, identity_id);
+
+        let Some(ConsensusError::StateError(StateError::InvalidIdentityNonceError(e))) =
+            result.errors.first()
+        else {
+            panic!("expected state error");
+        };
+        assert_eq!(e.error, MergeIdentityNonceResult::NonceTooFarInFuture);
+    }
+
+    #[test]
+    fn validate_identity_nonce_update_already_in_past_no_missing_in_nonce() {
+        let tip = 50;
+        let new_nonce = tip - 24;
+        let identity_id = Identifier::default();
+        let result = validate_identity_nonce_update(tip, new_nonce, identity_id);
+
+        let Some(ConsensusError::StateError(StateError::InvalidIdentityNonceError(e))) =
+            result.errors.first()
+        else {
+            panic!("expected state error");
+        };
+        assert_eq!(
+            e.error,
+            MergeIdentityNonceResult::NonceAlreadyPresentInPast(24)
+        );
+    }
+
+    #[test]
+    fn validate_identity_nonce_update_already_in_past_some_missing_in_nonce() {
+        let tip = 50 | 0x0FFF000000000000;
+        let new_nonce = 50 - 24;
+        let identity_id = Identifier::default();
+        let result = validate_identity_nonce_update(tip, new_nonce, identity_id);
+
+        let Some(ConsensusError::StateError(StateError::InvalidIdentityNonceError(e))) =
+            result.errors.first()
+        else {
+            panic!("expected state error");
+        };
+        assert_eq!(
+            e.error,
+            MergeIdentityNonceResult::NonceAlreadyPresentInPast(24)
+        );
+    }
+
+    #[test]
+    fn validate_identity_nonce_update_not_in_past_some_missing_in_nonce() {
+        let tip = 50 | 0x0FFF000000000000;
+        let new_nonce = 50 - 20;
+        let identity_id = Identifier::default();
+        let result = validate_identity_nonce_update(tip, new_nonce, identity_id);
+
+        assert!(result.errors.is_empty())
+    }
+
+    #[test]
+    fn validate_identity_nonce_in_close_future() {
+        let tip = 50 | 0x0FFF000000000000;
+        let new_nonce = 50 + 24;
+        let identity_id = Identifier::default();
+        let result = validate_identity_nonce_update(tip, new_nonce, identity_id);
+
+        assert!(result.errors.is_empty())
+    }
 }

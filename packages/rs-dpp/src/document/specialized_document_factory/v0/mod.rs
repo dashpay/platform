@@ -30,6 +30,7 @@ use crate::state_transition::documents_batch_transition::{
     },
     DocumentsBatchTransition, DocumentsBatchTransitionV0,
 };
+use crate::state_transition::errors::StateTransitionError;
 use itertools::Itertools;
 
 const PROPERTY_FEATURE_VERSION: &str = "$version";
@@ -210,29 +211,29 @@ impl SpecializedDocumentFactoryV0 {
 
         let transitions: Vec<_> = documents
             .into_iter()
-            .filter_map(|(action, documents)| match action {
-                DocumentTransitionActionType::Create => Some(Self::document_create_transitions(
-                    documents,
-                    nonce_counter,
-                    platform_version,
-                )),
-                DocumentTransitionActionType::Delete => Some(Self::document_delete_transitions(
+            .map(|(action, documents)| match action {
+                DocumentTransitionActionType::Create => {
+                    Self::document_create_transitions(documents, nonce_counter, platform_version)
+                }
+                DocumentTransitionActionType::Delete => Self::document_delete_transitions(
                     documents
                         .into_iter()
                         .map(|(document, document_type, _)| (document, document_type))
                         .collect(),
                     nonce_counter,
                     platform_version,
-                )),
-                DocumentTransitionActionType::Replace => Some(Self::document_replace_transitions(
+                ),
+                DocumentTransitionActionType::Replace => Self::document_replace_transitions(
                     documents
                         .into_iter()
                         .map(|(document, document_type, _)| (document, document_type))
                         .collect(),
                     nonce_counter,
                     platform_version,
+                ),
+                _ => Err(ProtocolError::InvalidStateTransitionType(
+                    "action type not accounted for".to_string(),
                 )),
-                _ => None,
             })
             .collect::<Result<Vec<_>, ProtocolError>>()?
             .into_iter()
