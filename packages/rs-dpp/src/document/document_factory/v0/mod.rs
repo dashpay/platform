@@ -31,7 +31,6 @@ use crate::state_transition::documents_batch_transition::{
     },
     DocumentsBatchTransition, DocumentsBatchTransitionV0,
 };
-use crate::state_transition::errors::StateTransitionError;
 use itertools::Itertools;
 
 const PROPERTY_FEATURE_VERSION: &str = "$version";
