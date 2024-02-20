@@ -129,8 +129,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
         self.0.nonce() as u64
     }
 
-    #[wasm_bindgen(js_name=setRevision)]
-    pub fn set_revision(&mut self, revision: u64) {
+    #[wasm_bindgen(js_name=setNonce)]
+    pub fn set_nonce(&mut self, revision: u64) {
         self.0.set_nonce(revision);
     }
 
