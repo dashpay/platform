@@ -214,8 +214,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
 
         js_sys::Reflect::set(
             &js_object,
-            &"revision".to_owned().into(),
-            &JsValue::from(object.revision),
+            &"nonce".to_owned().into(),
+            &JsValue::from(object.nonce),
         )?;
 
         Ok(js_object.into())
@@ -310,8 +310,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
 
         js_sys::Reflect::set(
             &js_object,
-            &"revision".to_owned().into(),
-            &JsValue::from(&format!("{}", object.revision)),
+            &"nonce".to_owned().into(),
+            &JsValue::from(&format!("{}", object.nonce)),
         )?;
 
         Ok(js_object.into())
