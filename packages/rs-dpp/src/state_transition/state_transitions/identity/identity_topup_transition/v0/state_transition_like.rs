@@ -1,10 +1,7 @@
 use platform_value::BinaryData;
 
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use crate::{
-    prelude::Identifier,
-    state_transition::{StateTransitionLike, StateTransitionType},
-};
+use crate::{prelude::Identifier, ProtocolError, state_transition::{StateTransitionLike, StateTransitionType}};
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 
@@ -48,5 +45,21 @@ impl StateTransitionLike for IdentityTopUpTransitionV0 {
     /// Get owner ID
     fn owner_id(&self) -> Identifier {
         self.identity_id
+    }
+
+    /// We want transactions to be unique based on the asset lock proof, here there is a
+    /// conflict on purpose with identity create transitions
+    fn unique_identifiers(&self) -> Vec<String> {
+        let identifier = self.asset_lock_proof.create_identifier();
+        match identifier {
+            Ok(identifier) => {
+                vec![base64::encode(identifier)]
+            }
+            Err(_) => {
+                // no unique identifier, this won't actually occur on Platform
+                // as we ask for the unique identifier after validation
+                vec![String::default()]
+            }
+        }
     }
 }

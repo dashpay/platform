@@ -17,10 +17,18 @@ use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
 
+/// The options when putting something to platform
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PutSettings {
+    pub request_settings : RequestSettings,
+    pub identity_nonce_stale_time_s: Option<u64>,
+}
+
 #[async_trait::async_trait]
 /// A trait for putting an identity to platform
 pub trait PutDocument<S: Signer> {
     /// Puts an identity on platform
+    /// setting settings to `None` sets default connection behavior
     async fn put_to_platform(
         &self,
         sdk: &Sdk,
@@ -28,6 +36,7 @@ pub trait PutDocument<S: Signer> {
         document_state_transition_entropy: [u8; 32],
         identity_public_key: IdentityPublicKey,
         signer: &S,
+        settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error>;
 
     /// Waits for the response of a state transition after it has been broadcast
@@ -48,20 +57,11 @@ pub trait PutDocument<S: Signer> {
         data_contract: Arc<DataContract>,
         signer: &S,
     ) -> Result<Document, Error>;
-
-    async fn put_to_platform_with_settings(
-        &self,
-        sdk: &Sdk,
-        document_type: DocumentType,
-        document_state_transition_entropy: [u8; 32],
-        identity_public_key: IdentityPublicKey,
-        signer: &S,
-        settings: RequestSettings,
-    ) -> Result<StateTransition, Error>;
 }
 
 #[async_trait::async_trait]
 impl<S: Signer> PutDocument<S> for Document {
+
     async fn put_to_platform(
         &self,
         sdk: &Sdk,
@@ -69,33 +69,14 @@ impl<S: Signer> PutDocument<S> for Document {
         document_state_transition_entropy: [u8; 32],
         identity_public_key: IdentityPublicKey,
         signer: &S,
-    ) -> Result<StateTransition, Error> {
-        self.put_to_platform_with_settings(
-            sdk,
-            document_type,
-            document_state_transition_entropy,
-            identity_public_key,
-            signer,
-            RequestSettings::default(),
-        )
-        .await
-    }
-
-    async fn put_to_platform_with_settings(
-        &self,
-        sdk: &Sdk,
-        document_type: DocumentType,
-        document_state_transition_entropy: [u8; 32],
-        identity_public_key: IdentityPublicKey,
-        signer: &S,
-        settings: RequestSettings,
+        settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
         let new_identity_contract_nonce = sdk
             .get_identity_contract_nonce(
                 self.owner_id(),
                 document_type.data_contract_id(),
                 true,
-                &settings,
+                settings
             )
             .await?;
         let transition = DocumentsBatchTransition::new_document_creation_transition_from_document(
@@ -113,7 +94,7 @@ impl<S: Signer> PutDocument<S> for Document {
 
         let request = transition.broadcast_request_for_state_transition()?;
 
-        request.clone().execute(sdk, settings).await?;
+        request.clone().execute(sdk, settings.unwrap_or_default().request_settings).await?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
 
@@ -173,6 +154,7 @@ impl<S: Signer> PutDocument<S> for Document {
                 document_state_transition_entropy,
                 identity_public_key,
                 signer,
+                None,
             )
             .await?;
 

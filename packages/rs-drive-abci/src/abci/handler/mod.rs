@@ -786,14 +786,15 @@ where
                     (0, "".to_string())
                 };
 
-                let gas_wanted = validation_result
-                    .data
-                    .map(|fee_result| {
-                        fee_result
+                let check_tx_result = validation_result
+                    .data.unwrap_or_default();
+
+                let gas_wanted = check_tx_result.fee_result
                             .map(|fee_result| fee_result.total_base_fee())
-                            .unwrap_or_default()
-                    })
-                    .unwrap_or_default();
+                            .unwrap_or_default();
+
+                // Todo: IMPORTANT We need tenderdash to support multiple senders
+                let first_unique_identifier = check_tx_result.unique_identifiers.first().cloned().unwrap_or_default();
 
                 Ok(ResponseCheckTx {
                     code,
@@ -801,7 +802,7 @@ where
                     info,
                     gas_wanted: gas_wanted as SignedCredits,
                     codespace: "".to_string(),
-                    sender: "".to_string(),
+                    sender: first_unique_identifier,
                     priority: 0,
                 })
             }

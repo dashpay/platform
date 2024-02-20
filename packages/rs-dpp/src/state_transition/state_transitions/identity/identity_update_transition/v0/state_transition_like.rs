@@ -49,4 +49,9 @@ impl StateTransitionLike for IdentityUpdateTransitionV0 {
     fn owner_id(&self) -> Identifier {
         self.identity_id
     }
+
+    /// We want things to be unique based on the nonce, so we don't add the transition type
+    fn unique_identifiers(&self) -> Vec<String> {
+        vec![format!("{}-{:x}", base64::encode(self.identity_id), self.nonce)]
+    }
 }

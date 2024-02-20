@@ -24,7 +24,7 @@ use crate::identity::accessors::IdentityGettersV0;
 #[cfg(all(feature = "validation", feature = "identity-value-conversion"))]
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 use crate::identity::core_script::CoreScript;
-use crate::prelude::Revision;
+use crate::prelude::{IdentityNonce, Revision};
 #[cfg(all(feature = "identity-serialization", feature = "client"))]
 use crate::serialization::PlatformDeserializable;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
@@ -205,12 +205,13 @@ impl IdentityFactory {
         identity: &Identity,
         recipient_id: Identifier,
         amount: u64,
+        identity_nonce: IdentityNonce,
     ) -> Result<IdentityCreditTransferTransition, ProtocolError> {
         let identity_credit_transfer_transition = IdentityCreditTransferTransitionV0 {
             identity_id: identity.id(),
             recipient_id,
             amount,
-            nonce: identity.revision() + 1,
+            nonce: identity_nonce,
             ..Default::default()
         };
 
@@ -227,7 +228,7 @@ impl IdentityFactory {
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
-        revision: Revision,
+        identity_nonce: IdentityNonce,
     ) -> Result<IdentityCreditWithdrawalTransition, ProtocolError> {
         let mut identity_credit_withdrawal_transition =
             IdentityCreditWithdrawalTransitionV0::default();
@@ -236,7 +237,7 @@ impl IdentityFactory {
         identity_credit_withdrawal_transition.core_fee_per_byte = core_fee_per_byte;
         identity_credit_withdrawal_transition.pooling = pooling;
         identity_credit_withdrawal_transition.output_script = output_script;
-        identity_credit_withdrawal_transition.nonce = revision;
+        identity_credit_withdrawal_transition.nonce = identity_nonce;
 
         Ok(IdentityCreditWithdrawalTransition::from(
             identity_credit_withdrawal_transition,

@@ -24,10 +24,11 @@ use dpp::dashcore::{consensus, InstantLock, Transaction};
 
 use crate::identity::IdentityWasm;
 use dpp::identity::core_script::CoreScript;
-use dpp::prelude::Revision;
+use dpp::prelude::{IdentityNonce, Revision};
 use dpp::withdrawal::Pooling;
 use dpp::NonConsensusError;
 use serde::Deserialize;
+use dpp::fee::Credits;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name=IdentityFacade)]
@@ -235,12 +236,14 @@ impl IdentityFacadeWasm {
         identity: &IdentityWasm,
         recipient_id: &IdentifierWrapper,
         amount: u64,
+        identity_nonce: u64,
     ) -> Result<IdentityCreditTransferTransitionWasm, JsValue> {
         self.0
             .create_identity_credit_transfer_transition(
                 identity.inner(),
                 recipient_id.to_owned().into(),
                 amount,
+                identity_nonce,
             )
             .map(Into::into)
             .with_js_error()

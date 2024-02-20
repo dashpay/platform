@@ -190,12 +190,14 @@ impl IdentityFactoryWasm {
         identity: &IdentityWasm,
         recipient_id: &IdentifierWrapper,
         amount: u64,
+        identity_nonce: u64,
     ) -> Result<IdentityCreditTransferTransitionWasm, JsValue> {
         self.0
             .create_identity_credit_transfer_transition(
                 identity.inner(),
                 recipient_id.to_owned().into(),
                 amount,
+                identity_nonce,
             )
             .map(Into::into)
             .with_js_error()

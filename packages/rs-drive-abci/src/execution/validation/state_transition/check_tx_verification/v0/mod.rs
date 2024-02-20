@@ -9,6 +9,7 @@ use dpp::prelude::ConsensusValidationResult;
 
 use dpp::state_transition::{StateTransition};
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
+use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
@@ -263,6 +264,9 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     )),
                 )
             }
+        }
+        _ => {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution("CheckTxLevel must be first time check or recheck")))
         }
     }
 }

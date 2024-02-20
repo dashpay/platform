@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
-use crate::prelude::{Identifier, Revision};
+use crate::prelude::{Identifier, IdentityNonce, Revision};
 
 use crate::identity::identity_factory::IdentityFactory;
 #[cfg(feature = "state-transitions")]
@@ -106,9 +106,10 @@ impl IdentityFacade {
         identity: &Identity,
         recipient_id: Identifier,
         amount: u64,
+        identity_nonce: IdentityNonce,
     ) -> Result<IdentityCreditTransferTransition, ProtocolError> {
         self.factory
-            .create_identity_credit_transfer_transition(identity, recipient_id, amount)
+            .create_identity_credit_transfer_transition(identity, recipient_id, amount, identity_nonce)
     }
 
     #[cfg(feature = "state-transitions")]
@@ -119,7 +120,7 @@ impl IdentityFacade {
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
-        revision: Revision,
+        identity_nonce: u64,
     ) -> Result<IdentityCreditWithdrawalTransition, ProtocolError> {
         self.factory.create_identity_credit_withdrawal_transition(
             identity_id,
@@ -127,7 +128,7 @@ impl IdentityFacade {
             core_fee_per_byte,
             pooling,
             output_script,
-            revision,
+            identity_nonce,
         )
     }
 

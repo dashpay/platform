@@ -538,11 +538,13 @@ pub fn create_identity_credit_transfer_transition(
     signer: &mut SimpleSigner,
     amount: u64,
 ) -> StateTransition {
+    let nonce = identity_nonce_counter.entry(identity.id()).or_default();
+    *nonce += 1;
     let mut transition: StateTransition = IdentityCreditTransferTransitionV0 {
         identity_id: identity.id(),
         recipient_id: recipient.id(),
         amount,
-        nonce: identity.revision() + 1,
+        nonce: *nonce,
         signature_public_key_id: 0,
         signature: Default::default(),
     }

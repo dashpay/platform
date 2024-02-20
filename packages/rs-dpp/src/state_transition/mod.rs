@@ -311,6 +311,11 @@ impl StateTransition {
         call_method!(self, owner_id)
     }
 
+    /// returns the unique identifiers for the state transition
+    pub fn unique_identifiers(&self) -> Vec<String> {
+        call_method!(self, unique_identifiers)
+    }
+
     /// set a new signature
     pub fn set_signature(&mut self, signature: BinaryData) {
         call_method!(self, set_signature, signature)

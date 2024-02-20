@@ -388,7 +388,7 @@ impl FromProof<platform::GetIdentityNonceRequest> for IdentityNonceFetcher {
         provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
-        IdentityBalance: 'a,
+        IdentityNonceFetcher: 'a,
     {
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();
@@ -437,7 +437,7 @@ impl FromProof<platform::GetIdentityContractNonceRequest> for IdentityContractNo
         provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
-        IdentityBalance: 'a,
+        IdentityContractNonceFetcher: 'a,
     {
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();

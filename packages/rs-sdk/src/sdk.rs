@@ -28,12 +28,11 @@ use drive_proof_verifier::{types, ContextProvider, FromProof};
 pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
-use rs_dapi_client::transport::AppliedRequestSettings;
 pub use rs_dapi_client::AddressList;
 pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
-    DapiClient, DapiClientError, DapiRequestExecutor, DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
+    DapiClient, DapiClientError, DapiRequestExecutor,
 };
 #[cfg(feature = "mocks")]
 use std::path::{Path, PathBuf};
@@ -41,11 +40,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::Mutex;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
+use crate::platform::transition::put_document::PutSettings;
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 /// How many quorum public keys fit in the cache.
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
+/// The default identity nonce stale time in seconds
+pub const DEFAULT_IDENTITY_NONCE_STALE_TIME_S: u64 = 1200; //20 mins
 
 /// a type to represent staleness in seconds
 pub type StalenessInSeconds = u64;
@@ -216,8 +218,9 @@ impl Sdk {
         &self,
         identity_id: Identifier,
         bump_first: bool,
-        settings: &RequestSettings,
+        settings: Option<PutSettings>,
     ) -> Result<IdentityNonce, Error> {
+        let settings = settings.unwrap_or_default();
         let current_time_s = match SystemTime::now().duration_since(UNIX_EPOCH) {
             Ok(n) => n.as_secs(),
             Err(_) => panic!("SystemTime before UNIX EPOCH!"),
@@ -233,15 +236,14 @@ impl Sdk {
                 let (_, last_query_time) = e.get();
                 *last_query_time
                     < current_time_s.saturating_sub(
-                        settings
-                            .identity_nonce_stale_time_s
+                    settings.identity_nonce_stale_time_s
                             .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
                     )
             }
         };
 
         if should_query_platform {
-            let platform_nonce = IdentityNonceFetcher::fetch(&self, identity_id)
+            let platform_nonce = IdentityNonceFetcher::fetch_with_settings(&self, identity_id, settings.request_settings)
                 .await?
                 .unwrap_or(IdentityNonceFetcher(0))
                 .0;
@@ -301,8 +303,9 @@ impl Sdk {
         identity_id: Identifier,
         contract_id: Identifier,
         bump_first: bool,
-        settings: &RequestSettings,
+        settings: Option<PutSettings>,
     ) -> Result<IdentityNonce, Error> {
+        let settings = settings.unwrap_or_default();
         let current_time_s = match SystemTime::now().duration_since(UNIX_EPOCH) {
             Ok(n) => n.as_secs(),
             Err(_) => panic!("SystemTime before UNIX EPOCH!"),
@@ -322,8 +325,7 @@ impl Sdk {
                 let (_, last_query_time) = e.get();
                 *last_query_time
                     < current_time_s.saturating_sub(
-                        settings
-                            .identity_nonce_stale_time_s
+                    settings.identity_nonce_stale_time_s
                             .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
                     )
             }
@@ -331,7 +333,7 @@ impl Sdk {
 
         if should_query_platform {
             let platform_nonce =
-                IdentityContractNonceFetcher::fetch(&self, (identity_id, contract_id))
+                IdentityContractNonceFetcher::fetch_with_settings(&self, (identity_id, contract_id), settings.request_settings)
                     .await?
                     .unwrap_or(IdentityContractNonceFetcher(0))
                     .0;

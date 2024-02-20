@@ -16,6 +16,7 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::withdrawal::Pooling;
 use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
+use crate::platform::transition::put_document::PutSettings;
 
 #[async_trait::async_trait]
 pub trait WithdrawFromIdentity {
@@ -26,7 +27,7 @@ pub trait WithdrawFromIdentity {
         amount: u64,
         core_fee_per_byte: Option<u32>,
         signer: S,
-        settings: RequestSettings,
+        settings: Option<PutSettings>,
     ) -> Result<u64, Error>;
 }
 
@@ -39,10 +40,10 @@ impl WithdrawFromIdentity for Identity {
         amount: u64,
         core_fee_per_byte: Option<u32>,
         signer: S,
-        settings: RequestSettings,
+        settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
         let new_identity_contract_nonce =
-            sdk.get_identity_nonce(self.id(), true, &settings).await?;
+            sdk.get_identity_nonce(self.id(), true, settings).await?;
         let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
             self,
             CoreScript::new(address.script_pubkey()),
@@ -59,7 +60,7 @@ impl WithdrawFromIdentity for Identity {
 
         request
             .clone()
-            .execute(sdk, RequestSettings::default())
+            .execute(sdk, settings.unwrap_or_default().request_settings)
             .await?;
 
         let request = state_transition.wait_for_state_transition_result_request()?;
