@@ -1,6 +1,7 @@
 import DAPIClient from '@dashevo/dapi-client';
 import { Identifier } from '@dashevo/wasm-dpp';
 
+// TODO: re-fetch nonces by timeout
 class NonceManager {
   public dapiClient: DAPIClient;
 
