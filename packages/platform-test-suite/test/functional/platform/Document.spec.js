@@ -42,10 +42,11 @@ describe('Platform', () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
-      client.getApps().set('customContracts', {
-        contractId: dataContractFixture.getId(),
-        contract: dataContractFixture,
-      });
+      client.getApps()
+        .set('customContracts', {
+          contractId: dataContractFixture.getId(),
+          contract: dataContractFixture,
+        });
     });
 
     beforeEach(async () => {
@@ -60,16 +61,19 @@ describe('Platform', () => {
 
     it('should fail to create new document with an unknown type', async () => {
       // Add undefined document type for
-      client.getApps().get('customContracts').contract.setDocumentSchema('undefinedType', {
-        type: 'object',
-        properties: {
-          name: {
-            type: 'string',
-            position: 0,
+      client.getApps()
+        .get('customContracts')
+        .contract
+        .setDocumentSchema('undefinedType', {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              position: 0,
+            },
           },
-        },
-        additionalProperties: false,
-      });
+          additionalProperties: false,
+        });
 
       const newDocument = await client.platform.documents.create(
         'customContracts.undefinedType',
@@ -89,8 +93,16 @@ describe('Platform', () => {
         broadcastError = e;
       }
 
-      expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause()).to.be.an.instanceOf(InvalidDocumentTypeError);
+      expect(broadcastError)
+        .to
+        .be
+        .an
+        .instanceOf(StateTransitionBroadcastError);
+      expect(broadcastError.getCause())
+        .to
+        .be
+        .an
+        .instanceOf(InvalidDocumentTypeError);
     });
 
     it('should fail to create a new document with an unknown owner', async () => {
@@ -114,10 +126,14 @@ describe('Platform', () => {
         broadcastError = e;
       }
 
-      expect(broadcastError).to.exist();
-      expect(broadcastError.message).to.equal(
-        `Identity with ID ${unknownIdentity.getId()} is not associated with wallet, or it's not synced`,
-      );
+      expect(broadcastError)
+        .to
+        .exist();
+      expect(broadcastError.message)
+        .to
+        .equal(
+          `Identity with ID ${unknownIdentity.getId()} is not associated with wallet, or it's not synced`,
+        );
     });
 
     it('should fail to create a document that violates unique index constraint', async () => {
@@ -160,9 +176,16 @@ describe('Platform', () => {
         broadcastError = e;
       }
 
-      expect(broadcastError).to.exist();
-      expect(broadcastError.code).to.be.equal(4009);
-      expect(broadcastError.message).to.match(/Document \w* has duplicate unique properties \["\$ownerId", "firstName"] with other documents/);
+      expect(broadcastError)
+        .to
+        .exist();
+      expect(broadcastError.code)
+        .to
+        .be
+        .equal(4009);
+      expect(broadcastError.message)
+        .to
+        .match(/Document \w* has duplicate unique properties \["\$ownerId", "firstName"] with other documents/);
     });
 
     it('should be able to create new document', async () => {
@@ -189,20 +212,36 @@ describe('Platform', () => {
         { where: [['$id', '==', document.getId()]] },
       );
 
-      expect(fetchedDocument).to.exist();
-      expect(document.toObject()).to.deep.equal(fetchedDocument.toObject());
+      expect(fetchedDocument)
+        .to
+        .exist();
+      expect(document.toObject())
+        .to
+        .deep
+        .equal(fetchedDocument.toObject());
       expect(fetchedDocument.getUpdatedAt())
-        .to.be.deep.equal(fetchedDocument.getCreatedAt());
+        .to
+        .be
+        .deep
+        .equal(fetchedDocument.getCreatedAt());
     });
 
     it('should be able to fetch created document by created timestamp', async () => {
       const [fetchedDocument] = await client.platform.documents.get(
         'customContracts.indexedDocument',
-        { where: [['$createdAt', '==', document.getCreatedAt().getTime()]] },
+        {
+          where: [['$createdAt', '==', document.getCreatedAt()
+            .getTime()]],
+        },
       );
 
-      expect(fetchedDocument).to.exist();
-      expect(document.toObject()).to.deep.equal(fetchedDocument.toObject());
+      expect(fetchedDocument)
+        .to
+        .exist();
+      expect(document.toObject())
+        .to
+        .deep
+        .equal(fetchedDocument.toObject());
     });
 
     it('should be able to update document', async () => {
@@ -226,9 +265,13 @@ describe('Platform', () => {
           { where: [['$id', '==', document.getId()]] },
         );
 
-      expect(fetchedDocument.get('firstName')).to.equal('updatedName');
+      expect(fetchedDocument.get('firstName'))
+        .to
+        .equal('updatedName');
       expect(fetchedDocument.getUpdatedAt())
-        .to.be.greaterThan(fetchedDocument.getCreatedAt());
+        .to
+        .be
+        .greaterThan(fetchedDocument.getCreatedAt());
     });
 
     it.skip('should be able to prove that a document was updated', async () => {
@@ -261,21 +304,57 @@ describe('Platform', () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
-      expect(proof.rootTreeProof).to.be.an.instanceof(Uint8Array);
-      expect(proof.rootTreeProof.length).to.be.greaterThan(0);
+      expect(proof.rootTreeProof)
+        .to
+        .be
+        .an
+        .instanceof(Uint8Array);
+      expect(proof.rootTreeProof.length)
+        .to
+        .be
+        .greaterThan(0);
 
-      expect(proof.storeTreeProofs).to.exist();
-      expect(proof.storeTreeProofs.documentsProof).to.be.an.instanceof(Uint8Array);
-      expect(proof.storeTreeProofs.documentsProof.length).to.be.greaterThan(0);
+      expect(proof.storeTreeProofs)
+        .to
+        .exist();
+      expect(proof.storeTreeProofs.documentsProof)
+        .to
+        .be
+        .an
+        .instanceof(Uint8Array);
+      expect(proof.storeTreeProofs.documentsProof.length)
+        .to
+        .be
+        .greaterThan(0);
 
-      expect(proof.quorumHash).to.be.an.instanceof(Uint8Array);
-      expect(proof.quorumHash.length).to.be.equal(32);
+      expect(proof.quorumHash)
+        .to
+        .be
+        .an
+        .instanceof(Uint8Array);
+      expect(proof.quorumHash.length)
+        .to
+        .be
+        .equal(32);
 
-      expect(proof.signature).to.be.an.instanceof(Uint8Array);
-      expect(proof.signature.length).to.be.equal(96);
+      expect(proof.signature)
+        .to
+        .be
+        .an
+        .instanceof(Uint8Array);
+      expect(proof.signature.length)
+        .to
+        .be
+        .equal(96);
 
-      expect(proof.round).to.be.a('number');
-      expect(proof.round).to.be.greaterThanOrEqual(0);
+      expect(proof.round)
+        .to
+        .be
+        .a('number');
+      expect(proof.round)
+        .to
+        .be
+        .greaterThanOrEqual(0);
     });
 
     it('should fail to update document with timestamp in violated time frame', async () => {
@@ -302,7 +381,10 @@ describe('Platform', () => {
       transitions[0].setUpdatedAt(updatedAt);
 
       documentsBatchTransition.setTransitions(transitions);
-      documentsBatchTransition.setIdentityContractNonce(6);
+      const identityContractNonce = await client.platform
+        .nonceManager.getIdentityContractNonce(identity.getId(), storedDocument.getDataContractId()) + 1;
+
+      documentsBatchTransition.setIdentityContractNonce(identityContractNonce);
       const signedTransition = await signStateTransition(
         client.platform,
         documentsBatchTransition,
@@ -313,12 +395,24 @@ describe('Platform', () => {
       try {
         await client.platform.broadcastStateTransition(signedTransition);
       } catch (e) {
+        client.platform.nonceManager.setIdentityContractNonce(
+          identity.getId(),
+          dataContractFixture.getId(),
+          identityContractNonce,
+        );
         broadcastError = e;
       }
 
-      expect(broadcastError).to.exist();
-      expect(broadcastError.code).to.be.equal(4008);
-      expect(broadcastError.message).to.match(/Document \w* updatedAt timestamp .* are out of block time window from .* and .*/);
+      expect(broadcastError)
+        .to
+        .exist();
+      expect(broadcastError.code)
+        .to
+        .be
+        .equal(4008);
+      expect(broadcastError.message)
+        .to
+        .match(/Document \w* updatedAt timestamp .* are out of block time window from .* and .*/);
     });
 
     it('should be able to delete a document', async () => {
@@ -333,7 +427,10 @@ describe('Platform', () => {
         { where: [['$id', '==', document.getId()]] },
       );
 
-      expect(storedDocument).to.not.exist();
+      expect(storedDocument)
+        .to
+        .not
+        .exist();
     });
 
     it('should fail to create a new document with timestamp in violated time frame', async () => {
@@ -363,9 +460,16 @@ describe('Platform', () => {
         broadcastError = e;
       }
 
-      expect(broadcastError).to.exist();
-      expect(broadcastError.message).to.match(/Document \w* createdAt timestamp .* are out of block time window from .* and .*/);
-      expect(broadcastError.code).to.be.equal(4008);
+      expect(broadcastError)
+        .to
+        .exist();
+      expect(broadcastError.message)
+        .to
+        .match(/Document \w* createdAt timestamp .* are out of block time window from .* and .*/);
+      expect(broadcastError.code)
+        .to
+        .be
+        .equal(4008);
     });
   });
 });
