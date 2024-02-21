@@ -18,6 +18,7 @@ impl Drive {
             .drive
             .methods
             .vote
+            .setup
             .setup_initial_vote_tree_main_structure
         {
             0 => self.setup_initial_vote_tree_main_structure_v0(transaction, platform_version),

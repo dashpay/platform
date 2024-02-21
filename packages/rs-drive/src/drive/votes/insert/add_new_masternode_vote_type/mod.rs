@@ -52,7 +52,7 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "add_document".to_string(),
+                method: "add_new_masternode_vote_type".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

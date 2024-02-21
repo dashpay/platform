@@ -13,6 +13,8 @@ use dpp::version::PlatformVersion;
 use dpp::voting::ContestedDocumentResourceVoteType;
 use grovedb::query_result_type::QueryResultType::QueryElementResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb_path::SubtreePath;
+use crate::drive::votes::TreePath;
 
 impl Drive {
     /// We remove votes for an identity when that identity is somehow disabled. Currently there is
@@ -66,7 +68,7 @@ impl Drive {
             // we then need to add to the batch the deletion
 
             self.batch_delete(
-                vote.tree_path(),
+                SubtreePath::from(vote.tree_path()),
                 vote.tree_key(),
                 BatchDeleteApplyType::StatefulBatchDelete {
                     is_known_to_be_subtree_with_sum: Some((false, false)),

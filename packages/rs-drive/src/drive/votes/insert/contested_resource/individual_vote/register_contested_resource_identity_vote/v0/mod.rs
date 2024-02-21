@@ -27,7 +27,7 @@ impl Drive {
 
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_add_to_operations(
-                vote.contract_id.to_buffer(),
+                vote.vote_poll.contract_id.to_buffer(),
                 Some(&block_info.epoch),
                 true,
                 transaction,
@@ -48,13 +48,13 @@ impl Drive {
         >,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<FeeResult, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         // let's start by creating a batch of operations
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_add_to_operations(
-                vote.contract_id.to_buffer(),
+                vote.vote_poll.contract_id.to_buffer(),
                 Some(&block_info.epoch),
                 true,
                 transaction,
