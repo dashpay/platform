@@ -12,6 +12,8 @@ services:
     ports:
       - 127.0.0.1:${DASHMATE_HELPER_API_PORT:?err}:${DASHMATE_HELPER_API_PORT:?err}
     command: yarn workspace dashmate helper ${CONFIG_NAME:?err}
+    expose:
+      - ${DASHMATE_HELPER_API_PORT:?err}
     volumes:
       - ${DASHMATE_HOME_DIR:?err}:/home/dashmate/.dashmate
       - /var/run/docker.sock:/var/run/docker.sock
@@ -68,7 +70,16 @@ services:
       - CHAIN_LOCK_QUORUM_WINDOW=${PLATFORM_DRIVE_ABCI_CHAIN_LOCK_DKG_INTERVAL:?err}
       - CHAIN_LOCK_QUORUM_SIZE=${PLATFORM_DRIVE_ABCI_CHAIN_LOCK_LLMQ_SIZE:?err}
       - DB_PATH=/var/lib/dash/rs-drive-abci/db
+      - ABCI_CONSENSUS_BIND_ADDRESS=tcp://0.0.0.0:26658
+      - ABCI_QUERY_BIND_ADDRESS=tcp://0.0.0.0:26659
+      - GRPC_BIND_ADDRESS=0.0.0.0:26670
+      - PROMETHEUS_BIND_ADDRESS=http://0.0.0.0:29090
     stop_grace_period: 30s
+    expose:
+      - 26658
+      - 26659
+      - 26670
+      - 29090
     env_file:
       # Logger settings
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/abci/logger.env
@@ -121,6 +132,8 @@ services:
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}
       - NODE_ENV=${ENVIRONMENT:?err}
+      - DRIVE_RPC_HOST=drive_abci
+      - DRIVE_RPC_PORT=26670
     command: yarn run api
     stop_grace_period: 10s
     profiles:
@@ -151,6 +164,8 @@ services:
       - NETWORK=devnet
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=26657
+      - DRIVE_RPC_HOST=drive_abci
+      - DRIVE_RPC_PORT=26670
     command: yarn run core-streams
     stop_grace_period: 10s
     profiles:

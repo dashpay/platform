@@ -4,7 +4,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_data_contract_history_request::Version;
-use dapi_grpc::platform::v0::GetDataContractHistoryRequest;
+use dapi_grpc::platform::v0::{GetDataContractHistoryRequest, GetDataContractHistoryResponse};
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 
@@ -15,19 +15,11 @@ mod v0;
 
 impl<C> Platform<C> {
     /// Querying of a data contract history
-    pub(in crate::query) fn query_data_contract_history(
+    pub fn query_data_contract_history(
         &self,
-        state: &PlatformState,
-        query_data: &[u8],
+        GetDataContractHistoryRequest { version }: GetDataContractHistoryRequest,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let GetDataContractHistoryRequest { version } =
-            check_validation_result_with_data!(GetDataContractHistoryRequest::decode(query_data)
-                .map_err(|e| QueryError::InvalidArgument(format!(
-                    "invalid query proto message: {}",
-                    e
-                ))));
-
+    ) -> Result<QueryValidationResult<GetDataContractHistoryResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::DecodingError("could not decode data contract query".to_string()),
@@ -55,11 +47,9 @@ impl<C> Platform<C> {
             ));
         }
         match version {
-            Version::V0(get_data_contract_history_request) => self.query_data_contract_history_v0(
-                state,
-                get_data_contract_history_request,
-                platform_version,
-            ),
+            Version::V0(request_v0) => {
+                self.query_data_contract_history_v0(request_v0, platform_version)
+            }
         }
     }
 }

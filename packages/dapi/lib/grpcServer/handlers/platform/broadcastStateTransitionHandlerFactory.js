@@ -72,7 +72,7 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
         }
 
         // broadcasting is timed out
-        if (jsonRpcError.data.contains('context deadline exceeded')) {
+        if (jsonRpcError.data.includes('context deadline exceeded')) {
           throw new ResourceExhaustedGrpcError('broadcasting state transition is timed out');
         }
 

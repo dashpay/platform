@@ -160,15 +160,15 @@ impl MappingConfig {
         let protobuf_file = abs_path(&protobuf_file);
         let out_dir = abs_path(&out_dir);
 
+        let build_server = cfg!(feature = "server");
+        let build_client = cfg!(feature = "client");
+
         let builder = tonic_build::configure()
-            .build_server(false)
+            .build_server(build_server)
+            .build_client(build_client)
+            .build_transport(build_server || build_client)
             .out_dir(out_dir.clone())
             .protoc_arg("--experimental_allow_proto3_optional");
-
-        #[cfg(feature = "client")]
-        let builder = builder.build_client(true).build_transport(true);
-        #[cfg(not(feature = "client"))]
-        let builder = builder.build_client(false).build_transport(false);
 
         Self {
             protobuf_file,

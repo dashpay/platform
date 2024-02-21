@@ -8,9 +8,5 @@ pub mod config;
 pub mod app;
 #[cfg(any(feature = "server", test))]
 mod handler;
-#[cfg(any(feature = "server", test))]
-mod server;
 
 pub use error::AbciError;
-#[cfg(feature = "server")]
-pub use server::start_abci_apps;

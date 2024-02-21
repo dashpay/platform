@@ -18,39 +18,28 @@ use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_response::GetPro
 impl<C> Platform<C> {
     pub(super) fn query_version_upgrade_state_v0(
         &self,
-        state: &PlatformState,
-        request: GetProtocolVersionUpgradeStateRequestV0,
+        GetProtocolVersionUpgradeStateRequestV0 { prove }: GetProtocolVersionUpgradeStateRequestV0,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let metadata = self.response_metadata_v0(state);
-        let quorum_type = self.config.validator_set_quorum_type() as u32;
-        let GetProtocolVersionUpgradeStateRequestV0 { prove } = request;
-
-        let response_data = if prove {
+    ) -> Result<QueryValidationResult<GetProtocolVersionUpgradeStateResponse>, Error> {
+        let response = if prove {
             let proof = check_validation_result_with_data!(self
                 .drive
                 .fetch_proved_versions_with_counter(None, &platform_version.drive));
+
+            let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
 
             GetProtocolVersionUpgradeStateResponse {
                 version: Some(get_protocol_version_upgrade_state_response::Version::V0(
                     GetProtocolVersionUpgradeStateResponseV0 {
                         result: Some(
                             get_protocol_version_upgrade_state_response::get_protocol_version_upgrade_state_response_v0::Result::Proof(
-                                Proof {
-                                    grovedb_proof: proof,
-                                    quorum_hash: state.last_committed_quorum_hash().to_vec(),
-                                    quorum_type,
-                                    block_id_hash: state.last_committed_block_id_hash().to_vec(),
-                                    signature: state.last_committed_block_signature().to_vec(),
-                                    round: state.last_committed_block_round(),
-                                },
+                                proof,
                             ),
                         ),
                         metadata: Some(metadata),
                     },
                 )),
             }
-                .encode_to_vec()
         } else {
             let protocol_versions_counter =
                 self.drive.cache.protocol_versions_counter.read().unwrap();
@@ -72,12 +61,11 @@ impl<C> Platform<C> {
                                 Versions { versions },
                             ),
                         ),
-                        metadata: Some(metadata),
+                        metadata: Some(self.response_metadata_v0()),
                     },
                 )),
             }
-                .encode_to_vec()
         };
-        Ok(QueryValidationResult::new_with_data(response_data))
+        Ok(QueryValidationResult::new_with_data(response))
     }
 }

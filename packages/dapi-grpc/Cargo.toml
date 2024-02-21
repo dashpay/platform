@@ -20,6 +20,7 @@ platform = []
 # Re-export Dash Platform protobuf types as `dapi_grpc::platform::proto`
 tenderdash-proto = []
 client = ["tonic/channel", "tonic/tls", "tonic/tls-roots", "platform"]
+server = ["tonic/channel", "tonic/tls", "tonic/tls-roots", "platform"]
 serde = ["dep:serde", "dep:serde_bytes"]
 mocks = ["dep:serde_json"]
 

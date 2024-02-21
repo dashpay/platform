@@ -4,7 +4,6 @@ mod identity_based_queries;
 mod proofs;
 mod response_metadata;
 mod system;
-mod v0;
 
 use crate::error::query::QueryError;
 use crate::error::Error;
@@ -17,25 +16,7 @@ use dpp::version::PlatformVersion;
 /// A query validation result
 pub type QueryValidationResult<TData> = ValidationResult<TData, QueryError>;
 
-impl<C> Platform<C> {
-    /// Querying
-    pub fn query(
-        &self,
-        query_path: &str,
-        query_data: &[u8],
-        platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        match platform_version.drive_abci.query.base_query_structure {
-            0 => self.query_v0(query_path, query_data, platform_version),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "Platform::query".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
-    }
-}
-
+// TODO: Move to corresponding modules
 #[cfg(test)]
 mod tests {
     #[macro_export]

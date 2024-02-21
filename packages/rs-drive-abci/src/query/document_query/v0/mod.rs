@@ -21,13 +21,7 @@ use drive::query::DriveQuery;
 impl<C> Platform<C> {
     pub(super) fn query_documents_v0(
         &self,
-        state: &PlatformState,
-        request: GetDocumentsRequestV0,
-        platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let metadata = self.response_metadata_v0(state);
-        let quorum_type = self.config.validator_set_quorum_type() as u32;
-        let GetDocumentsRequestV0 {
+        GetDocumentsRequestV0 {
             data_contract_id,
             document_type: document_type_name,
             r#where,
@@ -35,12 +29,15 @@ impl<C> Platform<C> {
             limit,
             prove,
             start,
-        } = request;
+        }: GetDocumentsRequestV0,
+        platform_version: &PlatformVersion,
+    ) -> Result<QueryValidationResult<GetDocumentsResponse>, Error> {
         let contract_id: Identifier = check_validation_result_with_data!(data_contract_id
             .try_into()
             .map_err(|_| QueryError::InvalidArgument(
                 "id must be a valid identifier (32 bytes long)".to_string()
             )));
+
         let (_, contract) = self.drive.get_contract_with_fetch_info_and_fee(
             contract_id.to_buffer(),
             None,
@@ -48,12 +45,15 @@ impl<C> Platform<C> {
             None,
             platform_version,
         )?;
+
         let contract = check_validation_result_with_data!(contract.ok_or(QueryError::Query(
             QuerySyntaxError::DataContractNotFound(
                 "contract not found when querying from value with contract info",
             )
         )));
+
         let contract_ref = &contract.contract;
+
         let document_type = check_validation_result_with_data!(contract_ref
             .document_type_for_name(document_type_name.as_str())
             .map_err(|_| QueryError::InvalidArgument(format!(
@@ -129,7 +129,8 @@ impl<C> Platform<C> {
             document_type,
             &self.config.drive,
         ));
-        let response_data = if prove {
+
+        let response = if prove {
             let proof =
                 match drive_query.execute_with_proof(&self.drive, None, None, platform_version) {
                     Ok(result) => result.0,
@@ -140,26 +141,19 @@ impl<C> Platform<C> {
                     }
                     Err(e) => return Err(e.into()),
                 };
+
+            let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
+
             GetDocumentsResponse {
                 version: Some(get_documents_response::Version::V0(
                     GetDocumentsResponseV0 {
                         result: Some(
-                            get_documents_response::get_documents_response_v0::Result::Proof(
-                                Proof {
-                                    grovedb_proof: proof,
-                                    quorum_hash: state.last_committed_quorum_hash().to_vec(),
-                                    quorum_type,
-                                    block_id_hash: state.last_committed_block_id_hash().to_vec(),
-                                    signature: state.last_committed_block_signature().to_vec(),
-                                    round: state.last_committed_block_round(),
-                                },
-                            ),
+                            get_documents_response::get_documents_response_v0::Result::Proof(proof),
                         ),
                         metadata: Some(metadata),
                     },
                 )),
             }
-            .encode_to_vec()
         } else {
             let results = match drive_query.execute_raw_results_no_proof(
                 &self.drive,
@@ -186,12 +180,12 @@ impl<C> Platform<C> {
                                 },
                             ),
                         ),
-                        metadata: Some(metadata),
+                        metadata: Some(self.response_metadata_v0()),
                     },
                 )),
             }
-            .encode_to_vec()
         };
-        Ok(QueryValidationResult::new_with_data(response_data))
+
+        Ok(QueryValidationResult::new_with_data(response))
     }
 }

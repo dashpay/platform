@@ -1,42 +1,66 @@
 //! This module implements ABCI application server.
 //!
+mod query;
+
 use crate::abci::app::QueryAbciApplication;
 use crate::abci::app::{ConsensusAbciApplication, NamedApplication};
 use crate::abci::AbciError;
-use crate::rpc::core::DefaultCoreRPC;
-use crate::{config::PlatformConfig, error::Error, platform_types::platform::Platform};
+use crate::server::query::QueryServer;
+use drive_abci::config::PlatformConfig;
+use drive_abci::error::Error;
+use drive_abci::platform_types::platform::Platform;
+use drive_abci::rpc::core::DefaultCoreRPC;
+use std::net::SocketAddr;
+use std::str::FromStr;
+use std::sync::Arc;
 use std::thread;
+use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
 
 /// Start ABCI server and process incoming connections.
 ///
 /// Should only return when server is stopped
-pub fn start_abci_apps(config: PlatformConfig, cancel: CancellationToken) -> Result<(), Error> {
-    let core_rpc = new_core_rpc(&config).expect("Failed to create core RPC client");
+pub fn start(
+    runtime: &Runtime,
+    platform: Arc<Platform<DefaultCoreRPC>>,
+    config: PlatformConfig,
+    cancel: CancellationToken,
+) {
+    let query_server = QueryServer::new(Arc::clone(&platform));
+    let platform_query_server = dapi_grpc::tonic::transport::Server::builder()
+        .add_service(dapi_grpc::platform::v0::platform_server::PlatformServer::new(query_server));
 
-    let platform: Platform<DefaultCoreRPC> =
-        Platform::open_with_client(config.db_path.clone(), Some(config.clone()), core_rpc)
-            .expect("Failed to open platform");
+    tracing::info!("gRPC server is listening on {}", &config.grpc_bind_address);
 
-    let platform_ref = &platform;
+    runtime.spawn(
+        platform_query_server.serve(
+            config
+                .grpc_bind_address
+                .parse()
+                .expect("invalid grpc address"),
+        ),
+    );
+
     let cancel_ref = &cancel;
+
+    let platform1 = Arc::clone(&platform);
+    let platform2 = Arc::clone(&platform);
 
     thread::scope(|scope| {
         scope.spawn(move || {
-            let app =
-                ConsensusAbciApplication::new(platform_ref).expect("Failed to create ABCI app");
+            let app = ConsensusAbciApplication::new(platform1.as_ref())
+                .expect("Failed to create ABCI app");
 
             start_tenderdash_abci_server(app, &config.abci.consensus_bind_address, cancel_ref)
         });
 
         scope.spawn(move || {
-            let app = QueryAbciApplication::new(platform_ref).expect("Failed to create ABCI app");
+            let app =
+                QueryAbciApplication::new(platform2.as_ref()).expect("Failed to create ABCI app");
 
             start_tenderdash_abci_server(app, &config.abci.query_bind_address, cancel_ref)
         });
     });
-
-    Ok(())
 }
 
 fn start_tenderdash_abci_server<'a, A>(app: A, bind_address: &str, cancel: &CancellationToken)

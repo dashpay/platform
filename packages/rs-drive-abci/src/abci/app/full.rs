@@ -97,7 +97,7 @@ where
         &self,
         request: proto::RequestQuery,
     ) -> Result<proto::ResponseQuery, proto::ResponseException> {
-        handler::query(self, request)
+        unreachable!("query is not supported in full ABCI application")
     }
 
     fn check_tx(

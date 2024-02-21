@@ -27,11 +27,12 @@
 // DEALINGS IN THE SOFTWARE.
 
 use dashcore_rpc::json::QuorumType;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::config::DriveConfig;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize, Serializer};
 
 use crate::logging::LogConfigs;
 use crate::{abci::config::AbciConfig, error::Error};
@@ -155,6 +156,19 @@ pub struct PlatformConfig {
     /// ABCI Application Server config
     #[serde(flatten)]
     pub abci: AbciConfig,
+
+    /// Address to listen for Prometheus connection.
+    ///
+    /// Optional.
+    ///
+    /// /// Address should be an URL with scheme `http://`, for example:
+    /// - `http://127.0.0.1:29090`
+    ///
+    /// Port number defaults to [crate::metrics::DEFAULT_PROMETHEUS_PORT].
+    pub prometheus_bind_address: Option<String>,
+
+    /// Address to listen for gRPC connection.
+    pub grpc_bind_address: String,
 
     /// Execution config
     #[serde(flatten)]
@@ -312,6 +326,8 @@ impl PlatformConfig {
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: 1,
+            prometheus_bind_address: None,
+            grpc_bind_address: "0.0.0.0:26670".to_string(),
         }
     }
 
@@ -330,6 +346,8 @@ impl PlatformConfig {
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: 1,
+            prometheus_bind_address: None,
+            grpc_bind_address: "0.0.0.0:26670".to_string(),
         }
     }
 
@@ -348,6 +366,8 @@ impl PlatformConfig {
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: 1,
+            prometheus_bind_address: None,
+            grpc_bind_address: "0.0.0.0:26670".to_string(),
         }
     }
 }

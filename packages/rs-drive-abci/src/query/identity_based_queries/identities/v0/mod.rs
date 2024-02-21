@@ -1,13 +1,10 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identities_request::GetIdentitiesRequestV0;
 use dapi_grpc::platform::v0::get_identities_response::{GetIdentitiesResponseV0, IdentityEntry};
-use dapi_grpc::platform::v0::{get_identities_response, GetIdentitiesResponse, Proof};
-use dapi_grpc::Message;
+use dapi_grpc::platform::v0::{get_identities_response, GetIdentitiesResponse};
 use dpp::platform_value::Bytes32;
 use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
@@ -17,13 +14,9 @@ use dpp::{check_validation_result_with_data, ProtocolError};
 impl<C> Platform<C> {
     pub(super) fn query_identities_v0(
         &self,
-        state: &PlatformState,
-        get_identities_request: GetIdentitiesRequestV0,
+        GetIdentitiesRequestV0 { ids, prove }: GetIdentitiesRequestV0,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let metadata = self.response_metadata_v0(state);
-        let quorum_type = self.config.validator_set_quorum_type() as u32;
-        let GetIdentitiesRequestV0 { ids, prove } = get_identities_request;
+    ) -> Result<QueryValidationResult<GetIdentitiesResponse>, Error> {
         let identity_ids = check_validation_result_with_data!(ids
             .into_iter()
             .map(|identity_id_vec| {
@@ -36,33 +29,28 @@ impl<C> Platform<C> {
                     })
             })
             .collect::<Result<Vec<[u8; 32]>, QueryError>>());
-        let response_data = if prove {
+
+        let response = if prove {
             let proof = self.drive.prove_full_identities(
                 identity_ids.as_slice(),
                 None,
                 &platform_version.drive,
             )?;
 
+            let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
+
             GetIdentitiesResponse {
                 version: Some(get_identities_response::Version::V0(
                     GetIdentitiesResponseV0 {
                         result: Some(
                             get_identities_response::get_identities_response_v0::Result::Proof(
-                                Proof {
-                                    grovedb_proof: proof,
-                                    quorum_hash: state.last_committed_quorum_hash().to_vec(),
-                                    quorum_type,
-                                    block_id_hash: state.last_committed_block_id_hash().to_vec(),
-                                    signature: state.last_committed_block_signature().to_vec(),
-                                    round: state.last_committed_block_round(),
-                                },
+                                proof,
                             ),
                         ),
                         metadata: Some(metadata),
                     },
                 )),
             }
-            .encode_to_vec()
         } else {
             let identities = self.drive.fetch_full_identities(
                 identity_ids.as_slice(),
@@ -98,12 +86,12 @@ impl<C> Platform<C> {
                                 },
                             ),
                         ),
-                        metadata: Some(metadata),
+                        metadata: Some(self.response_metadata_v0()),
                     },
                 )),
             }
-            .encode_to_vec()
         };
-        Ok(QueryValidationResult::new_with_data(response_data))
+
+        Ok(QueryValidationResult::new_with_data(response))
     }
 }

@@ -2,6 +2,8 @@
 //!
 //! RS-Drive-ABCI server starts a single-threaded server and listens to connections from Tenderdash.
 
+mod server;
+
 use clap::{Parser, Subcommand};
 use drive_abci::abci;
 use drive_abci::config::{FromEnv, PlatformConfig};
@@ -9,12 +11,14 @@ use drive_abci::core::wait_for_core_to_sync::v0::wait_for_core_to_sync_v0;
 use drive_abci::logging;
 use drive_abci::logging::{LogBuilder, LogConfig, LogDestination, Loggers};
 use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
+use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::DefaultCoreRPC;
 use itertools::Itertools;
 use std::fs::remove_file;
 use std::path::PathBuf;
 use std::process::ExitCode;
-use tokio::runtime::Builder;
+use std::sync::Arc;
+use tokio::runtime::{Builder, Runtime};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -83,7 +87,12 @@ struct Cli {
 }
 
 impl Cli {
-    fn run(self, config: PlatformConfig, cancel: CancellationToken) -> Result<(), String> {
+    fn run(
+        self,
+        runtime: &Runtime,
+        config: PlatformConfig,
+        cancel: CancellationToken,
+    ) -> Result<(), String> {
         match self.command {
             Commands::Start => {
                 verify_grovedb(&config.db_path, false)?;
@@ -106,7 +115,14 @@ impl Cli {
                     return Ok(());
                 }
 
-                abci::start_abci_apps(config, cancel).map_err(|e| e.to_string())?;
+                let platform: Platform<DefaultCoreRPC> = Platform::open_with_client(
+                    config.db_path.clone(),
+                    Some(config.clone()),
+                    core_rpc,
+                )
+                .expect("Failed to open platform");
+
+                server::start(runtime, Arc::new(platform), config, cancel);
 
                 return Ok(());
             }
@@ -146,7 +162,7 @@ fn main() -> Result<(), ExitCode> {
 
     // Main thread is not started in runtime, as it is synchronous and we don't want to run into
     // potential, hard to debug, issues.
-    let result = match cli.run(config, cancel) {
+    let result = match cli.run(&runtime, config, cancel) {
         Ok(()) => {
             tracing::debug!("shutdown complete");
             Ok(())
@@ -199,7 +215,6 @@ async fn handle_signals(cancel: CancellationToken, logs: Loggers) -> Result<(), 
 /// Start prometheus exporter if it's configured.
 fn start_prometheus(config: &PlatformConfig) -> Result<Option<Prometheus>, String> {
     let prometheus_addr = config
-        .abci
         .prometheus_bind_address
         .clone()
         .filter(|s| !s.is_empty());
@@ -223,7 +238,7 @@ fn dump_config(config: &PlatformConfig) -> Result<(), String> {
 
 /// Check status of ABCI server.
 fn check_status(config: &PlatformConfig) -> Result<(), String> {
-    if let Some(prometheus_addr) = &config.abci.prometheus_bind_address {
+    if let Some(prometheus_addr) = &config.prometheus_bind_address {
         let url =
             url::Url::parse(prometheus_addr).expect("cannot parse ABCI_PROMETHEUS_BIND_ADDRESS");
 

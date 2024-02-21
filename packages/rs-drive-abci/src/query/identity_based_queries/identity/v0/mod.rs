@@ -17,42 +17,33 @@ use dpp::version::PlatformVersion;
 impl<C> Platform<C> {
     pub(super) fn query_identity_v0(
         &self,
-        state: &PlatformState,
-        get_identity_request: GetIdentityRequestV0,
+        GetIdentityRequestV0 { id, prove }: GetIdentityRequestV0,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let metadata = self.response_metadata_v0(state);
-        let quorum_type = self.config.validator_set_quorum_type() as u32;
-        let GetIdentityRequestV0 { id, prove } = get_identity_request;
+    ) -> Result<QueryValidationResult<GetIdentityResponse>, Error> {
         let identity_id: Identifier =
             check_validation_result_with_data!(id.try_into().map_err(|_| {
                 QueryError::InvalidArgument(
                     "id must be a valid identifier (32 bytes long)".to_string(),
                 )
             }));
-        let response_data = if prove {
+
+        let response = if prove {
             let proof = self.drive.prove_full_identity(
                 identity_id.into_buffer(),
                 None,
                 &platform_version.drive,
             )?;
 
+            let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
+
             GetIdentityResponse {
                 version: Some(get_identity_response::Version::V0(GetIdentityResponseV0 {
                     result: Some(
-                        get_identity_response::get_identity_response_v0::Result::Proof(Proof {
-                            grovedb_proof: proof,
-                            quorum_hash: state.last_committed_quorum_hash().to_vec(),
-                            quorum_type,
-                            block_id_hash: state.last_committed_block_id_hash().to_vec(),
-                            signature: state.last_committed_block_signature().to_vec(),
-                            round: state.last_committed_block_round(),
-                        }),
+                        get_identity_response::get_identity_response_v0::Result::Proof(proof),
                     ),
                     metadata: Some(metadata),
                 })),
             }
-            .encode_to_vec()
         } else {
             let maybe_identity = self.drive.fetch_full_identity(
                 identity_id.into_buffer(),
@@ -75,11 +66,11 @@ impl<C> Platform<C> {
                             serialized_identity,
                         ),
                     ),
-                    metadata: Some(metadata),
+                    metadata: Some(self.response_metadata_v0()),
                 })),
             }
-            .encode_to_vec()
         };
-        Ok(QueryValidationResult::new_with_data(response_data))
+
+        Ok(QueryValidationResult::new_with_data(response))
     }
 }

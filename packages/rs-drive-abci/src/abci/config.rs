@@ -31,19 +31,6 @@ pub struct AbciConfig {
     #[serde(rename = "abci_query_bind_address")]
     pub query_bind_address: String,
 
-    /// Address to listen for Prometheus connection.
-    ///
-    /// Optional.
-    ///
-    /// /// Address should be an URL with scheme `http://`, for example:
-    /// - `http://127.0.0.1:29090`
-    ///
-    /// Port number defaults to [DEFAULT_PROMETHEUS_PORT].
-    ///
-    /// [DEFAULT_PROMETHEUS_PORT]: crate::metrics::DEFAULT_PROMETHEUS_PORT
-    #[serde(default, rename = "abci_prometheus_bind_address")]
-    pub prometheus_bind_address: Option<String>,
-
     /// Public keys used for system identity
     #[serde(flatten)]
     pub keys: Keys,
@@ -81,7 +68,6 @@ impl Default for AbciConfig {
         Self {
             consensus_bind_address: "tcp://127.0.0.1:1234".to_string(),
             query_bind_address: "tcp://127.0.0.1:1234".to_string(),
-            prometheus_bind_address: None,
             keys: Keys::new_random_keys_with_seed(18012014, PlatformVersion::first())
                 .expect("random keys for first version can not error"), //Dash genesis day
             genesis_height: AbciConfig::default_genesis_height(),

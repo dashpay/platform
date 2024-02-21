@@ -64,7 +64,7 @@ where
         &self,
         request: proto::RequestQuery,
     ) -> Result<proto::ResponseQuery, proto::ResponseException> {
-        handler::query(self, request)
+        unreachable!("query is not implemented for Query ABCI application")
     }
 
     fn check_tx(

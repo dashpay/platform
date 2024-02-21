@@ -19,17 +19,13 @@ use drive::query::SingleDocumentDriveQuery;
 impl<C> Platform<C> {
     pub(super) fn query_proofs_v0(
         &self,
-        state: &PlatformState,
-        request: GetProofsRequestV0,
-        platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let metadata = self.response_metadata_v0(state);
-        let quorum_type = self.config.validator_set_quorum_type() as u32;
-        let GetProofsRequestV0 {
+        GetProofsRequestV0 {
             identities,
             contracts,
             documents,
-        } = request;
+        }: GetProofsRequestV0,
+        platform_version: &PlatformVersion,
+    ) -> Result<QueryValidationResult<GetProofsResponse>, Error> {
         let contract_ids = check_validation_result_with_data!(contracts
             .into_iter()
             .map(|contract_request| {
@@ -104,23 +100,17 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        let response_data = GetProofsResponse {
+        let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
+
+        let response = GetProofsResponse {
             version: Some(get_proofs_response::Version::V0(GetProofsResponseV0 {
                 result: Some(get_proofs_response::get_proofs_response_v0::Result::Proof(
-                    Proof {
-                        grovedb_proof: proof,
-                        quorum_hash: state.last_committed_quorum_hash().to_vec(),
-                        quorum_type,
-                        block_id_hash: state.last_committed_block_id_hash().to_vec(),
-                        signature: state.last_committed_block_signature().to_vec(),
-                        round: state.last_committed_block_round(),
-                    },
+                    proof,
                 )),
                 metadata: Some(metadata),
             })),
-        }
-        .encode_to_vec();
+        };
 
-        Ok(QueryValidationResult::new_with_data(response_data))
+        Ok(QueryValidationResult::new_with_data(response))
     }
 }

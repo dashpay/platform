@@ -1275,6 +1275,7 @@ dependencies = [
 name = "drive-abci"
 version = "1.0.0-pr.1694.5"
 dependencies = [
+ "async-trait",
  "atty",
  "base64 0.20.0",
  "bincode 2.0.0-rc.3",
