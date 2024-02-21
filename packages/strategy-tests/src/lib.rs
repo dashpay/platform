@@ -456,52 +456,53 @@ impl Strategy {
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
-        self.contracts_with_updates
-            .iter_mut()
-            .filter_map(|(_, contract_updates)| {
-                let contract_updates = contract_updates.as_mut()?;
-                Some(
+        // Collect updates
+        let updates: Vec<_> = self.contracts_with_updates
+            .iter()
+            .flat_map(|(_, contract_updates_option)| {
+                contract_updates_option.as_ref().map_or_else(Vec::new, |contract_updates| {
                     contract_updates
-                        .iter_mut()
-                        .filter_map(|(update_height, contract_update)| {
-                            let adjusted_update_height = initial_block_height + *update_height * 3;
-                            if adjusted_update_height == block_height {
-                                let identity = current_identities
-                                    .iter()
-                                    .find(|identity| identity.id() == contract_update.data_contract().owner_id())
-                                    .expect("expected to find an identity")
-                                    .clone()
-                                    .into_partial_identity_info();
-
-                                let identity_contract_nonce = contract_nonce_counter
-                                    .entry((identity.id, contract_update.data_contract().id()))
-                                    .or_default();
-                                *identity_contract_nonce += 1;
-                
-    
-                                // Use the update height as the version number
-                                let data_contract = contract_update.data_contract_mut();
-                                data_contract.set_version(*update_height as u32);
-    
-                                let state_transition = DataContractUpdateTransition::new_from_data_contract(
-                                    data_contract.clone(),
-                                    &identity,
-                                    2, // Assume key id 1 is a high or critical auth key
-                                    *identity_contract_nonce,
-                                    signer,
-                                    platform_version,
-                                    None,
-                                )
-                                .expect("expected to create a create state transition from a data contract");
-                                Some(state_transition)
-                            } else {
-                                None
+                        .iter()
+                        .filter_map(move |(update_height, contract_update)| {
+                            let adjusted_update_height = initial_block_height + update_height * 3;
+                            if adjusted_update_height != block_height {
+                                return None;
                             }
+                            current_identities
+                                .iter()
+                                .find(|identity| identity.id() == contract_update.data_contract().owner_id())
+                                .map(|identity| (identity.clone(), *update_height, contract_update))
                         })
-                )
+                        .collect::<Vec<_>>()
+                }).into_iter()
             })
-            .flatten()
-            .collect()
+            .collect();
+
+        // Increment nonce counter, update data contract version, and create state transitions
+        updates.into_iter().map(|(identity, update_height, contract_update)| {
+            let identity_info = identity.into_partial_identity_info();
+            let contract_id = contract_update.data_contract().id();
+            let nonce = contract_nonce_counter.entry((identity_info.id, contract_id))
+                .and_modify(|e| *e += 1)
+                .or_insert(1);
+            
+            // Set the version number on the data contract
+            let mut contract_update_clone = contract_update.clone();
+            let data_contract = contract_update_clone.data_contract_mut();
+            data_contract.set_version(update_height as u32);
+
+            // Create the state transition
+            DataContractUpdateTransition::new_from_data_contract(
+                data_contract.clone(),
+                &identity_info,
+                2, // Assuming key id 2 is a high or critical auth key
+                *nonce,
+                signer,
+                platform_version,
+                None,
+            )
+            .expect("expected to create a state transition from a data contract")
+        }).collect()
     }
                 
     /// Generates state transitions for a given block based on Strategy operations.
@@ -1075,7 +1076,7 @@ impl Strategy {
                             let state_transition = crate::transitions::create_identity_credit_transfer_transition(
                                 owner, 
                                 &recipient,
-                                identity_nonce_counter
+                                identity_nonce_counter,
                                 signer, 
                                 1000,
                             );
@@ -1104,9 +1105,15 @@ impl Strategy {
                                         // Update the document types and increment the version
                                         contract_ref.document_types.insert(document_type_name, DocumentType::V0(new_document_type));
                                         contract_ref.increment_version();
-                                        
+
+                                        let identity = &current_identities[0];
+                                        let identity_contract_nonce = contract_nonce_counter
+                                            .entry((identity.id(), contract_ref.id()))
+                                            .or_default();
+                                        *identity_contract_nonce += 1;
+    
                                         // Prepare the DataContractUpdateTransition with the updated contract_ref
-                                        match DataContractUpdateTransition::try_from_platform_versioned(DataContract::V0(contract_ref.clone()), platform_version) {
+                                        match DataContractUpdateTransition::try_from_platform_versioned((DataContract::V0(contract_ref.clone()), *identity_contract_nonce), platform_version) {
                                             Ok(data_contract_update_transition) => {
                                                 let identity_public_key = current_identities[0]
                                                     .get_first_public_key_matching(
@@ -1209,6 +1216,8 @@ impl Strategy {
 
         // Append the new identities to current_identities
         current_identities.append(&mut identities);
+
+        // Do we also need to add identities to the identity_nonce_counter?
     
         // Do certain things on the first block
         if block_info.height == config.start_block_height {

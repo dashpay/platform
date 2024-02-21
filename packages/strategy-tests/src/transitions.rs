@@ -367,8 +367,8 @@ pub fn create_identity_update_transition_add_keys(
 pub fn create_identity_update_transition_disable_keys(
     identity: &mut Identity,
     count: u16,
-    block_time: u64,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
+    block_time: u64,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
     platform_version: &PlatformVersion,

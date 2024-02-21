@@ -1,8 +1,7 @@
 //! [Sdk] entrypoint to Dash Platform.
 
 use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::{fmt::Debug, num::NonZeroUsize, ops::DerefMut};
 
 use crate::error::Error;
@@ -13,19 +12,13 @@ use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use crate::platform::transition::put_document::PutSettings;
 use crate::platform::{Fetch, Identifier};
 use dapi_grpc::mock::Mockable;
-use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0;
-use dapi_grpc::platform::v0::get_identity_contract_nonce_response::Version;
-use dapi_grpc::platform::v0::{
-    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, Proof,
-};
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
-use dpp::prelude;
 use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive_proof_verifier::types::{IdentityContractNonceFetcher, IdentityNonceFetcher};
 #[cfg(feature = "mocks")]
 use drive_proof_verifier::MockContextProvider;
-use drive_proof_verifier::{types, ContextProvider, FromProof};
+use drive_proof_verifier::{ContextProvider, FromProof};
 pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
@@ -231,7 +224,7 @@ impl Sdk {
         let entry = identity_nonce_counter.entry(identity_id);
 
         let should_query_platform = match &entry {
-            Entry::Vacant(e) => true,
+            Entry::Vacant(_) => true,
             Entry::Occupied(e) => {
                 let (_, last_query_time) = e.get();
                 *last_query_time
@@ -325,7 +318,7 @@ impl Sdk {
         let entry = identity_contract_nonce_counter.entry((identity_id, contract_id));
 
         let should_query_platform = match &entry {
-            Entry::Vacant(e) => true,
+            Entry::Vacant(_) => true,
             Entry::Occupied(e) => {
                 let (_, last_query_time) = e.get();
                 *last_query_time
