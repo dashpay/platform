@@ -12,7 +12,8 @@ use dpp::document::DocumentV0Getters;
 use dpp::ProtocolError;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
-use dpp::system_data_contracts::masternode_reward_shares_contract::document_types::reward_share::properties::{PAY_TO_ID, PERCENTAGE};
+use dpp::system_data_contracts::masternode_reward_shares_contract::v1::document_types::reward_share::properties
+::{PAY_TO_ID, PERCENTAGE};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 
 use crate::error::execution::ExecutionError;
@@ -47,7 +48,12 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     let mut result = DataTriggerExecutionResult::default();
 
     let is_dry_run = context.state_transition_execution_context.in_dry_run();
-    let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
+    let data_contract_fetch_info = document_transition
+        .base()
+        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "expecting action to have a base",
+        )))?
+        .data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
 
     let document_create_transition = match document_transition {
@@ -56,7 +62,12 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
             return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
                 format!(
                     "the Document Transition {} isn't 'CREATE",
-                    document_transition.base().id()
+                    document_transition
+                        .base()
+                        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "expecting action to have a base"
+                        )))?
+                        .id()
                 ),
             )))
         }
@@ -81,7 +92,12 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
         if !owner_id_in_sml {
             let err = DataTriggerConditionError::new(
                 data_contract.id(),
-                document_transition.base().id(),
+                document_transition
+                    .base()
+                    .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "expecting action to have a base",
+                    )))?
+                    .id(),
                 "Only masternode identities can share rewards".to_string(),
             );
 
@@ -98,7 +114,12 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     if !is_dry_run && maybe_identity.is_none() {
         let err = DataTriggerConditionError::new(
             data_contract.id(),
-            document_transition.base().id(),
+            document_transition
+                .base()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "expecting action to have a base",
+                )))?
+                .id(),
             format!(
                 "Identity '{}' doesn't exist",
                 bs58::encode(pay_to_id).into_string()
@@ -157,7 +178,12 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     if documents.len() >= MAX_DOCUMENTS {
         let err = DataTriggerConditionError::new(
             data_contract.id(),
-            document_transition.base().id(),
+            document_transition
+                .base()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "expecting action to have a base",
+                )))?
+                .id(),
             format!(
                 "Reward shares cannot contain more than {} identities",
                 MAX_DOCUMENTS
@@ -180,7 +206,12 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     if total_percent > MAX_PERCENTAGE {
         let err = DataTriggerConditionError::new(
             data_contract.id(),
-            document_transition.base().id(),
+            document_transition
+                .base()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "expecting action to have a base",
+                )))?
+                .id(),
             format!("Percentage can not be more than {}", MAX_PERCENTAGE),
         );
 
@@ -232,6 +263,7 @@ mod test {
         document_type_name: String,
         documents: Vec<Document>,
         document_create_transition: DocumentCreateTransitionAction,
+        nonce_counter: BTreeMap<(Identifier, Identifier), u64>,
     }
 
     fn setup_test(platform_state: &mut PlatformStateV0) -> TestData {
@@ -294,14 +326,19 @@ mod test {
             },
         });
 
+        let mut nonce_counter = BTreeMap::new();
+
         let (documents, data_contract) = get_masternode_reward_shares_documents_fixture(1);
         let document_type = data_contract
             .document_type_for_name("rewardShare")
             .expect("expected the rewards document type");
-        let document_transitions = get_document_transitions_fixture([(
-            DocumentTransitionActionType::Create,
-            vec![(documents[0].clone(), document_type, Bytes32::default())],
-        )]);
+        let document_transitions = get_document_transitions_fixture(
+            [(
+                DocumentTransitionActionType::Create,
+                vec![(documents[0].clone(), document_type, Bytes32::default())],
+            )],
+            &mut nonce_counter,
+        );
 
         let document_create_transition = document_transitions[0]
             .as_transition_create()
@@ -315,6 +352,7 @@ mod test {
             document_create_transition: DocumentCreateTransitionAction::from_document_create_transition_with_contract_lookup(document_create_transition, |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::masternode_rewards_contract_fixture(platform_state.current_protocol_version_in_consensus)))
             }).expect("expected to create action"),
+            nonce_counter,
         }
     }
 

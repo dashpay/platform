@@ -4,11 +4,9 @@ use crate::serialization::{
     PlatformLimitDeserializableFromVersionedStructure, PlatformSerializableWithPlatformVersion,
 };
 
-pub use data_contract::*;
 use derive_more::From;
 
 use bincode::config::{BigEndian, Configuration};
-pub use generate_data_contract::*;
 
 pub mod errors;
 pub mod extra;
@@ -42,7 +40,7 @@ pub use v0::*;
 use crate::data_contract::serialized_version::{
     DataContractInSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,
 };
-use crate::util::hash::hash_to_vec;
+use crate::util::hash::hash_double_to_vec;
 
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
@@ -239,9 +237,9 @@ impl DataContract {
     }
 
     pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(self.serialize_to_bytes_with_platform_version(
-            platform_version,
-        )?))
+        Ok(hash_double_to_vec(
+            self.serialize_to_bytes_with_platform_version(platform_version)?,
+        ))
     }
 }
 
@@ -264,7 +262,7 @@ mod tests {
     #[test]
     fn test_contract_serialization() {
         let platform_version = PlatformVersion::latest();
-        let data_contract = load_system_data_contract(Dashpay, platform_version.protocol_version)
+        let data_contract = load_system_data_contract(Dashpay, platform_version)
             .expect("expected dashpay contract");
         let platform_version = PlatformVersion::latest();
         let serialized = data_contract

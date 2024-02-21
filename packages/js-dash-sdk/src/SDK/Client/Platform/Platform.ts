@@ -21,6 +21,7 @@ import getIdentity from './methods/identities/get';
 import registerIdentity from './methods/identities/register';
 import topUpIdentity from './methods/identities/topUp';
 import creditTransferIdentity from './methods/identities/creditTransfer';
+import creditWithdrawal from './methods/identities/creditWithdrawal';
 import updateIdentity from './methods/identities/update';
 import createIdentityCreateTransition from './methods/identities/internal/createIdentityCreateTransition';
 import createIdentityTopUpTransition from './methods/identities/internal/createIdentityTopUpTransition';
@@ -35,6 +36,7 @@ import broadcastStateTransition from './broadcastStateTransition';
 
 import logger, { ConfigurableLogger } from '../../../logger';
 import Fetcher from './Fetcher';
+import NonceManager from './NonceManager/NonceManager';
 
 /**
  * Interface for PlatformOpts
@@ -77,6 +79,7 @@ interface Identities {
   register: Function,
   topUp: Function,
   creditTransfer: Function,
+  withdrawCredits: Function,
   update: Function,
   utils: {
     createAssetLockTransaction: Function
@@ -151,6 +154,8 @@ export class Platform {
 
   protected fetcher: Fetcher;
 
+  protected nonceManager: NonceManager;
+
   /**
      * Construct some instance of Platform
      *
@@ -181,6 +186,7 @@ export class Platform {
       topUp: topUpIdentity.bind(this),
       creditTransfer: creditTransferIdentity.bind(this),
       update: updateIdentity.bind(this),
+      withdrawCredits: creditWithdrawal.bind(this),
       utils: {
         createAssetLockProof: createAssetLockProof.bind(this),
         createAssetLockTransaction: createAssetLockTransaction.bind(this),
@@ -200,6 +206,7 @@ export class Platform {
     }
 
     this.fetcher = new Fetcher(this.client.getDAPIClient());
+    this.nonceManager = new NonceManager(this.client.getDAPIClient());
   }
 
   async initialize() {

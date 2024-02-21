@@ -7,11 +7,11 @@ use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identity_balance_response::GetIdentityBalanceResponseV0;
 use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
 use dapi_grpc::platform::v0::{get_identity_balance_response, GetIdentityBalanceResponse, Proof};
+use dapi_grpc::Message;
 use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use prost::Message;
 
 impl<C> Platform<C> {
     pub(super) fn query_balance_v0(
@@ -21,7 +21,7 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
-        let quorum_type = self.config.quorum_type() as u32;
+        let quorum_type = self.config.validator_set_quorum_type() as u32;
         let GetIdentityRequestV0 { id, prove } = get_identity_request;
         let identity_id: Identifier =
             check_validation_result_with_data!(id.try_into().map_err(|_| {
@@ -40,11 +40,11 @@ impl<C> Platform<C> {
                     version: Some(get_identity_balance_response::Version::V0(GetIdentityBalanceResponseV0 {
                         result: Some(get_identity_balance_response::get_identity_balance_response_v0::Result::Proof(Proof {
                             grovedb_proof: proof,
-                            quorum_hash: state.last_quorum_hash().to_vec(),
+                            quorum_hash: state.last_committed_quorum_hash().to_vec(),
                             quorum_type,
-                            block_id_hash: state.last_block_id_hash().to_vec(),
-                            signature: state.last_block_signature().to_vec(),
-                            round: state.last_block_round(),
+                            block_id_hash: state.last_committed_block_id_hash().to_vec(),
+                            signature: state.last_committed_block_signature().to_vec(),
+                            round: state.last_committed_block_round(),
                         })),
                         metadata: Some(metadata),
                     })),

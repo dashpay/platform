@@ -28,6 +28,10 @@ const {
     GetProtocolVersionUpgradeStateResponse,
     GetProtocolVersionUpgradeVoteStatusRequest,
     GetProtocolVersionUpgradeVoteStatusResponse,
+    GetIdentityContractNonceRequest,
+    GetIdentityContractNonceResponse,
+    GetIdentityNonceRequest,
+    GetIdentityNonceResponse,
     Proof,
     ResponseMetadata,
   },
@@ -464,6 +468,80 @@ describe('DriveClient', () => {
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/versionUpgrade/state',
+        data: Buffer.from(request.serializeBinary()).toString('hex'),
+      });
+
+      expect(result).to.be.deep.equal(
+        responseBytes,
+      );
+    });
+  });
+
+  describe('#getIdentityContractNonce', () => {
+    it('should call \'getIdentityContractNonce\' RPC with the given parameters', async () => {
+      const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
+
+      const { GetIdentityContractNonceRequestV0 } = GetIdentityContractNonceRequest;
+      const request = new GetIdentityContractNonceRequest();
+      request.setV0(new GetIdentityContractNonceRequestV0());
+
+      const { GetIdentityContractNonceResponseV0 } = GetIdentityContractNonceResponse;
+      const response = new GetIdentityContractNonceResponse();
+      response.setV0(
+        new GetIdentityContractNonceResponseV0()
+          .setIdentityContractNonce(10),
+      );
+
+      const responseBytes = response.serializeBinary();
+
+      sinon.stub(drive.client, 'request')
+        .resolves({
+          result: {
+            response: { code: 0, value: responseBytes },
+          },
+        });
+
+      const result = await drive.fetchIdentityContractNonce(request);
+
+      expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
+        path: '/identity/contractNonce',
+        data: Buffer.from(request.serializeBinary()).toString('hex'),
+      });
+
+      expect(result).to.be.deep.equal(
+        responseBytes,
+      );
+    });
+  });
+
+  describe('#getIdentityNonce', () => {
+    it('should call \'getIdentityNonce\' RPC with the given parameters', async () => {
+      const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
+
+      const { GetIdentityNonceRequestV0 } = GetIdentityNonceRequest;
+      const request = new GetIdentityNonceRequest();
+      request.setV0(new GetIdentityNonceRequestV0());
+
+      const { GetIdentityNonceResponseV0 } = GetIdentityNonceResponse;
+      const response = new GetIdentityNonceResponse();
+      response.setV0(
+        new GetIdentityNonceResponseV0()
+          .setIdentityNonce(10),
+      );
+
+      const responseBytes = response.serializeBinary();
+
+      sinon.stub(drive.client, 'request')
+        .resolves({
+          result: {
+            response: { code: 0, value: responseBytes },
+          },
+        });
+
+      const result = await drive.fetchIdentityNonce(request);
+
+      expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
+        path: '/identity/nonce',
         data: Buffer.from(request.serializeBinary()).toString('hex'),
       });
 

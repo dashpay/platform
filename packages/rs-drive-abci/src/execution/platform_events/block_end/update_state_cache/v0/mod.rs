@@ -61,10 +61,12 @@ where
         state_cache.set_genesis_block_info(None);
 
         //todo: verify this with an update
-        PlatformVersion::set_current(PlatformVersion::get(platform_version.protocol_version)?);
+        let version = PlatformVersion::get(platform_version.protocol_version)?;
 
-        // Persist ephemeral data
-        self.store_ephemeral_state(&state_cache, transaction, platform_version)?;
+        PlatformVersion::set_current(version);
+
+        // Persist state cache
+        self.store_platform_state(&state_cache, Some(transaction), platform_version)?;
 
         Ok(())
     }

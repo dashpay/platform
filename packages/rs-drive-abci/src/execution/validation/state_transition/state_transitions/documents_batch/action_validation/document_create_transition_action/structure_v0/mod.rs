@@ -78,7 +78,7 @@ impl DocumentCreateTransitionActionStructureValidationV0 for DocumentCreateTrans
         // Validate timestamps against block time
         // we do validation here but not in validate state because it's a cheap validation
         // and validate state implements expensive validation only
-        let latest_block_time_ms = platform.state.last_block_time_ms();
+        let latest_block_time_ms = platform.state.last_committed_block_time_ms();
         let average_block_spacing_ms = platform.config.block_spacing_ms;
 
         // We do not need to perform these checks on genesis

@@ -7,7 +7,7 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::identity::PartialIdentity;
 
 use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
-use crate::execution::types::execution_operation::ExecutionOperation;
+use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
@@ -42,7 +42,7 @@ impl IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0 for Identity
                 key.data().as_slice(),
                 key.signature().as_slice(),
             )?;
-            execution_context.add_operation(ExecutionOperation::SignatureVerification(
+            execution_context.add_operation(ValidationOperation::SignatureVerification(
                 SignatureVerificationOperation::new(key.key_type()),
             ));
             if !validation_result.is_valid() {

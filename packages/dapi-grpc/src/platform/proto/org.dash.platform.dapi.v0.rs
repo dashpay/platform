@@ -1,5 +1,6 @@
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Proof {
@@ -22,6 +23,7 @@ pub struct Proof {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResponseMetadata {
@@ -42,6 +44,7 @@ pub struct ResponseMetadata {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StateTransitionBroadcastError {
@@ -54,6 +57,7 @@ pub struct StateTransitionBroadcastError {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BroadcastStateTransitionRequest {
@@ -62,6 +66,7 @@ pub struct BroadcastStateTransitionRequest {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BroadcastStateTransitionResponse {}
@@ -69,6 +74,7 @@ pub struct BroadcastStateTransitionResponse {}
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityRequest {
@@ -79,6 +85,7 @@ pub struct GetIdentityRequest {
 pub mod get_identity_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentityRequestV0 {
@@ -101,6 +108,77 @@ pub mod get_identity_request {
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIdentityNonceRequest {
+    #[prost(oneof = "get_identity_nonce_request::Version", tags = "1")]
+    pub version: ::core::option::Option<get_identity_nonce_request::Version>,
+}
+/// Nested message and enum types in `GetIdentityNonceRequest`.
+pub mod get_identity_nonce_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetIdentityNonceRequestV0 {
+        #[prost(bytes = "vec", tag = "1")]
+        #[serde(with = "serde_bytes")]
+        pub identity_id: ::prost::alloc::vec::Vec<u8>,
+        #[prost(bool, tag = "2")]
+        pub prove: bool,
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetIdentityNonceRequestV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
+#[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIdentityContractNonceRequest {
+    #[prost(oneof = "get_identity_contract_nonce_request::Version", tags = "1")]
+    pub version: ::core::option::Option<get_identity_contract_nonce_request::Version>,
+}
+/// Nested message and enum types in `GetIdentityContractNonceRequest`.
+pub mod get_identity_contract_nonce_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetIdentityContractNonceRequestV0 {
+        #[prost(bytes = "vec", tag = "1")]
+        #[serde(with = "serde_bytes")]
+        pub identity_id: ::prost::alloc::vec::Vec<u8>,
+        #[prost(bytes = "vec", tag = "2")]
+        pub contract_id: ::prost::alloc::vec::Vec<u8>,
+        #[prost(bool, tag = "3")]
+        pub prove: bool,
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetIdentityContractNonceRequestV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
+#[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityBalanceRequest {
@@ -111,6 +189,7 @@ pub struct GetIdentityBalanceRequest {
 pub mod get_identity_balance_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentityBalanceRequestV0 {
@@ -133,6 +212,7 @@ pub mod get_identity_balance_request {
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityBalanceAndRevisionRequest {
@@ -145,6 +225,7 @@ pub struct GetIdentityBalanceAndRevisionRequest {
 pub mod get_identity_balance_and_revision_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentityBalanceAndRevisionRequestV0 {
@@ -170,6 +251,7 @@ pub mod get_identity_balance_and_revision_request {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityResponse {
@@ -180,6 +262,7 @@ pub struct GetIdentityResponse {
 pub mod get_identity_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentityResponseV0 {
@@ -214,6 +297,7 @@ pub mod get_identity_response {
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentitiesRequest {
@@ -224,6 +308,7 @@ pub struct GetIdentitiesRequest {
 pub mod get_identities_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentitiesRequestV0 {
@@ -249,6 +334,7 @@ pub mod get_identities_request {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentitiesResponse {
@@ -259,6 +345,7 @@ pub struct GetIdentitiesResponse {
 pub mod get_identities_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct IdentityValue {
@@ -267,6 +354,7 @@ pub mod get_identities_response {
     }
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct IdentityEntry {
@@ -277,6 +365,7 @@ pub mod get_identities_response {
     }
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Identities {
@@ -285,6 +374,7 @@ pub mod get_identities_response {
     }
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentitiesResponseV0 {
@@ -322,6 +412,110 @@ pub mod get_identities_response {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIdentityNonceResponse {
+    #[prost(oneof = "get_identity_nonce_response::Version", tags = "1")]
+    pub version: ::core::option::Option<get_identity_nonce_response::Version>,
+}
+/// Nested message and enum types in `GetIdentityNonceResponse`.
+pub mod get_identity_nonce_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetIdentityNonceResponseV0 {
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(oneof = "get_identity_nonce_response_v0::Result", tags = "1, 2")]
+        pub result: ::core::option::Option<get_identity_nonce_response_v0::Result>,
+    }
+    /// Nested message and enum types in `GetIdentityNonceResponseV0`.
+    pub mod get_identity_nonce_response_v0 {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(uint64, tag = "1")]
+            IdentityNonce(u64),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetIdentityNonceResponseV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(
+    ::dapi_grpc_macros::VersionedGrpcMessage,
+    ::dapi_grpc_macros::VersionedGrpcResponse
+)]
+#[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIdentityContractNonceResponse {
+    #[prost(oneof = "get_identity_contract_nonce_response::Version", tags = "1")]
+    pub version: ::core::option::Option<get_identity_contract_nonce_response::Version>,
+}
+/// Nested message and enum types in `GetIdentityContractNonceResponse`.
+pub mod get_identity_contract_nonce_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetIdentityContractNonceResponseV0 {
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(
+            oneof = "get_identity_contract_nonce_response_v0::Result",
+            tags = "1, 2"
+        )]
+        pub result: ::core::option::Option<
+            get_identity_contract_nonce_response_v0::Result,
+        >,
+    }
+    /// Nested message and enum types in `GetIdentityContractNonceResponseV0`.
+    pub mod get_identity_contract_nonce_response_v0 {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(uint64, tag = "1")]
+            IdentityContractNonce(u64),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetIdentityContractNonceResponseV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(
+    ::dapi_grpc_macros::VersionedGrpcMessage,
+    ::dapi_grpc_macros::VersionedGrpcResponse
+)]
+#[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityBalanceResponse {
@@ -332,6 +526,7 @@ pub struct GetIdentityBalanceResponse {
 pub mod get_identity_balance_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentityBalanceResponseV0 {
@@ -369,6 +564,7 @@ pub mod get_identity_balance_response {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityBalanceAndRevisionResponse {
@@ -381,6 +577,7 @@ pub struct GetIdentityBalanceAndRevisionResponse {
 pub mod get_identity_balance_and_revision_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentityBalanceAndRevisionResponseV0 {
@@ -398,6 +595,7 @@ pub mod get_identity_balance_and_revision_response {
     pub mod get_identity_balance_and_revision_response_v0 {
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct BalanceAndRevision {
@@ -428,6 +626,7 @@ pub mod get_identity_balance_and_revision_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct KeyRequestType {
@@ -451,11 +650,13 @@ pub mod key_request_type {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AllKeys {}
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SpecificKeys {
@@ -464,6 +665,7 @@ pub struct SpecificKeys {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchKey {
@@ -472,6 +674,7 @@ pub struct SearchKey {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SecurityLevelMap {
@@ -528,6 +731,7 @@ pub mod security_level_map {
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityKeysRequest {
@@ -538,6 +742,7 @@ pub struct GetIdentityKeysRequest {
 pub mod get_identity_keys_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentityKeysRequestV0 {
@@ -569,6 +774,7 @@ pub mod get_identity_keys_request {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityKeysResponse {
@@ -579,6 +785,7 @@ pub struct GetIdentityKeysResponse {
 pub mod get_identity_keys_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentityKeysResponseV0 {
@@ -591,6 +798,7 @@ pub mod get_identity_keys_response {
     pub mod get_identity_keys_response_v0 {
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct Keys {
@@ -621,6 +829,7 @@ pub mod get_identity_keys_response {
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetProofsRequest {
@@ -631,6 +840,7 @@ pub struct GetProofsRequest {
 pub mod get_proofs_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetProofsRequestV0 {
@@ -645,6 +855,7 @@ pub mod get_proofs_request {
     pub mod get_proofs_request_v0 {
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct DocumentRequest {
@@ -659,6 +870,7 @@ pub mod get_proofs_request {
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct IdentityRequest {
@@ -688,6 +900,7 @@ pub mod get_proofs_request {
                 FullIdentity = 0,
                 Balance = 1,
                 Keys = 2,
+                Revision = 3,
             }
             impl Type {
                 /// String value of the enum field names used in the ProtoBuf definition.
@@ -699,6 +912,7 @@ pub mod get_proofs_request {
                         Type::FullIdentity => "FULL_IDENTITY",
                         Type::Balance => "BALANCE",
                         Type::Keys => "KEYS",
+                        Type::Revision => "REVISION",
                     }
                 }
                 /// Creates an enum from field names used in the ProtoBuf definition.
@@ -707,6 +921,7 @@ pub mod get_proofs_request {
                         "FULL_IDENTITY" => Some(Self::FullIdentity),
                         "BALANCE" => Some(Self::Balance),
                         "KEYS" => Some(Self::Keys),
+                        "REVISION" => Some(Self::Revision),
                         _ => None,
                     }
                 }
@@ -714,6 +929,7 @@ pub mod get_proofs_request {
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct ContractRequest {
@@ -737,6 +953,7 @@ pub mod get_proofs_request {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetProofsResponse {
@@ -747,6 +964,7 @@ pub struct GetProofsResponse {
 pub mod get_proofs_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetProofsResponseV0 {
@@ -779,6 +997,7 @@ pub mod get_proofs_response {
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractRequest {
@@ -789,6 +1008,7 @@ pub struct GetDataContractRequest {
 pub mod get_data_contract_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetDataContractRequestV0 {
@@ -814,6 +1034,7 @@ pub mod get_data_contract_request {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractResponse {
@@ -824,6 +1045,7 @@ pub struct GetDataContractResponse {
 pub mod get_data_contract_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetDataContractResponseV0 {
@@ -858,6 +1080,7 @@ pub mod get_data_contract_response {
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractsRequest {
@@ -868,6 +1091,7 @@ pub struct GetDataContractsRequest {
 pub mod get_data_contracts_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetDataContractsRequestV0 {
@@ -893,6 +1117,7 @@ pub mod get_data_contracts_request {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractsResponse {
@@ -903,6 +1128,7 @@ pub struct GetDataContractsResponse {
 pub mod get_data_contracts_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct DataContractEntry {
@@ -913,6 +1139,7 @@ pub mod get_data_contracts_response {
     }
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct DataContracts {
@@ -921,6 +1148,7 @@ pub mod get_data_contracts_response {
     }
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetDataContractsResponseV0 {
@@ -955,6 +1183,7 @@ pub mod get_data_contracts_response {
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractHistoryRequest {
@@ -965,6 +1194,7 @@ pub struct GetDataContractHistoryRequest {
 pub mod get_data_contract_history_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetDataContractHistoryRequestV0 {
@@ -997,6 +1227,7 @@ pub mod get_data_contract_history_request {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractHistoryResponse {
@@ -1007,6 +1238,7 @@ pub struct GetDataContractHistoryResponse {
 pub mod get_data_contract_history_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetDataContractHistoryResponseV0 {
@@ -1021,6 +1253,7 @@ pub mod get_data_contract_history_response {
     pub mod get_data_contract_history_response_v0 {
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct DataContractHistoryEntry {
@@ -1031,6 +1264,7 @@ pub mod get_data_contract_history_response {
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct DataContractHistory {
@@ -1063,6 +1297,7 @@ pub mod get_data_contract_history_response {
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDocumentsRequest {
@@ -1073,6 +1308,7 @@ pub struct GetDocumentsRequest {
 pub mod get_documents_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetDocumentsRequestV0 {
@@ -1123,6 +1359,7 @@ pub mod get_documents_request {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDocumentsResponse {
@@ -1133,6 +1370,7 @@ pub struct GetDocumentsResponse {
 pub mod get_documents_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetDocumentsResponseV0 {
@@ -1145,6 +1383,7 @@ pub mod get_documents_response {
     pub mod get_documents_response_v0 {
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct Documents {
@@ -1175,6 +1414,7 @@ pub mod get_documents_response {
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentitiesByPublicKeyHashesRequest {
@@ -1187,6 +1427,7 @@ pub struct GetIdentitiesByPublicKeyHashesRequest {
 pub mod get_identities_by_public_key_hashes_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentitiesByPublicKeyHashesRequestV0 {
@@ -1212,6 +1453,7 @@ pub mod get_identities_by_public_key_hashes_request {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentitiesByPublicKeyHashesResponse {
@@ -1224,6 +1466,7 @@ pub struct GetIdentitiesByPublicKeyHashesResponse {
 pub mod get_identities_by_public_key_hashes_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct PublicKeyHashIdentityEntry {
@@ -1235,6 +1478,7 @@ pub mod get_identities_by_public_key_hashes_response {
     }
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct IdentitiesByPublicKeyHashes {
@@ -1243,6 +1487,7 @@ pub mod get_identities_by_public_key_hashes_response {
     }
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentitiesByPublicKeyHashesResponseV0 {
@@ -1282,6 +1527,7 @@ pub mod get_identities_by_public_key_hashes_response {
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityByPublicKeyHashRequest {
@@ -1294,6 +1540,7 @@ pub struct GetIdentityByPublicKeyHashRequest {
 pub mod get_identity_by_public_key_hash_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentityByPublicKeyHashRequestV0 {
@@ -1319,6 +1566,7 @@ pub mod get_identity_by_public_key_hash_request {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityByPublicKeyHashResponse {
@@ -1331,6 +1579,7 @@ pub struct GetIdentityByPublicKeyHashResponse {
 pub mod get_identity_by_public_key_hash_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentityByPublicKeyHashResponseV0 {
@@ -1370,6 +1619,7 @@ pub mod get_identity_by_public_key_hash_response {
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WaitForStateTransitionResultRequest {
@@ -1382,6 +1632,7 @@ pub struct WaitForStateTransitionResultRequest {
 pub mod wait_for_state_transition_result_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct WaitForStateTransitionResultRequestV0 {
@@ -1406,6 +1657,7 @@ pub mod wait_for_state_transition_result_request {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WaitForStateTransitionResultResponse {
@@ -1418,6 +1670,7 @@ pub struct WaitForStateTransitionResultResponse {
 pub mod wait_for_state_transition_result_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct WaitForStateTransitionResultResponseV0 {
@@ -1455,6 +1708,7 @@ pub mod wait_for_state_transition_result_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetConsensusParamsRequest {
@@ -1465,6 +1719,7 @@ pub struct GetConsensusParamsRequest {
 pub mod get_consensus_params_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetConsensusParamsRequestV0 {
@@ -1484,6 +1739,7 @@ pub mod get_consensus_params_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetConsensusParamsResponse {
@@ -1494,6 +1750,7 @@ pub struct GetConsensusParamsResponse {
 pub mod get_consensus_params_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ConsensusParamsBlock {
@@ -1506,6 +1763,7 @@ pub mod get_consensus_params_response {
     }
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ConsensusParamsEvidence {
@@ -1518,6 +1776,7 @@ pub mod get_consensus_params_response {
     }
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetConsensusParamsResponseV0 {
@@ -1539,6 +1798,7 @@ pub mod get_consensus_params_response {
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetProtocolVersionUpgradeStateRequest {
@@ -1551,6 +1811,7 @@ pub struct GetProtocolVersionUpgradeStateRequest {
 pub mod get_protocol_version_upgrade_state_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetProtocolVersionUpgradeStateRequestV0 {
@@ -1573,6 +1834,7 @@ pub mod get_protocol_version_upgrade_state_request {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetProtocolVersionUpgradeStateResponse {
@@ -1585,6 +1847,7 @@ pub struct GetProtocolVersionUpgradeStateResponse {
 pub mod get_protocol_version_upgrade_state_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetProtocolVersionUpgradeStateResponseV0 {
@@ -1602,6 +1865,7 @@ pub mod get_protocol_version_upgrade_state_response {
     pub mod get_protocol_version_upgrade_state_response_v0 {
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct Versions {
@@ -1610,6 +1874,7 @@ pub mod get_protocol_version_upgrade_state_response {
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct VersionEntry {
@@ -1642,6 +1907,7 @@ pub mod get_protocol_version_upgrade_state_response {
 #[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetProtocolVersionUpgradeVoteStatusRequest {
@@ -1657,6 +1923,7 @@ pub struct GetProtocolVersionUpgradeVoteStatusRequest {
 pub mod get_protocol_version_upgrade_vote_status_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetProtocolVersionUpgradeVoteStatusRequestV0 {
@@ -1683,6 +1950,7 @@ pub mod get_protocol_version_upgrade_vote_status_request {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetProtocolVersionUpgradeVoteStatusResponse {
@@ -1698,6 +1966,7 @@ pub struct GetProtocolVersionUpgradeVoteStatusResponse {
 pub mod get_protocol_version_upgrade_vote_status_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetProtocolVersionUpgradeVoteStatusResponseV0 {
@@ -1715,6 +1984,7 @@ pub mod get_protocol_version_upgrade_vote_status_response {
     pub mod get_protocol_version_upgrade_vote_status_response_v0 {
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct VersionSignals {
@@ -1723,6 +1993,7 @@ pub mod get_protocol_version_upgrade_vote_status_response {
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct VersionSignal {
@@ -1753,6 +2024,7 @@ pub mod get_protocol_version_upgrade_vote_status_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetEpochsInfoRequest {
@@ -1763,6 +2035,7 @@ pub struct GetEpochsInfoRequest {
 pub mod get_epochs_info_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetEpochsInfoRequestV0 {
@@ -1791,6 +2064,7 @@ pub mod get_epochs_info_request {
     ::dapi_grpc_macros::VersionedGrpcResponse
 )]
 #[grpc_versions(0)]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetEpochsInfoResponse {
@@ -1801,6 +2075,7 @@ pub struct GetEpochsInfoResponse {
 pub mod get_epochs_info_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetEpochsInfoResponseV0 {
@@ -1813,6 +2088,7 @@ pub mod get_epochs_info_response {
     pub mod get_epochs_info_response_v0 {
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct EpochInfos {
@@ -1821,6 +2097,7 @@ pub mod get_epochs_info_response {
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct EpochInfo {
@@ -2364,6 +2641,66 @@ pub mod platform_client {
                     GrpcMethod::new(
                         "org.dash.platform.dapi.v0.Platform",
                         "getIdentityKeys",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_identity_nonce(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetIdentityNonceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetIdentityNonceResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getIdentityNonce",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getIdentityNonce",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_identity_contract_nonce(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetIdentityContractNonceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetIdentityContractNonceResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getIdentityContractNonce",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getIdentityContractNonce",
                     ),
                 );
             self.inner.unary(req, path, codec).await

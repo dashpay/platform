@@ -13,8 +13,10 @@
 
 use crate::{
     transport::{TransportClient, TransportRequest},
-    Dapi, DapiClientError, RequestSettings,
+    DapiClientError, DapiRequestExecutor, RequestSettings,
 };
+use dapi_grpc::mock::Mockable;
+use dapi_grpc::tonic::async_trait;
 use hex::ToHex;
 use sha2::Digest;
 use std::{
@@ -22,17 +24,17 @@ use std::{
     collections::HashMap,
     fmt::{Debug, Display},
 };
-use tonic::async_trait;
 
 /// Mock DAPI client.
 ///
-/// This is a mock implmeneation of [Dapi] that can be used for testing.
+/// This is a mock implmeneation of [DapiRequestExecutor] that can be used for testing.
 ///
 /// See `tests/mock_dapi_client.rs` for an example.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct MockDapiClient {
     expectations: Expectations,
 }
+
 impl MockDapiClient {
     /// Create a new mock client
     pub fn new() -> Self {
@@ -42,7 +44,8 @@ impl MockDapiClient {
     /// Add a new expectation for a request
     pub fn expect<R>(&mut self, request: &R, response: &R::Response) -> &mut Self
     where
-        R: TransportRequest,
+        R: TransportRequest + Mockable,
+        R::Response: Mockable,
     {
         let key = self.expectations.add(request, response);
 
@@ -60,42 +63,43 @@ impl MockDapiClient {
     ///
     /// The file must contain JSON structure.
     /// See [DumpData](crate::DumpData) and [DapiClient::dump_dir()](crate::DapiClient::dump_dir()) more for details.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the file can't be read or the data can't be parsed.
     #[cfg(feature = "dump")]
     pub fn load<T: TransportRequest, P: AsRef<std::path::Path>>(
         &mut self,
         file: P,
     ) -> Result<(T, T::Response), std::io::Error>
     where
-        T: for<'de> serde::Deserialize<'de>,
-        T::Response: for<'de> serde::Deserialize<'de>,
+        T: Mockable,
+        T::Response: Mockable,
     {
-        let f = std::fs::File::open(file)?;
+        use crate::DumpData;
 
-        #[derive(serde::Deserialize)]
-        struct Data<R: TransportRequest> {
-            request: R,
-            response: R::Response,
-        }
-
-        let data: Data<T> = serde_json::from_reader(f).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("unable to parse json: {}", e),
-            )
+        let buf = std::fs::read(file)?;
+        let data = DumpData::<T>::mock_deserialize(&buf).ok_or({
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "unable to parse json")
         })?;
 
-        self.expect(&data.request, &data.response);
-        Ok((data.request, data.response))
+        let (request, response) = data.deserialize();
+        self.expect(&request, &response);
+        Ok((request, response))
     }
 }
 
 #[async_trait]
-impl Dapi for MockDapiClient {
+impl DapiRequestExecutor for MockDapiClient {
     async fn execute<R: TransportRequest>(
-        &mut self,
+        &self,
         request: R,
         _settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
+    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
+    where
+        R: Mockable,
+        R::Response: Mockable,
+    {
         let (key, response) = self.expectations.get(&request);
 
         tracing::trace!(
@@ -117,7 +121,7 @@ impl Dapi for MockDapiClient {
     }
 }
 
-#[derive(Eq, Hash, PartialEq, PartialOrd, Ord, Clone)]
+#[derive(Eq, Hash, PartialEq, PartialOrd, Ord, Clone, Debug)]
 /// Unique identifier of some serializable object (e.g. request) that can be used as a key in a hashmap.
 pub struct Key([u8; 32]);
 
@@ -127,24 +131,20 @@ impl Key {
     /// # Panics
     ///
     /// Panics if the object can't be serialized.
-    pub fn new<S: serde::Serialize>(request: S) -> Self {
+    pub fn new<S: Mockable>(request: &S) -> Self {
         Self::try_new(request).expect("unable to create a key")
     }
 
     /// Generate unique identifier of some serializable object (e.g. request).
-    pub fn try_new<S: serde::Serialize>(request: S) -> Result<Self, std::io::Error> {
-        let mut encoded = match serde_json::to_vec(&request) {
-            Ok(b) => b,
-            Err(e) => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("unable to serialize json: {}", e),
-                ))
-            }
-        };
+    pub fn try_new<S: Mockable>(request: &S) -> Result<Self, std::io::Error> {
         // we append type name to the encoded value to make sure that different types
         // will have different keys
         let typ = type_name::<S>().replace('&', ""); //remove & from type name
+
+        let mut encoded = S::mock_serialize(request).ok_or(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("mocking not supported for object of type {}", typ),
+        ))?;
         encoded.append(&mut typ.as_bytes().to_vec());
 
         let mut e = sha2::Sha256::new();
@@ -175,21 +175,22 @@ impl Display for Key {
     }
 }
 
+#[derive(Debug)]
 struct ExpectedResponse(Vec<u8>);
 
 impl ExpectedResponse {
-    fn serialize<I: serde::Serialize>(request: &I) -> Self {
+    fn serialize<I: Mockable>(request: &I) -> Self {
         // We use json because bincode sometimes fail to deserialize
-        Self(serde_json::to_vec(request).expect("encode value"))
+        Self(request.mock_serialize().expect("encode value"))
     }
 
-    fn deserialize<O: for<'de> serde::Deserialize<'de>>(&self) -> O {
+    fn deserialize<O: Mockable>(&self) -> O {
         // We use json because bincode sometimes fail to deserialize
-        serde_json::from_slice(&self.0).expect("deserialize value")
+        O::mock_deserialize(&self.0).expect("deserialize value")
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 /// Requests expected by a mock and their responses.
 struct Expectations {
     expectations: HashMap<Key, ExpectedResponse>,
@@ -199,11 +200,7 @@ impl Expectations {
     /// Add expected request and provide given response.
     ///
     /// If the expectation already exists, it will be silently replaced.
-    pub fn add<I: serde::Serialize, O: serde::Serialize + serde::de::DeserializeOwned>(
-        &mut self,
-        request: &I,
-        response: &O,
-    ) -> Key {
+    pub fn add<I: Mockable, O: Mockable>(&mut self, request: &I, response: &O) -> Key {
         let key = Key::new(request);
         let value = ExpectedResponse::serialize(response);
 
@@ -215,11 +212,8 @@ impl Expectations {
     /// Get the response for a given request.
     ///
     /// Returns `None` if the request has not been expected.
-    pub fn get<I: serde::Serialize, O: for<'de> serde::Deserialize<'de> + Debug>(
-        &self,
-        request: I,
-    ) -> (Key, Option<O>) {
-        let key = Key::new(&request);
+    pub fn get<I: Mockable, O: Mockable>(&self, request: &I) -> (Key, Option<O>) {
+        let key = Key::new(request);
 
         let response = self.expectations.get(&key).and_then(|v| v.deserialize());
 

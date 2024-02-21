@@ -1,17 +1,17 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
-use crate::execution::types::execution_operation::{ExecutionOperation, OperationLike};
+use crate::execution::types::execution_operation::ValidationOperation;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::fee::fee_result::FeeResult;
-use dpp::fee::Credits;
+
 use dpp::prelude::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use dpp::ProtocolError;
+
 use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C>
@@ -64,7 +64,7 @@ where
                     )
                     .map_err(Error::Drive)?;
 
-                ExecutionOperation::add_many_to_fee_result(
+                ValidationOperation::add_many_to_fee_result(
                     execution_operations,
                     &mut estimated_fee_result,
                     &block_info.epoch,
@@ -93,12 +93,15 @@ where
             }
             ExecutionEvent::PaidDriveEvent {
                 identity,
+                removed_balance,
                 operations,
                 execution_operations,
             } => {
                 let balance = identity.balance.ok_or(Error::Execution(
                     ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
                 ))?;
+                let balance_after_principal_operation =
+                    balance.saturating_sub(removed_balance.unwrap_or_default());
                 let mut estimated_fee_result = self
                     .drive
                     .apply_drive_operations(
@@ -110,7 +113,7 @@ where
                     )
                     .map_err(Error::Drive)?;
 
-                ExecutionOperation::add_many_to_fee_result(
+                ValidationOperation::add_many_to_fee_result(
                     execution_operations,
                     &mut estimated_fee_result,
                     &block_info.epoch,
@@ -119,7 +122,7 @@ where
 
                 // TODO: Should take into account refunds as well
                 let required_balance = estimated_fee_result.total_base_fee();
-                if balance >= required_balance {
+                if balance_after_principal_operation >= required_balance {
                     Ok(ConsensusValidationResult::new_with_data(
                         estimated_fee_result,
                     ))

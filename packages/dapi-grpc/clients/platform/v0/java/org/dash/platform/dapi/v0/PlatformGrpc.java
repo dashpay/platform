@@ -139,6 +139,68 @@ public final class PlatformGrpc {
     return getGetIdentityKeysMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceResponse> getGetIdentityNonceMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getIdentityNonce",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceResponse> getGetIdentityNonceMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceResponse> getGetIdentityNonceMethod;
+    if ((getGetIdentityNonceMethod = PlatformGrpc.getGetIdentityNonceMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetIdentityNonceMethod = PlatformGrpc.getGetIdentityNonceMethod) == null) {
+          PlatformGrpc.getGetIdentityNonceMethod = getGetIdentityNonceMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getIdentityNonce"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getIdentityNonce"))
+              .build();
+        }
+      }
+    }
+    return getGetIdentityNonceMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse> getGetIdentityContractNonceMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getIdentityContractNonce",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse> getGetIdentityContractNonceMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse> getGetIdentityContractNonceMethod;
+    if ((getGetIdentityContractNonceMethod = PlatformGrpc.getGetIdentityContractNonceMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetIdentityContractNonceMethod = PlatformGrpc.getGetIdentityContractNonceMethod) == null) {
+          PlatformGrpc.getGetIdentityContractNonceMethod = getGetIdentityContractNonceMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getIdentityContractNonce"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getIdentityContractNonce"))
+              .build();
+        }
+      }
+    }
+    return getGetIdentityContractNonceMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse> getGetIdentityBalanceMethod;
 
@@ -744,6 +806,20 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getIdentityNonce(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentityNonceMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getIdentityContractNonce(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentityContractNonceMethod(), responseObserver);
+    }
+
+    /**
+     */
     public void getIdentityBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentityBalanceMethod(), responseObserver);
@@ -891,6 +967,20 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysResponse>(
                   this, METHODID_GET_IDENTITY_KEYS)))
+          .addMethod(
+            getGetIdentityNonceMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceResponse>(
+                  this, METHODID_GET_IDENTITY_NONCE)))
+          .addMethod(
+            getGetIdentityContractNonceMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse>(
+                  this, METHODID_GET_IDENTITY_CONTRACT_NONCE)))
           .addMethod(
             getGetIdentityBalanceMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -1058,6 +1148,22 @@ public final class PlatformGrpc {
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetIdentityKeysMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getIdentityNonce(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetIdentityNonceMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getIdentityContractNonce(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetIdentityContractNonceMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -1241,6 +1347,20 @@ public final class PlatformGrpc {
 
     /**
      */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceResponse getIdentityNonce(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetIdentityNonceMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse getIdentityContractNonce(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetIdentityContractNonceMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse getIdentityBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetIdentityBalanceMethod(), getCallOptions(), request);
@@ -1407,6 +1527,22 @@ public final class PlatformGrpc {
 
     /**
      */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceResponse> getIdentityNonce(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetIdentityNonceMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse> getIdentityContractNonce(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetIdentityContractNonceMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse> getIdentityBalance(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
@@ -1546,23 +1682,22 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_IDENTITY = 1;
   private static final int METHODID_GET_IDENTITIES = 2;
   private static final int METHODID_GET_IDENTITY_KEYS = 3;
-  private static final int METHODID_GET_IDENTITY_BALANCE = 4;
-  private static final int METHODID_GET_IDENTITY_BALANCE_AND_REVISION = 5;
-  private static final int METHODID_GET_PROOFS = 6;
-  private static final int METHODID_GET_DATA_CONTRACT = 7;
-  private static final int METHODID_GET_DATA_CONTRACT_HISTORY = 8;
-  private static final int METHODID_GET_DATA_CONTRACTS = 9;
-  private static final int METHODID_GET_DOCUMENTS = 10;
-  private static final int METHODID_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES = 11;
-  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 12;
-  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 13;
-  private static final int METHODID_GET_CONSENSUS_PARAMS = 14;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 15;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 16;
-  private static final int METHODID_GET_EPOCHS_INFO = 17;
-  private static final int METHODID_GET_CONTESTED_RESOURCES = 18;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 19;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATUS = 20;
+  private static final int METHODID_GET_IDENTITY_NONCE = 4;
+  private static final int METHODID_GET_IDENTITY_CONTRACT_NONCE = 5;
+  private static final int METHODID_GET_IDENTITY_BALANCE = 6;
+  private static final int METHODID_GET_IDENTITY_BALANCE_AND_REVISION = 7;
+  private static final int METHODID_GET_PROOFS = 8;
+  private static final int METHODID_GET_DATA_CONTRACT = 9;
+  private static final int METHODID_GET_DATA_CONTRACT_HISTORY = 10;
+  private static final int METHODID_GET_DATA_CONTRACTS = 11;
+  private static final int METHODID_GET_DOCUMENTS = 12;
+  private static final int METHODID_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES = 13;
+  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 14;
+  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 15;
+  private static final int METHODID_GET_CONSENSUS_PARAMS = 16;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 17;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 18;
+  private static final int METHODID_GET_EPOCHS_INFO = 19;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -1596,6 +1731,14 @@ public final class PlatformGrpc {
         case METHODID_GET_IDENTITY_KEYS:
           serviceImpl.getIdentityKeys((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysResponse>) responseObserver);
+          break;
+        case METHODID_GET_IDENTITY_NONCE:
+          serviceImpl.getIdentityNonce((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityNonceResponse>) responseObserver);
+          break;
+        case METHODID_GET_IDENTITY_CONTRACT_NONCE:
+          serviceImpl.getIdentityContractNonce((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse>) responseObserver);
           break;
         case METHODID_GET_IDENTITY_BALANCE:
           serviceImpl.getIdentityBalance((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceRequest) request,
@@ -1730,6 +1873,8 @@ public final class PlatformGrpc {
               .addMethod(getGetIdentityMethod())
               .addMethod(getGetIdentitiesMethod())
               .addMethod(getGetIdentityKeysMethod())
+              .addMethod(getGetIdentityNonceMethod())
+              .addMethod(getGetIdentityContractNonceMethod())
               .addMethod(getGetIdentityBalanceMethod())
               .addMethod(getGetIdentityBalanceAndRevisionMethod())
               .addMethod(getGetProofsMethod())

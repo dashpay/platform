@@ -39,6 +39,8 @@ mod fetch_by_public_key_hashes;
 #[cfg(feature = "full")]
 mod full_identity;
 #[cfg(feature = "full")]
+mod nonce;
+#[cfg(feature = "full")]
 mod partial_identity;
 #[cfg(feature = "full")]
 mod prove;

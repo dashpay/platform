@@ -1,8 +1,4 @@
-use std::array::TryFromSliceError;
-use std::collections::BTreeMap;
-use std::num::TryFromIntError;
-
-use crate::{types::*, Error, QuorumInfoProvider};
+use crate::{types, types::*, ContextProvider, Error};
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
 };
@@ -11,7 +7,8 @@ use dapi_grpc::platform::v0::{
     get_data_contract_history_request, get_data_contract_request, get_data_contracts_request,
     get_epochs_info_request, get_identity_balance_and_revision_request,
     get_identity_balance_request, get_identity_by_public_key_hash_request,
-    get_identity_keys_request, get_identity_request, GetProtocolVersionUpgradeStateRequest,
+    get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request,
+    get_identity_request, GetProtocolVersionUpgradeStateRequest,
     GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
     GetProtocolVersionUpgradeVoteStatusResponse,
 };
@@ -25,19 +22,23 @@ use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::{DataContract, Identifier, Identity};
+use dpp::serialization::PlatformDeserializable;
+use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
-pub use drive::drive::verify::RootHash;
+
 use drive::drive::Drive;
+use drive::error::proof::ProofError;
 use drive::query::DriveQuery;
+use std::array::TryFromSliceError;
+use std::collections::BTreeMap;
+use std::num::TryFromIntError;
+use std::sync::Arc;
 
 use crate::verify::verify_tenderdash_proof;
-
-lazy_static::lazy_static! {
-    pub static ref PLATFORM_VERSION: PlatformVersion = PlatformVersion::latest().to_owned();
-}
 
 /// Parse and verify the received proof and retrieve the requested object, if any.
 ///
@@ -63,7 +64,7 @@ pub trait FromProof<Req> {
     ///
     /// * `request`: The request sent to the server.
     /// * `response`: The response received from the server.
-    /// * `provider`: A callback implementing [QuorumInfoProvider] that provides quorum details required to verify the proof.
+    /// * `provider`: A callback implementing [ContextProvider] that provides quorum details required to verify the proof.
     ///
     /// # Returns
     ///
@@ -75,7 +76,7 @@ pub trait FromProof<Req> {
         request: I,
         response: O,
         platform_version: &PlatformVersion,
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         Self: Sized + 'a;
@@ -91,7 +92,7 @@ pub trait FromProof<Req> {
     ///
     /// * `request`: The request sent to the server.
     /// * `response`: The response received from the server.
-    /// * `provider`: A callback implementing [QuorumInfoProvider] that provides quorum details required to verify the proof.
+    /// * `provider`: A callback implementing [ContextProvider] that provides quorum details required to verify the proof.
     ///
     /// # Returns
     ///
@@ -102,7 +103,7 @@ pub trait FromProof<Req> {
         request: I,
         response: O,
         platform_version: &PlatformVersion,
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Self, Error>
     where
         Self: Sized + 'a,
@@ -119,8 +120,8 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        _platform_version: &PlatformVersion,
-        provider: &'a dyn QuorumInfoProvider,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         Identity: Sized + 'a,
@@ -146,7 +147,7 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
             &proof.grovedb_proof,
             false,
             id.into_buffer(),
-            &PLATFORM_VERSION,
+            platform_version,
         )
         .map_err(|e| Error::DriveError {
             error: e.to_string(),
@@ -166,9 +167,9 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         Identity: 'a,
@@ -196,7 +197,7 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
         let (root_hash, maybe_identity) = Drive::verify_full_identity_by_public_key_hash(
             &proof.grovedb_proof,
             public_key_hash,
-            &PLATFORM_VERSION,
+            platform_version,
         )
         .map_err(|e| Error::DriveError {
             error: e.to_string(),
@@ -215,9 +216,9 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         IdentityPublicKeys: 'a,
@@ -281,7 +282,9 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
             &proof.grovedb_proof,
             key_request,
             false,
-            &PLATFORM_VERSION,
+            false,
+            false,
+            platform_version,
         )
         .map_err(|e| Error::DriveError {
             error: e.to_string(),
@@ -338,7 +341,7 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
                 .purpose_map
                 .iter()
                 .map(|(k, v)| {
-                    let v=  v.security_level_map
+                     let v = v.security_level_map
                             .iter()
                             .map(|(level, kind)| {
                                 let kt = match GrpcKeyKind::from_i32(*kind) {
@@ -373,6 +376,108 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
     Ok(request_type)
 }
 
+impl FromProof<platform::GetIdentityNonceRequest> for IdentityNonceFetcher {
+    type Request = platform::GetIdentityNonceRequest;
+    type Response = platform::GetIdentityNonceResponse;
+
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+
+        provider: &'a dyn ContextProvider,
+    ) -> Result<Option<Self>, Error>
+    where
+        IdentityNonceFetcher: 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let identity_id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_identity_nonce_request::Version::V0(v0) => {
+                Ok::<dpp::identifier::Identifier, Error>(
+                    Identifier::from_bytes(&v0.identity_id).map_err(|e| Error::ProtocolError {
+                        error: e.to_string(),
+                    })?,
+                )
+            }
+        }?;
+
+        // Extract content from proof and verify Drive/GroveDB proofs
+        let (root_hash, maybe_nonce) = Drive::verify_identity_nonce(
+            &proof.grovedb_proof,
+            identity_id.into_buffer(),
+            false,
+            platform_version,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok(maybe_nonce.map(types::IdentityNonceFetcher))
+    }
+}
+
+impl FromProof<platform::GetIdentityContractNonceRequest> for IdentityContractNonceFetcher {
+    type Request = platform::GetIdentityContractNonceRequest;
+    type Response = platform::GetIdentityContractNonceResponse;
+
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+
+        provider: &'a dyn ContextProvider,
+    ) -> Result<Option<Self>, Error>
+    where
+        IdentityContractNonceFetcher: 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (identity_id, contract_id) = match request.version.ok_or(Error::EmptyVersion)? {
+            get_identity_contract_nonce_request::Version::V0(v0) => {
+                Ok::<(dpp::identifier::Identifier, dpp::identifier::Identifier), Error>((
+                    Identifier::from_bytes(&v0.identity_id).map_err(|e| Error::ProtocolError {
+                        error: e.to_string(),
+                    })?,
+                    Identifier::from_bytes(&v0.contract_id).map_err(|e| Error::ProtocolError {
+                        error: e.to_string(),
+                    })?,
+                ))
+            }
+        }?;
+
+        // Extract content from proof and verify Drive/GroveDB proofs
+        let (root_hash, maybe_identity) = Drive::verify_identity_contract_nonce(
+            &proof.grovedb_proof,
+            identity_id.into_buffer(),
+            contract_id.into_buffer(),
+            false,
+            platform_version,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok(maybe_identity.map(types::IdentityContractNonceFetcher))
+    }
+}
+
 impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
     type Request = platform::GetIdentityBalanceRequest;
     type Response = platform::GetIdentityBalanceResponse;
@@ -380,9 +485,9 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         IdentityBalance: 'a,
@@ -407,7 +512,7 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
             &proof.grovedb_proof,
             id.into_buffer(),
             false,
-            &PLATFORM_VERSION,
+            platform_version,
         )
         .map_err(|e| Error::DriveError {
             error: e.to_string(),
@@ -428,7 +533,7 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
         response: O,
         _platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         IdentityBalanceAndRevision: 'a,
@@ -473,9 +578,9 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         DataContract: 'a,
@@ -503,7 +608,7 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
             false,
             false,
             id.into_buffer(),
-            &PLATFORM_VERSION,
+            platform_version,
         )
         .map_err(|e| Error::DriveError {
             error: e.to_string(),
@@ -522,9 +627,9 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         DataContracts: 'a,
@@ -557,7 +662,7 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
             &proof.grovedb_proof,
             false,
             ids.as_slice(),
-            &PLATFORM_VERSION,
+            platform_version,
         )
         .map_err(|e| Error::DriveError {
             error: e.to_string(),
@@ -595,9 +700,9 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         Self: Sized + 'a,
@@ -629,7 +734,7 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
             start_at_ms,
             limit,
             offset,
-            &PLATFORM_VERSION,
+            platform_version,
         )
         .map_err(|e| Error::DriveError {
             error: e.to_string(),
@@ -641,6 +746,55 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
     }
 }
 
+impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionProofResult {
+    type Request = platform::BroadcastStateTransitionRequest;
+    type Response = platform::WaitForStateTransitionResultResponse;
+
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<Option<Self>, Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+
+        let state_transition = StateTransition::deserialize_from_bytes(&request.state_transition)
+            .map_err(|e| Error::ProtocolError {
+            error: e.to_string(),
+        })?;
+
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let known_contracts_provider_fn =
+            |id: &Identifier| -> Result<Option<Arc<DataContract>>, drive::error::Error> {
+                provider.get_data_contract(id).map_err(|e| {
+                    drive::error::Error::Proof(ProofError::ErrorRetrievingContract(e.to_string()))
+                })
+            };
+
+        let (root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
+            &state_transition,
+            &proof.grovedb_proof,
+            &known_contracts_provider_fn,
+            platform_version,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok(Some(result))
+    }
+}
+
 impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfo {
     type Request = platform::GetEpochsInfoRequest;
     type Response = platform::GetEpochsInfoResponse;
@@ -649,7 +803,7 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfo {
         request: I,
         response: O,
         platform_version: &PlatformVersion,
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         Self: Sized + 'a,
@@ -679,7 +833,7 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfos {
         request: I,
         response: O,
         platform_version: &PlatformVersion,
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         Self: Sized + 'a,
@@ -754,7 +908,7 @@ impl FromProof<GetProtocolVersionUpgradeStateRequest> for ProtocolVersionUpgrade
         _request: I,
         response: O,
         platform_version: &PlatformVersion,
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         Self: Sized + 'a,
@@ -787,7 +941,7 @@ impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtoco
         request: I,
         response: O,
         platform_version: &PlatformVersion,
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         Self: Sized + 'a,
@@ -848,7 +1002,6 @@ impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtoco
         Ok(Some(votes))
     }
 }
-
 // #[cfg_attr(feature = "mocks", mockall::automock)]
 impl<'dq, Q> FromProof<Q> for Documents
 where
@@ -861,9 +1014,9 @@ where
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         Self: 'a,
@@ -885,7 +1038,7 @@ where
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, documents) = request
-            .verify_proof(&proof.grovedb_proof, &PLATFORM_VERSION)
+            .verify_proof(&proof.grovedb_proof, platform_version)
             .map_err(|e| Error::DriveError {
                 error: e.to_string(),
             })?;

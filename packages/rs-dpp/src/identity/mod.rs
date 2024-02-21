@@ -1,6 +1,5 @@
 pub use credits_converter::*;
-pub use credits_converter::*;
-pub use get_biggest_possible_identity::*;
+
 pub use identity::*;
 #[cfg(feature = "client")]
 pub use identity_facade::*;
@@ -24,6 +23,7 @@ mod fields;
 mod identity_facade;
 #[cfg(feature = "factories")]
 pub mod identity_factory;
+pub mod identity_nonce;
 mod methods;
 #[cfg(feature = "random-identities")]
 pub mod random;

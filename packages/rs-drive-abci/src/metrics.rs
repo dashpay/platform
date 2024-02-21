@@ -56,6 +56,11 @@ impl HistogramTiming {
             start: Instant::now(),
         }
     }
+
+    /// Returns the elapsed time since the metric was started.
+    pub fn elapsed(&self) -> std::time::Duration {
+        self.start.elapsed()
+    }
 }
 
 impl Drop for HistogramTiming {
