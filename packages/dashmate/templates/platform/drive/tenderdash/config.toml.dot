@@ -13,7 +13,7 @@
 # TCP or UNIX socket address of the ABCI application,
 # or the name of an ABCI application compiled in with the Tendermint binary
 #proxy-app = "tcp://drive_abci:26658"
-proxy-app = "Query:socket:tcp://drive_abci:26659,CheckTx:socket:tcp://drive_abci:26659,*:socket:tcp://drive_abci:26658"
+proxy-app = "CheckTx:grpc:drive_abci:26670,*:socket:tcp://drive_abci:26658"
 
 # A custom human readable name for this node
 {{?it.platform.drive.tenderdash.moniker}}moniker = "{{=it.platform.drive.tenderdash.moniker}}"{{?}}

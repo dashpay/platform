@@ -71,7 +71,6 @@ services:
       - CHAIN_LOCK_QUORUM_SIZE=${PLATFORM_DRIVE_ABCI_CHAIN_LOCK_LLMQ_SIZE:?err}
       - DB_PATH=/var/lib/dash/rs-drive-abci/db
       - ABCI_CONSENSUS_BIND_ADDRESS=tcp://0.0.0.0:26658
-      - ABCI_QUERY_BIND_ADDRESS=tcp://0.0.0.0:26659
       - GRPC_BIND_ADDRESS=0.0.0.0:26670
       - PROMETHEUS_BIND_ADDRESS=http://0.0.0.0:29090
     stop_grace_period: 30s

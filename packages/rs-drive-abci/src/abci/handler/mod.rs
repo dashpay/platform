@@ -36,6 +36,7 @@
 //!
 
 mod check_tx;
+mod echo;
 pub mod error;
 pub mod execution_result;
 mod extend_vote;
@@ -47,6 +48,7 @@ mod process_proposal;
 mod verify_vote_extension;
 
 pub use check_tx::check_tx;
+pub use echo::echo;
 pub use extend_vote::extend_vote;
 pub use finalize_block::finalize_block;
 pub use info::info;

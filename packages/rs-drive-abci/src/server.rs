@@ -2,7 +2,7 @@
 //!
 mod query;
 
-use crate::abci::app::QueryAbciApplication;
+use crate::abci::app::CheckTxAbciApplication;
 use crate::abci::app::{ConsensusAbciApplication, NamedApplication};
 use crate::abci::AbciError;
 use crate::server::query::QueryServer;
@@ -27,38 +27,43 @@ pub fn start(
     cancel: CancellationToken,
 ) {
     let query_server = QueryServer::new(Arc::clone(&platform));
-    let platform_query_server = dapi_grpc::tonic::transport::Server::builder()
-        .add_service(dapi_grpc::platform::v0::platform_server::PlatformServer::new(query_server));
+    let check_tx_server = CheckTxAbciApplication::new(Arc::clone(&platform));
 
-    tracing::info!("gRPC server is listening on {}", &config.grpc_bind_address);
+    let grpc_server = dapi_grpc::tonic::transport::Server::builder()
+        .add_service(dapi_grpc::platform::v0::platform_server::PlatformServer::new(query_server))
+        .add_service(
+            tenderdash_abci::proto::abci::abci_application_server::AbciApplicationServer::new(
+                check_tx_server,
+            ),
+        );
 
-    runtime.spawn(
-        platform_query_server.serve(
-            config
-                .grpc_bind_address
-                .parse()
-                .expect("invalid grpc address"),
-        ),
-    );
+    let grpc_server_cancel = cancel.clone();
+
+    runtime.spawn(async move {
+        tracing::info!("gRPC server is listening on {}", &config.grpc_bind_address);
+
+        grpc_server
+            .serve_with_shutdown(
+                config
+                    .grpc_bind_address
+                    .parse()
+                    .expect("invalid grpc address"),
+                grpc_server_cancel.cancelled(),
+            )
+            .await
+            .expect("gRPC server failed");
+
+        tracing::info!("gRPC server is stopped");
+    });
 
     let cancel_ref = &cancel;
 
     let platform1 = Arc::clone(&platform);
-    let platform2 = Arc::clone(&platform);
 
     thread::scope(|scope| {
         scope.spawn(move || {
-            let app = ConsensusAbciApplication::new(platform1.as_ref())
-                .expect("Failed to create ABCI app");
-
+            let app = ConsensusAbciApplication::new(platform1.as_ref());
             start_tenderdash_abci_server(app, &config.abci.consensus_bind_address, cancel_ref)
-        });
-
-        scope.spawn(move || {
-            let app =
-                QueryAbciApplication::new(platform2.as_ref()).expect("Failed to create ABCI app");
-
-            start_tenderdash_abci_server(app, &config.abci.query_bind_address, cancel_ref)
         });
     });
 }

@@ -1,4 +1,4 @@
 mod error;
-mod server;
+mod service;
 
-pub use server::QueryServer;
+pub use service::QueryServer;

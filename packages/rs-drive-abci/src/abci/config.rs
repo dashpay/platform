@@ -23,14 +23,6 @@ pub struct AbciConfig {
     #[serde(rename = "abci_consensus_bind_address")]
     pub consensus_bind_address: String,
 
-    /// Address to listen for ABCI connections
-    ///
-    /// Address should be an URL with scheme `tcp://` or `unix://`, for example:
-    /// - `tcp://127.0.0.1:1234`
-    /// - `unix:///var/run/abci.sock`
-    #[serde(rename = "abci_query_bind_address")]
-    pub query_bind_address: String,
-
     /// Public keys used for system identity
     #[serde(flatten)]
     pub keys: Keys,
@@ -67,7 +59,6 @@ impl Default for AbciConfig {
     fn default() -> Self {
         Self {
             consensus_bind_address: "tcp://127.0.0.1:1234".to_string(),
-            query_bind_address: "tcp://127.0.0.1:1234".to_string(),
             keys: Keys::new_random_keys_with_seed(18012014, PlatformVersion::first())
                 .expect("random keys for first version can not error"), //Dash genesis day
             genesis_height: AbciConfig::default_genesis_height(),

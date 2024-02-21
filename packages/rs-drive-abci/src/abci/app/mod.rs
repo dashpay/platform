@@ -3,17 +3,18 @@ use crate::platform_types::platform::Platform;
 use drive::grovedb::Transaction;
 use std::sync::{Arc, RwLock};
 
+mod check_tx;
 /// Block update
 mod consensus;
 mod full;
-mod query;
 
+use crate::rpc::core::DefaultCoreRPC;
+pub use check_tx::CheckTxAbciApplication;
 pub use consensus::ConsensusAbciApplication;
 pub use full::FullAbciApplication;
-pub use query::QueryAbciApplication;
 
 /// Platform-based ABCI application
-pub trait PlatformApplication<C> {
+pub trait PlatformApplication<C = DefaultCoreRPC> {
     /// Returns Platform
     fn platform(&self) -> &Platform<C>;
 }

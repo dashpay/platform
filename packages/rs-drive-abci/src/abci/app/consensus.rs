@@ -29,13 +29,11 @@ impl<'a, C> NamedApplication for ConsensusAbciApplication<'a, C> {
 
 impl<'a, C> ConsensusAbciApplication<'a, C> {
     /// Create new ABCI app
-    pub fn new(platform: &'a Platform<C>) -> Result<Self, Error> {
-        let app = Self {
+    pub fn new(platform: &'a Platform<C>) -> Self {
+        Self {
             platform,
             transaction: RwLock::new(None),
-        };
-
-        Ok(app)
+        }
     }
 }
 
