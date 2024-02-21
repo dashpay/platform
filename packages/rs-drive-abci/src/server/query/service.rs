@@ -48,28 +48,30 @@ impl QueryServer {
     where
         RS: Clone,
     {
-        let Some(platform_version) = PlatformVersion::get_maybe_current() else {
-            return Err(Status::unavailable("platform is not initialized"));
-        };
+        tokio::task::block_in_place(move || {
+            let Some(platform_version) = PlatformVersion::get_maybe_current() else {
+                return Err(Status::unavailable("platform is not initialized"));
+            };
 
-        let mut result = query_method(
-            self.platform.as_ref(),
-            request.into_inner(),
-            platform_version,
-        )
-        .map_err(error_into_status)?;
+            let mut result = query_method(
+                self.platform.as_ref(),
+                request.into_inner(),
+                platform_version,
+            )
+            .map_err(error_into_status)?;
 
-        if result.is_valid() {
-            let response = result
-                .into_data()
-                .map_err(|error| error_into_status(error.into()))?;
+            if result.is_valid() {
+                let response = result
+                    .into_data()
+                    .map_err(|error| error_into_status(error.into()))?;
 
-            Ok(Response::new(response))
-        } else {
-            let error = result.errors.swap_remove(0);
+                Ok(Response::new(response))
+            } else {
+                let error = result.errors.swap_remove(0);
 
-            Err(query_error_into_status(error))
-        }
+                Err(query_error_into_status(error))
+            }
+        })
     }
 }
 

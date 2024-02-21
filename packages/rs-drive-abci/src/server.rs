@@ -29,6 +29,7 @@ pub fn start(
     let query_server = QueryServer::new(Arc::clone(&platform));
     let check_tx_server = CheckTxAbciApplication::new(Arc::clone(&platform));
 
+    // TODO: Consider to use tower to limit concurrent requests
     let grpc_server = dapi_grpc::tonic::transport::Server::builder()
         .add_service(dapi_grpc::platform::v0::platform_server::PlatformServer::new(query_server))
         .add_service(

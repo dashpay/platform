@@ -1,13 +1,14 @@
 use crate::abci::app::PlatformApplication;
 use crate::abci::handler;
 use crate::platform_types::platform::Platform;
-use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
+use crate::rpc::core::CoreRPCLike;
 use async_trait::async_trait;
 use std::fmt::Debug;
 use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::abci_application_server as grpc_abci_server;
 use tenderdash_abci::proto::tonic;
+use tokio;
 
 /// AbciApp is an implementation of gRPC ABCI Application, as defined by Tenderdash.
 ///
@@ -67,7 +68,7 @@ where
         &self,
         request: tonic::Request<proto::RequestCheckTx>,
     ) -> Result<tonic::Response<proto::ResponseCheckTx>, tonic::Status> {
-        handler::check_tx(self, request.into_inner())
+        tokio::task::block_in_place(move || handler::check_tx(self, request.into_inner()))
             .map(|response| tonic::Response::new(response))
             .map_err(|e| tonic::Status::internal(e.error))
     }
