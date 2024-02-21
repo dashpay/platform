@@ -6969,13 +6969,8 @@ _PLATFORM = _descriptor.ServiceDescriptor(
   index=0,
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-<<<<<<< HEAD
   serialized_start=17897,
   serialized_end=20869,
-=======
-  serialized_start=15673,
-  serialized_end=18446,
->>>>>>> v1.0-dev
   methods=[
   _descriptor.MethodDescriptor(
     name='broadcastStateTransition',

@@ -10,7 +10,7 @@ mod version;
 
 use crate::identity::KeyID;
 
-use crate::prelude::Identifier;
+use crate::prelude::{Identifier, IdentityNonce};
 
 use crate::protocol_error::ProtocolError;
 use crate::voting::Vote;
@@ -40,6 +40,7 @@ pub struct MasternodeVoteTransitionV0 {
     // Own ST fields
     pub pro_tx_hash: Identifier,
     pub vote: Vote,
+    pub nonce: IdentityNonce,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]

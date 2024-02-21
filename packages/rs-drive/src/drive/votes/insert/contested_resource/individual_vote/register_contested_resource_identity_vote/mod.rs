@@ -14,6 +14,7 @@ use dpp::version::PlatformVersion;
 use dpp::voting::ContestedDocumentResourceVoteType;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use dpp::identifier::Identifier;
+use dpp::prelude::IdentityNonce;
 use crate::fee::op::LowLevelDriveOperation;
 
 impl Drive {
@@ -54,12 +55,13 @@ impl Drive {
         voter_pro_tx_hash: [u8; 32],
         vote: ContestedDocumentResourceVoteType,
         block_info: &BlockInfo,
+        identity_nonce: IdentityNonce,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<LowLevelDriveOperation, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match platform_version
             .drive
             .methods
@@ -71,6 +73,7 @@ impl Drive {
                 voter_pro_tx_hash,
                 vote,
                 block_info,
+                identity_nonce,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

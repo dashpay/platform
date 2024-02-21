@@ -8,7 +8,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::voting::{ContestedDocumentResourceVoteType, Vote};
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::prelude::Identifier;
+use dpp::prelude::{Identifier, IdentityNonce};
 use platform_version::version::PlatformVersion;
 
 impl Drive {
@@ -17,6 +17,7 @@ impl Drive {
         voter_pro_tx_hash: Identifier,
         vote: ContestedDocumentResourceVoteType,
         block_info: &BlockInfo,
+        identity_nonce: IdentityNonce,
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -41,6 +42,7 @@ impl Drive {
         voter_pro_tx_hash: [u8; 32],
         vote: ContestedDocumentResourceVoteType,
         block_info: &BlockInfo,
+        identity_nonce: IdentityNonce,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,

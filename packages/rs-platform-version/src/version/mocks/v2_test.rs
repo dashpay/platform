@@ -661,10 +661,13 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                         transform_into_action: 0,
                     },
                 masternode_vote_state_transition: DriveAbciStateTransitionValidationVersion {
-                    structure: 0,
+                    base_structure: 0,
                     identity_signatures: None,
+                    balance: None,
+                    nonce: Some(0),
                     state: 0,
                     transform_into_action: 0,
+                    advanced_structure: None
                 },
                 contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     base_structure: 0,

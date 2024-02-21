@@ -49,4 +49,12 @@ impl StateTransitionLike for MasternodeVoteTransitionV0 {
     fn owner_id(&self) -> Identifier {
         self.pro_tx_hash
     }
+
+    fn unique_identifiers(&self) -> Vec<String> {
+        vec![format!(
+            "{}-{:x}",
+            base64::encode(self.pro_tx_hash),
+            self.nonce
+        )]
+    }
 }

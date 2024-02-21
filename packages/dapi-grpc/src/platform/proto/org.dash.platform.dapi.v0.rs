@@ -2134,6 +2134,7 @@ pub mod get_epochs_info_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetContestedResourcesRequest {
@@ -2144,6 +2145,7 @@ pub struct GetContestedResourcesRequest {
 pub mod get_contested_resources_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetContestedResourcesRequestV0 {
@@ -2171,6 +2173,7 @@ pub mod get_contested_resources_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetContestedResourcesResponse {
@@ -2181,6 +2184,7 @@ pub struct GetContestedResourcesResponse {
 pub mod get_contested_resources_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetContestedResourcesResponseV0 {
@@ -2193,6 +2197,7 @@ pub mod get_contested_resources_response {
     pub mod get_contested_resources_response_v0 {
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct ContestedResources {
@@ -2203,6 +2208,7 @@ pub mod get_contested_resources_response {
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct ContestedResource {
@@ -2231,6 +2237,7 @@ pub mod get_contested_resources_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetContestedResourceVoteStateRequest {
@@ -2243,6 +2250,7 @@ pub struct GetContestedResourceVoteStateRequest {
 pub mod get_contested_resource_vote_state_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetContestedResourceVoteStateRequestV0 {
@@ -2270,6 +2278,7 @@ pub mod get_contested_resource_vote_state_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetContestedResourceVoteStateResponse {
@@ -2282,6 +2291,7 @@ pub struct GetContestedResourceVoteStateResponse {
 pub mod get_contested_resource_vote_state_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetContestedResourceVoteStateResponseV0 {
@@ -2299,6 +2309,7 @@ pub mod get_contested_resource_vote_state_response {
     pub mod get_contested_resource_vote_state_response_v0 {
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct ContestedResourceContenders {
@@ -2309,6 +2320,7 @@ pub mod get_contested_resource_vote_state_response {
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct Contender {
@@ -2339,6 +2351,7 @@ pub mod get_contested_resource_vote_state_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetContestedResourceVoteStatusRequest {
@@ -2351,6 +2364,7 @@ pub struct GetContestedResourceVoteStatusRequest {
 pub mod get_contested_resource_vote_status_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetContestedResourceVoteStatusRequestV0 {
@@ -2378,6 +2392,7 @@ pub mod get_contested_resource_vote_status_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetContestedResourceVoteStatusResponse {
@@ -2390,6 +2405,7 @@ pub struct GetContestedResourceVoteStatusResponse {
 pub mod get_contested_resource_vote_status_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetContestedResourceVoteStatusResponseV0 {
@@ -2407,6 +2423,7 @@ pub mod get_contested_resource_vote_status_response {
     pub mod get_contested_resource_vote_status_response_v0 {
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct ContestedResourceVoters {
@@ -2417,6 +2434,7 @@ pub mod get_contested_resource_vote_status_response {
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct Voter {
