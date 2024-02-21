@@ -8,4 +8,8 @@ pub enum DataContractError {
     /// KeyBoundsExpectedButNotPresent error
     #[error("key bounds expected but not present error: {0}")]
     KeyBoundsExpectedButNotPresent(&'static str),
+
+    /// Data contract missing or cannot be retrieved
+    #[error("data contract cannot be retrieved: {0}")]
+    MissingContract(String),
 }

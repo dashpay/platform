@@ -6,7 +6,6 @@ use crate::protocol_error::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 
 /// Extended Block information

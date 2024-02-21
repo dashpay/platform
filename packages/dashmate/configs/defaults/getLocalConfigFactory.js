@@ -24,6 +24,9 @@ export default function getLocalConfigFactory(getBaseConfig) {
         },
       },
       core: {
+        docker: {
+          image: 'dashpay/dashd:20.1.0-devpr5855.4d19698f', commandArgs: [],
+        },
         p2p: {
           port: 20001,
         },
@@ -49,6 +52,10 @@ export default function getLocalConfigFactory(getBaseConfig) {
           tenderdash: {
             p2p: {
               port: 46656,
+              flushThrottleTimeout: '10ms',
+              maxPacketMsgPayloadSize: 1024,
+              sendRate: 20000000,
+              recvRate: 20000000,
             },
             rpc: {
               port: 46657,
@@ -63,6 +70,11 @@ export default function getLocalConfigFactory(getBaseConfig) {
           abci: {
             validatorSet: {
               llmqType: 106,
+            },
+            chainLock: {
+              llmqType: 100,
+              dkgInterval: 24,
+              llmqSize: 3,
             },
           },
         },

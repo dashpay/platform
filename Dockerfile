@@ -30,7 +30,7 @@
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
 
 ARG ALPINE_VERSION=3.18
-
+ARG PROTOC_VERSION=25.2
 ARG RUSTC_WRAPPER
 
 #
@@ -78,8 +78,9 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
+ARG PROTOC_VERSION
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else export PROTOC_ARCH=x86_64; fi; \
-    curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v22.4/protoc-22.4-linux-${PROTOC_ARCH}.zip \
+    curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip \
         -o /tmp/protoc.zip && \
     unzip -qd /opt/protoc /tmp/protoc.zip && \
     rm /tmp/protoc.zip && \
@@ -236,7 +237,7 @@ RUN mkdir -p /var/log/dash \
     /var/lib/dash/rs-drive-abci/db
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
-COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.example /var/lib/dash/rs-drive-abci/.env
+COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
 
 # Create a volume
 VOLUME /var/lib/dash/rs-drive-abci/db
@@ -392,7 +393,7 @@ LABEL description="DAPI Node.JS"
 # Install ZMQ shared library
 RUN apk add --no-cache zeromq-dev
 
-WORKDIR /platform
+WORKDIR /platform/packages/dapi
 
 COPY --from=build-dapi /platform/.yarn /platform/.yarn
 COPY --from=build-dapi /platform/package.json /platform/yarn.lock /platform/.yarnrc.yml /platform/.pnp* /platform/

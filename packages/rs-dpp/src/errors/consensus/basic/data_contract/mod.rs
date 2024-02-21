@@ -1,3 +1,4 @@
+mod data_contract_empty_schema_error;
 mod data_contract_have_new_unique_index_error;
 mod data_contract_immutable_properties_update_error;
 mod data_contract_invalid_index_definition_update_error;
@@ -17,6 +18,7 @@ mod system_property_index_already_present_error;
 mod undefined_index_property_error;
 mod unique_indices_limit_reached_error;
 
+pub use data_contract_empty_schema_error::*;
 pub use data_contract_have_new_unique_index_error::*;
 pub use data_contract_immutable_properties_update_error::*;
 pub use data_contract_invalid_index_definition_update_error::*;
@@ -31,7 +33,7 @@ pub use invalid_data_contract_version_error::*;
 pub use invalid_index_property_type_error::*;
 pub use invalid_indexed_property_constraint_error::*;
 pub use invalid_json_schema_ref_error::*;
-pub use invalid_json_schema_ref_error::*;
+
 pub use system_property_index_already_present_error::*;
 pub use undefined_index_property_error::*;
 pub use unique_indices_limit_reached_error::*;

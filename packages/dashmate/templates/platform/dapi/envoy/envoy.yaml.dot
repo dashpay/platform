@@ -80,21 +80,24 @@
                   timeout: 660s
                   max_stream_duration:
                     grpc_timeout_header_max: 600s
+              # set timeout for waitForStateTransitionResult
+              - match:
+                  prefix: "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
+                route:
+                  cluster: core_and_platform
+                  timeout: 80s
               # core unary endpoints
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Core"
                 route:
                   cluster: core_and_platform
+                  timeout: {{= it.platform.dapi.envoy.http.responseTimeout }}
               # platform unary endpoints
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Platform"
                 route:
                   cluster: core_and_platform
-              # health-check endpoints
-              - match:
-                  prefix: "/grpc.health.v1.Health"
-                route:
-                  cluster: tx_filter_stream
+                  timeout: {{= it.platform.dapi.envoy.http.responseTimeout }}
               # configuration of the static responses of unsupported api versions
               # core static response
               - match:
@@ -190,7 +193,7 @@ static_resources:
         {{?}}
   clusters:
    - name: core_and_platform
-     connect_timeout: 0.5s
+     connect_timeout: {{= it.platform.dapi.envoy.http.connectTimeout }}
      type: logical_dns
      lb_policy: round_robin
      typed_extension_protocol_options:
@@ -211,7 +214,7 @@ static_resources:
                      address: dapi_api
                      port_value: 3005
    - name: tx_filter_stream
-     connect_timeout: 0.5s
+     connect_timeout: {{= it.platform.dapi.envoy.http.connectTimeout }}
      type: logical_dns
      lb_policy: round_robin
      typed_extension_protocol_options:
@@ -232,7 +235,7 @@ static_resources:
                      address: dapi_tx_filter_stream
                      port_value: 3006
    - name: json_rpc
-     connect_timeout: 0.5s
+     connect_timeout: {{= it.platform.dapi.envoy.http.connectTimeout }}
      type: logical_dns
      lb_policy: round_robin
      load_assignment:
@@ -248,5 +251,5 @@ static_resources:
 admin:
  address:
    socket_address:
-     address: 0.0.0.0
+     address: 0.0.0.0 # For docker container only. Must be a local/private interface.
      port_value: 8081

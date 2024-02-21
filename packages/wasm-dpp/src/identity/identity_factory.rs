@@ -4,9 +4,11 @@ use crate::identifier::IdentifierWrapper;
 use crate::identity::errors::InvalidIdentityError;
 
 use crate::identity::identity::IdentityWasm;
-use crate::identity::state_transition::ChainAssetLockProofWasm;
 use crate::identity::state_transition::IdentityCreditTransferTransitionWasm;
 use crate::identity::state_transition::InstantAssetLockProofWasm;
+use crate::identity::state_transition::{
+    ChainAssetLockProofWasm, IdentityCreditWithdrawalTransitionWasm,
+};
 
 use crate::{
     identity::state_transition::create_asset_lock_proof_from_wasm_instance,
@@ -16,16 +18,18 @@ use crate::{
 };
 use dpp::dashcore::{consensus, InstantLock, Transaction};
 
-use dpp::prelude::Identity;
+use dpp::prelude::{Identity, IdentityNonce, Revision};
 
 use serde::Deserialize;
 use std::convert::TryInto;
 
-use crate::utils::WithJsError;
+use crate::utils::{Inner, WithJsError};
 use dpp::identity::identity_factory::IdentityFactory;
 
+use dpp::identity::core_script::CoreScript;
+use dpp::withdrawal::Pooling;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
+use wasm_bindgen::{JsError, JsValue};
 
 #[wasm_bindgen(js_name=IdentityFactory)]
 pub struct IdentityFactoryWasm(IdentityFactory);
@@ -155,11 +159,11 @@ impl IdentityFactoryWasm {
         identity: &IdentityWasm,
         asset_lock_proof: &JsValue,
     ) -> Result<IdentityCreateTransitionWasm, JsValue> {
-        let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&asset_lock_proof)?;
+        let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(asset_lock_proof)?;
 
         self.0
             .create_identity_create_transition(
-                Identity::from(identity.to_owned()),
+                &Identity::from(identity.to_owned()),
                 asset_lock_proof,
             )
             .map(Into::into)
@@ -183,15 +187,47 @@ impl IdentityFactoryWasm {
     #[wasm_bindgen(js_name=createIdentityCreditTransferTransition)]
     pub fn create_identity_credit_transfer_transition(
         &self,
-        identity_id: &IdentifierWrapper,
+        identity: &IdentityWasm,
         recipient_id: &IdentifierWrapper,
         amount: u64,
+        identity_nonce: u64,
     ) -> Result<IdentityCreditTransferTransitionWasm, JsValue> {
         self.0
             .create_identity_credit_transfer_transition(
-                identity_id.to_owned().into(),
+                identity.inner(),
                 recipient_id.to_owned().into(),
                 amount,
+                identity_nonce,
+            )
+            .map(Into::into)
+            .with_js_error()
+    }
+
+    #[wasm_bindgen(js_name=createIdentityCreditWithdrawalTransition)]
+    pub fn create_identity_credit_withdrawal_transition(
+        &self,
+        identity_id: &IdentifierWrapper,
+        amount: u64,
+        core_fee_per_byte: u32,
+        pooling: u8,
+        output_script: Vec<u8>,
+        identity_nonce: u64,
+    ) -> Result<IdentityCreditWithdrawalTransitionWasm, JsValue> {
+        let pooling = match pooling {
+            0 => Pooling::Never,
+            1 => Pooling::IfAvailable,
+            2 => Pooling::Standard,
+            _ => return Err(JsError::new("Invalid pooling value").into()),
+        };
+
+        self.0
+            .create_identity_credit_withdrawal_transition(
+                identity_id.to_owned().into(),
+                amount,
+                core_fee_per_byte,
+                pooling,
+                CoreScript::from_bytes(output_script),
+                identity_nonce as IdentityNonce,
             )
             .map(Into::into)
             .with_js_error()
@@ -201,6 +237,7 @@ impl IdentityFactoryWasm {
     pub fn create_identity_update_transition(
         &self,
         identity: &IdentityWasm,
+        identity_nonce: u64,
         public_keys: &JsValue,
     ) -> Result<IdentityUpdateTransitionWasm, JsValue> {
         let (add_public_keys, disable_public_keys) =
@@ -211,6 +248,7 @@ impl IdentityFactoryWasm {
         self.0
             .create_identity_update_transition(
                 identity.to_owned().into(),
+                identity_nonce,
                 add_public_keys,
                 disable_public_keys,
                 Some(now),

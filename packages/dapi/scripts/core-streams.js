@@ -213,3 +213,9 @@ main().catch((e) => {
   logger.error(e.stack);
   process.exit();
 });
+
+process.on('SIGINT', () => {
+  logger.info('Received SIGINT. Exiting...');
+
+  process.exit();
+});

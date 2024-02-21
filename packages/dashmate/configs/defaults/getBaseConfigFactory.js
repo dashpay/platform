@@ -46,7 +46,7 @@ export default function getBaseConfigFactory(homeDir) {
       group: null,
       docker: {
         network: {
-          subnet: '0.0.0.0/0', bindIp: '0.0.0.0',
+          subnet: '0.0.0.0/0',
         },
         baseImage: {
           build: {
@@ -75,9 +75,12 @@ export default function getBaseConfigFactory(homeDir) {
           image: 'dashpay/dashd:20', commandArgs: [],
         },
         p2p: {
-          port: 9999, seeds: [],
+          host: '0.0.0.0',
+          port: 9999,
+          seeds: [],
         },
         rpc: {
+          host: '127.0.0.1',
           port: 9998,
           user: 'dashrpc',
           password: 'rpcpassword',
@@ -113,7 +116,10 @@ export default function getBaseConfigFactory(homeDir) {
               image: 'dashpay/envoy:1.22.11',
             },
             http: {
+              host: '0.0.0.0',
               port: 443,
+              connectTimeout: '5s',
+              responseTimeout: '15s',
             },
             rateLimiter: {
               maxTokens: 300, tokensPerFill: 150, fillInterval: '60s', enabled: true,
@@ -131,6 +137,9 @@ export default function getBaseConfigFactory(homeDir) {
           api: {
             docker: {
               image: `dashpay/dapi:${dockerImageVersion}`,
+              deploy: {
+                replicas: 1,
+              },
               build: {
                 enabled: false,
                 context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
@@ -159,27 +168,67 @@ export default function getBaseConfigFactory(homeDir) {
             validatorSet: {
               llmqType: 4,
             },
+            chainLock: {
+              llmqType: 2,
+              dkgInterval: 288,
+              llmqSize: 400,
+            },
             epochTime: 788400,
           },
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:0.13.3',
+              image: 'dashpay/tenderdash:0.14.0-dev.2',
             },
             p2p: {
-              port: 26656, persistentPeers: [], seeds: [],
+              host: '0.0.0.0',
+              port: 26656,
+              persistentPeers: [],
+              seeds: [],
+              flushThrottleTimeout: '100ms',
+              maxPacketMsgPayloadSize: 10240,
+              sendRate: 5120000,
+              recvRate: 5120000,
             },
             rpc: {
+              host: '127.0.0.1',
               port: 26657,
+              maxOpenConnections: 900,
             },
             pprof: {
               enabled: false, port: 6060,
             },
             metrics: {
-              enabled: false, port: 26660,
+              enabled: false,
+              host: '127.0.0.1',
+              port: 26660,
+            },
+            mempool: {
+              cacheSize: 15000,
+              size: 5000,
+              maxTxsBytes: 1073741824,
             },
             consensus: {
-              createEmptyBlocks: true, createEmptyBlocksInterval: '3m',
+              createEmptyBlocks: true,
+              createEmptyBlocksInterval: '3m',
+              peer: {
+                gossipSleepDuration: '100ms',
+                queryMaj23SleepDuration: '2s',
+              },
+              unsafeOverride: {
+                propose: {
+                  timeout: null,
+                  delta: null,
+                },
+                vote: {
+                  timeout: null,
+                  delta: null,
+                },
+                commit: {
+                  timeout: null,
+                  bypass: null,
+                },
+              },
             },
             log: {
               level: 'info', format: 'plain', path: null,
@@ -190,16 +239,33 @@ export default function getBaseConfigFactory(homeDir) {
             genesis: {
               consensus_params: {
                 block: {
-                  max_bytes: '22020096', max_gas: '-1', time_iota_ms: '5000',
+                  max_bytes: '2097152', max_gas: '57631392000', time_iota_ms: '5000',
                 },
                 evidence: {
-                  max_age: '100000', max_age_num_blocks: '100000', max_age_duration: '172800000000000',
+                  max_age: '100000',
+                  max_age_num_blocks: '100000',
+                  max_age_duration: '172800000000000',
                 },
                 validator: {
                   pub_key_types: ['bls12381'],
                 },
                 version: {
                   app_version: '1',
+                },
+                timeout: {
+                  propose: '30000000000',
+                  propose_delta: '1000000000',
+                  vote: '2000000000',
+                  vote_delta: '500000000',
+                  commit: '1000000000',
+                  bypass_commit_timeout: false,
+                },
+                synchrony: {
+                  message_delay: '32000000000',
+                  precision: '500000000',
+                },
+                abci: {
+                  recheck_tx: true,
                 },
               },
             },

@@ -1,6 +1,6 @@
 [package]
 name = "strategy-tests"
-version = "0.25.16-rc.6"
+version = "1.0.0-dev.5"
 authors = [
     "Samuel Westrich <sam@dash.org>",
     "Ivan Shumkov <ivan@shumkov.ru>",
@@ -10,11 +10,11 @@ edition = "2021"
 rust-version = "1.73"
 license = "MIT"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-drive = { path = "../rs-drive" }
+drive = { path = "../rs-drive", default-features = false, features = [
+    "verify",
+] }
 rand = "0.8.5"
 hex = "0.4.3"
 dpp = { path = "../rs-dpp", features = [
@@ -31,14 +31,11 @@ dpp = { path = "../rs-dpp", features = [
 ] }
 simple-signer = { path = "../simple-signer" }
 platform-version = { path = "../rs-platform-version" }
-platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 
 [dev-dependencies]
 platform-version = { path = "../rs-platform-version", features = [
     "mock-versions",
 ] }
-
-drive = { path = "../rs-drive" }
 
 # For tests of grovedb verify
 rocksdb = { version = "0.21.0" }

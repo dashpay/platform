@@ -34,6 +34,11 @@ macro_rules! delegate_transport_request_variant {
 
             const SETTINGS_OVERRIDES: $crate::platform::dapi::RequestSettings = $crate::platform::dapi::RequestSettings::default();
 
+            /// TODO: Not sure how to do that
+            fn method_name(&self) -> &'static str {
+                ""
+            }
+
             fn execute_transport<'c>(
                 self,
                 client: &'c mut Self::Client,
@@ -77,7 +82,7 @@ macro_rules! delegate_from_proof_variant {
                 request: I,
                 response: O,
                 version: &dpp::version::PlatformVersion,
-                provider: &'a dyn drive_proof_verifier::QuorumInfoProvider,
+                provider: &'a dyn drive_proof_verifier::ContextProvider,
             ) -> Result<Option<Self>, drive_proof_verifier::Error>
             where
                 Self: Sized + 'a,
@@ -129,7 +134,7 @@ macro_rules! delegate_from_proof_variant {
 macro_rules! delegate_enum {
     ($request:ident, $response:ident, $object:ty, $(($variant:ident, $req: ty, $resp: ty)),+) => {
         /// Wrapper around multiple requests for one object type.
-        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, derive_more::From)]
+        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, derive_more::From, dapi_grpc_macros::Mockable)]
         #[allow(missing_docs)]
         pub enum $request {
             $(
@@ -138,7 +143,7 @@ macro_rules! delegate_enum {
         }
 
         /// Wrapper around multiple responses for one object type.
-        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default, derive_more::From)]
+        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default, derive_more::From, dapi_grpc_macros::Mockable)]
         #[allow(missing_docs)]
         pub enum $response {
             #[default]
@@ -152,9 +157,6 @@ macro_rules! delegate_enum {
                 $variant($resp),
             )+
         }
-
-        impl $crate::platform::dapi::transport::TransportResponse for $response {}
-
 
         $crate::delegate_transport_request_variant! {
             $request,

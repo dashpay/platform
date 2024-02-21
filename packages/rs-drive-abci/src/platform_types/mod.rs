@@ -37,6 +37,8 @@ pub mod cleaned_abci_messages;
 pub mod commit;
 /// Epoch
 pub mod epoch_info;
+/// The execution event result
+pub mod event_execution_result;
 /// Masternode
 pub mod masternode;
 /// Main platform structs, not versioned
@@ -46,7 +48,7 @@ pub mod platform_state;
 /// Required identity public key set for system identities
 pub mod required_identity_public_key_set;
 /// The state transition execution result as part of the block execution outcome
-pub mod state_transition_execution_result;
+pub mod state_transitions_processing_result;
 /// System identity public keys
 pub mod system_identity_public_keys;
 /// The validator module
@@ -56,3 +58,6 @@ pub mod validator;
 pub mod validator_set;
 /// Withdrawal types
 pub mod withdrawal;
+
+/// Verify chain lock result
+pub mod verify_chain_lock_result;

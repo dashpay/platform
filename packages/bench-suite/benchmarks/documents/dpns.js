@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 
-const dpnsDocumentTypes = require('@dashevo/dpns-contract/schema/dpns-contract-documents');
+const dpnsDocumentTypes = require('@dashevo/dpns-contract/schema/v1/dpns-contract-documents.json');
 
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 

@@ -10,6 +10,12 @@ use dashcore::Network;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 
+use crate::block::epoch::Epoch;
+use crate::fee::default_costs::EpochCosts;
+use crate::fee::default_costs::KnownCostItem::{
+    VerifySignatureBLS12_381, VerifySignatureBip13ScriptHash, VerifySignatureEcdsaHash160,
+    VerifySignatureEcdsaSecp256k1, VerifySignatureEddsa25519Hash160,
+};
 use crate::fee::Credits;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -34,8 +40,11 @@ use std::convert::TryFrom;
     PartialOrd,
     Encode,
     Decode,
+    Default,
+    strum::EnumIter,
 )]
 pub enum KeyType {
+    #[default]
     ECDSA_SECP256K1 = 0,
     BLS12_381 = 1,
     ECDSA_HASH160 = 2,
@@ -43,14 +52,8 @@ pub enum KeyType {
     EDDSA_25519_HASH160 = 4,
 }
 
-impl Default for KeyType {
-    fn default() -> Self {
-        KeyType::ECDSA_SECP256K1
-    }
-}
-
 lazy_static! {
-    static ref KEY_TYPE_SIZES: HashMap<KeyType, usize> = vec![
+    static ref KEY_TYPE_SIZES: HashMap<KeyType, usize> = [
         (KeyType::ECDSA_SECP256K1, 33),
         (KeyType::BLS12_381, 48),
         (KeyType::ECDSA_HASH160, 20),
@@ -73,6 +76,17 @@ impl KeyType {
         KEY_TYPE_SIZES[self]
     }
 
+    /// All key types
+    pub fn all_key_types() -> [KeyType; 5] {
+        [
+            Self::ECDSA_SECP256K1,
+            Self::BLS12_381,
+            Self::ECDSA_HASH160,
+            Self::BIP13_SCRIPT_HASH,
+            Self::EDDSA_25519_HASH160,
+        ]
+    }
+
     /// Are keys of this type unique?
     pub fn is_unique_key_type(&self) -> bool {
         match self {
@@ -87,14 +101,23 @@ impl KeyType {
     pub fn signature_verify_cost(
         &self,
         platform_version: &PlatformVersion,
+        epoch: &Epoch,
     ) -> Result<Credits, ProtocolError> {
         match platform_version.dpp.costs.signature_verify {
             0 => Ok(match self {
-                KeyType::ECDSA_SECP256K1 => 3000,
-                KeyType::BLS12_381 => 6000,
-                KeyType::ECDSA_HASH160 => 4000,
-                KeyType::BIP13_SCRIPT_HASH => 6000,
-                KeyType::EDDSA_25519_HASH160 => 3000,
+                KeyType::ECDSA_SECP256K1 => {
+                    epoch.cost_for_known_cost_item(VerifySignatureEcdsaSecp256k1)
+                }
+                KeyType::BLS12_381 => epoch.cost_for_known_cost_item(VerifySignatureBLS12_381),
+                KeyType::ECDSA_HASH160 => {
+                    epoch.cost_for_known_cost_item(VerifySignatureEcdsaHash160)
+                }
+                KeyType::BIP13_SCRIPT_HASH => {
+                    epoch.cost_for_known_cost_item(VerifySignatureBip13ScriptHash)
+                }
+                KeyType::EDDSA_25519_HASH160 => {
+                    epoch.cost_for_known_cost_item(VerifySignatureEddsa25519Hash160)
+                }
             }),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "KeyType::signature_verify_cost".to_string(),

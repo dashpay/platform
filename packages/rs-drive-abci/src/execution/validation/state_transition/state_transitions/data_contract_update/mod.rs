@@ -1,3 +1,4 @@
+mod identity_contract_nonce;
 mod state;
 mod structure;
 
@@ -9,13 +10,15 @@ use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::execution::validation::state_transition::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::data_contract_update::structure::v0::DataContractUpdateStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionStateValidationV0, StateTransitionStructureValidationV0,
+    StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0,
+    StateTransitionStructureKnownInStateValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
@@ -27,6 +30,7 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
         &self,
         platform: &PlatformRef<C>,
         _validate: bool,
+        _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
@@ -41,57 +45,6 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
             0 => self.transform_into_action_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: transform_into_action".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
-    }
-}
-
-impl StateTransitionStructureValidationV0 for DataContractUpdateTransition {
-    fn validate_structure(
-        &self,
-        _platform: &PlatformStateRef,
-        _action: Option<&StateTransitionAction>,
-        protocol_version: u32,
-    ) -> Result<SimpleConsensusValidationResult, Error> {
-        let platform_version = PlatformVersion::get(protocol_version)?;
-        match platform_version
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .contract_update_state_transition
-            .structure
-        {
-            0 => self.validate_base_structure_v0(platform_version),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "data contract update transition: validate_structure".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
-    }
-}
-
-impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
-    fn validate_state<C: CoreRPCLike>(
-        &self,
-        _action: Option<StateTransitionAction>,
-        platform: &PlatformRef<C>,
-        tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
-        match platform_version
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .contract_update_state_transition
-            .state
-        {
-            0 => self.validate_state_v0(platform, tx, platform_version),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "data contract update transition: validate_state".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -144,10 +97,10 @@ mod tests {
             .data_contract_owned();
 
         let config = PlatformConfig {
-            quorum_size: 10,
+            validator_set_quorum_size: 10,
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 300,
@@ -184,9 +137,10 @@ mod tests {
         use dpp::platform_value::platform_value;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
+        use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
         use dpp::version::TryFromPlatformVersioned;
         use platform_version::version::LATEST_PLATFORM_VERSION;
-        use platform_version::TryIntoPlatformVersioned;
+        use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
 
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {
@@ -224,6 +178,7 @@ mod tests {
                 .expect("to be able to set document schema");
 
             let state_transition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce: 1,
                 data_contract: DataContractInSerializationFormat::try_from_platform_versioned(
                     data_contract,
                     platform_version,
@@ -241,8 +196,12 @@ mod tests {
                 block_info: &BlockInfo::default(),
             };
 
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected a platform version");
+
             let result = DataContractUpdateTransition::V0(state_transition)
-                .validate_state(None, &platform_ref, None)
+                .validate_state(None, &platform_ref, &mut execution_context, None)
                 .expect("state transition to be validated");
 
             assert!(!result.is_valid());
@@ -298,6 +257,7 @@ mod tests {
 
             // TODO: add a data contract stop transition
             let state_transition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce: 1,
                 data_contract: DataContractInSerializationFormat::try_from_platform_versioned(
                     data_contract.clone(),
                     platform_version,
@@ -315,8 +275,12 @@ mod tests {
                 block_info: &BlockInfo::default(),
             };
 
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected a platform version");
+
             let result = DataContractUpdateTransition::V0(state_transition)
-                .validate_state(None, &platform_ref, None)
+                .validate_state(None, &platform_ref, &mut execution_context, None)
                 .expect("state transition to be validated");
 
             assert!(result.is_valid());
@@ -398,6 +362,8 @@ mod tests {
                 platform,
             } = setup_test();
 
+            let platform_version = PlatformVersion::latest();
+
             data_contract.config_mut().set_keeps_history(true);
             data_contract.config_mut().set_readonly(false);
 
@@ -444,7 +410,7 @@ mod tests {
             // It should be not possible to modify this
             data_contract.config_mut().set_keeps_history(false);
 
-            let state_transition: DataContractUpdateTransitionV0 = data_contract
+            let state_transition: DataContractUpdateTransitionV0 = (data_contract, 1)
                 .try_into_platform_versioned(LATEST_PLATFORM_VERSION)
                 .expect("expected an update transition");
 
@@ -458,8 +424,12 @@ mod tests {
                 block_info: &BlockInfo::default(),
             };
 
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected a platform version");
+
             let result = state_transition
-                .validate_state(None, &platform_ref, None)
+                .validate_state(None, &platform_ref, &mut execution_context, None)
                 .expect("state transition to be validated");
 
             assert!(!result.is_valid());
@@ -468,7 +438,7 @@ mod tests {
                 StateError::DataContractConfigUpdateError,
                 1
             );
-            let error = errors.get(0).expect("to have an error");
+            let error = errors.first().expect("to have an error");
             assert_eq!(
                 error.additional_message(),
                 "contract can not change whether it keeps history: changing from true to false"

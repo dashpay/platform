@@ -7,12 +7,14 @@ impl From<IdentityCreditTransferTransitionV0> for IdentityCreditTransferTransiti
             identity_id,
             recipient_id,
             amount,
+            nonce,
             ..
         } = value;
         IdentityCreditTransferTransitionActionV0 {
             identity_id,
             recipient_id,
             transfer_amount: amount,
+            nonce,
         }
     }
 }
@@ -23,12 +25,14 @@ impl From<&IdentityCreditTransferTransitionV0> for IdentityCreditTransferTransit
             identity_id,
             recipient_id,
             amount,
+            nonce,
             ..
         } = value;
         IdentityCreditTransferTransitionActionV0 {
             identity_id: *identity_id,
             recipient_id: *recipient_id,
             transfer_amount: *amount,
+            nonce: *nonce,
         }
     }
 }

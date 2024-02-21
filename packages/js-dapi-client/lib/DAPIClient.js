@@ -34,6 +34,7 @@ class DAPIClient extends EventEmitter {
       blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
       loggerOptions: {
         identifier: '',
+        level: undefined,
       },
       ...options,
     };
@@ -57,7 +58,10 @@ class DAPIClient extends EventEmitter {
 
     this.core = new CoreMethodsFacade(jsonRpcTransport, grpcTransport);
     this.platform = new PlatformMethodsFacade(grpcTransport);
-    this.logger = logger.getForId(this.options.loggerOptions.identifier);
+    this.logger = logger.getForId(
+      this.options.loggerOptions.identifier,
+      this.options.loggerOptions.level,
+    );
 
     this.initBlockHeadersProvider();
   }
@@ -89,6 +93,7 @@ DAPIClient.EVENTS = EVENTS;
  * @property {boolean} [throwDeadlineExceeded]
  * @property {object} [loggerOptions]
  * @property {string} [loggerOptions.identifier]
+ * @property {string} [loggerOptions.level]
  * @property {BlockHeadersProvider} [blockHeadersProvider]
  * @property {BlockHeadersProviderOptions} [blockHeadersProviderOptions]
  */

@@ -3,7 +3,6 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
 use crate::query::QueryValidationResult;
-use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 
 use dpp::version::PlatformVersion;
 
@@ -19,6 +18,10 @@ impl<C> Platform<C> {
         match query_path {
             "/identity" => self.query_identity(&state, query_data, platform_version),
             "/identities" => self.query_identities(&state, query_data, platform_version),
+            "/identity/contractNonce" => {
+                self.query_identity_contract_nonce(&state, query_data, platform_version)
+            }
+            "/identity/nonce" => self.query_identity_nonce(&state, query_data, platform_version),
             "/identity/balance" => self.query_balance(&state, query_data, platform_version),
             "/identity/balanceAndRevision" => {
                 self.query_balance_and_revision(&state, query_data, platform_version)
@@ -73,6 +76,7 @@ mod test {
         use dapi_grpc::platform::v0::get_data_contract_history_response::{
             get_data_contract_history_response_v0, GetDataContractHistoryResponseV0,
         };
+        use dapi_grpc::Message;
         use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
         use dpp::data_contract::DataContract;
@@ -82,7 +86,6 @@ mod test {
         use dpp::validation::ValidationResult;
         use dpp::version::PlatformVersion;
         use drive::drive::Drive;
-        use prost::Message;
 
         fn default_request_v0() -> GetDataContractHistoryRequestV0 {
             GetDataContractHistoryRequestV0 {

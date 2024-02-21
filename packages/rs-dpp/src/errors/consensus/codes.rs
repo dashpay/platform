@@ -59,6 +59,7 @@ impl ErrorWithCode for BasicError {
             Self::DuplicateIndexNameError { .. } => 1048,
             Self::InvalidDataContractVersionError { .. } => 1050,
             Self::IncompatibleDataContractSchemaError { .. } => 1051,
+            Self::DataContractEmptySchemaError { .. } => 1069,
             Self::DataContractImmutablePropertiesUpdateError { .. } => 1052,
             Self::DataContractUniqueIndicesChangedError { .. } => 1053,
             Self::DataContractInvalidIndexDefinitionUpdateError { .. } => 1054,
@@ -78,7 +79,8 @@ impl ErrorWithCode for BasicError {
             Self::MissingDocumentTypeError { .. } => 1028,
             Self::MissingPositionsInDocumentTypePropertiesError { .. } => 1067,
             Self::MaxDocumentsTransitionsExceededError { .. } => 1065,
-            Self::DocumentTransitionsAreAbsentError { .. } => 1066,
+            Self::DocumentTransitionsAreAbsentError { .. } => 1068,
+            Self::IdentityContractNonceOutOfBoundsError(_) => 1069,
 
             // Identity
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 1029,
@@ -108,6 +110,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidIdentityCreditWithdrawalTransitionAmountError(_) => 1062,
             Self::InvalidIdentityUpdateTransitionEmptyError(_) => 1063,
             Self::InvalidIdentityUpdateTransitionDisableKeysError(_) => 1064,
+            Self::IdentityCreditTransferToSelfError(_) => 1070,
 
             // State Transition
             Self::InvalidStateTransitionTypeError { .. } => 1043,
@@ -149,7 +152,7 @@ impl ErrorWithCode for StateError {
             // Data contract
             Self::DataContractAlreadyPresentError { .. } => 4000,
             Self::DataContractIsReadonlyError { .. } => 4026,
-            #[cfg(feature = "validation")]
+            #[cfg(feature = "state-transition-validation")]
             Self::DataTriggerError(ref e) => e.code(),
             Self::DataContractConfigUpdateError { .. } => 4027,
 
@@ -169,13 +172,15 @@ impl ErrorWithCode for StateError {
             Self::IdentityPublicKeyIsReadOnlyError { .. } => 4017,
             Self::InvalidIdentityPublicKeyIdError { .. } => 4018,
             Self::InvalidIdentityRevisionError { .. } => 4019,
-            Self::MaxIdentityPublicKeyLimitReachedError { .. } => 4020,
-            Self::DuplicatedIdentityPublicKeyStateError { .. } => 4021,
-            Self::DuplicatedIdentityPublicKeyIdStateError { .. } => 4022,
-            Self::IdentityPublicKeyIsDisabledError { .. } => 4023,
-            Self::MissingIdentityPublicKeyIdsError { .. } => 4024,
+            Self::InvalidIdentityNonceError(_) => 4020,
+            Self::MaxIdentityPublicKeyLimitReachedError { .. } => 4021,
+            Self::DuplicatedIdentityPublicKeyStateError { .. } => 4022,
+            Self::DuplicatedIdentityPublicKeyIdStateError { .. } => 4023,
+            Self::IdentityPublicKeyIsDisabledError { .. } => 4024,
+            Self::MissingIdentityPublicKeyIdsError { .. } => 4025,
             Self::IdentityInsufficientBalanceError(_) => 4026,
-            Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 4027,
+            Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 4028,
+            Self::InvalidAssetLockProofValueError(_) => 4029,
         }
     }
 }

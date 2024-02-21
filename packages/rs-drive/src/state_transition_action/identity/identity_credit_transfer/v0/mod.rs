@@ -2,6 +2,7 @@ mod transformer;
 
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
+use dpp::prelude::{IdentityNonce, Revision};
 use serde::{Deserialize, Serialize};
 
 /// action v0
@@ -14,4 +15,6 @@ pub struct IdentityCreditTransferTransitionActionV0 {
     pub recipient_id: Identifier,
     /// identity id
     pub identity_id: Identifier,
+    /// nonce
+    pub nonce: IdentityNonce,
 }

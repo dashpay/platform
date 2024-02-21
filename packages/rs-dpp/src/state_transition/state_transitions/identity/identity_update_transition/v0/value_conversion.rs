@@ -9,6 +9,7 @@ use crate::state_transition::identity_update_transition::v0::{
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionValueConvert;
 
+use crate::state_transition::state_transitions::common_fields::property_names::NONCE;
 use platform_version::version::PlatformVersion;
 
 impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
@@ -29,6 +30,9 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
         let revision = raw_object
             .get_integer(REVISION)
             .map_err(ProtocolError::ValueError)?;
+        let nonce = raw_object
+            .get_integer(NONCE)
+            .map_err(ProtocolError::ValueError)?;
         let add_public_keys = raw_object
             .remove_optional_array(property_names::ADD_PUBLIC_KEYS)
             .map_err(ProtocolError::ValueError)?
@@ -47,6 +51,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
             signature_public_key_id,
             identity_id,
             revision,
+            nonce,
             add_public_keys,
             disable_public_keys,
             public_keys_disabled_at,

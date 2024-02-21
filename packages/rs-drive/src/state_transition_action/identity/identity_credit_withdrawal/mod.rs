@@ -8,7 +8,7 @@ use derive_more::From;
 use dpp::document::Document;
 
 use dpp::platform_value::Identifier;
-use dpp::prelude::Revision;
+use dpp::prelude::{IdentityNonce, Revision};
 
 /// action
 #[derive(Debug, Clone, From)]
@@ -18,10 +18,10 @@ pub enum IdentityCreditWithdrawalTransitionAction {
 }
 
 impl IdentityCreditWithdrawalTransitionAction {
-    /// Withdrawal amount
-    pub fn revision(&self) -> Revision {
+    /// Nonce
+    pub fn nonce(&self) -> IdentityNonce {
         match self {
-            IdentityCreditWithdrawalTransitionAction::V0(transition) => transition.revision,
+            IdentityCreditWithdrawalTransitionAction::V0(transition) => transition.nonce,
         }
     }
 
@@ -29,6 +29,13 @@ impl IdentityCreditWithdrawalTransitionAction {
     pub fn identity_id(&self) -> Identifier {
         match self {
             IdentityCreditWithdrawalTransitionAction::V0(transition) => transition.identity_id,
+        }
+    }
+
+    /// Amount
+    pub fn amount(&self) -> u64 {
+        match self {
+            IdentityCreditWithdrawalTransitionAction::V0(transition) => transition.amount,
         }
     }
 

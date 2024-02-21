@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
 use dpp::data_contract::created_data_contract::CreatedDataContract;
-use dpp::data_contract::DataContract;
+
 use dpp::data_contract::DataContractFacade;
 use dpp::identifier::Identifier;
 
@@ -11,14 +11,13 @@ use crate::data_contract::DataContractWasm;
 use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::errors::protocol_error::from_protocol_error;
 use crate::utils::{
-    get_bool_from_options, IntoWasm, ToSerdeJSONExt, WithJsError, SKIP_VALIDATION_PROPERTY_NAME,
+    get_bool_from_options, ToSerdeJSONExt, WithJsError, SKIP_VALIDATION_PROPERTY_NAME,
 };
 
 use dpp::ProtocolError;
 use std::sync::Arc;
 
-use crate::identity::identity_facade::IdentityFacadeWasm;
-use dpp::identity::IdentityFacade;
+use dpp::prelude::IdentityNonce;
 use wasm_bindgen::prelude::*;
 
 impl From<DataContractFacade> for DataContractFacadeWasm {
@@ -127,9 +126,13 @@ impl DataContractFacadeWasm {
     pub fn create_data_contract_update_transition(
         &self,
         data_contract: &DataContractWasm,
+        identity_contract_nonce: IdentityNonce,
     ) -> Result<DataContractUpdateTransitionWasm, JsValue> {
         self.0
-            .create_data_contract_update_transition(data_contract.to_owned().into())
+            .create_data_contract_update_transition(
+                data_contract.to_owned().into(),
+                identity_contract_nonce,
+            )
             .map(Into::into)
             .map_err(from_protocol_error)
     }

@@ -3,10 +3,7 @@ use std::sync::Arc;
 use wasm_bindgen::{prelude::*, JsValue};
 
 use crate::document::factory::DocumentFactoryWASM;
-use crate::{
-    utils::{get_class_name, IntoWasm},
-    DataContractWasm, ExtendedDocumentWasm,
-};
+use crate::{DataContractWasm, ExtendedDocumentWasm};
 
 use crate::document::state_transition::document_batch_transition::DocumentsBatchTransitionWasm;
 
@@ -99,8 +96,10 @@ impl DocumentFacadeWasm {
     pub fn create_state_transition(
         &self,
         documents: &JsValue,
+        nonce_counter_value: &js_sys::Object, //IdentityID/ContractID -> nonce
     ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
-        self.factory.create_state_transition(documents)
+        self.factory
+            .create_state_transition(documents, nonce_counter_value)
     }
 
     // /// Creates Documents State Transition

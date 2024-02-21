@@ -47,7 +47,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::{DocumentV0, INITIAL_REVISION};
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::system_data_contracts::masternode_reward_shares_contract::document_types;
+use dpp::system_data_contracts::masternode_reward_shares_contract::v1::document_types;
 use dpp::version::PlatformVersion;
 use drive::common::identities::create_test_identity_with_rng;
 use drive::dpp::document::Document;

@@ -15,9 +15,6 @@ where
         let mut hasher = Sha256::new();
         hasher.update(pro_tx_hash);
         hasher.update(key_data);
-        Ok(hasher
-            .finalize()
-            .try_into()
-            .expect("expected a 32 byte hash"))
+        Ok(hasher.finalize().into())
     }
 }

@@ -1,7 +1,4 @@
-use crate::{
-    prelude::Identifier, state_transition::StateTransitionType, BlsModule, NonConsensusError,
-    ProtocolError,
-};
+use crate::{prelude::Identifier, state_transition::StateTransitionType, BlsModule, ProtocolError};
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -23,7 +20,7 @@ use crate::version::PlatformVersion;
 impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity_with_signer<S: Signer>(
-        identity: Identity,
+        identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
         signer: &S,

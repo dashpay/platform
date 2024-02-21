@@ -21,7 +21,7 @@ use std::collections::HashMap;
 pub(super) fn validate_unique_identity_public_key_hashes_in_state_v0(
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
     drive: &Drive,
-    execution_context: &mut StateTransitionExecutionContext,
+    _execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {

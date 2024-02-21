@@ -1,7 +1,7 @@
 [package]
 name = "drive"
 description = "Dash drive built on top of GroveDB"
-version = "0.25.16-rc.6"
+version = "1.0.0-dev.5"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -21,11 +21,11 @@ integer-encoding = { version = "4.0.0" }
 rand = { version = "0.8.4", features = ["small_rng"] }
 byteorder = { version = "1.4.3" }
 indexmap = { version = "1.8.0" }
-sqlparser = { version = "0.13.0" }
+sqlparser = { version = "0.38.0" }
 thiserror = { version = "1.0.30" }
 moka = { version = "0.11.1", features = ["future", "futures-util"] }
 nohash-hasher = { version = "0.2.0" }
-dpp = { path = "../rs-dpp", features = ["drive", "cbor"] }
+dpp = { path = "../rs-dpp", features = ["drive", "cbor", "random-public-keys"] }
 derive_more = "0.99.17"
 tracing = { version = "0.1.37", default-features = false, features = [] }
 
@@ -45,11 +45,11 @@ grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "b40dd1a35f85
 grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "b40dd1a35f852c81caeda2d3c2910c40fae3a67f", optional = true }
 
 [dev-dependencies]
+anyhow = { version = "1.0.75" }
 criterion = "0.3.5"
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }
-anyhow = "1.0.71"
 dpp = { path = "../rs-dpp", features = [
   "drive",
   "document-cbor-conversion",
@@ -67,10 +67,9 @@ name = "benchmarks"
 harness = false
 
 [features]
-default = ["full"]
-fixtures-and-mocks = ["dpp/fixtures-and-mocks"]
+default = ["full", "verify", "fixtures-and-mocks"]
+fixtures-and-mocks = ["full", "dpp/fixtures-and-mocks", "verify"]
 full = [
-  "fixtures-and-mocks",
   "grovedb/estimated_costs",
   "grovedb-storage",
   "grovedb-costs",

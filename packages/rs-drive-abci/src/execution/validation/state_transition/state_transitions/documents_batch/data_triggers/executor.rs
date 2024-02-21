@@ -6,14 +6,16 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use dpp::version::PlatformVersion;
+use drive::error::drive::DriveError;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBinding;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBindingV0Getters;
 use crate::error::Error;
+use crate::error::execution::ExecutionError;
 
 pub trait DataTriggerExecutor {
     fn validate_with_data_triggers(
         &self,
-        data_trigger_bindings: &Vec<DataTriggerBinding>,
+        data_trigger_bindings: &[DataTriggerBinding],
         context: &DataTriggerExecutionContext<'_>,
         platform_version: &PlatformVersion,
     ) -> Result<DataTriggerExecutionResult, Error>;
@@ -22,12 +24,22 @@ pub trait DataTriggerExecutor {
 impl DataTriggerExecutor for DocumentTransitionAction {
     fn validate_with_data_triggers(
         &self,
-        data_trigger_bindings: &Vec<DataTriggerBinding>,
+        data_trigger_bindings: &[DataTriggerBinding],
         context: &DataTriggerExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<DataTriggerExecutionResult, Error> {
-        let data_contract_id = self.base().data_contract_id();
-        let document_type_name = self.base().document_type_name();
+        let data_contract_id = self
+            .base()
+            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "expecting action to have a base",
+            )))?
+            .data_contract_id();
+        let document_type_name = self
+            .base()
+            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "expecting action to have a base",
+            )))?
+            .document_type_name();
         let transition_action = self.action_type();
 
         // Match data triggers by action type, contract ID and document type name

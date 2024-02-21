@@ -5,9 +5,9 @@
 //! ## Traits
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from the platform.
 
-use crate::mock::MockResponse;
 use crate::{
     error::Error,
+    mock::MockResponse,
     platform::{document_query::DocumentQuery, query::Query},
     Sdk,
 };
@@ -23,9 +23,8 @@ use dpp::document::Document;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
-use drive_proof_verifier::types::{
-    MasternodeProtocolVote, ProtocolVersionVoteCount, RetrievedObjects,
-};
+use dpp::version::ProtocolVersionVoteCount;
+use drive_proof_verifier::types::{MasternodeProtocolVote, RetrievedObjects};
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
@@ -59,14 +58,14 @@ use super::LimitQuery;
 ///
 /// # const SOME_IDENTIFIER_1 : [u8; 32] = [1; 32];
 /// # const SOME_IDENTIFIER_2 : [u8; 32] = [2; 32];
-/// let mut sdk = Sdk::new_mock();
+/// let sdk = Sdk::new_mock();
 ///
 /// let id1 = Identifier::new(SOME_IDENTIFIER_1);
 /// let id2 = Identifier::new(SOME_IDENTIFIER_2);
 ///
 /// let query = vec![id1, id2];
 ///
-/// let data_contract = DataContract::fetch_many(&mut sdk, query);
+/// let data_contract = DataContract::fetch_many(&sdk, query);
 /// ```
 #[async_trait::async_trait]
 pub trait FetchMany<K: Ord>
@@ -126,7 +125,7 @@ where
     ///
     /// Any errors encountered during the execution are returned as [`Error`](crate::error::Error) instances.
     async fn fetch_many<Q: Query<<Self as FetchMany<K>>::Request>>(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         query: Q,
     ) -> Result<RetrievedObjects<K, Self>, Error> {
         let request = query.query(sdk.prove())?;
@@ -162,7 +161,7 @@ where
     ///
     /// `Vec<Identifier>` must implement [Query] for [Self::Request].
     async fn fetch_by_identifiers<I: IntoIterator<Item = Identifier> + Send>(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         identifiers: I,
     ) -> Result<RetrievedObjects<K, Self>, Error>
     where
@@ -183,7 +182,7 @@ where
     /// - `query`: A query parameter implementing [`Query`](crate::platform::query::Query) to specify the data to be retrieved.
     /// - `limit`: Maximum number of objects to fetch.
     async fn fetch_many_with_limit<Q: Query<<Self as FetchMany<K>>::Request>>(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         query: Q,
         limit: u32,
     ) -> Result<RetrievedObjects<K, Self>, Error>
@@ -214,7 +213,7 @@ impl FetchMany<Identifier> for Document {
     // TODO: Refactor to use ContextProvider
     type Request = DocumentQuery;
     async fn fetch_many<Q: Query<<Self as FetchMany<Identifier>>::Request>>(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         query: Q,
     ) -> Result<BTreeMap<Identifier, Option<Self>>, Error> {
         let document_query: DocumentQuery = query.query(sdk.prove())?;
@@ -252,11 +251,11 @@ impl FetchMany<KeyID> for IdentityPublicKey {
 ///
 /// ## Supported query types
 ///
+/// * [EpochQuery](super::types::epoch::EpochQuery) - query that specifies epoch matching criteria
 /// * [EpochIndex](dpp::block::epoch::EpochIndex) - epoch index of first object to find; will return up to
 /// [DEFAULT_EPOCH_QUERY_LIMIT](super::query::DEFAULT_EPOCH_QUERY_LIMIT) objects starting from this index
-/// * [`LimitQuery<EpochIndex>`](super::LimitQuery) - limit query that allows to specify maximum number of objects
-/// to fetch; see also [FetchMany::fetch_many_with_limit()].
-///
+/// * [`LimitQuery<EpochQuery>`](super::LimitQuery), [`LimitQuery<EpochIndex>`](super::LimitQuery) - limit query
+/// that allows to specify maximum number of objects to fetch; see also [FetchMany::fetch_many_with_limit()].
 impl FetchMany<EpochIndex> for ExtendedEpochInfo {
     type Request = GetEpochsInfoRequest;
 }
@@ -277,8 +276,8 @@ impl FetchMany<EpochIndex> for ExtendedEpochInfo {
 /// use drive_proof_verifier::types::ProtocolVersionVoteCount;
 ///
 /// # tokio_test::block_on(async {
-/// let mut sdk = Sdk::new_mock();
-/// let result = ProtocolVersionVoteCount::fetch_many(&mut sdk, ()).await;
+/// let sdk = Sdk::new_mock();
+/// let result = ProtocolVersionVoteCount::fetch_many(&sdk, ()).await;
 /// # });
 /// ```
 impl FetchMany<ProtocolVersion> for ProtocolVersionVoteCount {

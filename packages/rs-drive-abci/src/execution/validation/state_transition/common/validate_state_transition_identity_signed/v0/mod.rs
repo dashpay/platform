@@ -8,7 +8,7 @@ use dpp::consensus::signature::{
 use dpp::identity::PartialIdentity;
 
 use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
-use crate::execution::types::execution_operation::ExecutionOperation;
+use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
@@ -65,7 +65,7 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
         &self,
         drive: &Drive,
         action: Option<&StateTransitionAction>,
-        request_revision: bool,
+        request_identity_revision: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -102,7 +102,7 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
 
         let key_request = IdentityKeysRequest::new_specific_key_query(owner_id.as_bytes(), key_id);
 
-        let maybe_partial_identity = if request_revision {
+        let maybe_partial_identity = if request_identity_revision {
             drive.fetch_identity_balance_with_keys_and_revision(
                 key_request,
                 transaction,
@@ -164,11 +164,7 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
         }
 
         let operation = SignatureVerificationOperation::new(public_key.key_type());
-        execution_context.add_operation(ExecutionOperation::SignatureVerification(operation));
-
-        // if execution_context.is_dry_run() {
-        //     return Ok(validation_result);
-        // }
+        execution_context.add_operation(ValidationOperation::SignatureVerification(operation));
 
         let signature_is_valid = self.verify_signature(public_key, &NativeBlsModule);
 

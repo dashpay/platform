@@ -1,10 +1,8 @@
 use dpp::consensus::basic::identity::InvalidIdentityCreditWithdrawalTransitionOutputScriptError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
-use dpp::serialization::PlatformSerializable;
-use wasm_bindgen::prelude::*;
 
-use crate::buffer::Buffer;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidIdentityCreditWithdrawalTransitionOutputScriptError)]
 pub struct InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm {

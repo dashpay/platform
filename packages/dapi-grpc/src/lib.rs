@@ -22,3 +22,9 @@ pub mod platform {
 #[cfg(feature = "serde")]
 // Serde deserialization logic
 pub mod deserialization;
+
+// We need mock module even if the feature is disabled
+pub mod mock;
+
+// Re-export tonic to ensure everyone uses the same version
+pub use tonic;

@@ -68,6 +68,7 @@ impl Drive {
             loaded_public_keys,
             balance: Some(balance),
             revision: Some(revision),
+
             not_found_public_keys,
         }))
     }

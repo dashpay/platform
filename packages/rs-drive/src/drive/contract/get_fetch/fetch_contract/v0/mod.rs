@@ -55,7 +55,7 @@ impl Drive {
         // We need to pass allow cache to false
         let (value, mut cost) = if known_keeps_history.unwrap_or_default() {
             let CostContext { value, cost } = self.grove.get_caching_optional(
-                (&paths::contract_keeping_history_storage_path(&contract_id)).into(),
+                (&paths::contract_keeping_history_root_path(&contract_id)).into(),
                 &[0],
                 false,
                 transaction,
@@ -117,7 +117,7 @@ impl Drive {
                     value,
                     cost: secondary_cost,
                 } = self.grove.get_caching_optional(
-                    (&paths::contract_keeping_history_storage_path(&contract_id)).into(),
+                    (&paths::contract_keeping_history_root_path(&contract_id)).into(),
                     &[0],
                     false,
                     transaction,

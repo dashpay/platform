@@ -54,18 +54,15 @@ this repository may be used on the following networks:
   - [node.js](https://nodejs.org/) v20
   - [docker](https://docs.docker.com/get-docker/) v20.10+
   - [rust](https://www.rust-lang.org/tools/install) v1.73+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
+  - [protoc - protobuf compiler](https://github.com/protocolbuffers/protobuf/releases) v25.2+
+    - if needed, set PROTOC environment variable to location of `protoc` binary
   - [wasm-bingen toolchain](https://rustwasm.github.io/wasm-bindgen/):
     - **IMPORTANT (OSX only)**: built-in `llvm` on OSX does not work, needs to be installed from brew:
       - `brew install llvm`
       - LLVM installed from brew is keg only, and path to it must be provided in the profile file,
         in terminal run `echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc` or `echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.bash_profile` depending on your default shell.
         You can find your default shell with `echo $SHELL`
-      - Reload your shell with `source ~/.zshrc` or `source ~/.bash_profile` 
-    - install `protoc` - protobuf compiler:
-      - on debian/ubuntu: `apt install -y protobuf-compiler`
-      - on Mac: `brew install protobuf`
-      - on other systems, install most recent version from [Protocol Buffers releases page](https://github.com/protocolbuffers/protobuf/releases) (tested with protobuf 22.4)
-      - if needed, set PROTOC environment variable to location of `protoc` binary
+      - Reload your shell with `source ~/.zshrc` or `source ~/.bash_profile`
     - `cargo install wasm-bindgen-cli@0.2.85`
       - *double-check that wasm-bindgen-cli version above matches wasm-bindgen version in Cargo.lock file*
       - *Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)*

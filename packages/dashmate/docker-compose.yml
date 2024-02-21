@@ -22,8 +22,8 @@ services:
       org.dashmate.service.title: "Core"
     restart: unless-stopped
     ports:
-      - ${DOCKER_NETWORK_BIND_IP:?err}:${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err} # P2P
-      - 127.0.0.1:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err} #RPC
+      - ${CORE_P2P_HOST:?err}:${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err} # P2P
+      - ${CORE_RPC_HOST:?err}:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err} #RPC
     volumes:
       - core_data:/home/dash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/core/dash.conf:/home/dash/.dashcore/dash.conf:ro
@@ -47,14 +47,11 @@ services:
     volumes:
       - drive_abci_data:/var/lib/dash/rs-drive-abci/db
     environment:
-      - BLOCK_SPACING_MS=3000 # TODO: sync with tenderdash
       - CHAIN_ID=${PLATFORM_DRIVE_TENDERDASH_GENESIS_CHAIN_ID:-devnet}
       - CORE_JSON_RPC_USERNAME=${CORE_RPC_USER:?err}
       - CORE_JSON_RPC_PASSWORD=${CORE_RPC_PASSWORD:?err}
       - CORE_JSON_RPC_HOST=core
       - CORE_JSON_RPC_PORT=${CORE_RPC_PORT:?err}
-      - CORE_ZMQ_HOST=core
-      - CORE_ZMQ_PORT=29998
       - DPNS_MASTER_PUBLIC_KEY=${PLATFORM_DPNS_MASTER_PUBLIC_KEY}
       - DPNS_SECOND_PUBLIC_KEY=${PLATFORM_DPNS_SECOND_PUBLIC_KEY}
       - DASHPAY_MASTER_PUBLIC_KEY=${PLATFORM_DASHPAY_MASTER_PUBLIC_KEY}
@@ -66,10 +63,10 @@ services:
       - MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY=${PLATFORM_MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY}
       - WITHDRAWALS_MASTER_PUBLIC_KEY=${PLATFORM_WITHDRAWALS_MASTER_PUBLIC_KEY}
       - WITHDRAWALS_SECOND_PUBLIC_KEY=${PLATFORM_WITHDRAWALS_SECOND_PUBLIC_KEY}
-      - QUORUM_SIZE=5 # TODO: sync with Tenderdash
-      - QUORUM_TYPE=${PLATFORM_DRIVE_ABCI_VALIDATOR_SET_LLMQ_TYPE:?err}
-      - NETWORK=${NETWORK:?err}
-      - TENDERDASH_P2P_PORT=${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}
+      - VALIDATOR_SET_QUORUM_TYPE=${PLATFORM_DRIVE_ABCI_VALIDATOR_SET_LLMQ_TYPE:?err}
+      - CHAIN_LOCK_QUORUM_TYPE=${PLATFORM_DRIVE_ABCI_CHAIN_LOCK_LLMQ_TYPE:?err}
+      - CHAIN_LOCK_QUORUM_WINDOW=${PLATFORM_DRIVE_ABCI_CHAIN_LOCK_DKG_INTERVAL:?err}
+      - CHAIN_LOCK_QUORUM_SIZE=${PLATFORM_DRIVE_ABCI_CHAIN_LOCK_LLMQ_SIZE:?err}
     stop_grace_period: 30s
     env_file:
       # Logger settings
@@ -85,10 +82,10 @@ services:
     depends_on:
       - drive_abci
     ports:
-      - ${DOCKER_NETWORK_BIND_IP:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err} # P2P
-      - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err} # RPC
+      - ${PLATFORM_DRIVE_TENDERDASH_P2P_HOST:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err} # P2P
+      - ${PLATFORM_DRIVE_TENDERDASH_RPC_HOST}:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err} # RPC
       - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_PPROF_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_PPROF_PORT:?err} # pprof
-      - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_METRICS_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_METRICS_PORT:?err} # Metrics
+      - ${PLATFORM_DRIVE_TENDERDASH_METRICS_HOST:?err}:${PLATFORM_DRIVE_TENDERDASH_METRICS_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_METRICS_PORT:?err} # Metrics
     volumes:
       - drive_tenderdash:/tenderdash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/tenderdash:/tenderdash/config:ro
@@ -102,6 +99,9 @@ services:
     labels:
       org.dashmate.service.title: "DAPI API"
     restart: unless-stopped
+    deploy:
+      mode: replicated
+      replicas: ${PLATFORM_DAPI_API_DOCKER_DEPLOY_REPLICAS:-1}
     depends_on:
       - drive_tenderdash
     environment:
@@ -120,16 +120,22 @@ services:
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}
       - NODE_ENV=${ENVIRONMENT:?err}
-    command: yarn workspace @dashevo/dapi api
+    command: yarn run api
     stop_grace_period: 10s
     profiles:
       - platform
+    expose:
+      - 3004
+      - 3005
 
   dapi_tx_filter_stream:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "DAPI Transactions Filter Stream"
     restart: unless-stopped
+    deploy:
+      mode: replicated
+      replicas: ${PLATFORM_DAPI_API_DOCKER_DEPLOY_REPLICAS:-1}
     environment:
       - TX_FILTER_STREAM_GRPC_PORT=3006
       - DASHCORE_RPC_HOST=core
@@ -144,10 +150,12 @@ services:
       - NETWORK=devnet
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=26657
-    command: yarn workspace @dashevo/dapi core-streams
+    command: yarn run core-streams
     stop_grace_period: 10s
     profiles:
       - platform
+    expose:
+      - 3006
 
   dapi_envoy:
     image: ${PLATFORM_DAPI_ENVOY_DOCKER_IMAGE:?err}
@@ -155,7 +163,7 @@ services:
       org.dashmate.service.title: "DAPI Envoy"
     restart: unless-stopped
     ports:
-      - ${DOCKER_NETWORK_BIND_IP:?err}:${PLATFORM_DAPI_ENVOY_HTTP_PORT:?err}:10000 # JSON RPC and gRPC Web & Native
+      - ${PLATFORM_DAPI_ENVOY_HTTP_HOST:?err}:${PLATFORM_DAPI_ENVOY_HTTP_PORT:?err}:10000 # JSON RPC and gRPC Web & Native
     depends_on:
       - dapi_api
       - dapi_tx_filter_stream

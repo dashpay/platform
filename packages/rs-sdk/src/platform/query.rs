@@ -3,6 +3,7 @@
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from the platform.
 use std::fmt::Debug;
 
+use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{
     self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
     AllKeys, GetEpochsInfoRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest,
@@ -14,6 +15,8 @@ use drive::query::DriveQuery;
 use rs_dapi_client::transport::TransportRequest;
 
 use crate::{error::Error, platform::document_query::DocumentQuery};
+
+use super::types::epoch::EpochQuery;
 
 /// Default limit of epoch records returned by the platform.
 pub const DEFAULT_EPOCH_QUERY_LIMIT: u32 = 100;
@@ -43,15 +46,15 @@ pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
 /// use rs_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
-/// let mut sdk = Sdk::new_mock();
+/// let sdk = Sdk::new_mock();
 /// let query = Identifier::new(SOME_IDENTIFIER);
-/// let identity = Identity::fetch(&mut sdk, query);
+/// let identity = Identity::fetch(&sdk, query);
 /// ```
 ///
 /// As [Identifier](crate::platform::Identifier) implements [Query], the `query` variable in the code
 /// above can be used as a parameter for [Fetch::fetch()](crate::platform::Fetch::fetch())
 /// and [FetchMany::fetch_many()](crate::platform::FetchMany::fetch_many()) methods.
-pub trait Query<T: TransportRequest>: Send + Debug + Clone {
+pub trait Query<T: TransportRequest + Mockable>: Send + Debug + Clone {
     /// Converts the current instance into an instance of the `TransportRequest` type.
     ///
     /// This method takes ownership of the instance upon which it's called (hence `self`), and attempts to perform the conversion.
@@ -157,12 +160,12 @@ impl<'a> Query<DocumentQuery> for DriveQuery<'a> {
 /// use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
-/// let mut sdk = Sdk::new_mock();
+/// let sdk = Sdk::new_mock();
 /// let query = LimitQuery {
 ///    query: 1,
 ///    limit: Some(10),
 /// };
-/// let epoch = ExtendedEpochInfo::fetch_many(&mut sdk, query);
+/// let epoch = ExtendedEpochInfo::fetch_many(&sdk, query);
 /// ```
 #[derive(Debug, Clone)]
 pub struct LimitQuery<Q> {
@@ -178,18 +181,19 @@ impl<Q> From<Q> for LimitQuery<Q> {
     }
 }
 
-impl Query<GetEpochsInfoRequest> for LimitQuery<EpochIndex> {
+impl<E: Into<EpochQuery> + Clone + Debug + Send> Query<GetEpochsInfoRequest> for LimitQuery<E> {
     fn query(self, prove: bool) -> Result<GetEpochsInfoRequest, Error> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
+        let inner: EpochQuery = self.query.into();
         Ok(GetEpochsInfoRequest {
             version: Some(proto::get_epochs_info_request::Version::V0(
                 proto::get_epochs_info_request::GetEpochsInfoRequestV0 {
                     prove,
-                    start_epoch: Some(self.query.into()),
+                    start_epoch: inner.start.map(|v| v as u32),
                     count: self.limit.unwrap_or(DEFAULT_EPOCH_QUERY_LIMIT),
-                    ascending: true,
+                    ascending: inner.ascending,
                 },
             )),
         })
@@ -198,7 +202,11 @@ impl Query<GetEpochsInfoRequest> for LimitQuery<EpochIndex> {
 
 impl Query<GetEpochsInfoRequest> for EpochIndex {
     fn query(self, prove: bool) -> Result<GetEpochsInfoRequest, Error> {
-        LimitQuery::from(self).query(prove)
+        LimitQuery {
+            query: self,
+            limit: Some(1),
+        }
+        .query(prove)
     }
 }
 

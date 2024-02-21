@@ -1,9 +1,11 @@
 mod action_validation;
-mod base_structure;
+mod advanced_structure;
 mod data_triggers;
+mod identity_contract_nonce;
 mod state;
 mod transformer;
 
+use dpp::block::block_info::BlockInfo;
 use dpp::prelude::*;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -14,15 +16,18 @@ use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
 use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::rpc::core::CoreRPCLike;
 
-use crate::execution::validation::state_transition::documents_batch::base_structure::v0::DocumentsBatchStateTransitionStructureValidationV0;
+use crate::execution::validation::state_transition::documents_batch::advanced_structure::v0::DocumentsBatchStateTransitionStructureValidationV0;
+use crate::execution::validation::state_transition::documents_batch::identity_contract_nonce::v0::DocumentsBatchStateTransitionIdentityContractNonceV0;
 use crate::execution::validation::state_transition::documents_batch::state::v0::DocumentsBatchStateTransitionStateValidationV0;
 
 use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionStateValidationV0, StateTransitionStructureValidationV0,
+    StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0,
+    StateTransitionStateValidationV0, StateTransitionStructureKnownInStateValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -32,6 +37,7 @@ impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
         &self,
         platform: &PlatformRef<C>,
         validate: bool,
+        _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
@@ -53,20 +59,73 @@ impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
     }
 }
 
-impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
-    fn validate_structure(
+impl StateTransitionBasicStructureValidationV0 for DocumentsBatchTransition {
+    fn validate_basic_structure(
         &self,
-        platform: &PlatformStateRef,
-        action: Option<&StateTransitionAction>,
-        protocol_version: u32,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let platform_version = PlatformVersion::get(protocol_version)?;
         match platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
             .documents_batch_state_transition
-            .structure
+            .basic_structure
+        {
+            0 => self
+                .validate_base_structure(platform_version)
+                .map_err(Error::Protocol),
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "documents batch transition: base structure".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+}
+
+impl StateTransitionNonceValidationV0 for DocumentsBatchTransition {
+    fn validate_nonces(
+        &self,
+        platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .documents_batch_state_transition
+            .revision
+        {
+            0 => self.validate_identity_contract_nonces_v0(
+                platform,
+                block_info,
+                tx,
+                platform_version,
+            ),
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "documents batch transition: revision".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+}
+
+impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransition {
+    fn validate_advanced_structure_from_state(
+        &self,
+        platform: &PlatformStateRef,
+        action: Option<&StateTransitionAction>,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .documents_batch_state_transition
+            .advanced_structure
         {
             0 => {
                 let action =
@@ -80,7 +139,7 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
                         "action must be a documents batch transition action",
                     )));
                 };
-                self.validate_structure_v0(
+                self.validate_advanced_structure_from_state_v0(
                     platform,
                     documents_batch_transition_action,
                     platform_version,
@@ -93,6 +152,10 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
             })),
         }
     }
+
+    fn requires_advance_structure_validation(&self) -> bool {
+        true
+    }
 }
 
 impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
@@ -100,6 +163,7 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
         &self,
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
+        _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
