@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 
 use dpp::consensus::state::identity::invalid_asset_lock_proof_value::InvalidAssetLockProofValueError;
@@ -13,7 +14,7 @@ use dpp::identity::state_transition::AssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
-use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
+
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
 
@@ -23,7 +24,7 @@ use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::execution::ExecutionError;
 use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
-use crate::execution::types::execution_operation::ExecutionOperation;
+use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
@@ -147,8 +148,8 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
                 ))
             })?;
 
-        execution_context.add_operation(ExecutionOperation::DoubleSha256);
-        execution_context.add_operation(ExecutionOperation::SignatureVerification(
+        execution_context.add_operation(ValidationOperation::DoubleSha256);
+        execution_context.add_operation(ValidationOperation::SignatureVerification(
             SignatureVerificationOperation::new(KeyType::ECDSA_HASH160),
         ));
 
@@ -162,7 +163,10 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
             ));
         }
 
-        match IdentityCreateTransitionAction::try_from_borrowed(self, tx_out.value * 1000) {
+        match IdentityCreateTransitionAction::try_from_borrowed(
+            self,
+            tx_out.value * CREDITS_PER_DUFF,
+        ) {
             Ok(action) => {
                 validation_result.set_data(action.into());
             }

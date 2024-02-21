@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::balances::credits::CREDITS_PER_DUFF;
 
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 use dpp::consensus::state::identity::invalid_asset_lock_proof_value::InvalidAssetLockProofValueError;
@@ -11,7 +12,7 @@ use dpp::identity::KeyType;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
-use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
+
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
 
@@ -22,7 +23,7 @@ use drive::state_transition_action::StateTransitionAction;
 use crate::error::execution::ExecutionError;
 use drive::grovedb::TransactionArg;
 
-use crate::execution::types::execution_operation::ExecutionOperation;
+use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
@@ -110,8 +111,8 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
                 ))
             })?;
 
-        execution_context.add_operation(ExecutionOperation::DoubleSha256);
-        execution_context.add_operation(ExecutionOperation::SignatureVerification(
+        execution_context.add_operation(ValidationOperation::DoubleSha256);
+        execution_context.add_operation(ValidationOperation::SignatureVerification(
             SignatureVerificationOperation::new(KeyType::ECDSA_HASH160),
         ));
 
@@ -125,7 +126,10 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
             ));
         }
 
-        match IdentityTopUpTransitionAction::try_from_borrowed(self, &tx_out.value * 1000) {
+        match IdentityTopUpTransitionAction::try_from_borrowed(
+            self,
+            tx_out.value * CREDITS_PER_DUFF,
+        ) {
             Ok(action) => {
                 validation_result.set_data(action.into());
             }

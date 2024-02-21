@@ -31,7 +31,8 @@ use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
 use drive_abci::platform_types::epoch_info::v0::EpochInfoV0;
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
-use drive_abci::rpc::core::{CoreRPCLike, MockCoreRPCLike};
+use drive_abci::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
+use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use platform_version::version::PlatformVersion;
 use rand::prelude::{SliceRandom, StdRng};
@@ -42,6 +43,8 @@ use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::serializers::timestamp::FromMilis;
 use tenderdash_abci::Application;
+
+pub const GENESIS_TIME_MS: u64 = 1681094380000;
 
 pub(crate) fn run_chain_for_strategy(
     platform: &mut Platform<MockCoreRPCLike>,
@@ -554,7 +557,7 @@ pub(crate) fn run_chain_for_strategy(
                 .as_slice()
                 .try_into()
                 .expect("Expected a byte array of length 32");
-            (quorum_hash.clone(), fixed_bytes)
+            (*quorum_hash, fixed_bytes)
         })
         .collect();
 
@@ -576,7 +579,7 @@ pub(crate) fn run_chain_for_strategy(
 
             let block_hash = *core_blocks
                 .get(&block_height)
-                .expect(format!("expected a block hash to be known for {}", core_height).as_str());
+                .unwrap_or_else(|| panic!("expected a block hash to be known for {}", core_height));
 
             let chain_lock = if sign_chain_locks {
                 // From DIP 8: https://github.com/dashpay/dips/blob/master/dip-0008.md#finalization-of-signed-blocks
@@ -651,7 +654,7 @@ pub(crate) fn run_chain_for_strategy(
     platform
         .core_rpc
         .expect_submit_chain_lock()
-        .returning(move |chain_lock: &ChainLock| return Ok(chain_lock.block_height));
+        .returning(move |chain_lock: &ChainLock| Ok(chain_lock.block_height));
 
     create_chain_for_strategy(
         platform,
@@ -767,8 +770,10 @@ pub(crate) fn start_chain_for_strategy(
             quorums,
             current_quorum_hash,
             current_proposer_versions: None,
-            start_time_ms: 1681094380000,
-            current_time_ms: 1681094380000,
+            current_identity_nonce_counter: Default::default(),
+            current_identity_contract_nonce_counter: Default::default(),
+            start_time_ms: GENESIS_TIME_MS,
+            current_time_ms: GENESIS_TIME_MS,
         },
         strategy,
         config,
@@ -792,6 +797,8 @@ pub(crate) fn continue_chain_for_strategy(
         quorums,
         mut current_quorum_hash,
         current_proposer_versions,
+        mut current_identity_nonce_counter,
+        mut current_identity_contract_nonce_counter,
         start_time_ms,
         mut current_time_ms,
     } = chain_execution_parameters;
@@ -822,7 +829,7 @@ pub(crate) fn continue_chain_for_strategy(
 
     let mut current_core_height = core_height_start;
 
-    let mut total_withdrawals = vec![];
+    let mut total_withdrawals = UnsignedWithdrawalTxs::default();
 
     let mut current_quorum_with_test_info =
         quorums.get::<QuorumHash>(&current_quorum_hash).unwrap();
@@ -869,6 +876,8 @@ pub(crate) fn continue_chain_for_strategy(
                 platform,
                 &block_info,
                 &mut current_identities,
+                &mut current_identity_nonce_counter,
+                &mut current_identity_contract_nonce_counter,
                 &mut signer,
                 &mut rng,
             );
@@ -949,7 +958,7 @@ pub(crate) fn continue_chain_for_strategy(
 
         let MimicExecuteBlockOutcome {
             state_transaction_results,
-            withdrawal_transactions: mut withdrawals_this_block,
+            withdrawal_transactions: withdrawals_this_block,
             validator_set_update,
             next_validator_set_hash,
             root_app_hash,
@@ -971,7 +980,7 @@ pub(crate) fn continue_chain_for_strategy(
 
         let platform_version = platform_state.current_platform_version().unwrap();
 
-        total_withdrawals.append(&mut withdrawals_this_block);
+        total_withdrawals.append(withdrawals_this_block);
 
         for finalize_block_operation in finalize_block_operations {
             match finalize_block_operation {
@@ -1075,6 +1084,8 @@ pub(crate) fn continue_chain_for_strategy(
         quorums,
         current_quorum_hash,
         current_proposer_versions: proposer_versions,
+        identity_nonce_counter: current_identity_nonce_counter,
+        identity_contract_nonce_counter: current_identity_contract_nonce_counter,
         end_epoch_index,
         end_time_ms: current_time_ms,
         strategy,

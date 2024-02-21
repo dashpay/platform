@@ -72,7 +72,7 @@ export default function getBaseConfigFactory(homeDir) {
           port: 3001,
         },
         docker: {
-          image: 'dashpay/dashd:20.1.0-devpr5806.a1814ce2', commandArgs: [],
+          image: 'dashpay/dashd:20', commandArgs: [],
         },
         p2p: {
           host: '0.0.0.0',
@@ -178,7 +178,7 @@ export default function getBaseConfigFactory(homeDir) {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:fix-ordered-map',
+              image: 'dashpay/tenderdash:0.14.0-dev.2',
             },
             p2p: {
               host: '0.0.0.0',
@@ -204,6 +204,7 @@ export default function getBaseConfigFactory(homeDir) {
               port: 26660,
             },
             mempool: {
+              cacheSize: 15000,
               size: 5000,
               maxTxsBytes: 1073741824,
             },

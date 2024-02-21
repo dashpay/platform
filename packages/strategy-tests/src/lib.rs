@@ -31,6 +31,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashSet};
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::identifier::Identifier;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::BinaryData;
 use dpp::ProtocolError;
@@ -82,7 +83,7 @@ pub mod transitions;
 ///
 /// # Note
 /// Ensure that when using or updating the `Strategy`, all associated operations, identities, and contracts are coherent with the intended workflow or simulation. Inconsistencies might lead to unexpected behaviors or simulation failures.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct Strategy {
     pub contracts_with_updates: Vec<(
         CreatedDataContract,
@@ -91,19 +92,8 @@ pub struct Strategy {
     pub operations: Vec<Operation>,
     pub start_identities: Vec<(Identity, StateTransition)>,
     pub identities_inserts: Frequency,
+    pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
-}
-
-impl Default for Strategy {
-    fn default() -> Self {
-        Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency::default(),
-            signer: None,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Encode, Decode)]
@@ -112,6 +102,7 @@ struct StrategyInSerializationFormat {
     pub operations: Vec<Vec<u8>>,
     pub start_identities: Vec<(Identity, StateTransition)>,
     pub identities_inserts: Frequency,
+    pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
 }
 
@@ -135,6 +126,7 @@ impl PlatformSerializableWithPlatformVersion for Strategy {
             operations,
             start_identities,
             identities_inserts,
+            identity_contract_nonce_gaps,
             signer,
         } = self;
 
@@ -173,6 +165,7 @@ impl PlatformSerializableWithPlatformVersion for Strategy {
             operations: operations_in_serialization_format,
             start_identities,
             identities_inserts,
+            identity_contract_nonce_gaps,
             signer,
         };
 
@@ -208,6 +201,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
             operations,
             start_identities,
             identities_inserts,
+            identity_contract_nonce_gaps,
             signer,
         } = strategy;
 
@@ -256,6 +250,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
             operations,
             start_identities,
             identities_inserts,
+            identity_contract_nonce_gaps,
             signer,
         })
     }
@@ -482,6 +477,7 @@ impl Strategy {
         current_identities: &Vec<Identity>,
         block_height: u64,
         signer: &SimpleSigner,
+        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
         self.contracts_with_updates
@@ -500,10 +496,16 @@ impl Strategy {
                     .clone()
                     .into_partial_identity_info();
 
+                let identity_contract_nonce = contract_nonce_counter
+                    .entry((identity.id, contract_update.data_contract().id()))
+                    .or_default();
+                *identity_contract_nonce += 1;
+
                 let state_transition = DataContractUpdateTransition::new_from_data_contract(
                     contract_update.data_contract().clone(),
                     &identity,
                     1, //key id 1 should always be a high or critical auth key in these tests
+                    *identity_contract_nonce,
                     signer,
                     platform_version,
                     None,
@@ -562,6 +564,8 @@ impl Strategy {
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
+        identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
+        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
@@ -604,10 +608,22 @@ impl Strategy {
                                     } else {
                                         None
                                     };
+
+                                let identity_contract_nonce = contract_nonce_counter
+                                    .entry((identity.id(), contract.id()))
+                                    .or_default();
+                                let gap = self
+                                    .identity_contract_nonce_gaps
+                                    .as_ref()
+                                    .map_or(0, |gap_amount| gap_amount.events_if_hit(rng))
+                                    as u64;
+                                *identity_contract_nonce += 1 + gap;
+
                                 let document_create_transition: DocumentCreateTransition =
                                     DocumentCreateTransitionV0 {
                                         base: DocumentBaseTransitionV0 {
                                             id: document.id(),
+                                            identity_contract_nonce: *identity_contract_nonce,
                                             document_type_name: document_type.name().clone(),
                                             data_contract_id: contract.id(),
                                         }
@@ -713,10 +729,17 @@ impl Strategy {
                                     } else {
                                         None
                                     };
+
+                                let identity_contract_nonce = contract_nonce_counter
+                                    .entry((identity.id(), contract.id()))
+                                    .or_default();
+                                *identity_contract_nonce += 1;
+
                                 let document_create_transition: DocumentCreateTransition =
                                     DocumentCreateTransitionV0 {
                                         base: DocumentBaseTransitionV0 {
                                             id: document.id(),
+                                            identity_contract_nonce: *identity_contract_nonce,
                                             document_type_name: document_type.name().clone(),
                                             data_contract_id: contract.id(),
                                         }
@@ -808,10 +831,18 @@ impl Strategy {
                                 .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
+                            let identity_contract_nonce = contract_nonce_counter
+                                .get_mut(&(identity.id, contract.id()))
+                                .expect(
+                                    "the identity should already have a nonce for that contract",
+                                );
+                            *identity_contract_nonce += 1;
+
                             let document_delete_transition: DocumentDeleteTransition =
                                 DocumentDeleteTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
                                         id: document.id(),
+                                        identity_contract_nonce: *identity_contract_nonce,
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),
                                     }
@@ -895,10 +926,18 @@ impl Strategy {
                                 .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
+                            let identity_contract_nonce = contract_nonce_counter
+                                .get_mut(&(identity.id, contract.id()))
+                                .expect(
+                                    "the identity should already have a nonce for that contract",
+                                );
+                            *identity_contract_nonce += 1;
+
                             let document_replace_transition: DocumentReplaceTransition =
                                 DocumentReplaceTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
                                         id: document.id(),
+                                        identity_contract_nonce: *identity_contract_nonce,
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),
                                     }
@@ -974,6 +1013,7 @@ impl Strategy {
                                         crate::transitions::create_identity_update_transition_add_keys(
                                             random_identity,
                                             *count,
+                                            identity_nonce_counter,
                                             signer,
                                             rng,
                                             platform_version,
@@ -990,6 +1030,7 @@ impl Strategy {
                                             random_identity,
                                             *count,
                                             block_info.time_ms,
+                                            identity_nonce_counter,
                                             signer,
                                             rng,
                                             platform_version,
@@ -1011,6 +1052,7 @@ impl Strategy {
                             let state_transition =
                                 crate::transitions::create_identity_withdrawal_transition(
                                     random_identity,
+                                    identity_nonce_counter,
                                     signer,
                                     rng,
                                 );
@@ -1029,7 +1071,11 @@ impl Strategy {
 
                         let state_transition =
                             crate::transitions::create_identity_credit_transfer_transition(
-                                owner, recipient, signer, 1000,
+                                owner,
+                                recipient,
+                                identity_nonce_counter,
+                                signer,
+                                1000,
                             );
                         operations.push(state_transition);
                     }
@@ -1086,6 +1132,8 @@ impl Strategy {
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
+        identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
+        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
@@ -1108,6 +1156,8 @@ impl Strategy {
                     block_info,
                     current_identities,
                     signer,
+                    identity_nonce_counter,
+                    contract_nonce_counter,
                     rng,
                     platform_version,
                 );
@@ -1120,6 +1170,7 @@ impl Strategy {
                 current_identities,
                 block_info.height,
                 signer,
+                contract_nonce_counter,
                 platform_version,
             );
             state_transitions.append(&mut contract_update_state_transitions);
@@ -1267,6 +1318,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            identity_contract_nonce_gaps: None,
             signer: Some(simple_signer),
         };
 

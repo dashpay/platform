@@ -1,17 +1,15 @@
 use dashcore_rpc::dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
-    ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult, GetChainTipsResult,
-    GetTransactionLockedResult, MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType,
-    SoftforkInfo,
+    AssetUnlockStatusResult, ExtendedQuorumDetails, ExtendedQuorumListResult, GetChainTipsResult,
+    MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
 };
 use dashcore_rpc::json::GetRawTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
-use dpp::dashcore::{hashes::Hash, InstantLock};
+use dpp::dashcore::InstantLock;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
-use tenderdash_abci::proto::types::CoreChainLock;
 
 /// Information returned by QuorumListExtended
 pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;
@@ -33,11 +31,12 @@ pub trait CoreRPCLike {
     /// Get transaction
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
 
-    /// Get transaction finalization status
-    fn get_transactions_are_chain_locked(
+    /// Get asset unlock statuses
+    fn get_asset_unlock_statuses(
         &self,
-        tx_ids: Vec<Txid>,
-    ) -> Result<Vec<GetTransactionLockedResult>, Error>;
+        indices: &[u64],
+        core_chain_locked_height: u32,
+    ) -> Result<Vec<AssetUnlockStatusResult>, Error>;
 
     /// Get transaction
     fn get_transaction_extended_info(&self, tx_id: &Txid)
@@ -116,6 +115,9 @@ pub trait CoreRPCLike {
 
     /// Returns masternode sync status
     fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error>;
+
+    /// Sends raw transaction to the network
+    fn send_raw_transaction(&self, transaction: &Vec<u8>) -> Result<Txid, Error>;
 }
 
 #[derive(Debug)]
@@ -124,6 +126,12 @@ pub struct DefaultCoreRPC {
     inner: Client,
 }
 
+// TODO: Create errors for these error codes in dashcore_rpc
+
+/// TX is invalid due to consensus rules
+pub const CORE_RPC_TX_CONSENSUS_ERROR: i32 = -26;
+/// Tx already broadcasted and included in the chain
+pub const CORE_RPC_TX_ALREADY_IN_CHAIN: i32 = -27;
 /// Client still warming up
 pub const CORE_RPC_ERROR_IN_WARMUP: i32 = -28;
 /// Dash is not connected
@@ -136,6 +144,11 @@ pub const CORE_RPC_PARSE_ERROR: i32 = -32700;
 pub const CORE_RPC_INVALID_ADDRESS_OR_KEY: i32 = -5;
 /// Invalid, missing or duplicate parameter
 pub const CORE_RPC_INVALID_PARAMETER: i32 = -8;
+
+/// Asset Unlock consenus error "bad-assetunlock-not-active-quorum"
+pub const CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM: &str = "bad-assetunlock-not-active-quorum";
+/// Asset Unlock consenus error "bad-assetunlock-not-active-quorum"
+pub const CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED: &str = "bad-assetunlock-too-late";
 
 macro_rules! retry {
     ($action:expr) => {{
@@ -209,13 +222,6 @@ impl CoreRPCLike for DefaultCoreRPC {
 
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error> {
         retry!(self.inner.get_raw_transaction(tx_id, None))
-    }
-
-    fn get_transactions_are_chain_locked(
-        &self,
-        tx_ids: Vec<Txid>,
-    ) -> Result<Vec<GetTransactionLockedResult>, Error> {
-        retry!(self.inner.get_transaction_are_locked(&tx_ids))
     }
 
     fn get_transaction_extended_info(
@@ -304,5 +310,19 @@ impl CoreRPCLike for DefaultCoreRPC {
     /// Returns masternode sync status
     fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error> {
         retry!(self.inner.mnsync_status())
+    }
+
+    fn send_raw_transaction(&self, transaction: &Vec<u8>) -> Result<Txid, Error> {
+        retry!(self.inner.send_raw_transaction(transaction.as_slice()))
+    }
+
+    fn get_asset_unlock_statuses(
+        &self,
+        indices: &[u64],
+        core_chain_locked_height: u32,
+    ) -> Result<Vec<AssetUnlockStatusResult>, Error> {
+        retry!(self
+            .inner
+            .get_asset_unlock_statuses(indices, Some(core_chain_locked_height)))
     }
 }

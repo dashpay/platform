@@ -15,6 +15,12 @@ pub(super) fn execute_data_triggers(
     let data_trigger_bindings = data_trigger_bindings_list(platform_version)?;
 
     for document_transition_action in document_transition_actions {
+        if matches!(
+            document_transition_action,
+            DocumentTransitionAction::BumpIdentityDataContractNonce(_)
+        ) {
+            continue;
+        }
         let data_trigger_execution_result = document_transition_action
             .validate_with_data_triggers(&data_trigger_bindings, context, platform_version)?;
 

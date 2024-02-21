@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::prelude::IdentityNonce;
 use crate::state_transition::documents_batch_transition::document_base_transition::property_names;
 use crate::{data_contract::DataContract, errors::ProtocolError, identifier::Identifier};
 
@@ -31,6 +32,11 @@ pub struct DocumentBaseTransitionV0 {
     /// The document ID
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "$id"))]
     pub id: Identifier,
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(rename = "$identity-contract-nonce")
+    )]
+    pub identity_contract_nonce: IdentityNonce,
     /// Name of document type found int the data contract associated with the `data_contract_id`
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "$type"))]
     pub document_type_name: String,
@@ -47,12 +53,14 @@ impl DocumentBaseTransitionV0 {
     pub fn from_value_map_consume(
         map: &mut BTreeMap<String, Value>,
         data_contract: DataContract,
+        identity_contract_nonce: IdentityNonce,
     ) -> Result<DocumentBaseTransitionV0, ProtocolError> {
         Ok(DocumentBaseTransitionV0 {
             id: Identifier::from(
                 map.remove_hash256_bytes(property_names::ID)
                     .map_err(ProtocolError::ValueError)?,
             ),
+            identity_contract_nonce,
             document_type_name: map
                 .remove_string(property_names::DOCUMENT_TYPE)
                 .map_err(ProtocolError::ValueError)?,

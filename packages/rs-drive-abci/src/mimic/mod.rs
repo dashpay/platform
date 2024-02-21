@@ -2,36 +2,35 @@ use crate::abci::server::AbciApplication;
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use bytes::Buf;
-
-use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
-use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo;
-use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::AssetUnlockBaseTransactionInfo;
-use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
-use dashcore_rpc::dashcore::bls_sig_utils::BLSSignature;
-use dashcore_rpc::dashcore::consensus::Decodable;
-use dashcore_rpc::dashcore;
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
-use dpp::dashcore::hashes::Hash;
-use dpp::block::block_info::BlockInfo;
-use dpp::serialization::PlatformSerializable;
-use dpp::state_transition::StateTransition;
-use dpp::util::deserializer::ProtocolVersion;
-use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
-use tenderdash_abci::proto::abci::{CommitInfo, ExecTxResult, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal, ValidatorSetUpdate};
-use tenderdash_abci::proto::google::protobuf::Timestamp;
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
-use tenderdash_abci::proto::types::{
-    Block, BlockId, Data, EvidenceList, Header, PartSetHeader, VoteExtension, VoteExtensionType, StateId, CanonicalVote, SignedMsgType,
-};
-use tenderdash_abci::signatures::SignBytes;
-use tenderdash_abci::{signatures::SignDigest, proto::version::Consensus, Application};
-use tenderdash_abci::proto::abci::tx_record::TxAction;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
 use crate::mimic::test_quorum::TestQuorumInfo;
+use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::{
+    make_extend_vote_request_id, UnsignedWithdrawalTxs,
+};
+use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::hashes::Hash;
+use dpp::serialization::PlatformSerializable;
+use dpp::state_transition::StateTransition;
+use dpp::util::deserializer::ProtocolVersion;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
+use tenderdash_abci::proto::abci::tx_record::TxAction;
+use tenderdash_abci::proto::abci::{
+    CommitInfo, ExecTxResult, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal,
+    RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal,
+    ValidatorSetUpdate,
+};
+use tenderdash_abci::proto::google::protobuf::Timestamp;
+use tenderdash_abci::proto::serializers::timestamp::ToMilis;
+use tenderdash_abci::proto::types::{
+    Block, BlockId, CanonicalVote, Data, EvidenceList, Header, PartSetHeader, SignedMsgType,
+    StateId, VoteExtension, VoteExtensionType,
+};
+use tenderdash_abci::signatures::Hashable;
+use tenderdash_abci::{proto::version::Consensus, signatures::Signable, Application};
 
 /// Test quorum for mimic block execution
 pub mod test_quorum;
@@ -44,7 +43,7 @@ pub struct MimicExecuteBlockOutcome {
     /// state transaction results
     pub state_transaction_results: Vec<(StateTransition, ExecTxResult)>,
     /// withdrawal transactions
-    pub withdrawal_transactions: Vec<dashcore_rpc::dashcore::Transaction>,
+    pub withdrawal_transactions: UnsignedWithdrawalTxs,
     /// The next validators
     pub validator_set_update: Option<ValidatorSetUpdate>,
     /// The next validators hash
@@ -205,7 +204,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             time: time.to_milis(),
         };
         let state_id_hash = state_id
-            .sha256(CHAIN_ID, height as i64, round as i32)
+            .calculate_msg_hash(CHAIN_ID, height as i64, round as i32)
             .expect("cannot hash state id");
 
         let block_header_hash: [u8; 32] = rng.gen();
@@ -218,7 +217,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             state_id: state_id_hash,
         };
         let block_id_hash = block_id
-            .sha256(CHAIN_ID, height as i64, round as i32)
+            .calculate_msg_hash(CHAIN_ID, height as i64, round as i32)
             .expect("cannot hash block id");
 
         let request_process_proposal = RequestProcessProposal {
@@ -403,44 +402,23 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 )))?.v0()?;
 
         let extensions = block_execution_context
-            .withdrawal_transactions
-            .keys()
-            .map(|tx_id| {
+            .unsigned_withdrawal_transactions
+            .iter()
+            .map(|tx| {
+                let sign_request_id = Some(make_extend_vote_request_id(tx));
+
                 VoteExtension {
-                    r#type: VoteExtensionType::ThresholdRecover as i32,
-                    extension: tx_id.to_byte_array().to_vec(),
-                    signature: vec![], //todo: signature
+                    r#type: VoteExtensionType::ThresholdRecoverRaw as i32,
+                    extension: tx.txid().to_byte_array().to_vec(),
+                    sign_request_id,
+                    signature: vec![0; 96], //todo: signature
                 }
             })
             .collect();
 
-        //todo: tidy up and fix
-        let withdrawals = block_execution_context
-            .withdrawal_transactions
-            .values()
-            .map(|transaction| {
-                let AssetUnlockBaseTransactionInfo {
-                    version,
-                    lock_time,
-                    output,
-                    base_payload,
-                } = Decodable::consensus_decode(&mut transaction.reader()).expect("a");
-                dashcore::Transaction {
-                    version,
-                    lock_time,
-                    input: vec![],
-                    output,
-                    special_transaction_payload: Some(AssetUnlockPayloadType(AssetUnlockPayload {
-                        base: base_payload,
-                        request_info: AssetUnlockRequestInfo {
-                            request_height: core_height,
-                            quorum_hash: current_quorum.quorum_hash,
-                        },
-                        quorum_sig: BLSSignature::from([0; 96]),
-                    })),
-                }
-            })
-            .collect();
+        let withdrawal_transactions = block_execution_context
+            .unsigned_withdrawal_transactions
+            .clone();
 
         drop(guarded_block_execution_context);
 
@@ -448,7 +426,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         let quorum_type = self.platform.config.validator_set_quorum_type();
         let state_id_hash = state_id
-            .sha256(CHAIN_ID, height as i64, round as i32)
+            .calculate_msg_hash(CHAIN_ID, height as i64, round as i32)
             .expect("cannot calculate state id hash");
 
         let commit = CanonicalVote {
@@ -582,7 +560,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         Ok(MimicExecuteBlockOutcome {
             state_transaction_results,
             app_version: APP_VERSION,
-            withdrawal_transactions: withdrawals,
+            withdrawal_transactions,
             validator_set_update,
             next_validator_set_hash,
             root_app_hash: app_hash

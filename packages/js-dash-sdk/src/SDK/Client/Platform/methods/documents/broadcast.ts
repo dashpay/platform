@@ -31,12 +31,31 @@ export default async function broadcast(
 
   const { dpp } = this;
 
-  const documentsBatchTransition = dpp.document.createStateTransition(documents);
+  const identityId = identity.getId();
+  const dataContractId = [
+    ...(documents.create || []),
+    ...(documents.replace || []),
+    ...(documents.delete || []),
+  ][0]?.getDataContractId();
+
+  if (!dataContractId) {
+    throw new Error('Data contract ID is not found');
+  }
+
+  const identityContractNonce = await this.nonceManager
+    .getIdentityContractNonce(identityId, dataContractId) + 1;
+
+  const documentsBatchTransition = dpp.document.createStateTransition(documents, {
+    [identityId.toString()]: {
+      [dataContractId.toString()]: identityContractNonce,
+    },
+  });
 
   this.logger.silly('[Document#broadcast] Created documents batch transition');
 
   await signStateTransition(this, documentsBatchTransition, identity, 1);
 
+  this.nonceManager.setIdentityContractNonce(identityId, dataContractId, identityContractNonce);
   // Broadcast state transition also wait for the result to be obtained
   await broadcastStateTransition(this, documentsBatchTransition);
 

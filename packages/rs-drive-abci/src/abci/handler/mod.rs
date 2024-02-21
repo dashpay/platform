@@ -41,6 +41,7 @@ mod execution_result;
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
 
+use super::AbciError;
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
 use dpp::errors::consensus::codes::ErrorWithCode;
@@ -48,14 +49,12 @@ use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{
-    ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
-    RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
-    ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery, TxRecord,
+    ExecTxResult, ExtendVoteExtension, RequestCheckTx, RequestFinalizeBlock, RequestInitChain,
+    RequestPrepareProposal, RequestProcessProposal, RequestQuery, ResponseCheckTx,
+    ResponseFinalizeBlock, ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal,
+    ResponseQuery, TxRecord,
 };
 use tenderdash_abci::proto::types::CoreChainLock;
-use tenderdash_abci::proto::types::VoteExtensionType;
-
-use super::AbciError;
 
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
@@ -69,7 +68,6 @@ use crate::platform_types::block_proposal::v0::BlockProposal;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
-use crate::platform_types::withdrawal::withdrawal_txs;
 use dpp::dashcore::hashes::Hash;
 use dpp::fee::SignedCredits;
 use dpp::version::TryIntoPlatformVersioned;
@@ -89,7 +87,7 @@ where
 
         if !tenderdash_abci::check_version(&request.abci_version) {
             return Err(proto::ResponseException::from(format!(
-                "tenderdash requires ABCI version {}, our version is {}",
+                "tenderdash requires protobuf definitions version {}, our version is {}",
                 request.abci_version,
                 tenderdash_abci::proto::ABCI_VERSION
             )));
@@ -275,11 +273,10 @@ where
 
         // We need to let Tenderdash know about the transactions we should remove from execution
         let valid_tx_count = state_transitions_result.valid_count();
-        let invalid_all_tx_count = state_transitions_result.invalid_count();
         let failed_tx_count = state_transitions_result.failed_count();
         let delayed_tx_count = transactions_exceeding_max_block_size.len();
-        let mut invalid_paid_tx_count = state_transitions_result.invalid_count();
-        let mut invalid_unpaid_tx_count = state_transitions_result.invalid_count();
+        let invalid_paid_tx_count = state_transitions_result.invalid_paid_count();
+        let invalid_unpaid_tx_count = state_transitions_result.invalid_unpaid_count();
 
         let mut tx_results = Vec::new();
         let mut tx_records = Vec::new();
@@ -292,21 +289,13 @@ where
             let tx_action = match &state_transition_execution_result {
                 StateTransitionExecutionResult::SuccessfulExecution(_, _) => TxAction::Unmodified,
                 // We have identity to pay for the state transition, so we keep it in the block
-                StateTransitionExecutionResult::PaidConsensusError(_) => {
-                    invalid_paid_tx_count += 1;
-
-                    TxAction::Unmodified
-                }
+                StateTransitionExecutionResult::PaidConsensusError(..) => TxAction::Unmodified,
                 // We don't have any associated identity to pay for the state transition,
                 // so we remove it from the block to prevent spam attacks.
                 // Such state transitions must be invalidated by check tx, but they might
                 // still be added to mempool due to inconsistency between check tx and tx processing
                 // (fees calculation) or malicious proposer.
-                StateTransitionExecutionResult::UnpaidConsensusError(_) => {
-                    invalid_unpaid_tx_count += 1;
-
-                    TxAction::Removed
-                }
+                StateTransitionExecutionResult::UnpaidConsensusError(_) => TxAction::Removed,
                 // We shouldn't include in the block any state transitions that produced an internal error
                 // during execution
                 StateTransitionExecutionResult::DriveAbciError(_) => TxAction::Removed,
@@ -365,7 +354,6 @@ where
             valid_tx_count,
             delayed_tx_count,
             failed_tx_count,
-            invalid_unpaid_tx_count,
             "Prepared proposal with {} transitions for height: {}, round: {} in {} ms",
             valid_tx_count + invalid_paid_tx_count,
             request.height,
@@ -378,7 +366,7 @@ where
 
     fn process_proposal(
         &self,
-        mut request: RequestProcessProposal,
+        request: RequestProcessProposal,
     ) -> Result<ResponseProcessProposal, proto::ResponseException> {
         let timer = crate::metrics::abci_request_duration("process_proposal");
 
@@ -558,7 +546,7 @@ where
             let platform_version = PlatformVersion::get(protocol_version)
                 .expect("must be set in run block proposer from existing platform version");
 
-            let invalid_tx_count = state_transition_results.invalid_count();
+            let invalid_tx_count = state_transition_results.invalid_paid_count();
             let valid_tx_count = state_transition_results.valid_count();
 
             let tx_results = state_transition_results
@@ -569,7 +557,7 @@ where
                     matches!(
                         execution_result,
                         StateTransitionExecutionResult::SuccessfulExecution(_, _)
-                            | StateTransitionExecutionResult::PaidConsensusError(_)
+                            | StateTransitionExecutionResult::PaidConsensusError(..)
                     )
                 })
                 .map(|execution_result| {
@@ -630,26 +618,21 @@ where
             round as u32,
             block_hash.clone(),
         )? {
-            Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
+            return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
                 height, round, hex::encode(block_hash),
                 block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(hex::encode).unwrap_or("None".to_string())
             )))
-                .into())
-        } else {
-            // we only want to sign the hash of the transaction
-            let extensions = block_execution_context
-                .withdrawal_transactions()
-                .keys()
-                .map(|tx_id| proto::ExtendVoteExtension {
-                    r#type: VoteExtensionType::ThresholdRecover as i32,
-                    extension: tx_id.to_byte_array().to_vec(),
-                })
-                .collect();
-            Ok(proto::ResponseExtendVote {
-                vote_extensions: extensions,
-            })
+                .into());
         }
+
+        // Extend vote with unsigned withdrawal transactions
+        // we only want to sign the hash of the transaction
+        let vote_extensions = block_execution_context
+            .unsigned_withdrawal_transactions()
+            .into();
+
+        Ok(proto::ResponseExtendVote { vote_extensions })
     }
 
     /// Todo: Verify vote extension not really needed because extend vote is deterministic
@@ -659,6 +642,7 @@ where
     ) -> Result<proto::ResponseVerifyVoteExtension, proto::ResponseException> {
         let _timer = crate::metrics::abci_request_duration("verify_vote_extension");
 
+        // Verify that this is a vote extension for our current executed block and our proposer
         let proto::RequestVerifyVoteExtension {
             height,
             round,
@@ -669,10 +653,11 @@ where
         let height: u64 = height as u64;
         let round: u32 = round as u32;
 
+        // Make sure we are in a block execution phase
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
         let Some(block_execution_context) = guarded_block_execution_context.as_ref() else {
             tracing::warn!(
-                "vote extension for height: {}, round: {} is rejected because we are not in a block execution phase",
+                "vote extensions for height: {}, round: {} are rejected because we are not in a block execution phase",
                 height,
                 round,
             );
@@ -682,51 +667,20 @@ where
             });
         };
 
-        let platform_version = block_execution_context
-            .block_platform_state()
-            .current_platform_version()?;
-
-        let got: withdrawal_txs::v0::WithdrawalTxs = vote_extensions.into();
-        let expected = block_execution_context
-            .withdrawal_transactions()
-            .keys()
-            .map(|tx_id| proto::ExtendVoteExtension {
-                r#type: VoteExtensionType::ThresholdRecover as i32,
-                extension: tx_id.to_byte_array().to_vec(),
-            })
-            .collect::<Vec<_>>()
-            .into();
-
-        // let state = self.platform.state.read().unwrap();
-        //
-        // let quorum = state.current_validator_set()?;
-
-        // let validator_pro_tx_hash = ProTxHash::from_slice(validator_pro_tx_hash.as_slice())
-        //     .map_err(|_| {
-        //         Error::Abci(AbciError::BadRequestDataSize(format!(
-        //             "invalid vote extension protxhash: {}",
-        //             hex::encode(validator_pro_tx_hash.as_slice())
-        //         )))
-        //     })?;
-        //
-        // let Some(validator) = quorum.validator_set.get(&validator_pro_tx_hash) else {
-        //     return Ok(proto::ResponseVerifyVoteExtension {
-        //         status: VerifyStatus::Unknown.into(),
-        //     });
-        // };
+        // Make sure vote extension is for our currently executing block
 
         let block_state_info = block_execution_context.block_state_info();
 
-        //// Verification that vote extension is for our current executed block
-        // When receiving the vote extension, we need to make sure that info matches our current block
-
-        if block_state_info.height() != height || block_state_info.round() != round {
+        // We might get vote extension to verify for previous (in case if other node is behind)
+        // or future round (in case if the current node is behind), so we make sure that only height
+        // is matching. It's fine because withdrawal transactions to sign are the same for any round
+        // of the same height
+        if block_state_info.height() != height {
             tracing::warn!(
-                "vote extension for height: {}, round: {} is rejected because we are at height: {} round {}",
+                "vote extensions for height: {}, round: {} are rejected because we are at height: {}",
                 height,
                 round,
                 block_state_info.height(),
-                block_state_info.round()
             );
 
             return Ok(proto::ResponseVerifyVoteExtension {
@@ -734,39 +688,35 @@ where
             });
         }
 
-        let validation_result = self.platform.check_withdrawals(
-            &got,
-            &expected,
-            height as u64,
-            round as u32,
-            None,
-            None,
-            platform_version,
-        )?;
+        // Verify that a validator is requesting a signatures
+        // for a correct set of withdrawal transactions
 
-        if validation_result.is_valid() {
-            tracing::debug!(
-                "vote extension for height: {}, round: {} is successfully verified",
-                height,
-                round,
-            );
+        let expected_withdrawals = block_execution_context.unsigned_withdrawal_transactions();
 
-            Ok(proto::ResponseVerifyVoteExtension {
-                status: VerifyStatus::Accept.into(),
-            })
-        } else {
+        if expected_withdrawals != &vote_extensions {
+            let expected_extensions: Vec<ExtendVoteExtension> = expected_withdrawals.into();
+
             tracing::error!(
-                ?got,
-                ?expected,
-                ?validation_result.errors,
-                "vote extension for height: {}, round: {} mismatch",
+                received_extensions = ?vote_extensions,
+                ?expected_extensions,
+                "vote extensions for height: {}, round: {} mismatch",
                 height, round
             );
 
-            Ok(proto::ResponseVerifyVoteExtension {
+            return Ok(proto::ResponseVerifyVoteExtension {
                 status: VerifyStatus::Reject.into(),
-            })
+            });
         }
+
+        tracing::debug!(
+            "vote extensions for height: {}, round: {} are successfully verified",
+            height,
+            round,
+        );
+
+        Ok(proto::ResponseVerifyVoteExtension {
+            status: VerifyStatus::Accept.into(),
+        })
     }
 
     fn finalize_block(
@@ -836,13 +786,18 @@ where
                     (0, "".to_string())
                 };
 
-                let gas_wanted = validation_result
-                    .data
-                    .map(|fee_result| {
-                        fee_result
-                            .map(|fee_result| fee_result.total_base_fee())
-                            .unwrap_or_default()
-                    })
+                let check_tx_result = validation_result.data.unwrap_or_default();
+
+                let gas_wanted = check_tx_result
+                    .fee_result
+                    .map(|fee_result| fee_result.total_base_fee())
+                    .unwrap_or_default();
+
+                // Todo: IMPORTANT We need tenderdash to support multiple senders
+                let first_unique_identifier = check_tx_result
+                    .unique_identifiers
+                    .first()
+                    .cloned()
                     .unwrap_or_default();
 
                 Ok(ResponseCheckTx {
@@ -851,7 +806,7 @@ where
                     info,
                     gas_wanted: gas_wanted as SignedCredits,
                     codespace: "".to_string(),
-                    sender: "".to_string(),
+                    sender: first_unique_identifier,
                     priority: 0,
                 })
             }

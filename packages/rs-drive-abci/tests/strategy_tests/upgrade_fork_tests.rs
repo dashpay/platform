@@ -5,7 +5,6 @@ mod tests {
     use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::version::PlatformVersion;
     use drive::drive::config::DriveConfig;
-    use tenderdash_abci::proto::types::CoreChainLock;
 
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::strategy::{
@@ -41,6 +40,7 @@ mod tests {
                             times_per_block_range: Default::default(),
                             chance_per_block: None,
                         },
+                        identity_contract_nonce_gaps: None,
                         signer: None,
                     },
                     total_hpmns: 460,
@@ -100,6 +100,8 @@ mod tests {
                     current_quorum_hash,
                     current_proposer_versions,
                     end_time_ms,
+                    identity_nonce_counter,
+                    identity_contract_nonce_counter,
                     ..
                 } = run_chain_for_strategy(
                     &mut platform,
@@ -171,6 +173,8 @@ mod tests {
                     quorums,
                     current_quorum_hash,
                     end_time_ms,
+                    identity_nonce_counter,
+                    identity_contract_nonce_counter,
                     ..
                 } = continue_chain_for_strategy(
                     abci_app,
@@ -182,6 +186,8 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions.clone()),
+                        current_identity_nonce_counter: identity_nonce_counter,
+                        current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -244,6 +250,8 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
+                        current_identity_nonce_counter: identity_nonce_counter,
+                        current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -310,6 +318,7 @@ mod tests {
                             times_per_block_range: Default::default(),
                             chance_per_block: None,
                         },
+                        identity_contract_nonce_gaps: None,
                         signer: None,
                     },
                     total_hpmns: 50,
@@ -366,6 +375,8 @@ mod tests {
                     current_quorum_hash,
                     current_proposer_versions,
                     end_time_ms,
+                    identity_nonce_counter,
+                    identity_contract_nonce_counter,
                     ..
                 } = run_chain_for_strategy(
                     &mut platform,
@@ -434,6 +445,8 @@ mod tests {
                     quorums,
                     current_quorum_hash,
                     end_time_ms,
+                    identity_nonce_counter,
+                    identity_contract_nonce_counter,
                     ..
                 } = continue_chain_for_strategy(
                     abci_app,
@@ -445,6 +458,8 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions.clone()),
+                        current_identity_nonce_counter: identity_nonce_counter,
+                        current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -507,6 +522,8 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
+                        current_identity_nonce_counter: identity_nonce_counter,
+                        current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -572,6 +589,7 @@ mod tests {
                             times_per_block_range: Default::default(),
                             chance_per_block: None,
                         },
+                        identity_contract_nonce_gaps: None,
                         signer: None,
                     },
                     total_hpmns: 120,
@@ -631,6 +649,8 @@ mod tests {
                     current_quorum_hash,
                     current_proposer_versions,
                     end_time_ms,
+                    identity_nonce_counter,
+                    identity_contract_nonce_counter,
                     ..
                 } = run_chain_for_strategy(
                     &mut platform,
@@ -694,7 +714,10 @@ mod tests {
                     proposers,
                     quorums,
                     current_quorum_hash,
+
                     end_time_ms,
+                    identity_nonce_counter,
+                    identity_contract_nonce_counter,
                     ..
                 } = continue_chain_for_strategy(
                     abci_app,
@@ -706,6 +729,8 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions.clone()),
+                        current_identity_nonce_counter: identity_nonce_counter,
+                        current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -770,6 +795,8 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
+                        current_identity_nonce_counter: identity_nonce_counter,
+                        current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -832,6 +859,7 @@ mod tests {
                             times_per_block_range: Default::default(),
                             chance_per_block: None,
                         },
+                        identity_contract_nonce_gaps: None,
                         signer: None,
                     },
                     total_hpmns: 200,
@@ -890,6 +918,8 @@ mod tests {
                     current_quorum_hash,
                     current_proposer_versions,
                     end_time_ms,
+                    identity_nonce_counter,
+                    identity_contract_nonce_counter,
                     ..
                 } = run_chain_for_strategy(
                     &mut platform,
@@ -943,7 +973,10 @@ mod tests {
                     proposers,
                     quorums,
                     current_quorum_hash,
+
                     end_time_ms,
+                    identity_nonce_counter,
+                    identity_contract_nonce_counter,
                     ..
                 } = continue_chain_for_strategy(
                     abci_app,
@@ -955,6 +988,8 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
+                        current_identity_nonce_counter: identity_nonce_counter,
+                        current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -1009,6 +1044,7 @@ mod tests {
                             times_per_block_range: Default::default(),
                             chance_per_block: None,
                         },
+                        identity_contract_nonce_gaps: None,
                         signer: None,
                     },
                     total_hpmns: 200,
@@ -1048,7 +1084,10 @@ mod tests {
                     quorums,
                     current_quorum_hash,
                     current_proposer_versions,
+
                     end_time_ms,
+                    identity_nonce_counter,
+                    identity_contract_nonce_counter,
                     ..
                 } = continue_chain_for_strategy(
                     abci_app,
@@ -1060,6 +1099,8 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: None, //restart the proposer versions
+                        current_identity_nonce_counter: identity_nonce_counter,
+                        current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -1123,6 +1164,8 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
+                        current_identity_nonce_counter: identity_nonce_counter,
+                        current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
@@ -1190,6 +1233,7 @@ mod tests {
                             times_per_block_range: Default::default(),
                             chance_per_block: None,
                         },
+                        identity_contract_nonce_gaps: None,
                         signer: None,
                     },
                     total_hpmns: 200,
@@ -1251,6 +1295,8 @@ mod tests {
                     quorums,
                     current_quorum_hash,
                     end_time_ms,
+                    identity_nonce_counter,
+                    identity_contract_nonce_counter,
                     ..
                 } = run_chain_for_strategy(&mut platform, 1400, strategy, config.clone(), 15);
                 {
@@ -1302,6 +1348,7 @@ mod tests {
                             times_per_block_range: Default::default(),
                             chance_per_block: None,
                         },
+                        identity_contract_nonce_gaps: None,
                         signer: None,
                     },
                     total_hpmns: 200,
@@ -1348,6 +1395,8 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: None,
+                        current_identity_nonce_counter: identity_nonce_counter,
+                        current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },

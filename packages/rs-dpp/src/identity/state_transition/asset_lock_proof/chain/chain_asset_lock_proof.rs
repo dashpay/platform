@@ -3,7 +3,7 @@ use platform_value::Value;
 use std::convert::TryFrom;
 use std::io;
 
-use crate::util::hash::hash;
+use crate::util::hash::hash_double;
 use crate::{identifier::Identifier, ProtocolError};
 pub use bincode::{Decode, Encode};
 use dashcore::OutPoint;
@@ -50,7 +50,7 @@ impl ChainAssetLockProof {
             .try_into()
             .map_err(|e: io::Error| ProtocolError::EncodingError(e.to_string()))?;
 
-        let hash = hash(output_vec);
+        let hash = hash_double(output_vec);
 
         Ok(Identifier::new(hash))
     }

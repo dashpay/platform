@@ -38,7 +38,7 @@ pub const DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED: bool = false;
 /// Boolean if GroveDB has_raw in enabled by default
 pub const DEFAULT_GROVE_HAS_RAW_ENABLED: bool = true;
 /// The default default query limit
-pub const DEFAULT_DEFAULT_QUERY_LIMIT: u16 = 100;
+pub const DEFAULT_QUERY_LIMIT: u16 = 100;
 /// The default max query limit
 pub const DEFAULT_MAX_QUERY_LIMIT: u16 = 100;
 /// Default maximum number of contracts in cache
@@ -126,7 +126,7 @@ fn default_has_raw_enabled() -> bool {
 }
 
 fn default_default_query_limit() -> u16 {
-    DEFAULT_DEFAULT_QUERY_LIMIT
+    DEFAULT_QUERY_LIMIT
 }
 
 fn default_epochs_per_era() -> u16 {
@@ -147,7 +147,7 @@ impl Default for DriveConfig {
             batching_consistency_verification:
                 DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED,
             has_raw_enabled: DEFAULT_GROVE_HAS_RAW_ENABLED,
-            default_query_limit: DEFAULT_DEFAULT_QUERY_LIMIT,
+            default_query_limit: DEFAULT_QUERY_LIMIT,
             epochs_per_era: DEFAULT_EPOCHS_PER_ERA,
             max_query_limit: DEFAULT_MAX_QUERY_LIMIT,
             default_genesis_time: None,

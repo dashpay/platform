@@ -1,7 +1,7 @@
 use crate::data_contract::{DataContract, DataContractFactory};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
-use crate::prelude::Identifier;
+use crate::prelude::{Identifier, IdentityNonce};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 #[cfg(feature = "state-transitions")]
@@ -51,6 +51,7 @@ impl DataContractFacade {
     }
 
     /// Create Data Contract from plain object
+    #[cfg(all(feature = "identity-serialization", feature = "client"))]
     pub fn create_from_object(
         &self,
         raw_data_contract: Value,
@@ -61,6 +62,7 @@ impl DataContractFacade {
     }
 
     /// Create Data Contract from buffer
+    #[cfg(all(feature = "identity-serialization", feature = "client"))]
     pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
@@ -84,8 +86,9 @@ impl DataContractFacade {
     pub fn create_data_contract_update_transition(
         &self,
         data_contract: DataContract,
+        identity_contract_nonce: IdentityNonce,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
         self.factory
-            .create_data_contract_update_transition(data_contract)
+            .create_data_contract_update_transition(data_contract, identity_contract_nonce)
     }
 }

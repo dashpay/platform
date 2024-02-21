@@ -18,8 +18,9 @@ mod state_transition_types;
 pub mod state_transition_factory;
 
 pub mod errors;
-use crate::util::hash::{hash_to_vec, ripemd160_sha256};
+use crate::util::hash::{hash_double_to_vec, hash_single, ripemd160_sha256};
 
+pub mod proof_result;
 mod serialization;
 pub mod state_transitions;
 mod traits;
@@ -261,16 +262,16 @@ impl StateTransition {
 
     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         if skip_signature {
-            Ok(hash_to_vec(self.signable_bytes()?))
+            Ok(hash_double_to_vec(self.signable_bytes()?))
         } else {
-            Ok(hash_to_vec(
+            Ok(hash_double_to_vec(
                 crate::serialization::PlatformSerializable::serialize_to_bytes(self)?,
             ))
         }
     }
 
     /// Returns state transition name
-    pub fn name(&self) -> String {
+    pub fn name(&self) -> &'static str {
         match self {
             Self::DataContractCreate(_) => "DataContractCreate",
             Self::DataContractUpdate(_) => "DataContractUpdate",
@@ -281,12 +282,18 @@ impl StateTransition {
             Self::IdentityUpdate(_) => "IdentityUpdate",
             Self::IdentityCreditTransfer(_) => "IdentityCreditTransfer",
         }
-        .to_string()
     }
 
     /// returns the signature as a byte-array
     pub fn signature(&self) -> &BinaryData {
         call_method!(self, signature)
+    }
+
+    /// The transaction id is a single hash of the data with the signature
+    pub fn transaction_id(&self) -> Result<[u8; 32], ProtocolError> {
+        Ok(hash_single(
+            crate::serialization::PlatformSerializable::serialize_to_bytes(self)?,
+        ))
     }
 
     /// returns the signature as a byte-array
@@ -302,6 +309,11 @@ impl StateTransition {
     /// returns the signature as a byte-array
     pub fn owner_id(&self) -> Identifier {
         call_method!(self, owner_id)
+    }
+
+    /// returns the unique identifiers for the state transition
+    pub fn unique_identifiers(&self) -> Vec<String> {
+        call_method!(self, unique_identifiers)
     }
 
     /// set a new signature

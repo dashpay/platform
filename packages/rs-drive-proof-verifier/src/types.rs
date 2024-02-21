@@ -7,6 +7,8 @@
 
 use std::collections::BTreeMap;
 
+use dpp::prelude::IdentityNonce;
+pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::{
     block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
     dashcore::ProTxHash,
@@ -47,6 +49,14 @@ pub type IdentityBalance = u64;
 /// Identity balance and revision of the identity.
 pub type IdentityBalanceAndRevision = (u64, Revision);
 
+/// An identity nonce
+#[derive(Debug)]
+pub struct IdentityNonceFetcher(pub IdentityNonce);
+
+/// An identity contract nonce
+#[derive(Debug)]
+pub struct IdentityContractNonceFetcher(pub IdentityNonce);
+
 /// Public keys belonging to some identity.
 ///
 /// Map of [key IDs](KeyID) to the [public key](IdentityPublicKey).
@@ -57,12 +67,6 @@ pub type Documents = RetrievedObjects<Identifier, Document>;
 
 /// Collection of epoch information
 pub type ExtendedEpochInfos = RetrievedObjects<EpochIndex, ExtendedEpochInfo>;
-
-/// Number of votes for a protocol version upgrade.
-///
-/// Number of votes for a protocol version upgrade, returned by [ProtocolVersionVoteCount::fetch_many()].
-/// See [ProtocolVersionUpgrades].
-pub type ProtocolVersionVoteCount = u64;
 
 /// Results of protocol version upgrade voting.
 ///

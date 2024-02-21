@@ -1,8 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use dpp::dashcore::hashes::Hash;
-    use dpp::dashcore::{BlockHash, ChainLock};
-    use tenderdash_abci::proto::types::CoreChainLock;
 
     use crate::execution::run_chain_for_strategy;
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
@@ -25,6 +22,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -124,6 +122,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -209,6 +208,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,

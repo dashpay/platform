@@ -1,6 +1,6 @@
 [package]
 name = "wasm-dpp"
-version = "1.0.0-dev.3"
+version = "1.0.0-dev.5"
 edition = "2021"
 rust-version = "1.73"
 authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
@@ -47,10 +47,10 @@ wasm-logger = { version = "0.2.0" }
 num_enum = "0.5.7"
 hex = { version = "0.4" }
 
+anyhow = { version = "1.0.75" }
+# required, cargo-machete false positive
 wasm-bindgen-futures = "0.4.33"
 async-trait = "0.1.59"
-anyhow = "1.0.70"
-
 [profile.release]
 lto = true
 opt-level = 's'

@@ -6,6 +6,7 @@ import DAPIClient from '@dashevo/dapi-client';
 import { contractId as dpnsContractId } from '@dashevo/dpns-contract/lib/systemIds';
 import { contractId as dashpayContractId } from '@dashevo/dashpay-contract/lib/systemIds';
 import { contractId as masternodeRewardSharesContractId } from '@dashevo/masternode-reward-shares-contract/lib/systemIds';
+import { contractId as withdrawalsContractId } from '@dashevo/withdrawals-contract/lib/systemIds';
 import { Platform } from './Platform';
 import { ClientApps, ClientAppsOptions } from './ClientApps';
 
@@ -137,6 +138,9 @@ export class Client extends EventEmitter {
       },
       masternodeRewardShares: {
         contractId: masternodeRewardSharesContractId,
+      },
+      withdrawals: {
+        contractId: withdrawalsContractId,
       },
       ...this.options.apps,
     });

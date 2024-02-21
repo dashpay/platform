@@ -4,8 +4,11 @@ use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
 
 use crate::error::Error;
 
-use crate::drive::identity::identity_path_vec;
-use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
+use crate::drive::identity::contract_info::ContractInfoStructure::IdentityContractNonceKey;
+use crate::drive::identity::IdentityRootStructure::{IdentityTreeNonce, IdentityTreeRevision};
+use crate::drive::identity::{
+    identity_contract_info_group_path, identity_contract_info_group_path_vec, identity_path_vec,
+};
 use crate::error::query::QuerySyntaxError;
 use grovedb::{PathQuery, Query, SizedQuery};
 
@@ -24,6 +27,8 @@ pub enum IdentityProveRequestType {
     Balance = 1,
     /// Keys: A variant representing keys access only, assigned the value 2.
     Keys = 2,
+    /// Revision: A variant representing revision field
+    Revision = 3,
 }
 
 impl TryFrom<u8> for IdentityProveRequestType {
@@ -34,6 +39,7 @@ impl TryFrom<u8> for IdentityProveRequestType {
             0 => Ok(IdentityProveRequestType::FullIdentity),
             1 => Ok(IdentityProveRequestType::Balance),
             2 => Ok(IdentityProveRequestType::Keys),
+            3 => Ok(IdentityProveRequestType::Revision),
             _ => Err(Error::Query(QuerySyntaxError::InvalidIdentityProveRequest(
                 "unknown prove request type",
             ))),
@@ -177,6 +183,22 @@ impl Drive {
     pub fn balance_for_identity_id_query(identity_id: [u8; 32]) -> PathQuery {
         let balance_path = balance_path_vec();
         PathQuery::new_single_key(balance_path, identity_id.to_vec())
+    }
+
+    /// The query for proving an identity's nonce.
+    pub fn identity_nonce_query(identity_id: [u8; 32]) -> PathQuery {
+        let identity_path = identity_path_vec(identity_id.as_slice());
+        PathQuery::new_single_key(identity_path, vec![IdentityTreeNonce as u8])
+    }
+
+    /// The query for proving the identities nonce for a specific contract.
+    pub fn identity_contract_nonce_query(
+        identity_id: [u8; 32],
+        contract_id: [u8; 32],
+    ) -> PathQuery {
+        let identity_contract_path =
+            identity_contract_info_group_path_vec(&identity_id, contract_id.as_slice());
+        PathQuery::new_single_key(identity_contract_path, vec![IdentityContractNonceKey as u8])
     }
 
     /// The query for proving the identities balance and revision from an identity id.

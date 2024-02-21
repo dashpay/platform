@@ -11,11 +11,12 @@ use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 pub const DOCUMENT_TRANSITION_TYPES: [StateTransitionType; 1] =
     [StateTransitionType::DocumentsBatch];
 
-pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 4] = [
+pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 5] = [
     StateTransitionType::IdentityCreate,
     StateTransitionType::IdentityTopUp,
     StateTransitionType::IdentityUpdate,
     StateTransitionType::IdentityCreditTransfer,
+    StateTransitionType::IdentityCreditWithdrawal,
 ];
 
 pub const DATA_CONTRACT_TRANSITION_TYPES: [StateTransitionType; 2] = [
@@ -56,4 +57,8 @@ pub trait StateTransitionLike:
 
     /// Get owner ID
     fn owner_id(&self) -> Identifier;
+
+    /// unique identifiers for the state transition
+    /// This is often only one String except in the case of a documents batch state transition
+    fn unique_identifiers(&self) -> Vec<String>;
 }
