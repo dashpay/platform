@@ -61,6 +61,7 @@ pub fn start(
 
     let platform1 = Arc::clone(&platform);
 
+    // TODO: Consider to set thread priority higher than tonic
     thread::scope(|scope| {
         scope.spawn(move || {
             let app = ConsensusAbciApplication::new(platform1.as_ref());
