@@ -8,7 +8,7 @@ PROJECT_ROOT_PATH=$(dirname "$SCRIPT_DIRECTORY_PATH")
 PACKAGES_PATH="$PROJECT_ROOT_PATH/packages"
 LOGS_PATH="$PROJECT_ROOT_PATH/logs"
 
-CONFIG=local
+CONFIG=local_seed
 DAPI_PATH="${PACKAGES_PATH}"/dapi
 DRIVE_PATH="${PACKAGES_PATH}"/rs-drive-abci
 SDK_PATH="${PACKAGES_PATH}"/js-dash-sdk
@@ -23,7 +23,7 @@ WALLET_LIB_PATH="${PACKAGES_PATH}"/wallet-lib
 #   get_config core.rpc.port
 function get_config() {
     # We use `jq` because it's much faster than `yarn dashmate config get`
-    jq ".configs.${CONFIG}_1.$1" <"${HOME}"/.dashmate/config.json
+    jq ".configs.${CONFIG}.$1" <"${HOME}"/.dashmate/config.json
 }
 
 touch "${LOGS_PATH}"/mint.log

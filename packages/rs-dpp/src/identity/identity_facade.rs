@@ -5,22 +5,20 @@ use std::collections::BTreeMap;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
-use crate::prelude::{Identifier, Revision};
+use crate::prelude::{Identifier, IdentityNonce, Revision};
 
 use crate::identity::identity_factory::IdentityFactory;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::identity_create_transition::IdentityCreateTransition;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::{
+    identity_create_transition::IdentityCreateTransition,
+    identity_credit_transfer_transition::IdentityCreditTransferTransition,
+    identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
+    identity_topup_transition::IdentityTopUpTransition,
+    identity_update_transition::IdentityUpdateTransition,
+    public_key_in_creation::IdentityPublicKeyInCreation,
+};
 
 use crate::identity::core_script::CoreScript;
-use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::withdrawal::Pooling;
 use crate::ProtocolError;
 
@@ -54,6 +52,7 @@ impl IdentityFacade {
     //         .create_from_object(raw_identity)
     // }
 
+    #[cfg(all(feature = "identity-serialization", feature = "client"))]
     pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
@@ -84,7 +83,7 @@ impl IdentityFacade {
     #[cfg(feature = "state-transitions")]
     pub fn create_identity_create_transition(
         &self,
-        identity: Identity,
+        identity: &Identity,
         asset_lock_proof: AssetLockProof,
     ) -> Result<IdentityCreateTransition, ProtocolError> {
         self.factory
@@ -107,9 +106,14 @@ impl IdentityFacade {
         identity: &Identity,
         recipient_id: Identifier,
         amount: u64,
+        identity_nonce: IdentityNonce,
     ) -> Result<IdentityCreditTransferTransition, ProtocolError> {
-        self.factory
-            .create_identity_credit_transfer_transition(identity, recipient_id, amount)
+        self.factory.create_identity_credit_transfer_transition(
+            identity,
+            recipient_id,
+            amount,
+            identity_nonce,
+        )
     }
 
     #[cfg(feature = "state-transitions")]
@@ -120,7 +124,7 @@ impl IdentityFacade {
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
-        revision: Revision,
+        identity_nonce: u64,
     ) -> Result<IdentityCreditWithdrawalTransition, ProtocolError> {
         self.factory.create_identity_credit_withdrawal_transition(
             identity_id,
@@ -128,7 +132,7 @@ impl IdentityFacade {
             core_fee_per_byte,
             pooling,
             output_script,
-            revision,
+            identity_nonce,
         )
     }
 
@@ -136,6 +140,7 @@ impl IdentityFacade {
     pub fn create_identity_update_transition(
         &self,
         identity: Identity,
+        identity_nonce: u64,
         add_public_keys: Option<Vec<IdentityPublicKeyInCreation>>,
         public_key_ids_to_disable: Option<Vec<KeyID>>,
         // Pass disable time as argument because SystemTime::now() does not work for wasm target
@@ -144,6 +149,7 @@ impl IdentityFacade {
     ) -> Result<IdentityUpdateTransition, ProtocolError> {
         self.factory.create_identity_update_transition(
             identity,
+            identity_nonce,
             add_public_keys,
             public_key_ids_to_disable,
             disable_time,

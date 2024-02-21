@@ -38,7 +38,7 @@ use simple_signer::signer::SimpleSigner;
 
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
 
 /// Constructs an `AssetLockProof` representing an instant asset lock proof.
@@ -234,10 +234,9 @@ pub fn create_identity_top_up_transition(
         instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
 
     IdentityTopUpTransition::try_from_identity(
-        identity.clone(),
+        identity,
         asset_lock_proof,
         secret_key.as_ref(),
-        &NativeBlsModule,
         platform_version,
         None,
     )
@@ -284,6 +283,7 @@ pub fn create_identity_top_up_transition(
 pub fn create_identity_update_transition_add_keys(
     identity: &mut Identity,
     count: u16,
+    identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
@@ -305,12 +305,16 @@ pub fn create_identity_update_transition_add_keys(
         .find(|(_, key)| key.security_level() == MASTER)
         .expect("expected to have a master key");
 
+    let identity_nonce = identity_nonce_counter.entry(identity.id()).or_default();
+    *identity_nonce += 1;
+
     let state_transition = IdentityUpdateTransition::try_from_identity_with_signer(
         identity,
         key_id,
         add_public_keys.clone(),
         vec![],
         None,
+        *identity_nonce,
         signer,
         platform_version,
         None,
@@ -363,6 +367,7 @@ pub fn create_identity_update_transition_disable_keys(
     identity: &mut Identity,
     count: u16,
     block_time: u64,
+    identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
@@ -408,12 +413,16 @@ pub fn create_identity_update_transition_disable_keys(
         .find(|(_, key)| key.security_level() == MASTER)
         .expect("expected to have a master key");
 
+    let identity_nonce = identity_nonce_counter.entry(identity.id()).or_default();
+    *identity_nonce += 1;
+
     let state_transition = IdentityUpdateTransition::try_from_identity_with_signer(
         identity,
         key_id,
         vec![],
         key_ids_to_disable,
         Some(block_time),
+        *identity_nonce,
         signer,
         platform_version,
         None,
@@ -454,17 +463,19 @@ pub fn create_identity_update_transition_disable_keys(
 /// - If there's an error during the signing process.
 pub fn create_identity_withdrawal_transition(
     identity: &mut Identity,
+    identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
 ) -> StateTransition {
-    identity.bump_revision();
+    let nonce = identity_nonce_counter.entry(identity.id()).or_default();
+    *nonce += 1;
     let mut withdrawal: StateTransition = IdentityCreditWithdrawalTransitionV0 {
         identity_id: identity.id(),
         amount: 100000000, // 0.001 Dash
         core_fee_per_byte: MIN_CORE_FEE_PER_BYTE,
         pooling: Pooling::Never,
         output_script: CoreScript::random_p2sh(rng),
-        revision: identity.revision(),
+        nonce: *nonce,
         signature_public_key_id: 0,
         signature: Default::default(),
     }
@@ -524,14 +535,17 @@ pub fn create_identity_withdrawal_transition(
 pub fn create_identity_credit_transfer_transition(
     identity: &Identity,
     recipient: &Identity,
+    identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     signer: &mut SimpleSigner,
     amount: u64,
 ) -> StateTransition {
+    let nonce = identity_nonce_counter.entry(identity.id()).or_default();
+    *nonce += 1;
     let mut transition: StateTransition = IdentityCreditTransferTransitionV0 {
         identity_id: identity.id(),
         recipient_id: recipient.id(),
         amount,
-        revision: identity.revision() + 1,
+        nonce: *nonce,
         signature_public_key_id: 0,
         signature: Default::default(),
     }
@@ -665,7 +679,7 @@ pub fn create_state_transitions_for_identities(
                 instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
             let identity_create_transition =
                 IdentityCreateTransition::try_from_identity_with_signer(
-                    identity.clone(),
+                    &identity,
                     asset_lock_proof,
                     pk.as_slice(),
                     signer,

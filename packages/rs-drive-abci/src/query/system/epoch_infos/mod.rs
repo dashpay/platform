@@ -7,10 +7,10 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_epochs_info_request::Version;
 use dapi_grpc::platform::v0::GetEpochsInfoRequest;
+use dapi_grpc::Message;
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use prost::Message;
 
 impl<C> Platform<C> {
     /// Querying of version upgrade state

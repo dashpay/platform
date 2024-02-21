@@ -34,7 +34,7 @@ use super::fetch::Fetch;
 /// required to correctly verify proofs returned by the Dash Platform.
 ///
 /// Conversions are implemented between this type, [GetDocumentsRequest] and [DriveQuery] using [TryFrom] trait.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, dapi_grpc_macros::Mockable)]
 pub struct DocumentQuery {
     /// Data contract ID
     pub data_contract: Arc<DataContract>,
@@ -79,7 +79,7 @@ impl DocumentQuery {
     ///
     /// Note that this method will fetch data contract first.
     pub async fn new_with_data_contract_id(
-        api: &mut Sdk,
+        api: &Sdk,
         data_contract_id: Identifier,
         document_type_name: &str,
     ) -> Result<Self, Error> {
@@ -130,6 +130,14 @@ impl TransportRequest for DocumentQuery {
     const SETTINGS_OVERRIDES: rs_dapi_client::RequestSettings =
         <GetDocumentsRequest as TransportRequest>::SETTINGS_OVERRIDES;
 
+    fn request_name(&self) -> &'static str {
+        "GetDocumentsRequest"
+    }
+
+    fn method_name(&self) -> &'static str {
+        "get_documents"
+    }
+
     fn execute_transport<'c>(
         self,
         client: &'c mut Self::Client,
@@ -149,7 +157,7 @@ impl FromProof<DocumentQuery> for Document {
         request: I,
         response: O,
         version: &dpp::version::PlatformVersion,
-        provider: &'a dyn drive_proof_verifier::QuorumInfoProvider,
+        provider: &'a dyn drive_proof_verifier::ContextProvider,
     ) -> Result<Option<Self>, drive_proof_verifier::Error>
     where
         Self: Sized + 'a,
@@ -180,7 +188,7 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
         request: I,
         response: O,
         version: &dpp::version::PlatformVersion,
-        provider: &'a dyn drive_proof_verifier::QuorumInfoProvider,
+        provider: &'a dyn drive_proof_verifier::ContextProvider,
     ) -> Result<Option<Self>, drive_proof_verifier::Error>
     where
         Self: Sized + 'a,
@@ -229,6 +237,34 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
 
 impl<'a> From<&'a DriveQuery<'a>> for DocumentQuery {
     fn from(value: &'a DriveQuery<'a>) -> Self {
+        let data_contract = value.contract.clone();
+        let document_type_name = value.document_type.name();
+        let where_clauses = value.internal_clauses.clone().into();
+        let order_by_clauses = value.order_by.iter().map(|(_, v)| v.clone()).collect();
+        let limit = value.limit.unwrap_or(0) as u32;
+
+        let start = if let Some(start_at) = value.start_at {
+            match value.start_at_included {
+                true => Some(Start::StartAt(start_at.to_vec())),
+                false => Some(Start::StartAfter(start_at.to_vec())),
+            }
+        } else {
+            None
+        };
+
+        Self {
+            data_contract: Arc::new(data_contract),
+            document_type_name: document_type_name.to_string(),
+            where_clauses,
+            order_by_clauses,
+            limit,
+            start,
+        }
+    }
+}
+
+impl<'a> From<DriveQuery<'a>> for DocumentQuery {
+    fn from(value: DriveQuery<'a>) -> Self {
         let data_contract = value.contract.clone();
         let document_type_name = value.document_type.name();
         let where_clauses = value.internal_clauses.clone().into();

@@ -2,7 +2,7 @@ mod transformer;
 
 use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
-use dpp::prelude::Revision;
+use dpp::prelude::{IdentityNonce, Revision};
 use serde::{Deserialize, Serialize};
 
 /// action v0
@@ -19,4 +19,6 @@ pub struct IdentityUpdateTransitionActionV0 {
     pub identity_id: Identifier,
     /// revision
     pub revision: Revision,
+    /// nonce used to prevent replay attacks
+    pub nonce: IdentityNonce,
 }

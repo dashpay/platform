@@ -1,6 +1,7 @@
 mod v0;
 
 use crate::data_contract::DataContract;
+use std::collections::BTreeMap;
 
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -11,8 +12,10 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
-use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
-use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::documents_batch_transition::{
+    document_transition::action_type::DocumentTransitionActionType, DocumentsBatchTransition,
+};
 use crate::util::entropy_generator::EntropyGenerator;
 pub use v0::DocumentFactoryV0;
 
@@ -111,12 +114,14 @@ impl DocumentFactory {
                 Vec<(Document, DocumentTypeRef<'a>, Bytes32)>,
             ),
         >,
+        nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         match self {
-            DocumentFactory::V0(v0) => v0.create_state_transition(documents_iter),
+            DocumentFactory::V0(v0) => v0.create_state_transition(documents_iter, nonce_counter),
         }
     }
 
+    #[cfg(feature = "extended-document")]
     pub fn create_extended_from_document_buffer(
         &self,
         buffer: &[u8],

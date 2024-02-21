@@ -2,7 +2,7 @@ use crate::data_contract::DataContract;
 use platform_value::Identifier;
 use std::io::Write;
 
-use crate::util::hash::hash;
+use crate::util::hash::hash_double;
 
 impl DataContract {
     /// Generate data contract id based on owner id and entropy
@@ -13,6 +13,6 @@ impl DataContract {
         let mut b: Vec<u8> = vec![];
         let _ = b.write(owner_id.as_ref());
         let _ = b.write(entropy.as_ref());
-        Identifier::from(hash(b))
+        Identifier::from(hash_double(b))
     }
 }

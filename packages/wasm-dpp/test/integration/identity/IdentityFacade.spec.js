@@ -177,6 +177,8 @@ describe('IdentityFacade', () => {
       const stateTransition = dpp.identity
         .createIdentityUpdateTransition(
           identity,
+          // eslint-disable-next-line
+          BigInt(1),
           publicKeys,
         );
 
@@ -204,7 +206,7 @@ describe('IdentityFacade', () => {
           stateTransitionFixture.getCoreFeePerByte(),
           stateTransitionFixture.getPooling(),
           stateTransitionFixture.getOutputScript(),
-          stateTransitionFixture.getRevision(),
+          stateTransitionFixture.getNonce(),
         );
 
       expect(stateTransition.toObject())

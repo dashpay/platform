@@ -11,7 +11,7 @@ use dpp::check_validation_result_with_data;
 
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use prost::Message;
+use dapi_grpc::Message;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::GetProtocolVersionUpgradeVoteStatusRequestV0;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_response::get_protocol_version_upgrade_vote_status_response_v0::{VersionSignal, VersionSignals};
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_response::GetProtocolVersionUpgradeVoteStatusResponseV0;

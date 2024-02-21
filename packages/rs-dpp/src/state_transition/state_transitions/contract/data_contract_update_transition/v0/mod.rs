@@ -17,6 +17,7 @@ use platform_version::version::PlatformVersion;
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
+use crate::prelude::IdentityNonce;
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::state_transition::StateTransition;
 use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};
@@ -29,6 +30,11 @@ use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};
 )]
 
 pub struct DataContractUpdateTransitionV0 {
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(rename = "$identity-contract-nonce")
+    )]
+    pub identity_contract_nonce: IdentityNonce,
     pub data_contract: DataContractInSerializationFormat,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
@@ -36,15 +42,16 @@ pub struct DataContractUpdateTransitionV0 {
     pub signature: BinaryData,
 }
 
-impl TryFromPlatformVersioned<DataContract> for DataContractUpdateTransitionV0 {
+impl TryFromPlatformVersioned<(DataContract, IdentityNonce)> for DataContractUpdateTransitionV0 {
     type Error = ProtocolError;
 
     fn try_from_platform_versioned(
-        value: DataContract,
+        value: (DataContract, IdentityNonce),
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
         Ok(DataContractUpdateTransitionV0 {
-            data_contract: value.try_into_platform_versioned(platform_version)?,
+            identity_contract_nonce: value.1,
+            data_contract: value.0.try_into_platform_versioned(platform_version)?,
             signature_public_key_id: 0,
             signature: Default::default(),
         })

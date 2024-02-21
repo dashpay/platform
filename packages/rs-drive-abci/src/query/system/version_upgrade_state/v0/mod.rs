@@ -10,7 +10,7 @@ use dpp::check_validation_result_with_data;
 
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use prost::Message;
+use dapi_grpc::Message;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_request::GetProtocolVersionUpgradeStateRequestV0;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_response::get_protocol_version_upgrade_state_response_v0::{VersionEntry, Versions};
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_response::GetProtocolVersionUpgradeStateResponseV0;

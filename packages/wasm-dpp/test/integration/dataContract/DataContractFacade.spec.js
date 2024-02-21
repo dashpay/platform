@@ -101,7 +101,8 @@ describe('DataContractFacade', () => {
       updatedDataContract.incrementVersion();
 
       const dataContractUpdateTransition = dpp.dataContract
-        .createDataContractUpdateTransition(updatedDataContract);
+        // eslint-disable-next-line
+        .createDataContractUpdateTransition(updatedDataContract, BigInt(1));
 
       const { identityPublicKey, privateKey } = await getPrivateAndPublicKeyForSigningFixture();
 

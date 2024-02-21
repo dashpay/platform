@@ -12,6 +12,8 @@ service Platform {
   rpc getIdentity(GetIdentityRequest) returns (GetIdentityResponse);
   rpc getIdentities(GetIdentitiesRequest) returns (GetIdentitiesResponse);
   rpc getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
+  rpc getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse);
+  rpc getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse);
   rpc getIdentityBalance(GetIdentityBalanceRequest)
       returns (GetIdentityBalanceResponse);
   rpc getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest)
@@ -76,6 +78,28 @@ message GetIdentityRequest {
   oneof version { GetIdentityRequestV0 v0 = 1; }
 }
 
+message GetIdentityNonceRequest {
+
+  message GetIdentityNonceRequestV0 {
+    bytes identity_id = 1;
+    bool prove = 2;
+  }
+
+  oneof version { GetIdentityNonceRequestV0 v0 = 1; }
+}
+
+
+message GetIdentityContractNonceRequest {
+
+  message GetIdentityContractNonceRequestV0 {
+    bytes identity_id = 1;
+    bytes contract_id = 2;
+    bool prove = 3;
+  }
+
+  oneof version { GetIdentityContractNonceRequestV0 v0 = 1; }
+}
+
 message GetIdentityBalanceRequest {
 
   message GetIdentityBalanceRequestV0 {
@@ -138,6 +162,32 @@ message GetIdentitiesResponse {
     ResponseMetadata metadata = 3;  // Metadata about the blockchain state
   }
   oneof version { GetIdentitiesResponseV0 v0 = 1; }
+}
+
+message GetIdentityNonceResponse {
+
+  message GetIdentityNonceResponseV0 {
+    oneof result {
+      uint64 identity_nonce = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetIdentityNonceResponseV0 v0 = 1; }
+}
+
+message GetIdentityContractNonceResponse {
+
+  message GetIdentityContractNonceResponseV0 {
+    oneof result {
+      uint64 identity_contract_nonce = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetIdentityContractNonceResponseV0 v0 = 1; }
 }
 
 message GetIdentityBalanceResponse {
@@ -244,6 +294,7 @@ message GetProofsRequest {
         FULL_IDENTITY = 0;  // Request for the full identity
         BALANCE = 1;        // Request for the identity's balance
         KEYS = 2;           // Request for the identity's keys
+        REVISION = 3;       // Request for the identity's revision
       }
       bytes identity_id = 1;  // ID of the identity for which the proof is requested
       Type request_type = 2;  // Type of identity request

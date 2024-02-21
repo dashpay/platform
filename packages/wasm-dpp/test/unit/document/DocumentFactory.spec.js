@@ -233,7 +233,7 @@ describe('DocumentFactory', () => {
       try {
         factory.createStateTransition({
           unknown: documents,
-        });
+        }, {});
 
         expect.fail('Error was not thrown');
       } catch (e) {
@@ -245,7 +245,7 @@ describe('DocumentFactory', () => {
 
     it('should throw and error if no documents were supplied', async () => {
       try {
-        factory.createStateTransition({});
+        factory.createStateTransition({}, {});
         expect.fail('Error was not thrown');
       } catch (e) {
         expect(e).to.be.an.instanceOf(NoDocumentsSuppliedError);
@@ -287,9 +287,15 @@ describe('DocumentFactory', () => {
       const [newDocument] = await getDocumentsFixture(dataContract);
       newDocument.setData({ lastName: 'Keck' });
 
+      const identityId = newDocument.getOwnerId();
+
       const stateTransition = factory.createStateTransition({
         create: documents,
         replace: [newDocument],
+      }, {
+        [identityId.toString()]: {
+          [dataContract.getId().toString()]: 1,
+        },
       });
 
       const replaceDocuments = stateTransition.getTransitions()

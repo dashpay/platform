@@ -49,4 +49,9 @@ impl StateTransitionLike for IdentityCreateTransitionV0 {
     fn owner_id(&self) -> Identifier {
         self.identity_id
     }
+
+    /// this is based on the asset lock
+    fn unique_identifiers(&self) -> Vec<String> {
+        vec![base64::encode(self.identity_id)]
+    }
 }

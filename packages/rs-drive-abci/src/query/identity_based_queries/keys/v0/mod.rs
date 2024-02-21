@@ -7,10 +7,10 @@ use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identity_keys_request::GetIdentityKeysRequestV0;
 use dapi_grpc::platform::v0::get_identity_keys_response::GetIdentityKeysResponseV0;
 use dapi_grpc::platform::v0::{get_identity_keys_response, GetIdentityKeysResponse, Proof};
+use dapi_grpc::Message;
 use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use drive::error::query::QuerySyntaxError;
-use prost::Message;
 use std::collections::BTreeMap;
 
 use dpp::identity::{KeyID, Purpose, SecurityLevel};

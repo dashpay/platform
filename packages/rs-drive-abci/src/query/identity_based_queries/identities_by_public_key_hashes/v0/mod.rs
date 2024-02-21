@@ -11,12 +11,12 @@ use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_response::{
 use dapi_grpc::platform::v0::{
     get_identities_by_public_key_hashes_response, GetIdentitiesByPublicKeyHashesResponse, Proof,
 };
+use dapi_grpc::Message;
 use dpp::platform_value::Bytes20;
 use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::{check_validation_result_with_data, ProtocolError};
-use prost::Message;
 
 impl<C> Platform<C> {
     pub(super) fn query_identities_by_public_key_hashes_v0(

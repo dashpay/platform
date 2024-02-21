@@ -8,8 +8,8 @@ use dapi_grpc::platform::v0::GetDocumentsRequest;
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 
+use dapi_grpc::Message;
 use dpp::version::PlatformVersion;
-use prost::Message;
 
 mod v0;
 

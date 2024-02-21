@@ -7,6 +7,7 @@ pub enum DocumentTransitionActionType {
     Create, //the entropy used
     Replace,
     Delete,
+    IgnoreWhileBumpingRevision,
 }
 
 pub trait TransitionActionTypeGetter {

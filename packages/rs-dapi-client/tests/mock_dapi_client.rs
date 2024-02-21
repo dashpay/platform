@@ -1,6 +1,6 @@
 use dapi_grpc::platform::v0::{GetIdentityRequest, GetIdentityResponse, Proof};
 
-use rs_dapi_client::{mock::MockDapiClient, Dapi, DapiRequest, RequestSettings};
+use rs_dapi_client::{mock::MockDapiClient, DapiRequest, DapiRequestExecutor, RequestSettings};
 
 #[tokio::test]
 async fn test_mock_get_identity_dapi_client() {
@@ -25,7 +25,7 @@ async fn test_mock_get_identity_dapi_client() {
 
     let result = dapi.execute(request.clone(), settings).await.unwrap();
 
-    let result2 = request.execute(&mut dapi, settings).await.unwrap();
+    let result2 = request.execute(&dapi, settings).await.unwrap();
 
     assert_eq!(result, response);
     assert_eq!(result2, response);
