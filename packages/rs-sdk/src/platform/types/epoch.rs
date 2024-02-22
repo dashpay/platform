@@ -43,7 +43,7 @@ impl ExtendedEpochInfoEx for ExtendedEpochInfo {
             limit: Some(1),
         };
 
-        let (epoch, metadata) = Self::fetch_with_metadata(sdk, query).await?;
+        let (epoch, metadata) = Self::fetch_with_metadata(sdk, query, None).await?;
 
         Ok((epoch.ok_or(Error::EpochNotFound)?, metadata))
     }
