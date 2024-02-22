@@ -16,6 +16,7 @@ use dpp::prelude::AssetLockProof;
 use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
+use tracing::info;
 
 impl Sdk {
     /// Starts the stream to listen for instant send lock messages
