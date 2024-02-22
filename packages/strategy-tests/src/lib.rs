@@ -31,7 +31,7 @@ use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
 use rand::Rng;
 use tracing::{error, info};
-use std::collections::{BTreeMap, HashSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
@@ -277,6 +277,19 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
 }
 
 impl Strategy {    
+    /// Convenience method to get all contract ids that are in operations
+    pub fn used_contract_ids(&self) -> BTreeSet<Identifier> {
+        self.operations.iter().filter_map(|operation| {
+            match &operation.op_type {
+                OperationType::Document(document) => {
+                    Some(document.contract.id())
+                }
+                //todo add data contract updates
+                _ => None
+            }
+        }).collect()
+    }
+
     /// Creates state transitions based on the `identities_inserts` and `start_identities` fields.
     /// 
     /// This method creates a list of state transitions associated with identities. If the block height

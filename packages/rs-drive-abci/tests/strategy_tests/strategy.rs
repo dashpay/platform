@@ -483,6 +483,8 @@ impl NetworkStrategy {
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
+        identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
+        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
@@ -519,10 +521,23 @@ impl NetworkStrategy {
                                     } else {
                                         None
                                     };
+                                    
+                                let identity_contract_nonce = contract_nonce_counter
+                                    .entry((identity.id(), contract.id()))
+                                    .or_default();
+                                let gap = self
+                                    .strategy
+                                    .identity_contract_nonce_gaps
+                                    .as_ref()
+                                    .map_or(0, |gap_amount| gap_amount.events_if_hit(rng))
+                                    as u64;
+                                *identity_contract_nonce += 1 + gap;
+                                
                                 let document_create_transition: DocumentCreateTransition =
                                     DocumentCreateTransitionV0 {
                                         base: DocumentBaseTransitionV0 {
                                             id: document.id(),
+                                            identity_contract_nonce: *identity_contract_nonce,
                                             document_type_name: document_type.name().clone(),
                                             data_contract_id: contract.id(),
                                         }
@@ -626,10 +641,17 @@ impl NetworkStrategy {
                                     } else {
                                         None
                                     };
+
+                                let identity_contract_nonce = contract_nonce_counter
+                                    .entry((identity.id(), contract.id()))
+                                    .or_default();
+                                *identity_contract_nonce += 1;
+
                                 let document_create_transition: DocumentCreateTransition =
                                     DocumentCreateTransitionV0 {
                                         base: DocumentBaseTransitionV0 {
                                             id: document.id(),
+                                            identity_contract_nonce: *identity_contract_nonce,
                                             document_type_name: document_type.name().clone(),
                                             data_contract_id: contract.id(),
                                         }
@@ -721,10 +743,17 @@ impl NetworkStrategy {
                                 .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
+                            let identity_contract_nonce = contract_nonce_counter
+                                .get_mut(&(identity.id, contract.id()))
+                                .expect(
+                                    "the identity should already have a nonce for that contract",
+                                );
+                            *identity_contract_nonce += 1;
                             let document_delete_transition: DocumentDeleteTransition =
                                 DocumentDeleteTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
                                         id: document.id(),
+                                        identity_contract_nonce: *identity_contract_nonce,
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),
                                     }
@@ -808,10 +837,17 @@ impl NetworkStrategy {
                                 .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
+                            let identity_contract_nonce = contract_nonce_counter
+                                .get_mut(&(identity.id, contract.id()))
+                                .expect(
+                                    "the identity should already have a nonce for that contract",
+                                );
+                            *identity_contract_nonce += 1;
                             let document_replace_transition: DocumentReplaceTransition =
                                 DocumentReplaceTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
                                         id: document.id(),
+                                        identity_contract_nonce: *identity_contract_nonce,
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),
                                     }
@@ -885,6 +921,7 @@ impl NetworkStrategy {
                                         strategy_tests::transitions::create_identity_update_transition_add_keys(
                                             random_identity,
                                             *count,
+                                            identity_nonce_counter,
                                             signer,
                                             rng,
                                             platform_version,
@@ -900,6 +937,7 @@ impl NetworkStrategy {
                                         strategy_tests::transitions::create_identity_update_transition_disable_keys(
                                             random_identity,
                                             *count,
+                                            identity_nonce_counter,
                                             block_info.time_ms,
                                             signer,
                                             rng,
@@ -920,6 +958,7 @@ impl NetworkStrategy {
                             let state_transition =
                                 strategy_tests::transitions::create_identity_withdrawal_transition(
                                     random_identity,
+                                    identity_nonce_counter,
                                     signer,
                                     rng,
                                 );
@@ -944,6 +983,7 @@ impl NetworkStrategy {
                             strategy_tests::transitions::create_identity_credit_transfer_transition(
                                 owner,
                                 recipient,
+                                identity_nonce_counter,
                                 signer,
                                 fetched_owner_balance - 100,
                             );
@@ -1004,8 +1044,8 @@ impl NetworkStrategy {
         } else {
             // Don't do any state transitions on block 1
             let (mut document_state_transitions, mut add_to_finalize_block_operations) =
-                self.strategy.state_transitions_for_block(
-                    &platform.drive,
+                self.state_transitions_for_block(
+                    &platform,
                     block_info,
                     current_identities,
                     signer,
