@@ -78,12 +78,12 @@ macro_rules! delegate_from_proof_variant {
             type Request = $request;
             type Response = $response;
 
-            fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+            fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
                 request: I,
                 response: O,
                 version: &dpp::version::PlatformVersion,
                 provider: &'a dyn drive_proof_verifier::ContextProvider,
-            ) -> Result<Option<Self>, drive_proof_verifier::Error>
+            ) -> Result<(Option<Self>, ResponseMetadata), drive_proof_verifier::Error>
             where
                 Self: Sized + 'a,
             {
@@ -96,7 +96,7 @@ macro_rules! delegate_from_proof_variant {
                 match request {$(
                     req::$variant(request) => {
                         if let resp::$variant(response) = response {
-                            <Self as drive_proof_verifier::FromProof<$req>>::maybe_from_proof(
+                            <Self as drive_proof_verifier::FromProof<$req>>::maybe_from_proof_with_metadata(
                                 request, response, version, provider,
                             )
                         } else {
@@ -115,6 +115,7 @@ macro_rules! delegate_from_proof_variant {
         }
     };
 }
+
 #[macro_export]
 /// Define enums that will wrap multiple requests/responses for one object.
 ///
