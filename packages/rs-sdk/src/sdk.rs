@@ -12,6 +12,11 @@ use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use crate::platform::transition::put_document::PutSettings;
 use crate::platform::{Fetch, Identifier};
 use dapi_grpc::mock::Mockable;
+use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0;
+use dapi_grpc::platform::v0::get_identity_contract_nonce_response::Version;
+use dapi_grpc::platform::v0::{
+    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, Proof, ResponseMetadata,
+};
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
 use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -167,6 +172,26 @@ impl Sdk {
     where
         O::Request: Mockable,
     {
+        self.parse_proof_with_metadata(request, response)
+            .map(|result| result.0)
+    }
+
+    /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
+    ///
+    /// This method is used to retrieve objects from proofs returned by Dash Platform.
+    ///
+    /// ## Generic Parameters
+    ///
+    /// - `R`: Type of the request that was used to fetch the proof.
+    /// - `O`: Type of the object to be retrieved from the proof.
+    pub(crate) fn parse_proof_with_metadata<R, O: FromProof<R> + MockResponse>(
+        &self,
+        request: O::Request,
+        response: O::Response,
+    ) -> Result<(Option<O>, ResponseMetadata), drive_proof_verifier::Error>
+    where
+        O::Request: Mockable,
+    {
         let guard = self
             .context_provider
             .lock()
@@ -177,10 +202,10 @@ impl Sdk {
 
         match self.inner {
             SdkInstance::Dapi { .. } => {
-                O::maybe_from_proof(request, response, self.version(), &provider)
+                O::maybe_from_proof_with_metadata(request, response, self.version(), &provider)
             }
             #[cfg(feature = "mocks")]
-            SdkInstance::Mock { .. } => self.mock().parse_proof(request, response),
+            SdkInstance::Mock { .. } => self.mock().parse_proof_with_metadata(request, response),
         }
     }
 

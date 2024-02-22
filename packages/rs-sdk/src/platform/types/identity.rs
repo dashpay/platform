@@ -11,7 +11,7 @@ use dapi_grpc::platform::v0::{
     get_identity_by_public_key_hash_request, get_identity_contract_nonce_request,
     get_identity_nonce_request, get_identity_request, GetIdentityBalanceAndRevisionRequest,
     GetIdentityBalanceRequest, GetIdentityByPublicKeyHashRequest, GetIdentityContractNonceRequest,
-    GetIdentityNonceRequest, GetIdentityRequest,
+    GetIdentityNonceRequest, GetIdentityRequest, ResponseMetadata,
 };
 use dpp::prelude::Identity;
 

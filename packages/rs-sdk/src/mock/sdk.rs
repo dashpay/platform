@@ -1,6 +1,7 @@
 //! Mocking mechanisms for Dash Platform SDK.
 //!
 //! See [MockDashPlatformSdk] for more details.
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dapi_grpc::{
     mock::Mockable,
     platform::v0::{self as proto},
@@ -337,6 +338,37 @@ impl MockDashPlatformSdk {
                      "expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
                     ))?;
                 O::maybe_from_proof(request, response, version, provider)?
+            }
+        };
+
+        Ok(data)
+    }
+
+    /// Wrapper around [FromProof] that uses mock expectations instead of executing [FromProof] trait.
+    pub(crate) fn parse_proof_with_metadata<I, O: FromProof<I>>(
+        &self,
+        request: O::Request,
+        response: O::Response,
+    ) -> Result<(Option<O>, ResponseMetadata), drive_proof_verifier::Error>
+    where
+        O::Request: Mockable,
+        Option<O>: MockResponse,
+        // O: FromProof<<O as FromProof<I>>::Request>,
+    {
+        let key = Key::new(&request);
+
+        let data = match self.from_proof_expectations.get(&key) {
+            Some(d) => (
+                Option::<O>::mock_deserialize(self, d),
+                ResponseMetadata::default(),
+            ),
+            None => {
+                let version = self.version();
+                let provider = self.quorum_provider.as_ref()
+                    .ok_or(ContextProviderError::InvalidQuorum(
+                        "expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
+                    ))?;
+                O::maybe_from_proof_with_metadata(request, response, version, provider)?
             }
         };
 
