@@ -1,4 +1,3 @@
-use dpp::ProtocolError;
 use dpp::dashcore::secp256k1::Secp256k1;
 use dpp::dashcore::secp256k1::SecretKey;
 use dpp::dashcore::{
@@ -21,6 +20,7 @@ use dpp::prelude::AssetLockProof;
 use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+use dpp::ProtocolError;
 
 use dpp::state_transition::identity_credit_withdrawal_transition::v0::{
     IdentityCreditWithdrawalTransitionV0, MIN_CORE_FEE_PER_BYTE,
@@ -39,10 +39,10 @@ use simple_signer::signer::SimpleSigner;
 
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
-use tracing::error;
-use tracing::info;
 use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
+use tracing::error;
+use tracing::info;
 
 /// Constructs an `AssetLockProof` representing an instant asset lock proof.
 ///
@@ -228,8 +228,9 @@ pub fn create_identity_top_up_transition(
     create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
-    let (asset_lock_proof, private_key) = create_asset_lock(200000)
-        .ok_or(ProtocolError::Generic("Failed to create asset lock proof".to_string()))?;
+    let (asset_lock_proof, private_key) = create_asset_lock(200000).ok_or(
+        ProtocolError::Generic("Failed to create asset lock proof".to_string()),
+    )?;
 
     let pk_bytes = private_key.to_bytes();
 
@@ -621,9 +622,14 @@ pub fn create_identities_state_transitions(
         key_count,
         rng,
         platform_version,
-    ).expect("Expected to create identities and keys");
+    )
+    .expect("Expected to create identities and keys");
 
-    let starting_id_num = signer.private_keys.keys().max().map_or(0, |max_key| max_key.id() + 1);
+    let starting_id_num = signer
+        .private_keys
+        .keys()
+        .max()
+        .map_or(0, |max_key| max_key.id() + 1);
 
     // Update keys with new KeyIDs and add them to signer
     let mut current_id_num = starting_id_num;
@@ -636,43 +642,50 @@ pub fn create_identities_state_transitions(
     signer.add_keys(keys);
 
     // Generate state transitions for each identity
-    identities.into_iter().enumerate().map(|(index, mut identity)| {
-        // Calculate the starting KeyID for this identity
-        let identity_starting_id = starting_id_num + (index as u32) * key_count;
+    identities
+        .into_iter()
+        .enumerate()
+        .map(|(index, mut identity)| {
+            // Calculate the starting KeyID for this identity
+            let identity_starting_id = starting_id_num + (index as u32) * key_count;
 
-        // Update the identity with the new KeyIDs
-        let public_keys_map = identity.public_keys_mut();
-        public_keys_map.values_mut().enumerate().for_each(|(key_index, public_key)| {
-            if let IdentityPublicKey::V0(ref mut id_pub_key_v0) = public_key {
-                let new_id = identity_starting_id + key_index as u32;
-                id_pub_key_v0.set_id(new_id);
-            }
-        });
+            // Update the identity with the new KeyIDs
+            let public_keys_map = identity.public_keys_mut();
+            public_keys_map
+                .values_mut()
+                .enumerate()
+                .for_each(|(key_index, public_key)| {
+                    if let IdentityPublicKey::V0(ref mut id_pub_key_v0) = public_key {
+                        let new_id = identity_starting_id + key_index as u32;
+                        id_pub_key_v0.set_id(new_id);
+                    }
+                });
 
-        // Attempt to create an asset lock
-        match create_asset_lock(200000) {
-            Some((proof, private_key)) => {
-                let pk = private_key.to_bytes();
-                match IdentityCreateTransition::try_from_identity_with_signer(
-                    &identity,
-                    proof,
-                    &pk,
-                    signer,
-                    &NativeBlsModule,
-                    platform_version,
-                ) {
-                    Ok(identity_create_transition) => {
-                        identity.set_id(identity_create_transition.owner_id());
-                        Ok((identity, identity_create_transition))
-                    },
-                    Err(e) => {
-                        Err(e)
+            // Attempt to create an asset lock
+            match create_asset_lock(200000) {
+                Some((proof, private_key)) => {
+                    let pk = private_key.to_bytes();
+                    match IdentityCreateTransition::try_from_identity_with_signer(
+                        &identity,
+                        proof,
+                        &pk,
+                        signer,
+                        &NativeBlsModule,
+                        platform_version,
+                    ) {
+                        Ok(identity_create_transition) => {
+                            identity.set_id(identity_create_transition.owner_id());
+                            Ok((identity, identity_create_transition))
+                        }
+                        Err(e) => Err(e),
                     }
                 }
-            },
-            None => Err(ProtocolError::Generic("Failed to create asset lock proof".to_string()))
-        }
-    }).collect::<Result<Vec<(Identity, StateTransition)>, ProtocolError>>()
+                None => Err(ProtocolError::Generic(
+                    "Failed to create asset lock proof".to_string(),
+                )),
+            }
+        })
+        .collect::<Result<Vec<(Identity, StateTransition)>, ProtocolError>>()
 }
 
 /// Generates state transitions for the creation of new identities.

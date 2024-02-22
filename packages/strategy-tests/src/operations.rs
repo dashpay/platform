@@ -239,8 +239,12 @@ impl PlatformSerializableWithPlatformVersion for DataContractUpdateOp {
         self,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
-        let DataContractUpdateOp { action, contract, document_type } = self;
-        
+        let DataContractUpdateOp {
+            action,
+            contract,
+            document_type,
+        } = self;
+
         // Serialize contract and optionally document type
         let contract_in_serialization_format: DataContractInSerializationFormat =
             contract.try_into_platform_versioned(platform_version)?;
@@ -280,31 +284,46 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
             .with_no_limit();
         let deserialized: DataContractUpdateOpInSerializationFormat =
             bincode::borrow_decode_from_slice(data, config)
-                .map_err(|e| PlatformDeserializationError(format!("Unable to deserialize DataContractUpdateOp: {}", e)))?.0;
+                .map_err(|e| {
+                    PlatformDeserializationError(format!(
+                        "Unable to deserialize DataContractUpdateOp: {}",
+                        e
+                    ))
+                })?
+                .0;
 
-        let contract = DataContract::try_from_platform_versioned(deserialized.contract, validate, platform_version)?;
+        let contract = DataContract::try_from_platform_versioned(
+            deserialized.contract,
+            validate,
+            platform_version,
+        )?;
 
         let action = deserialized.action;
 
         let document_type = deserialized.document_type.and_then(|value| {
             match value {
                 Value::Map(map) => {
-                    map.into_iter().map(|(name, schema_json)| {
-                        let name_str = name.to_str().expect("Couldn't convert document type name to str in deserialization");
-                        let schema = Value::try_from(schema_json).unwrap();
-                        let owner_id = contract.owner_id(); // Assuming you have a method to get the owner_id from the contract
-                        DocumentType::try_from_schema(
-                            owner_id, 
-                            name_str, 
-                            schema, 
-                            None,
-                            true,
-                            true,
-                            validate, 
-                            platform_version
-                        ).expect("Failed to reconstruct DocumentType from schema")
-                    }).next() // Assumes only one document type is being deserialized
-                },
+                    map.into_iter()
+                        .map(|(name, schema_json)| {
+                            let name_str = name.to_str().expect(
+                                "Couldn't convert document type name to str in deserialization",
+                            );
+                            let schema = Value::try_from(schema_json).unwrap();
+                            let owner_id = contract.owner_id(); // Assuming you have a method to get the owner_id from the contract
+                            DocumentType::try_from_schema(
+                                owner_id,
+                                name_str,
+                                schema,
+                                None,
+                                true,
+                                true,
+                                validate,
+                                platform_version,
+                            )
+                            .expect("Failed to reconstruct DocumentType from schema")
+                        })
+                        .next() // Assumes only one document type is being deserialized
+                }
                 _ => None,
             }
         });

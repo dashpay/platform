@@ -213,7 +213,10 @@ impl DocumentTypeV0 {
         let index_count = rng.gen_range(parameters.new_indexes_count_range.clone());
         let field_names: Vec<String> = properties.keys().cloned().collect();
         // DPP only allows 10 properties per index (v1.0-dev)
-        let ten_field_names = field_names.choose_multiple(&mut rand::thread_rng(), 10).cloned().collect_vec();
+        let ten_field_names = field_names
+            .choose_multiple(&mut rand::thread_rng(), 10)
+            .cloned()
+            .collect_vec();
 
         let mut indices = Vec::with_capacity(index_count as usize);
 
@@ -360,24 +363,31 @@ impl DocumentTypeV0 {
                 schema.insert("position".to_string(), serde_json::Value::Number(serde_json::Number::from(position_counter)));
             }
             position_counter += 1;
-        
+
             (key.clone(), schema_part)
         }).collect::<serde_json::Map<String, serde_json::Value>>();
-        
+
         // Generate indices
-        let indices_json_schema = indices.iter().map(|index| {
-            let properties_schema = index.properties.iter().map(|prop| {
-                // Only "asc" is allowed for now (v1.0-dev)
-                json!({ <std::string::String as Clone>::clone(&prop.name): "asc" })
-            }).collect::<Vec<_>>();
-        
-            json!({
-                "name": index.name,
-                "properties": properties_schema,
-                "unique": index.unique,
+        let indices_json_schema = indices
+            .iter()
+            .map(|index| {
+                let properties_schema = index
+                    .properties
+                    .iter()
+                    .map(|prop| {
+                        // Only "asc" is allowed for now (v1.0-dev)
+                        json!({ <std::string::String as Clone>::clone(&prop.name): "asc" })
+                    })
+                    .collect::<Vec<_>>();
+
+                json!({
+                    "name": index.name,
+                    "properties": properties_schema,
+                    "unique": index.unique,
+                })
             })
-        }).collect::<Vec<_>>();
-                
+            .collect::<Vec<_>>();
+
         // Combine everything into the final schema
         let schema = json!({
             "title": name,
@@ -387,7 +397,7 @@ impl DocumentTypeV0 {
             "indices": indices_json_schema,
             "additionalProperties": false,
         });
-        
+
         // TODO: It might not work properly
         Ok(DocumentTypeV0 {
             name,
