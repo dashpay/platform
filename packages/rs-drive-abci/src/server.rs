@@ -30,6 +30,7 @@ pub fn start(
     let check_tx_server = CheckTxAbciApplication::new(Arc::clone(&platform));
 
     // TODO: Consider to use tower to limit concurrent requests
+    // TODO: Use spawn_blocked and Handle::block_on() to execute consensus handler instead of block_in_place?
     let grpc_server = dapi_grpc::tonic::transport::Server::builder()
         .add_service(dapi_grpc::platform::v0::platform_server::PlatformServer::new(query_server))
         .add_service(
@@ -61,13 +62,16 @@ pub fn start(
 
     let platform1 = Arc::clone(&platform);
 
-    // TODO: Consider to set thread priority higher than tonic
-    thread::scope(|scope| {
-        scope.spawn(move || {
-            let app = ConsensusAbciApplication::new(platform1.as_ref());
-            start_tenderdash_abci_server(app, &config.abci.consensus_bind_address, cancel_ref)
-        });
-    });
+    // TODO: Consider to set higher priority for consensus server
+    // TODO: There is no point to provide sync interface since we use
+    //  runtime underneath. We should just expose a feature and pass it runtime here
+    // TODO: Do not control (start, etc) runtime inside. The lib should just expose
+    //  async interface. The app who should deal with runtime
+    // TODO: Use spawn_blocked and Handle::block_on() to execute consensus handler (and maybe tonic)?
+    // TODO: https://docs.rs/tokio-util/latest/tokio_util/io/struct.SyncIoBridge.html
+    // TODO: https://tokio.rs/tokio/topics/bridging
+    let app = ConsensusAbciApplication::new(platform1.as_ref());
+    start_tenderdash_abci_server(app, &config.abci.consensus_bind_address, cancel_ref)
 }
 
 fn start_tenderdash_abci_server<'a, A>(app: A, bind_address: &str, cancel: &CancellationToken)
