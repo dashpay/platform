@@ -32,7 +32,7 @@ describe('Dash - NonceManager', () => {
       expect(dapiClientMock.platform.getIdentityNonce).to.be.calledOnce();
     });
 
-    it('should invalidate and re-fetch nonce after interval passed', async function () {
+    it('should invalidate and re-fetch nonce after interval passed', async function it() {
       const clock = this.sinon.useFakeTimers();
       dapiClientMock.platform.getIdentityNonce.resolves({ identityNonce: 1 });
       expect(await nonceManager.getIdentityNonce(identityId)).to.be.equal(1);
@@ -41,6 +41,7 @@ describe('Dash - NonceManager', () => {
       dapiClientMock.platform.getIdentityNonce.resolves({ identityNonce: 2 });
       await nonceManager.getIdentityNonce(identityId);
       expect(await nonceManager.getIdentityNonce(identityId)).to.be.equal(2);
+      clock.restore();
     });
   });
 
@@ -59,7 +60,7 @@ describe('Dash - NonceManager', () => {
       expect(dapiClientMock.platform.getIdentityContractNonce).to.be.calledOnce();
     });
 
-    it('should invalidate and re-fetch nonce after interval passed', async function () {
+    it('should invalidate and re-fetch nonce after interval passed', async function it() {
       const clock = this.sinon.useFakeTimers();
       dapiClientMock.platform.getIdentityContractNonce.resolves({ identityContractNonce: 1 });
       expect(await nonceManager.getIdentityContractNonce(identityId, contractId))
@@ -70,6 +71,7 @@ describe('Dash - NonceManager', () => {
       await nonceManager.getIdentityContractNonce(identityId, contractId);
       expect(await nonceManager.getIdentityContractNonce(identityId, contractId))
         .to.be.equal(2);
+      clock.restore();
     });
   });
 });
