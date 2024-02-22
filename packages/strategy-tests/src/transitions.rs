@@ -473,8 +473,8 @@ pub fn create_identity_withdrawal_transition(
     *nonce += 1;
     let mut withdrawal: StateTransition = IdentityCreditWithdrawalTransitionV0 {
         identity_id: identity.id(),
-        amount: 1000, // 1 duff
-        core_fee_per_byte: 1,
+        amount: 1000000, // 1 duff
+        core_fee_per_byte: MIN_CORE_FEE_PER_BYTE,
         pooling: Pooling::Never,
         output_script: CoreScript::random_p2sh(rng),
         nonce: *nonce,
