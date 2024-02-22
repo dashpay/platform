@@ -1,12 +1,16 @@
 use crate::masternodes::MasternodeListItemWithUpdates;
 use crate::query::QueryStrategy;
 use crate::BlockHeight;
-
+use dashcore_rpc::dashcore::{self, Network, PrivateKey};
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::block::block_info::BlockInfo;
+use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
+use dpp::{NativeBlsModule, ProtocolError};
 
+use dpp::dashcore::secp256k1::SecretKey;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
+use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
@@ -15,7 +19,7 @@ use strategy_tests::operations::{
 
 use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
-use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{Identity, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
@@ -26,6 +30,7 @@ use drive::drive::flags::StorageFlags::SingleEpoch;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
 
+use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use drive::query::DriveQuery;
@@ -36,11 +41,13 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
 use strategy_tests::Strategy;
+use strategy_tests::transitions::{create_state_transitions_for_identities, instant_asset_lock_proof_fixture};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::AddAssign;
+use std::str::FromStr;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::BinaryData;
 use dpp::prelude::{Identifier, IdentityNonce};
@@ -338,7 +345,7 @@ impl NetworkStrategy {
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Vec<(Identity, StateTransition)> {
+    ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
         let mut state_transitions = vec![];
         if block_info.height == 1 && !self.strategy.start_identities.is_empty() {
             state_transitions.append(&mut self.strategy.start_identities.clone());
@@ -346,17 +353,16 @@ impl NetworkStrategy {
         let frequency = &self.strategy.identities_inserts;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
-            state_transitions.append(
-                &mut strategy_tests::transitions::create_identities_state_transitions(
-                    count,
-                    5,
-                    signer,
-                    rng,
-                    platform_version,
-                ),
-            )
+            let mut new_transitions = NetworkStrategy::create_identities_state_transitions(
+                count,
+                5,
+                signer,
+                rng,
+                platform_version,
+            );
+            state_transitions.append(&mut new_transitions);
         }
-        state_transitions
+        Ok(state_transitions)
     }
 
     pub fn contract_state_transitions(
@@ -469,6 +475,535 @@ impl NetworkStrategy {
             .collect()
     }
 
+    // TODO: this belongs to `DocumentOp`, also randomization details are common for all operations
+    // and could be moved out of here
+    pub fn state_transitions_for_block(
+        &self,
+        platform: &Platform<MockCoreRPCLike>,
+        block_info: &BlockInfo,
+        current_identities: &mut Vec<Identity>,
+        signer: &mut SimpleSigner,
+        identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
+        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
+        let mut operations = vec![];
+        let mut finalize_block_operations = vec![];
+        let mut replaced = vec![];
+        let mut deleted = vec![];
+        for op in &self.strategy.operations {
+            if op.frequency.check_hit(rng) {
+                let count = rng.gen_range(op.frequency.times_per_block_range.clone());
+                match &op.op_type {
+                    OperationType::Document(DocumentOp {
+                        action: DocumentAction::DocumentActionInsertRandom(fill_type, fill_size),
+                        document_type,
+                        contract,
+                    }) => {
+                        let documents = document_type
+                            .random_documents_with_params(
+                                count as u32,
+                                current_identities,
+                                block_info.time_ms,
+                                *fill_type,
+                                *fill_size,
+                                rng,
+                                platform_version,
+                            )
+                            .expect("expected random_documents_with_params");
+                        documents
+                            .into_iter()
+                            .for_each(|(document, identity, entropy)| {
+                                let updated_at =
+                                    if document_type.required_fields().contains("$updatedAt") {
+                                        document.created_at()
+                                    } else {
+                                        None
+                                    };
+
+                                let identity_contract_nonce = contract_nonce_counter
+                                    .entry((identity.id(), contract.id()))
+                                    .or_default();
+                                let gap = self
+                                    .strategy
+                                    .identity_contract_nonce_gaps
+                                    .as_ref()
+                                    .map_or(0, |gap_amount| gap_amount.events_if_hit(rng))
+                                    as u64;
+                                *identity_contract_nonce += 1 + gap;
+
+                                let document_create_transition: DocumentCreateTransition =
+                                    DocumentCreateTransitionV0 {
+                                        base: DocumentBaseTransitionV0 {
+                                            id: document.id(),
+                                            identity_contract_nonce: *identity_contract_nonce,
+                                            document_type_name: document_type.name().clone(),
+                                            data_contract_id: contract.id(),
+                                        }
+                                        .into(),
+                                        entropy: entropy.to_buffer(),
+                                        created_at: document.created_at(),
+                                        updated_at,
+                                        data: document.properties_consumed(),
+                                    }
+                                    .into();
+
+                                let document_batch_transition: DocumentsBatchTransition =
+                                    DocumentsBatchTransitionV0 {
+                                        owner_id: identity.id(),
+                                        transitions: vec![document_create_transition.into()],
+                                        signature_public_key_id: 0,
+                                        signature: BinaryData::default(),
+                                    }
+                                    .into();
+                                let mut document_batch_transition: StateTransition =
+                                    document_batch_transition.into();
+
+                                let identity_public_key = identity
+                                    .get_first_public_key_matching(
+                                        Purpose::AUTHENTICATION,
+                                        HashSet::from([
+                                            SecurityLevel::HIGH,
+                                            SecurityLevel::CRITICAL,
+                                        ]),
+                                        HashSet::from([
+                                            KeyType::ECDSA_SECP256K1,
+                                            KeyType::BLS12_381,
+                                        ]),
+                                    )
+                                    .expect("expected to get a signing key");
+
+                                document_batch_transition
+                                    .sign_external(
+                                        identity_public_key,
+                                        signer,
+                                        Some(|_data_contract_id, _document_type_name| {
+                                            Ok(SecurityLevel::HIGH)
+                                        }),
+                                    )
+                                    .expect("expected to sign");
+
+                                operations.push(document_batch_transition);
+                            });
+                    }
+                    OperationType::Document(DocumentOp {
+                        action:
+                            DocumentAction::DocumentActionInsertSpecific(
+                                specific_document_key_value_pairs,
+                                identifier,
+                                fill_type,
+                                fill_size,
+                            ),
+                        document_type,
+                        contract,
+                    }) => {
+                        let documents = if let Some(identifier) = identifier {
+                            let held_identity = vec![current_identities
+                                .iter()
+                                .find(|identity| identity.id() == identifier)
+                                .expect("expected to find identifier, review strategy params")
+                                .clone()];
+                            document_type
+                                .random_documents_with_params(
+                                    count as u32,
+                                    &held_identity,
+                                    block_info.time_ms,
+                                    *fill_type,
+                                    *fill_size,
+                                    rng,
+                                    platform_version,
+                                )
+                                .expect("expected random_documents_with_params")
+                        } else {
+                            document_type
+                                .random_documents_with_params(
+                                    count as u32,
+                                    current_identities,
+                                    block_info.time_ms,
+                                    *fill_type,
+                                    *fill_size,
+                                    rng,
+                                    platform_version,
+                                )
+                                .expect("expected random_documents_with_params")
+                        };
+
+                        documents
+                            .into_iter()
+                            .for_each(|(mut document, identity, entropy)| {
+                                document
+                                    .properties_mut()
+                                    .append(&mut specific_document_key_value_pairs.clone());
+                                let updated_at =
+                                    if document_type.required_fields().contains("$updatedAt") {
+                                        document.created_at()
+                                    } else {
+                                        None
+                                    };
+
+                                let identity_contract_nonce = contract_nonce_counter
+                                    .entry((identity.id(), contract.id()))
+                                    .or_default();
+                                *identity_contract_nonce += 1;
+
+                                let document_create_transition: DocumentCreateTransition =
+                                    DocumentCreateTransitionV0 {
+                                        base: DocumentBaseTransitionV0 {
+                                            id: document.id(),
+                                            identity_contract_nonce: *identity_contract_nonce,
+                                            document_type_name: document_type.name().clone(),
+                                            data_contract_id: contract.id(),
+                                        }
+                                        .into(),
+                                        entropy: entropy.to_buffer(),
+                                        created_at: document.created_at(),
+                                        updated_at,
+                                        data: document.properties_consumed(),
+                                    }
+                                    .into();
+
+                                let document_batch_transition: DocumentsBatchTransition =
+                                    DocumentsBatchTransitionV0 {
+                                        owner_id: identity.id(),
+                                        transitions: vec![document_create_transition.into()],
+                                        signature_public_key_id: 0,
+                                        signature: BinaryData::default(),
+                                    }
+                                    .into();
+                                let mut document_batch_transition: StateTransition =
+                                    document_batch_transition.into();
+
+                                let identity_public_key = identity
+                                    .get_first_public_key_matching(
+                                        Purpose::AUTHENTICATION,
+                                        HashSet::from([
+                                            SecurityLevel::HIGH,
+                                            SecurityLevel::CRITICAL,
+                                        ]),
+                                        HashSet::from([
+                                            KeyType::ECDSA_SECP256K1,
+                                            KeyType::BLS12_381,
+                                        ]),
+                                    )
+                                    .expect("expected to get a signing key");
+
+                                document_batch_transition
+                                    .sign_external(
+                                        identity_public_key,
+                                        signer,
+                                        Some(|_data_contract_id, _document_type_name| {
+                                            Ok(SecurityLevel::HIGH)
+                                        }),
+                                    )
+                                    .expect("expected to sign");
+
+                                operations.push(document_batch_transition);
+                            });
+                    }
+                    OperationType::Document(DocumentOp {
+                        action: DocumentAction::DocumentActionDelete,
+                        document_type,
+                        contract,
+                    }) => {
+                        let any_item_query =
+                            DriveQuery::any_item_query(contract, document_type.as_ref());
+                        let mut items = platform
+                            .drive
+                            .query_documents(
+                                any_item_query,
+                                Some(&block_info.epoch),
+                                false,
+                                None,
+                                Some(platform_version.protocol_version),
+                            )
+                            .expect("expect to execute query")
+                            .documents_owned();
+
+                        items.retain(|item| !deleted.contains(&item.id()));
+
+                        items.retain(|item| !replaced.contains(&item.id()));
+
+                        if !items.is_empty() {
+                            let document = items.remove(0);
+
+                            deleted.push(document.id());
+
+                            //todo: fix this into a search key request for the following
+                            //let search_key_request = BTreeMap::from([(Purpose::AUTHENTICATION as u8, BTreeMap::from([(SecurityLevel::HIGH as u8, AllKeysOfKindRequest)]))]);
+
+                            let request = IdentityKeysRequest {
+                                identity_id: document.owner_id().to_buffer(),
+                                request_type: KeyRequestType::SpecificKeys(vec![1]),
+                                limit: Some(1),
+                                offset: None,
+                            };
+                            let identity = platform
+                                .drive
+                                .fetch_identity_balance_with_keys(request, None, platform_version)
+                                .expect("expected to be able to get identity")
+                                .expect("expected to get an identity");
+                            let identity_contract_nonce = contract_nonce_counter
+                                .get_mut(&(identity.id, contract.id()))
+                                .expect(
+                                    "the identity should already have a nonce for that contract",
+                                );
+                            *identity_contract_nonce += 1;
+                            let document_delete_transition: DocumentDeleteTransition =
+                                DocumentDeleteTransitionV0 {
+                                    base: DocumentBaseTransitionV0 {
+                                        id: document.id(),
+                                        identity_contract_nonce: *identity_contract_nonce,
+                                        document_type_name: document_type.name().clone(),
+                                        data_contract_id: contract.id(),
+                                    }
+                                    .into(),
+                                }
+                                .into();
+
+                            let document_batch_transition: DocumentsBatchTransition =
+                                DocumentsBatchTransitionV0 {
+                                    owner_id: identity.id,
+                                    transitions: vec![document_delete_transition.into()],
+                                    signature_public_key_id: 0,
+                                    signature: BinaryData::default(),
+                                }
+                                .into();
+
+                            let mut document_batch_transition: StateTransition =
+                                document_batch_transition.into();
+
+                            let identity_public_key = identity
+                                .loaded_public_keys
+                                .values()
+                                .next()
+                                .expect("expected a key");
+
+                            document_batch_transition
+                                .sign_external(
+                                    identity_public_key,
+                                    signer,
+                                    Some(|_data_contract_id, _document_type_name| {
+                                        Ok(SecurityLevel::HIGH)
+                                    }),
+                                )
+                                .expect("expected to sign");
+
+                            operations.push(document_batch_transition);
+                        }
+                    }
+                    OperationType::Document(DocumentOp {
+                        action: DocumentAction::DocumentActionReplace,
+                        document_type,
+                        contract,
+                    }) => {
+                        let any_item_query =
+                            DriveQuery::any_item_query(contract, document_type.as_ref());
+                        let mut items = platform
+                            .drive
+                            .query_documents(
+                                any_item_query,
+                                Some(&block_info.epoch),
+                                false,
+                                None,
+                                Some(platform_version.protocol_version),
+                            )
+                            .expect("expect to execute query")
+                            .documents_owned();
+
+                        items.retain(|item| !deleted.contains(&item.id()));
+
+                        items.retain(|item| !replaced.contains(&item.id()));
+
+                        if !items.is_empty() {
+                            let document = items.remove(0);
+
+                            replaced.push(document.id());
+
+                            //todo: fix this into a search key request for the following
+                            //let search_key_request = BTreeMap::from([(Purpose::AUTHENTICATION as u8, BTreeMap::from([(SecurityLevel::HIGH as u8, AllKeysOfKindRequest)]))]);
+
+                            let random_new_document = document_type
+                                .random_document_with_rng(rng, platform_version)
+                                .unwrap();
+                            let request = IdentityKeysRequest {
+                                identity_id: document.owner_id().to_buffer(),
+                                request_type: KeyRequestType::SpecificKeys(vec![1]),
+                                limit: Some(1),
+                                offset: None,
+                            };
+                            let identity = platform
+                                .drive
+                                .fetch_identity_balance_with_keys(request, None, platform_version)
+                                .expect("expected to be able to get identity")
+                                .expect("expected to get an identity");
+                            let identity_contract_nonce = contract_nonce_counter
+                                .get_mut(&(identity.id, contract.id()))
+                                .expect(
+                                    "the identity should already have a nonce for that contract",
+                                );
+                            *identity_contract_nonce += 1;
+                            let document_replace_transition: DocumentReplaceTransition =
+                                DocumentReplaceTransitionV0 {
+                                    base: DocumentBaseTransitionV0 {
+                                        id: document.id(),
+                                        identity_contract_nonce: *identity_contract_nonce,
+                                        document_type_name: document_type.name().clone(),
+                                        data_contract_id: contract.id(),
+                                    }
+                                    .into(),
+                                    revision: document
+                                        .revision()
+                                        .expect("expected to unwrap revision")
+                                        + 1,
+                                    updated_at: Some(block_info.time_ms),
+                                    data: random_new_document.properties_consumed(),
+                                }
+                                .into();
+
+                            let document_batch_transition: DocumentsBatchTransition =
+                                DocumentsBatchTransitionV0 {
+                                    owner_id: identity.id,
+                                    transitions: vec![document_replace_transition.into()],
+                                    signature_public_key_id: 0,
+                                    signature: BinaryData::default(),
+                                }
+                                .into();
+
+                            let mut document_batch_transition: StateTransition =
+                                document_batch_transition.into();
+
+                            let identity_public_key = identity
+                                .loaded_public_keys
+                                .values()
+                                .next()
+                                .expect("expected a key");
+
+                            document_batch_transition
+                                .sign_external(
+                                    identity_public_key,
+                                    signer,
+                                    Some(|_data_contract_id, _document_type_name| {
+                                        Ok(SecurityLevel::HIGH)
+                                    }),
+                                )
+                                .expect("expected to sign");
+
+                            operations.push(document_batch_transition);
+                        }
+                    }
+                    OperationType::IdentityTopUp if !current_identities.is_empty() => {
+                        let indices: Vec<usize> =
+                            (0..current_identities.len()).choose_multiple(rng, count as usize);
+                        let random_identities: Vec<&Identity> = indices
+                            .into_iter()
+                            .map(|index| &current_identities[index])
+                            .collect();
+
+                        for random_identity in random_identities {
+                            operations.push(NetworkStrategy::create_identity_top_up_transition(
+                                rng,
+                                random_identity,
+                                platform_version,
+                            ));
+                        }
+                    }
+                    OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
+                        let indices: Vec<usize> =
+                            (0..current_identities.len()).choose_multiple(rng, count as usize);
+                        for index in indices {
+                            let random_identity = current_identities.get_mut(index).unwrap();
+                            match update_op {
+                                IdentityUpdateOp::IdentityUpdateAddKeys(count) => {
+                                    let (state_transition, keys_to_add_at_end_block) =
+                                        strategy_tests::transitions::create_identity_update_transition_add_keys(
+                                            random_identity,
+                                            *count,
+                                            identity_nonce_counter,
+                                            signer,
+                                            rng,
+                                            platform_version,
+                                        );
+                                    operations.push(state_transition);
+                                    finalize_block_operations.push(IdentityAddKeys(
+                                        keys_to_add_at_end_block.0,
+                                        keys_to_add_at_end_block.1,
+                                    ))
+                                }
+                                IdentityUpdateOp::IdentityUpdateDisableKey(count) => {
+                                    let state_transition =
+                                        strategy_tests::transitions::create_identity_update_transition_disable_keys(
+                                            random_identity,
+                                            *count,
+                                            identity_nonce_counter,
+                                            block_info.time_ms,
+                                            signer,
+                                            rng,
+                                            platform_version,
+                                        );
+                                    if let Some(state_transition) = state_transition {
+                                        operations.push(state_transition);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    OperationType::IdentityWithdrawal if !current_identities.is_empty() => {
+                        let indices: Vec<usize> =
+                            (0..current_identities.len()).choose_multiple(rng, count as usize);
+                        for index in indices {
+                            let random_identity = current_identities.get_mut(index).unwrap();
+                            let state_transition =
+                                strategy_tests::transitions::create_identity_withdrawal_transition(
+                                    random_identity,
+                                    identity_nonce_counter,
+                                    signer,
+                                    rng,
+                                );
+                            operations.push(state_transition);
+                        }
+                    }
+                    OperationType::IdentityTransfer if current_identities.len() > 1 => {
+                        let identities_clone = current_identities.clone();
+
+                        // Sender is the first in the list, which should be loaded_identity
+                        let owner = &mut current_identities[0];
+                        // Recipient is the second in the list
+                        let recipient = &identities_clone[1];
+
+                        let fetched_owner_balance = platform
+                            .drive
+                            .fetch_identity_balance(owner.id().to_buffer(), None, platform_version)
+                            .expect("expected to be able to get identity")
+                            .expect("expected to get an identity");
+
+                        let state_transition =
+                            strategy_tests::transitions::create_identity_credit_transfer_transition(
+                                owner,
+                                recipient,
+                                identity_nonce_counter,
+                                signer,
+                                fetched_owner_balance - 100,
+                            );
+                        operations.push(state_transition);
+                    }
+                    // OperationType::ContractCreate(new_fields_optional_count_range, new_fields_required_count_range, new_index_count_range, document_type_count)
+                    // if !current_identities.is_empty() => {
+                    //     DataContract::;
+                    //
+                    //     DocumentType::random_document()
+                    // }
+                    // OperationType::ContractUpdate(DataContractNewDocumentTypes(count))
+                    //     if !current_identities.is_empty() => {
+                    //
+                    // }
+                    _ => {}
+                }
+            }
+        }
+        (operations, finalize_block_operations)
+    }
+
     pub fn state_transitions_for_block_with_new_identities(
         &mut self,
         platform: &Platform<MockCoreRPCLike>,
@@ -484,11 +1019,20 @@ impl NetworkStrategy {
         let platform_version = platform_state
             .current_platform_version()
             .expect("expected platform version");
-        let identity_state_transitions =
+
+        let identity_state_transitions_result =
             self.identity_state_transitions_for_block(block_info, signer, rng, platform_version);
-        let (mut new_identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
-            identity_state_transitions.into_iter().unzip();
-        current_identities.append(&mut new_identities);
+
+        // Handle the Result returned by identity_state_transitions_for_block
+        let (mut identities, mut state_transitions) = match identity_state_transitions_result {
+            Ok(transitions) => transitions.into_iter().unzip(),
+            Err(error) => {
+                eprintln!("Error creating identity state transitions: {:?}", error);
+                (vec![], vec![])
+            }
+        };
+
+        current_identities.append(&mut identities);
 
         if block_info.height == 1 {
             // add contracts on block 1
@@ -497,9 +1041,9 @@ impl NetworkStrategy {
             state_transitions.append(&mut contract_state_transitions);
         } else {
             // Don't do any state transitions on block 1
-            let (mut document_state_transitions, mut add_to_finalize_block_operations) =
-                self.strategy.state_transitions_for_block(
-                    &platform.drive,
+            let (mut document_state_transitions, mut add_to_finalize_block_operations) = self
+                .state_transitions_for_block(
+                    &platform,
                     block_info,
                     current_identities,
                     signer,
@@ -524,6 +1068,49 @@ impl NetworkStrategy {
         }
 
         (state_transitions, finalize_block_operations)
+    }
+
+    // add this because strategy tests library now requires a callback and uses the actual chain.
+    fn create_identities_state_transitions(
+        count: u16,
+        key_count: KeyID,
+        signer: &mut SimpleSigner,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Vec<(Identity, StateTransition)> {
+        let (identities, keys) = Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(
+            count,
+            key_count,
+            rng,
+            platform_version,
+        )
+        .expect("expected to create identities");
+        signer.add_keys(keys);
+        create_state_transitions_for_identities(identities, signer, rng, platform_version)
+    }
+
+    // add this because strategy tests library now requires a callback and uses the actual chain.
+    fn create_identity_top_up_transition(
+        rng: &mut StdRng,
+        identity: &Identity,
+        platform_version: &PlatformVersion,
+    ) -> StateTransition {
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(rng, platform_version)
+            .unwrap();
+        let sk: [u8; 32] = pk.try_into().unwrap();
+        let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
+        let asset_lock_proof =
+            instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
+
+        IdentityTopUpTransition::try_from_identity(
+            identity,
+            asset_lock_proof,
+            secret_key.as_ref(),
+            platform_version,
+            None,
+        )
+        .expect("expected to create top up transition")
     }
 }
 
