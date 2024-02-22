@@ -18,6 +18,7 @@ use std::convert::{TryFrom, TryInto};
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 
+use crate::prelude::IdentityNonce;
 use crate::{
     identity::KeyID,
     prelude::{Identifier, Revision, TimestampMillis},
@@ -39,8 +40,11 @@ pub struct IdentityUpdateTransitionV0 {
     /// Unique identifier of the identity to be updated
     pub identity_id: Identifier,
 
-    /// Identity Update revision number
+    /// The revision of the identity after update
     pub revision: Revision,
+
+    /// Identity nonce for this transition to prevent replay attacks
+    pub nonce: IdentityNonce,
 
     /// Public Keys to add to the Identity
     /// we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`

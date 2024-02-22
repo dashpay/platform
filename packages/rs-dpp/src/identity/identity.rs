@@ -12,6 +12,7 @@ use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 
+use crate::fee::Credits;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -40,7 +41,7 @@ pub enum Identity {
 pub struct PartialIdentity {
     pub id: Identifier,
     pub loaded_public_keys: BTreeMap<KeyID, IdentityPublicKey>,
-    pub balance: Option<u64>,
+    pub balance: Option<Credits>,
     pub revision: Option<Revision>,
     /// These are keys that were requested but didn't exist
     pub not_found_public_keys: BTreeSet<KeyID>,

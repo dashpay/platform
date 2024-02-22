@@ -40,4 +40,13 @@ impl StateTransitionLike for DataContractUpdateTransitionV0 {
     fn owner_id(&self) -> Identifier {
         self.data_contract.owner_id()
     }
+
+    fn unique_identifiers(&self) -> Vec<String> {
+        vec![format!(
+            "{}-{}-{:x}",
+            base64::encode(self.data_contract.owner_id()),
+            base64::encode(self.data_contract.id()),
+            self.identity_contract_nonce
+        )]
+    }
 }

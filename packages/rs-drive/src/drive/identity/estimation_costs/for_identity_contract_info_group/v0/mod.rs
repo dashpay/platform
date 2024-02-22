@@ -3,7 +3,7 @@ use crate::drive::Drive;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::ApproximateElements;
 use grovedb::EstimatedLayerInformation;
-use grovedb::EstimatedLayerSizes::AllSubtrees;
+use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
@@ -22,7 +22,11 @@ impl Drive {
             EstimatedLayerInformation {
                 is_sum_tree: false,
                 estimated_layer_count: ApproximateElements(2),
-                estimated_layer_sizes: AllSubtrees(1, NoSumTrees, None),
+                estimated_layer_sizes: Mix {
+                    subtrees_size: Some((1, NoSumTrees, None, 1)),
+                    items_size: Some((1, 1, None, 1)),
+                    references_size: None,
+                },
             },
         );
     }

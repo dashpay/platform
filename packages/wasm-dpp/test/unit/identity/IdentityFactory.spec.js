@@ -236,6 +236,8 @@ describe('IdentityFactory', () => {
       const stateTransition = factory
         .createIdentityUpdateTransition(
           identity,
+          // eslint-disable-next-line
+          BigInt(1),
           {
             add: addPublicKeys,
             disable: disablePublicKeys,
@@ -262,7 +264,7 @@ describe('IdentityFactory', () => {
           stateTransitionFixture.getCoreFeePerByte(),
           stateTransitionFixture.getPooling(),
           stateTransitionFixture.getOutputScript(),
-          stateTransitionFixture.getRevision(),
+          stateTransitionFixture.getNonce(),
         );
 
       expect(stateTransition.toObject())

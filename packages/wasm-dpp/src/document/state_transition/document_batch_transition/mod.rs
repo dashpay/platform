@@ -14,7 +14,9 @@ use dpp::consensus::ConsensusError;
 use dpp::platform_value::BinaryData;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransition;
+use dpp::state_transition::documents_batch_transition::document_transition::{
+    DocumentTransition, DocumentTransitionV0Methods,
+};
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::StateTransition;
 use wasm_bindgen::prelude::*;
@@ -126,6 +128,11 @@ impl DocumentsBatchTransitionWasm {
         self.0.set_transitions(transitions);
 
         Ok(())
+    }
+
+    #[wasm_bindgen(js_name=setIdentityContractNonce)]
+    pub fn set_identity_contract_nonce(&mut self, nonce: u32) {
+        self.0.set_identity_contract_nonce(nonce as u64);
     }
 
     // #[wasm_bindgen(js_name=toJSON)]

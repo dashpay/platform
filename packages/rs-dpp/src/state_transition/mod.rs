@@ -271,7 +271,7 @@ impl StateTransition {
     }
 
     /// Returns state transition name
-    pub fn name(&self) -> String {
+    pub fn name(&self) -> &'static str {
         match self {
             Self::DataContractCreate(_) => "DataContractCreate",
             Self::DataContractUpdate(_) => "DataContractUpdate",
@@ -282,7 +282,6 @@ impl StateTransition {
             Self::IdentityUpdate(_) => "IdentityUpdate",
             Self::IdentityCreditTransfer(_) => "IdentityCreditTransfer",
         }
-        .to_string()
     }
 
     /// returns the signature as a byte-array
@@ -310,6 +309,11 @@ impl StateTransition {
     /// returns the signature as a byte-array
     pub fn owner_id(&self) -> Identifier {
         call_method!(self, owner_id)
+    }
+
+    /// returns the unique identifiers for the state transition
+    pub fn unique_identifiers(&self) -> Vec<String> {
+        call_method!(self, unique_identifiers)
     }
 
     /// set a new signature

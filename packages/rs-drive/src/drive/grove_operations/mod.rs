@@ -134,6 +134,9 @@ pub mod grove_batch_operations_costs;
 /// Clear a subtree in grovedb
 pub mod grove_clear;
 
+/// Proved path query in grovedb with a conditional query
+pub mod grove_get_proved_path_query_with_conditional;
+
 use grovedb_costs::CostContext;
 
 use grovedb::EstimatedLayerInformation;

@@ -8,12 +8,14 @@ use dpp::fee::fee_result::FeeResult;
 /// There are four possible outcomes of the state transition execution described by this enum
 #[derive(Debug, Clone)]
 pub enum StateTransitionExecutionResult {
-    // TODO: Error should also have fees
     /// State Transition is invalid, but we have a proved identity associated with it,
     /// and we can deduct processing fees calculated until this validation error happened
-    PaidConsensusError(ConsensusError),
-    /// State Transition is invalid, but we don't have a proved identity associated with it
-    /// so we can't deduct balance.
+    PaidConsensusError(ConsensusError, FeeResult),
+    /// State Transition is invalid, and is not paid for because we either :
+    ///     * don't have a proved identity associated with it so we can't deduct balance.
+    ///     * the state transition revision causes this transaction to not be valid
+    /// These state transitions can appear in prepare proposal but must never appear in process
+    /// proposal.
     UnpaidConsensusError(ConsensusError),
     /// State Transition execution failed due to the internal drive-abci error
     DriveAbciError(String),
@@ -41,8 +43,9 @@ impl StateTransitionsProcessingResult {
             StateTransitionExecutionResult::DriveAbciError(_) => {
                 self.failed_count += 1;
             }
-            StateTransitionExecutionResult::PaidConsensusError(_) => {
+            StateTransitionExecutionResult::PaidConsensusError(_, actual_fees) => {
                 self.invalid_paid_count += 1;
+                self.fees.checked_add_assign(actual_fees.clone())?;
             }
             StateTransitionExecutionResult::UnpaidConsensusError(_) => {
                 self.invalid_unpaid_count += 1;

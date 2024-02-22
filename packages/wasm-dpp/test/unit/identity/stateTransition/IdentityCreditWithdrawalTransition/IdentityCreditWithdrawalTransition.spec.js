@@ -62,10 +62,10 @@ describe('IdentityCreditWithdrawalTransition', () => {
     });
   });
 
-  describe('#getRevision', () => {
+  describe('#getNonce', () => {
     it('should return revision', () => {
-      expect(stateTransition.getRevision()).to.be.equal(
-        rawStateTransition.revision,
+      expect(stateTransition.getNonce()).to.be.equal(
+        rawStateTransition.nonce,
       );
     });
   });
@@ -82,7 +82,7 @@ describe('IdentityCreditWithdrawalTransition', () => {
         coreFeePerByte: stateTransition.getCoreFeePerByte(),
         pooling: stateTransition.getPooling(),
         outputScript: stateTransition.getOutputScript(),
-        revision: stateTransition.getRevision(),
+        nonce: stateTransition.getNonce(),
         signature: undefined,
         signaturePublicKeyId: undefined,
       });
@@ -99,7 +99,7 @@ describe('IdentityCreditWithdrawalTransition', () => {
         coreFeePerByte: stateTransition.getCoreFeePerByte(),
         pooling: stateTransition.getPooling(),
         outputScript: stateTransition.getOutputScript(),
-        revision: stateTransition.getRevision(),
+        nonce: stateTransition.getNonce(),
       });
     });
   });
@@ -116,7 +116,7 @@ describe('IdentityCreditWithdrawalTransition', () => {
         coreFeePerByte: stateTransition.getCoreFeePerByte(),
         pooling: stateTransition.getPooling(),
         outputScript: stateTransition.getOutputScript().toString('base64'),
-        revision: stateTransition.getRevision().toString(),
+        nonce: stateTransition.getNonce().toString(),
         signature: undefined,
         signaturePublicKeyId: undefined,
       });

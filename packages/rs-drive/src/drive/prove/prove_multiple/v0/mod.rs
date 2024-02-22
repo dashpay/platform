@@ -49,6 +49,10 @@ impl Drive {
                         path_queries
                             .push(Self::identity_all_keys_query(&identity_query.identity_id)?);
                     }
+                    IdentityProveRequestType::Revision => {
+                        path_queries
+                            .push(Self::identity_revision_query(&identity_query.identity_id));
+                    }
                 }
             }
             count += identity_queries.len();

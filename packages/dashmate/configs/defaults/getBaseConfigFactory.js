@@ -204,6 +204,7 @@ export default function getBaseConfigFactory(homeDir) {
               port: 26660,
             },
             mempool: {
+              cacheSize: 15000,
               size: 5000,
               maxTxsBytes: 1073741824,
             },

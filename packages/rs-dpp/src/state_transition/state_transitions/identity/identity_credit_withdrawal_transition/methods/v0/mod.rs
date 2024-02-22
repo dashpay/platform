@@ -1,6 +1,7 @@
 use crate::identity::core_script::CoreScript;
 use crate::identity::signer::Signer;
 use crate::identity::Identity;
+use crate::prelude::IdentityNonce;
 use crate::state_transition::{StateTransition, StateTransitionType};
 use crate::withdrawal::Pooling;
 use crate::ProtocolError;
@@ -15,6 +16,7 @@ pub trait IdentityCreditWithdrawalTransitionMethodsV0 {
         pooling: Pooling,
         core_fee_per_byte: u32,
         signer: S,
+        nonce: IdentityNonce,
         _platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError>;

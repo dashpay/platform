@@ -145,8 +145,18 @@ describe('Withdrawals', function withdrawalsTest() {
           status: 0,
         },
       );
+
+      const identityId = identity.getId();
+      const dataContractId = client.getApps().get('withdrawals').contractId;
+      const { identityContractNonce } = await client.getDAPIClient().platform
+        .getIdentityContractNonce(identityId, dataContractId);
+
       const stateTransition = client.platform.dpp.document.createStateTransition({
         create: [withdrawal],
+      }, {
+        [identityId.toString()]: {
+          [dataContractId.toString()]: identityContractNonce,
+        },
       });
 
       stateTransition.setSignaturePublicKeyId(1);

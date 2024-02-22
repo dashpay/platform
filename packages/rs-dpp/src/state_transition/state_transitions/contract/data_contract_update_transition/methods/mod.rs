@@ -12,6 +12,7 @@ use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
 
+use crate::prelude::IdentityNonce;
 use platform_version::version::PlatformVersion;
 
 impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransition {
@@ -19,6 +20,7 @@ impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransition {
         data_contract: DataContract,
         identity: &PartialIdentity,
         key_id: KeyID,
+        identity_contract_nonce: IdentityNonce,
         signer: &S,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
@@ -34,6 +36,7 @@ impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransition {
                 data_contract,
                 identity,
                 key_id,
+                identity_contract_nonce,
                 signer,
                 platform_version,
                 feature_version,

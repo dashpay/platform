@@ -46,4 +46,10 @@ impl StateTransitionLike for DocumentsBatchTransition {
             DocumentsBatchTransition::V0(transition) => transition.owner_id(),
         }
     }
+
+    fn unique_identifiers(&self) -> Vec<String> {
+        match self {
+            DocumentsBatchTransition::V0(transition) => transition.unique_identifiers(),
+        }
+    }
 }

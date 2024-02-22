@@ -254,6 +254,32 @@ class DriveClient {
       request.serializeBinary(),
     );
   }
+
+  /**
+   *  Fetch identity contract nonce
+   *
+   * @param {GetIdentityContractNonceRequest} request
+   * @return {Promise<Buffer>}
+   */
+  async fetchIdentityContractNonce(request) {
+    return this.request(
+      '/identity/contractNonce',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
+   *  Fetch identity nonce
+   *
+   * @param {GetIdentityNonceRequest} request
+   * @return {Promise<Buffer>}
+   */
+  async fetchIdentityNonce(request) {
+    return this.request(
+      '/identity/nonce',
+      request.serializeBinary(),
+    );
+  }
 }
 
 module.exports = DriveClient;

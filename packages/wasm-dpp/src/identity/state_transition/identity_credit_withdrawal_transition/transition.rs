@@ -124,14 +124,14 @@ impl IdentityCreditWithdrawalTransitionWasm {
             .set_output_script(CoreScript::from_bytes(output_script));
     }
 
-    #[wasm_bindgen(js_name=getRevision)]
-    pub fn get_revision(&self) -> u64 {
-        self.0.revision() as u64
+    #[wasm_bindgen(js_name=getNonce)]
+    pub fn get_nonce(&self) -> u64 {
+        self.0.nonce() as u64
     }
 
-    #[wasm_bindgen(js_name=setRevision)]
-    pub fn set_revision(&mut self, revision: u64) {
-        self.0.set_revision(revision);
+    #[wasm_bindgen(js_name=setNonce)]
+    pub fn set_nonce(&mut self, revision: u64) {
+        self.0.set_nonce(revision);
     }
 
     #[wasm_bindgen(js_name=toObject)]
@@ -214,8 +214,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
 
         js_sys::Reflect::set(
             &js_object,
-            &"revision".to_owned().into(),
-            &JsValue::from(object.revision),
+            &"nonce".to_owned().into(),
+            &JsValue::from(object.nonce),
         )?;
 
         Ok(js_object.into())
@@ -310,8 +310,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
 
         js_sys::Reflect::set(
             &js_object,
-            &"revision".to_owned().into(),
-            &JsValue::from(&format!("{}", object.revision)),
+            &"nonce".to_owned().into(),
+            &JsValue::from(&format!("{}", object.nonce)),
         )?;
 
         Ok(js_object.into())

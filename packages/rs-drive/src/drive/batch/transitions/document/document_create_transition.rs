@@ -1,6 +1,6 @@
 use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
-use crate::drive::batch::DriveOperation::DocumentOperation;
-use crate::drive::batch::{DocumentOperationType, DriveOperation};
+use crate::drive::batch::DriveOperation::{DocumentOperation, IdentityOperation};
+use crate::drive::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::DocumentOwnedInfo;
 use crate::drive::object_size_info::OwnedDocumentInfo;
@@ -25,13 +25,20 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
 
         let document_type_name = self.base().document_type_name().clone();
 
+        let identity_contract_nonce = self.base().identity_contract_nonce();
+
         let document =
             Document::try_from_owned_create_transition_action(self, owner_id, platform_version)?;
 
         let storage_flags = StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
 
-        Ok(vec![DocumentOperation(
-            DocumentOperationType::AddDocument {
+        Ok(vec![
+            IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
+                identity_id: owner_id.into_buffer(),
+                contract_id: data_contract_id.into_buffer(),
+                nonce: identity_contract_nonce,
+            }),
+            DocumentOperation(DocumentOperationType::AddDocument {
                 owned_document_info: OwnedDocumentInfo {
                     document_info: DocumentOwnedInfo((document, Some(Cow::Owned(storage_flags)))),
                     owner_id: Some(owner_id.into_buffer()),
@@ -39,7 +46,7 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
                 contract_id: data_contract_id,
                 document_type_name: Cow::Owned(document_type_name),
                 override_document: false,
-            },
-        )])
+            }),
+        ])
     }
 }

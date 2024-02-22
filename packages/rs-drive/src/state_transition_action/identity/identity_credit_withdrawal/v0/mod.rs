@@ -2,7 +2,7 @@ mod transformer;
 
 use dpp::document::Document;
 use dpp::identifier::Identifier;
-use dpp::prelude::Revision;
+use dpp::prelude::{IdentityNonce, Revision};
 
 use serde::{Deserialize, Serialize};
 
@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 pub struct IdentityCreditWithdrawalTransitionActionV0 {
     /// identity id
     pub identity_id: Identifier,
-    /// revision
-    pub revision: Revision,
+    /// nonce
+    pub nonce: IdentityNonce,
     /// prepared withdrawal document
     pub prepared_withdrawal_document: Document,
     /// amount

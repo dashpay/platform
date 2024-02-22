@@ -100,13 +100,25 @@ mod test {
         let config = DataContractConfig::default_for_version(platform_version)
             .expect("should create a default config");
 
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "a": {
+                    "type": "string",
+                    "maxLength": 10,
+                    "position": 0
+                }
+            },
+            "additionalProperties": false,
+        });
+
         let serialization_format = DataContractInSerializationFormatV0 {
             id: Identifier::random(),
             config,
             version: 0,
             owner_id: Default::default(),
             schema_defs: None,
-            document_schemas: Default::default(),
+            document_schemas: BTreeMap::from([("document_type_name".to_string(), schema.clone())]),
         };
 
         let mut data_contract = DataContractV0::try_from_platform_versioned(

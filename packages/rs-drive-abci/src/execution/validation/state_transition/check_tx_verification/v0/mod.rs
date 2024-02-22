@@ -9,11 +9,12 @@ use dpp::prelude::ConsensusValidationResult;
 
 use dpp::state_transition::{StateTransition};
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
+use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::processor::process_state_transition;
-use crate::execution::validation::state_transition::processor::v0::{StateTransitionSignatureValidationV0, StateTransitionStructureValidationV0};
+use crate::execution::validation::state_transition::processor::v0::{StateTransitionBalanceValidationV0, StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0, StateTransitionSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0};
 
 /// A trait for validating state transitions within a blockchain.
 pub(crate) trait StateTransitionCheckTxValidationV0 {
@@ -47,7 +48,33 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         platform_version,
                     )?;
 
-                let action = if state_transition.requires_state_to_validate_structure() {
+                // First we validate the basic structure
+                let result = state_transition.validate_basic_structure(platform_version)?;
+
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+
+                let result = state_transition.validate_nonces(
+                    &platform.into(),
+                    platform.block_info,
+                    None,
+                    platform_version,
+                )?;
+
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+
+                let action = if state_transition.requires_advance_structure_validation() {
                     let state_transition_action_result = state_transition.transform_into_action(
                         platform,
                         true,
@@ -61,24 +88,28 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                             ),
                         );
                     }
-                    Some(state_transition_action_result.into_data()?)
+                    let action = Some(state_transition_action_result.into_data()?);
+
+                    // Validating structure
+                    let result = state_transition.validate_advanced_structure_from_state(
+                        &platform.into(),
+                        action.as_ref(),
+                        platform_version,
+                    )?;
+
+                    if !result.is_valid() {
+                        return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                result.errors,
+                            ),
+                        );
+                    }
+                    action
                 } else {
                     None
                 };
 
-                // Validating structure
-                let result = state_transition.validate_structure(
-                    &platform.into(),
-                    action.as_ref(),
-                    platform.state.current_protocol_version_in_consensus(),
-                )?;
-                if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
-                }
+                // We want to validate the signature before we check that the signature security level is good.
 
                 let action = if state_transition
                     .requires_state_to_validate_identity_and_signatures()
@@ -122,7 +153,23 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         ),
                     );
                 }
-                let maybe_identity = result.into_data()?;
+                let mut maybe_identity = result.into_data()?;
+
+                let result = state_transition.validate_balance(
+                    maybe_identity.as_mut(),
+                    &platform.into(),
+                    platform.block_info,
+                    None,
+                    platform_version,
+                )?;
+
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
 
                 let action = if let Some(action) = action {
                     action
@@ -217,6 +264,11 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     )),
                 )
             }
+        }
+        _ => {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "CheckTxLevel must be first time check or recheck",
+            )))
         }
     }
 }

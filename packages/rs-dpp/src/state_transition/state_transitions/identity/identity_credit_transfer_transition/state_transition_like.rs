@@ -48,4 +48,10 @@ impl StateTransitionLike for IdentityCreditTransferTransition {
             IdentityCreditTransferTransition::V0(transition) => transition.owner_id(),
         }
     }
+
+    fn unique_identifiers(&self) -> Vec<String> {
+        match self {
+            IdentityCreditTransferTransition::V0(transition) => transition.unique_identifiers(),
+        }
+    }
 }

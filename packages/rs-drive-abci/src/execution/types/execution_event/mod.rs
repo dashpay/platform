@@ -13,7 +13,7 @@ use dpp::identity::PartialIdentity;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
 
-use crate::execution::types::execution_operation::ExecutionOperation;
+use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
@@ -27,10 +27,12 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
     PaidDriveEvent {
         /// The identity requesting the event
         identity: PartialIdentity,
+        /// The removed balance in the case of a transfer or withdrawal
+        removed_balance: Option<Credits>,
         /// the operations that the identity is requesting to perform
         operations: Vec<DriveOperation<'a>>,
         /// the execution operations that we must also pay for
-        execution_operations: Vec<ExecutionOperation>,
+        execution_operations: Vec<ValidationOperation>,
     },
     /// A drive event that is paid from an asset lock
     PaidFromAssetLockDriveEvent {
@@ -41,7 +43,7 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         /// the operations that should be performed
         operations: Vec<DriveOperation<'a>>,
         /// the execution operations that we must also pay for
-        execution_operations: Vec<ExecutionOperation>,
+        execution_operations: Vec<ValidationOperation>,
     },
     /// A drive event that is free
     FreeDriveEvent {
@@ -87,12 +89,47 @@ impl<'a> ExecutionEvent<'a> {
                     )))
                 }
             }
+            StateTransitionAction::IdentityCreditWithdrawalAction(identity_credit_withdrawal) => {
+                let removed_balance = identity_credit_withdrawal.amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                if let Some(identity) = identity {
+                    Ok(PaidDriveEvent {
+                        identity,
+                        removed_balance: Some(removed_balance),
+                        operations,
+                        execution_operations: execution_context.operations_consume(),
+                    })
+                } else {
+                    Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "partial identity should be present",
+                    )))
+                }
+            }
+            StateTransitionAction::IdentityCreditTransferAction(identity_credit_transfer) => {
+                let removed_balance = identity_credit_transfer.transfer_amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                if let Some(identity) = identity {
+                    Ok(PaidDriveEvent {
+                        identity,
+                        removed_balance: Some(removed_balance),
+                        operations,
+                        execution_operations: execution_context.operations_consume(),
+                    })
+                } else {
+                    Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "partial identity should be present",
+                    )))
+                }
+            }
             _ => {
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
                     Ok(PaidDriveEvent {
                         identity,
+                        removed_balance: None,
                         operations,
                         execution_operations: execution_context.operations_consume(),
                     })

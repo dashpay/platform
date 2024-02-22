@@ -4,6 +4,7 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use crate::error::Error;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::DataTriggerExecutionResult;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use crate::error::execution::ExecutionError;
 
 /// Creates a data trigger for handling document rejections.
 ///
@@ -24,13 +25,23 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 pub fn reject_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
 ) -> Result<DataTriggerExecutionResult, Error> {
-    let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
+    let data_contract_fetch_info = document_transition
+        .base()
+        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "expecting action to have a base",
+        )))?
+        .data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
     let mut result = DataTriggerExecutionResult::default();
 
     let err = DataTriggerConditionError::new(
         data_contract.id(),
-        document_transition.base().id(),
+        document_transition
+            .base()
+            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "expecting action to have a base",
+            )))?
+            .id(),
         "Action is not allowed".to_string(),
     );
 

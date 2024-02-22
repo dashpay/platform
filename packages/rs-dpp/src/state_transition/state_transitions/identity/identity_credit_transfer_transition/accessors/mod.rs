@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::prelude::Revision;
+use crate::prelude::{IdentityNonce, Revision};
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use platform_value::Identifier;
 pub use v0::*;
@@ -48,15 +48,15 @@ impl IdentityCreditTransferTransitionAccessorsV0 for IdentityCreditTransferTrans
         }
     }
 
-    fn set_revision(&mut self, revision: Revision) {
+    fn set_nonce(&mut self, nonce: IdentityNonce) {
         match self {
-            IdentityCreditTransferTransition::V0(transition) => transition.revision = revision,
+            IdentityCreditTransferTransition::V0(transition) => transition.nonce = nonce,
         }
     }
 
-    fn revision(&self) -> Revision {
+    fn nonce(&self) -> IdentityNonce {
         match self {
-            IdentityCreditTransferTransition::V0(transition) => transition.revision,
+            IdentityCreditTransferTransition::V0(transition) => transition.nonce,
         }
     }
 }

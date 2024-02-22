@@ -1,4 +1,4 @@
-mod methods;
+pub(crate) mod methods;
 mod operations;
 mod structs;
 
@@ -61,7 +61,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 14202000,
-                    processing_fee: 2364090,
+                    processing_fee: 2434150,
                     ..Default::default()
                 }
             );
@@ -121,7 +121,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 347382000,
-                    processing_fee: 9274850,
+                    processing_fee: 9344910,
                     ..Default::default()
                 }
             );
@@ -255,7 +255,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 513000,
-                    processing_fee: 1582060,
+                    processing_fee: 1452800,
                     ..Default::default()
                 }
             );
@@ -425,7 +425,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 715520,
+                    processing_fee: 648660,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }

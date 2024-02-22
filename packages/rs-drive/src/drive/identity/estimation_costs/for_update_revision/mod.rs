@@ -47,7 +47,7 @@ impl Drive {
                 Ok(())
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "get_cached_contract_with_fetch_info".to_string(),
+                method: "add_estimation_costs_for_update_revision".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

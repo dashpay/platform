@@ -1,7 +1,7 @@
 mod v0;
 
 use crate::identity::{KeyID, TimestampMillis};
-use crate::prelude::Revision;
+use crate::prelude::{IdentityNonce, Revision};
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_value::Identifier;
@@ -29,6 +29,18 @@ impl IdentityUpdateTransitionAccessorsV0 for IdentityUpdateTransition {
     fn revision(&self) -> Revision {
         match self {
             IdentityUpdateTransition::V0(transition) => transition.revision(),
+        }
+    }
+
+    fn set_nonce(&mut self, nonce: IdentityNonce) {
+        match self {
+            IdentityUpdateTransition::V0(transition) => transition.set_nonce(nonce),
+        }
+    }
+
+    fn nonce(&self) -> IdentityNonce {
+        match self {
+            IdentityUpdateTransition::V0(transition) => transition.nonce(),
         }
     }
 

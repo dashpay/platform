@@ -23,6 +23,7 @@ mod fields;
 mod identity_facade;
 #[cfg(feature = "factories")]
 pub mod identity_factory;
+pub mod identity_nonce;
 mod methods;
 #[cfg(feature = "random-identities")]
 pub mod random;

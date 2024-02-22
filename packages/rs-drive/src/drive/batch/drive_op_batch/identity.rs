@@ -4,8 +4,9 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
-use dpp::prelude::Revision;
+use dpp::prelude::{IdentityNonce, Revision};
 
+use crate::drive::identity::update::methods::merge_identity_nonce::MergeIdentityContractNonceResultToResult;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -75,6 +76,24 @@ pub enum IdentityOperationType {
         /// The revision we are updating to
         revision: Revision,
     },
+
+    /// Updates an identities nonce for a specific contract.
+    UpdateIdentityNonce {
+        /// The revision id
+        identity_id: [u8; 32],
+        /// The nonce we are updating to
+        nonce: IdentityNonce,
+    },
+
+    /// Updates an identities nonce for a specific contract.
+    UpdateIdentityContractNonce {
+        /// The revision id
+        identity_id: [u8; 32],
+        /// The contract id
+        contract_id: [u8; 32],
+        /// The nonce we are updating to
+        nonce: IdentityNonce,
+    },
 }
 
 impl DriveLowLevelOperationConverter for IdentityOperationType {
@@ -88,7 +107,6 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let _drive_version = &platform_version.drive;
         match self {
             IdentityOperationType::AddNewIdentity {
                 identity,
@@ -167,6 +185,35 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 estimated_costs_only_with_layer_info,
                 platform_version,
             )?]),
+            IdentityOperationType::UpdateIdentityContractNonce {
+                identity_id,
+                contract_id,
+                nonce,
+            } => {
+                let (result, operations) = drive.merge_identity_contract_nonce_operations(
+                    identity_id,
+                    contract_id,
+                    nonce,
+                    block_info,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                result.to_result()?;
+                Ok(operations)
+            }
+            IdentityOperationType::UpdateIdentityNonce { identity_id, nonce } => {
+                let (result, operations) = drive.merge_identity_nonce_operations(
+                    identity_id,
+                    nonce,
+                    block_info,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                result.to_result()?;
+                Ok(operations)
+            }
         }
     }
 }

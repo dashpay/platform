@@ -1,5 +1,6 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
+use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
@@ -10,6 +11,7 @@ impl DocumentDeleteTransition {
     pub fn from_document(
         document: Document,
         document_type: DocumentTypeRef,
+        identity_contract_nonce: IdentityNonce,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
         base_feature_version: Option<FeatureVersion>,
@@ -25,6 +27,7 @@ impl DocumentDeleteTransition {
             0 => Ok(DocumentDeleteTransitionV0::from_document(
                 document,
                 document_type,
+                identity_contract_nonce,
                 platform_version,
                 base_feature_version,
             )?

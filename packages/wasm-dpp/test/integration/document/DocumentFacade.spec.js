@@ -96,8 +96,15 @@ describe('DocumentFacade', () => {
 
   describe('createStateTransition', () => {
     it('should create DocumentsBatchTransition with passed documents - Rust', () => {
+      const identityId = documents[0].getOwnerId();
+      const contractId = documents[0].getDataContractId();
+
       const result = dpp.document.createStateTransition({
         create: documents,
+      }, {
+        [identityId.toString()]: {
+          [contractId.toString()]: 1,
+        },
       });
 
       expect(result).to.be.instanceOf(DocumentsBatchTransition);

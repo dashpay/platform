@@ -84,6 +84,7 @@ export async function createAndAttachTransportMocksToClient(client, sinon) {
   // Mock dapi client for platform endpoints
   client.dapiClient = dapiClientMock;
   client.platform.fetcher.dapiClient = dapiClientMock;
+  client.platform.nonceManager.dapiClient = dapiClientMock;
 
   // Starting account sync
   const accountPromise = client.wallet.getAccount();

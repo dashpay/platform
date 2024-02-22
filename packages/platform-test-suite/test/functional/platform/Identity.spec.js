@@ -66,7 +66,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(4028);
+      expect(broadcastError.getCause().getCode()).to.equal(4029);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
         InvalidAssetLockProofValueError,
       );

@@ -11,7 +11,7 @@ use dpp::version::PlatformVersion;
 pub mod signature_verification_operation;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExecutionOperation {
+pub enum ValidationOperation {
     DoubleSha256,
     SignatureVerification(SignatureVerificationOperation),
     PrecalculatedOperation(FeeResult),
@@ -27,16 +27,16 @@ pub trait OperationLike {
     fn storage_cost(&self, platform_version: &PlatformVersion) -> Result<Credits, Error>;
 }
 
-impl ExecutionOperation {
+impl ValidationOperation {
     pub fn add_many_to_fee_result(
-        execution_operations: &[ExecutionOperation],
+        execution_operations: &[ValidationOperation],
         fee_result: &mut FeeResult,
         epoch: &Epoch,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         for execution_operation in execution_operations {
             match execution_operation {
-                ExecutionOperation::SignatureVerification(signature_verification_operation) => {
+                ValidationOperation::SignatureVerification(signature_verification_operation) => {
                     fee_result.processing_fee = fee_result
                         .processing_fee
                         .checked_add(
@@ -47,10 +47,10 @@ impl ExecutionOperation {
                             "execution processing fee overflow error",
                         ))?;
                 }
-                ExecutionOperation::PrecalculatedOperation(precalculated_operation) => {
+                ValidationOperation::PrecalculatedOperation(precalculated_operation) => {
                     fee_result.checked_add_assign(precalculated_operation.clone())?;
                 }
-                ExecutionOperation::DoubleSha256 => {
+                ValidationOperation::DoubleSha256 => {
                     fee_result.processing_fee = fee_result
                         .processing_fee
                         .checked_add(epoch.cost_for_known_cost_item(DoubleSHA256))

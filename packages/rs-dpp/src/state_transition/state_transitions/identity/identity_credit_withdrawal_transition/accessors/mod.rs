@@ -4,7 +4,7 @@ use crate::identity::core_script::CoreScript;
 use platform_value::Identifier;
 pub use v0::*;
 
-use crate::prelude::Revision;
+use crate::prelude::{IdentityNonce, Revision};
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
 use crate::withdrawal::Pooling;
@@ -38,15 +38,15 @@ impl IdentityCreditWithdrawalTransitionAccessorsV0 for IdentityCreditWithdrawalT
         }
     }
 
-    fn set_revision(&mut self, revision: Revision) {
+    fn set_nonce(&mut self, nonce: IdentityNonce) {
         match self {
-            IdentityCreditWithdrawalTransition::V0(transition) => transition.revision = revision,
+            IdentityCreditWithdrawalTransition::V0(transition) => transition.nonce = nonce,
         }
     }
 
-    fn revision(&self) -> Revision {
+    fn nonce(&self) -> IdentityNonce {
         match self {
-            IdentityCreditWithdrawalTransition::V0(transition) => transition.revision,
+            IdentityCreditWithdrawalTransition::V0(transition) => transition.nonce,
         }
     }
 

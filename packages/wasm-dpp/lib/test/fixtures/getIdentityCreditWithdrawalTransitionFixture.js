@@ -14,7 +14,7 @@ module.exports = function getIdentityCreditWithdrawalTransitionFixture() {
   stateTransition.setPooling(0);
   stateTransition.setOutputScript(Script.buildPublicKeyHashOut(address).toBuffer());
   // eslint-disable-next-line
-  stateTransition.setRevision(BigInt(1));
+  stateTransition.setNonce(BigInt(1));
 
   return stateTransition;
 };

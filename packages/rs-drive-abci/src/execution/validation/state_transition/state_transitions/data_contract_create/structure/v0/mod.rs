@@ -1,5 +1,8 @@
 use crate::error::Error;
-use dpp::consensus::basic::data_contract::InvalidDataContractIdError;
+use dpp::consensus::basic::data_contract::{
+    DataContractEmptySchemaError, InvalidDataContractIdError,
+};
+use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;

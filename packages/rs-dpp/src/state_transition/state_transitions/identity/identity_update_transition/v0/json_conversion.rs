@@ -25,6 +25,7 @@ mod test {
         let transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: generate_random_identifier_struct(),
             revision: 0,
+            nonce: 1,
             add_public_keys: vec![public_key.into()],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,

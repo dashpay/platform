@@ -1,6 +1,7 @@
 mod v0;
 
 use crate::data_contract::DataContract;
+use std::collections::BTreeMap;
 
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -119,9 +120,12 @@ impl SpecializedDocumentFactory {
                 Vec<(Document, DocumentTypeRef<'a>, Bytes32)>,
             ),
         >,
+        nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>, //IdentityID/ContractID -> nonce
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         match self {
-            SpecializedDocumentFactory::V0(v0) => v0.create_state_transition(documents_iter),
+            SpecializedDocumentFactory::V0(v0) => {
+                v0.create_state_transition(documents_iter, nonce_counter)
+            }
         }
     }
 

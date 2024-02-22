@@ -453,6 +453,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '1.0.0-dev.5': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.mempool.cacheSize = base.get('platform.drive.tenderdash.mempool.cacheSize');
+          });
+
+        return configFile;
+      },
     };
   }
 

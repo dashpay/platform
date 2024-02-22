@@ -17,7 +17,7 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
-const MAX_PUBLIC_KEYS: usize = 10;
+const MAX_PUBLIC_KEYS: usize = 6;
 
 lazy_static! {
     static ref ALLOWED_SECURITY_LEVELS: HashMap<Purpose, Vec<SecurityLevel>> = {

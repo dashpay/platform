@@ -4,7 +4,7 @@ use bincode::{Decode, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 
-use crate::prelude::Identifier;
+use crate::prelude::{Identifier, IdentityNonce};
 use document_base_transition::DocumentBaseTransition;
 
 pub mod action_type;
@@ -51,6 +51,9 @@ pub trait DocumentTransitionV0Methods {
     fn data(&self) -> Option<&BTreeMap<String, Value>>;
     /// get the revision of transition if exits
     fn revision(&self) -> Option<Revision>;
+
+    /// get the identity contract nonce
+    fn identity_contract_nonce(&self) -> IdentityNonce;
     #[cfg(test)]
     /// Inserts the dynamic property into the document
     fn insert_dynamic_property(&mut self, property_name: String, value: Value);
@@ -61,6 +64,9 @@ pub trait DocumentTransitionV0Methods {
 
     // sets revision of the transition
     fn set_revision(&mut self, revision: Revision);
+
+    // sets identity contract nonce
+    fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce);
 }
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
@@ -332,6 +338,22 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Create(t) => Some(t.data_mut()),
             DocumentTransition::Replace(t) => Some(t.data_mut()),
             DocumentTransition::Delete(_) => None,
+        }
+    }
+
+    fn identity_contract_nonce(&self) -> IdentityNonce {
+        match self {
+            DocumentTransition::Create(t) => t.base().identity_contract_nonce(),
+            DocumentTransition::Replace(t) => t.base().identity_contract_nonce(),
+            DocumentTransition::Delete(t) => t.base().identity_contract_nonce(),
+        }
+    }
+
+    fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce) {
+        match self {
+            DocumentTransition::Create(t) => t.base_mut().set_identity_contract_nonce(nonce),
+            DocumentTransition::Replace(t) => t.base_mut().set_identity_contract_nonce(nonce),
+            DocumentTransition::Delete(t) => t.base_mut().set_identity_contract_nonce(nonce),
         }
     }
 }

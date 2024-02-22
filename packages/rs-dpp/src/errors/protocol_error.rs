@@ -99,6 +99,9 @@ pub enum ProtocolError {
     #[error(transparent)]
     StateTransitionError(#[from] StateTransitionError),
 
+    #[error("Invalid State Transition Type: {0}")]
+    InvalidStateTransitionType(String),
+
     #[error(transparent)]
     StructureError(#[from] StructureError),
 

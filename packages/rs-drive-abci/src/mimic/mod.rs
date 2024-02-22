@@ -2,7 +2,6 @@ use crate::abci::server::AbciApplication;
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
 use crate::mimic::test_quorum::TestQuorumInfo;
