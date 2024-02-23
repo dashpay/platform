@@ -17,6 +17,8 @@ use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation
 use crate::state_transition::StateTransition;
 use crate::version::PlatformVersion;
 
+use tracing::info;
+
 impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity_with_signer<S: Signer>(

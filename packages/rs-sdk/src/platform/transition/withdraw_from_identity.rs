@@ -5,7 +5,6 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::signer::Signer;
 use dpp::identity::Identity;
-use dpp::prelude::IdentityNonce;
 
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
@@ -20,6 +19,7 @@ use rs_dapi_client::{DapiRequest, RequestSettings};
 
 #[async_trait::async_trait]
 pub trait WithdrawFromIdentity {
+    /// Function to withdraw credits from an identity. Returns the final identity balance.
     async fn withdraw<S: Signer + Send>(
         &self,
         sdk: &Sdk,
@@ -42,7 +42,7 @@ impl WithdrawFromIdentity for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
-        let new_identity_contract_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
+        let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
         let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
             self,
             CoreScript::new(address.script_pubkey()),
@@ -50,7 +50,7 @@ impl WithdrawFromIdentity for Identity {
             Pooling::Never,
             core_fee_per_byte.unwrap_or(1),
             signer,
-            new_identity_contract_nonce,
+            new_identity_nonce,
             sdk.version(),
             None,
         )?;

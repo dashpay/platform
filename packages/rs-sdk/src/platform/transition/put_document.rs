@@ -25,9 +25,9 @@ pub struct PutSettings {
 }
 
 #[async_trait::async_trait]
-/// A trait for putting an identity to platform
+/// A trait for putting a document to platform
 pub trait PutDocument<S: Signer> {
-    /// Puts an identity on platform
+    /// Puts a document on platform
     /// setting settings to `None` sets default connection behavior
     async fn put_to_platform(
         &self,

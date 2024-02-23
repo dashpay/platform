@@ -1,6 +1,7 @@
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 
 use platform_value::Bytes32;
+use tracing::info;
 
 use crate::{data_contract::DataContract, identity::KeyID, NonConsensusError, ProtocolError};
 
@@ -33,15 +34,19 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
             identity.id,
             entropy,
         ));
+
         data_contract.set_owner_id(identity.id);
+
         let transition = DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
             data_contract: data_contract.try_into_platform_versioned(platform_version)?,
-            entropy: Default::default(),
+            entropy: entropy, // Why was this default before? It would produce a mismatched contract ID error
             signature_public_key_id: key_id,
             signature: Default::default(),
         });
+
         let mut state_transition: StateTransition = transition.into();
         let value = state_transition.signable_bytes()?;
+
         let public_key =
             identity
                 .loaded_public_keys
@@ -57,6 +62,7 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
                 "expected security level requirements".to_string(),
             ),
         )?;
+
         if !security_level_requirements.contains(&public_key.security_level()) {
             return Err(ProtocolError::ConsensusError(Box::new(
                 SignatureError::InvalidSignaturePublicKeySecurityLevelError(
@@ -69,7 +75,16 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
             )));
         }
 
-        state_transition.set_signature(signer.sign(public_key, &value)?);
+        // There was an error here where the public key supplied was not one belonging to the signer.
+        match signer.sign(public_key, &value) {
+            Ok(signature) => {
+                state_transition.set_signature(signature);
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        }
+
         Ok(state_transition)
     }
 }
