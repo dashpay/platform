@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::abci::app::{PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
@@ -13,7 +15,7 @@ use dpp::version::TryIntoPlatformVersioned;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{ExecTxResult, TxRecord};
-use tenderdash_abci::proto::types::CoreChainLock;
+use tenderdash_abci::proto::types::{ConsensusParams, CoreChainLock};
 
 pub fn prepare_proposal<'a, A, C>(
     app: &A,
@@ -174,6 +176,13 @@ where
             }),
     );
 
+    // TODO: move to a better place :)
+    let consensus_param_updates = get_consensus_params_update(
+        &app.platform().config.abci.consensus_params_dir,
+        request.height,
+    )
+    .map_err(|e| e.to_string())?;
+
     let response = proto::ResponsePrepareProposal {
         tx_results,
         app_hash: app_hash.to_vec(),
@@ -184,8 +193,7 @@ where
             signature: chain_lock.signature.to_bytes().to_vec(),
         }),
         validator_set_update,
-        // TODO: implement consensus param updates
-        consensus_param_updates: None,
+        consensus_param_updates,
     };
 
     let mut block_execution_context_guard = app.platform().block_execution_context.write().unwrap();
@@ -211,4 +219,75 @@ where
     );
 
     Ok(response)
+}
+
+/// Determine consensus params that shall be returned at provided height
+///
+/// If a file `$height.json` is found in `consensus_params_dir` directory, it will be returned.
+/// Otherwise, returns None.
+///
+/// # Arguments
+///
+/// * `consensus_params_dir` - Directory where consensus params are stored; if empty string, returns None
+/// * `height` - Height for which consensus params are requested
+///
+/// # Returns
+///
+/// * `Ok(Some(ConsensusParams))` - If file with consensus params for provided height is found
+/// * `Ok(None)` - If file with consensus params for provided height is not found
+/// * `Err(io::Error)` - If there was an error reading the file
+///
+// TODO: Move this to correct place
+fn get_consensus_params_update(
+    consensus_params_dir: &str,
+    height: i64,
+) -> Result<Option<ConsensusParams>, std::io::Error> {
+    if consensus_params_dir.is_empty() {
+        return Ok(None);
+    }
+    let file_path = PathBuf::from(consensus_params_dir);
+    file_path.to_path_buf().push(format!("{}.json", height));
+
+    // check if file exists
+    if !std::path::Path::new(&file_path).exists() {
+        return Ok(None);
+    }
+
+    let rdr = std::fs::File::open(file_path)?;
+    serde_json::from_reader(rdr).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+}
+
+#[cfg(test)]
+mod test {
+    use std::path::PathBuf;
+
+    use tenderdash_abci::proto::types::{BlockParams, ConsensusParams};
+
+    #[test]
+    fn test_get_consensus_params_update() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let consensus_params_dir = temp_dir.path().to_str().unwrap().to_string();
+
+        let height = 123456;
+        let file_path = PathBuf::from(&consensus_params_dir);
+        file_path.to_path_buf().push(format!("{}.json", height));
+
+        let consensus_params = ConsensusParams {
+            block: Some(BlockParams {
+                max_gas: 123457,
+                max_bytes: 4234524563,
+            }),
+            ..Default::default()
+        };
+
+        let file = std::fs::File::create(file_path).unwrap();
+        serde_json::to_writer(file, &consensus_params).unwrap();
+        drop(file);
+
+        // display the file
+        println!("{}", std::fs::read_to_string(file_path).unwrap());
+
+        let result = super::get_consensus_params_update(&consensus_params_dir, height).unwrap();
+        assert_eq!(result, Some(consensus_params));
+    }
 }

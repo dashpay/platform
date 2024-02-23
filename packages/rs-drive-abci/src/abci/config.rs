@@ -43,6 +43,15 @@ pub struct AbciConfig {
     // Note it is parsed directly in PlatformConfig::from_env() so here we just set defaults.
     #[serde(default)]
     pub log: crate::logging::LogConfigs,
+
+    /// Directory where files with consensus params updates for a given height, such as `H.json`, are
+    /// stored, where `H` is the height of the block for which the consensus params are sent, for example `123456`.
+    ///
+    /// If empty or not set, consensus params updates are not supported.
+    ///
+    /// Note that consensus params sent at a height H will be applied at height H+1.
+    #[serde(default)]
+    pub consensus_params_dir: String,
 }
 
 impl AbciConfig {
@@ -65,6 +74,7 @@ impl Default for AbciConfig {
             genesis_core_height: AbciConfig::default_genesis_core_height(),
             chain_id: "chain_id".to_string(),
             log: Default::default(),
+            consensus_params_dir: Default::default(),
         }
     }
 }
