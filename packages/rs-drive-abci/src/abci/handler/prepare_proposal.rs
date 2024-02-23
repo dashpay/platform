@@ -238,7 +238,7 @@ where
 /// * `Err(io::Error)` - If there was an error reading the file
 ///
 // TODO: Move this to correct place
-fn get_consensus_params_update(
+pub(super) fn get_consensus_params_update(
     consensus_params_dir: &str,
     height: i64,
 ) -> Result<Option<ConsensusParams>, std::io::Error> {
