@@ -55,7 +55,7 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
     "tracing-log",
 ], optional = false }
 atty = { version = "0.2.14", optional = false }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "81d28aa0b15fc0844dfa7f7251f6949f6c6c405a", features = [
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "47d4105a49a4a332d5578a91371333686c7c5b1a", features = [
     "grpc-server",
 ] }
 thread-priority = "0.15.1"
