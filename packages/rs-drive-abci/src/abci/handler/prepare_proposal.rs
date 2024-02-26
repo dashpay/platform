@@ -245,8 +245,8 @@ pub(super) fn get_consensus_params_update(
     if consensus_params_dir.is_empty() {
         return Ok(None);
     }
-    let file_path = PathBuf::from(consensus_params_dir);
-    file_path.to_path_buf().push(format!("{}.json", height));
+    let mut file_path = PathBuf::from(consensus_params_dir);
+    file_path.push(format!("{}.json", height));
 
     // check if file exists
     if !std::path::Path::new(&file_path).exists() {
