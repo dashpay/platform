@@ -91,4 +91,8 @@ pub enum AbciError {
     /// Generic with code should only be used in tests
     #[error("invalid state transition error: {0}")]
     InvalidStateTransition(#[from] ConsensusError),
+
+    /// Error occurred during update of consensus params
+    #[error("error occurred during update of consensus params: {0}")]
+    ConsensusParams(String),
 }

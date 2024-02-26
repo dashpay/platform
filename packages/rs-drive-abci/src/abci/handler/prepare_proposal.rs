@@ -181,7 +181,7 @@ where
         &app.platform().config.abci.consensus_params_dir,
         request.height,
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| Error::Abci(AbciError::ConsensusParams(e.to_string())))?;
 
     let response = proto::ResponsePrepareProposal {
         tx_results,
