@@ -81,6 +81,7 @@ derive_more = "0.99.17"
 moka = { version = "0.11.1" }
 async-trait = "0.1.77"
 num_cpus = "1.16.0"
+console-subscriber = { version = "0.2.0", optional = true }
 
 [dev-dependencies]
 base64 = "0.20.0"
@@ -107,9 +108,11 @@ rocksdb = { version = "0.21.0" }
 integer-encoding = { version = "4.0.0" }
 
 [features]
-default = ["server", "mocks"]
+# TODO: Remove console for production
+default = ["server", "mocks", "console"]
 server = ["clap", "dotenvy"]
 mocks = ["mockall", "drive/fixtures-and-mocks"]
+console = ["console-subscriber"]
 
 
 [[bin]]

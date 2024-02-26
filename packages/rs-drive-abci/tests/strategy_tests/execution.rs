@@ -676,8 +676,8 @@ pub(crate) fn create_chain_for_strategy(
     config: PlatformConfig,
     rng: StdRng,
 ) -> ChainExecutionOutcome {
-    let abci_application =
-        FullAbciApplication::new(platform).expect("expected new abci application");
+    let abci_application = FullAbciApplication::new(platform);
+
     let seed = strategy
         .failure_testing
         .as_ref()

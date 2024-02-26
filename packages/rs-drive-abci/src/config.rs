@@ -27,12 +27,11 @@
 // DEALINGS IN THE SOFTWARE.
 
 use dashcore_rpc::json::QuorumType;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::config::DriveConfig;
-use serde::{de::DeserializeOwned, Deserialize, Serialize, Serializer};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::logging::LogConfigs;
 use crate::{abci::config::AbciConfig, error::Error};

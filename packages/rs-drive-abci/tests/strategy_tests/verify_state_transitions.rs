@@ -1,5 +1,5 @@
 use dapi_grpc::platform::v0::get_proofs_request::{get_proofs_request_v0, GetProofsRequestV0};
-use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
+use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -7,7 +7,6 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::Document;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
-use dapi_grpc::Message;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
@@ -17,7 +16,6 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use drive::state_transition_action::StateTransitionAction;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use drive_abci::platform_types::platform::PlatformRef;
-use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
@@ -111,25 +109,19 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         .push(get_proofs_request_v0::ContractRequest {
                             contract_id: data_contract_create.data_contract_ref().id().to_vec(),
                         });
+
                     let versioned_request = GetProofsRequest {
                         version: Some(get_proofs_request::Version::V0(proofs_request)),
                     };
+
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
 
-                    let response_proof =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response")
-                            .proof_owned()
-                            .expect("proof should be present");
+                    let response = result.into_data().expect("expected queries to be valid");
+
+                    let response_proof = response.proof_owned().expect("expected to get proof");
 
                     // let fetched_contract = abci_app
                     //     .platform.drive.fetch_contract(data_contract_create.data_contract_ref().id().into_buffer(), None, None, None, platform_version).unwrap().unwrap();
@@ -157,7 +149,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     } else {
                         //there is the possibility that the state transition was not executed because it already existed,
                         // we can discount that for now in tests
-                        assert!(contract.is_none(),)
+                        assert!(contract.is_none())
                     }
                 }
                 StateTransitionAction::DataContractUpdateAction(data_contract_update) => {
@@ -171,18 +163,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
-
-                    let response =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response");
+                    let response = result.into_data().expect("expected queries to be valid");
 
                     let response_proof = response.proof_owned().expect("expected to get proof");
 
@@ -242,18 +225,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
-
-                    let response =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response");
+                    let response = result.into_data().expect("expected queries to be valid");
 
                     let response_proof = response.proof_owned().expect("proof should be present");
 
@@ -388,18 +362,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
-
-                    let response =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response");
+                    let response = result.into_data().expect("expected queries to be valid");
 
                     let response_proof = response.proof_owned().expect("proof should be present");
 
@@ -442,20 +407,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
+                    let response = result.into_data().expect("expected queries to be valid");
 
-                    let response_proof =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response")
-                            .proof_owned()
-                            .expect("proof should be present");
+                    let response_proof = response.proof_owned().expect("proof should be present");
 
                     // we expect to get an identity that matches the state transition
                     let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
@@ -504,21 +460,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, platform_version)
                         .expect("expected to query proofs");
 
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
+                    let response = result.into_data().expect("expected queries to be valid");
 
-                    let response_proof =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response")
-                            .proof_owned()
-                            .expect("proof should be present");
+                    let response_proof = response.proof_owned().expect("proof should be present");
 
                     // we expect to get an identity that matches the state transition
                     let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
@@ -552,20 +499,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
+                    let response = result.into_data().expect("expected queries to be valid");
 
-                    let response_proof =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response")
-                            .proof_owned()
-                            .expect("proof should be present");
+                    let response_proof = response.proof_owned().expect("proof should be present");
 
                     // we expect to get an identity that matches the state transition
                     let (root_hash, identity) = Drive::verify_identity_keys_by_identity_id(
@@ -623,20 +561,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
+                    let response = result.into_data().expect("expected queries to be valid");
 
-                    let response_proof =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response")
-                            .proof_owned()
-                            .expect("proof should be present");
+                    let response_proof = response.proof_owned().expect("proof should be present");
 
                     // we expect to get an identity that matches the state transition
                     let (root_hash_identity, _balance_identity) =

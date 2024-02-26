@@ -3,8 +3,9 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identity_keys_request::GetIdentityKeysRequestV0;
-use dapi_grpc::platform::v0::get_identity_keys_response::GetIdentityKeysResponseV0;
-use dapi_grpc::platform::v0::{get_identity_keys_response, GetIdentityKeysResponse, Proof};
+use dapi_grpc::platform::v0::get_identity_keys_response::{
+    get_identity_keys_response_v0, GetIdentityKeysResponseV0,
+};
 use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use drive::error::query::QuerySyntaxError;
@@ -79,7 +80,7 @@ impl<C> Platform<C> {
             prove,
         }: GetIdentityKeysRequestV0,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetIdentityKeysResponse>, Error> {
+    ) -> Result<QueryValidationResult<GetIdentityKeysResponseV0>, Error> {
         let identity_id: Identifier = check_validation_result_with_data!(identity_id
             .try_into()
             .map_err(|_| QueryError::InvalidArgument(
@@ -139,33 +140,252 @@ impl<C> Platform<C> {
 
             let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
 
-            GetIdentityKeysResponse {
-                version: Some(get_identity_keys_response::Version::V0(GetIdentityKeysResponseV0 {
-                    result: Some(get_identity_keys_response::get_identity_keys_response_v0::Result::Proof(proof)),
-                    metadata: Some(metadata),
-                })),
+            GetIdentityKeysResponseV0 {
+                result: Some(get_identity_keys_response_v0::Result::Proof(proof)),
+                metadata: Some(metadata),
             }
         } else {
             let keys: SerializedKeyVec =
                 self.drive
                     .fetch_identity_keys(key_request, None, platform_version)?;
 
-            GetIdentityKeysResponse {
-                version: Some(get_identity_keys_response::Version::V0(
-                    GetIdentityKeysResponseV0 {
-                        result: Some(
-                            get_identity_keys_response::get_identity_keys_response_v0::Result::Keys(
-                                get_identity_keys_response::get_identity_keys_response_v0::Keys {
-                                    keys_bytes: keys,
-                                },
-                            ),
-                        ),
-                        metadata: Some(self.response_metadata_v0()),
-                    },
+            GetIdentityKeysResponseV0 {
+                result: Some(get_identity_keys_response_v0::Result::Keys(
+                    get_identity_keys_response_v0::Keys { keys_bytes: keys },
                 )),
+                metadata: Some(self.response_metadata_v0()),
             }
         };
 
         Ok(QueryValidationResult::new_with_data(response))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::{assert_invalid_identifier, setup_platform};
+    use dapi_grpc::platform::v0::key_request_type::Request;
+    use dapi_grpc::platform::v0::{AllKeys, KeyRequestType, SearchKey, SecurityLevelMap};
+
+    #[test]
+    fn test_invalid_identity_id() {
+        let (platform, version) = setup_platform();
+
+        let request = GetIdentityKeysRequestV0 {
+            identity_id: vec![0; 8],
+            request_type: None,
+            limit: None,
+            offset: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_keys_v0(request, version)
+            .expect("expected query to succeed");
+
+        assert_invalid_identifier(result);
+    }
+
+    #[test]
+    fn test_invalid_limit_u16_overflow() {
+        let (platform, version) = setup_platform();
+
+        let request = GetIdentityKeysRequestV0 {
+            identity_id: vec![0; 32],
+            request_type: None,
+            limit: Some(u32::MAX),
+            offset: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_keys_v0(request, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::InvalidParameter(msg))] if msg == "limit out of bounds"
+        ));
+    }
+
+    #[test]
+    fn test_invalid_limit_max() {
+        let (platform, version) = setup_platform();
+
+        let request = GetIdentityKeysRequestV0 {
+            identity_id: vec![0; 32],
+            request_type: None,
+            limit: Some((platform.config.drive.max_query_limit + 1) as u32),
+            offset: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_keys_v0(request, version)
+            .expect("expected query to succeed");
+
+        let error_message = format!(
+            "limit greater than max limit {}",
+            platform.config.drive.max_query_limit
+        );
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::InvalidLimit(msg))] if msg == &error_message
+        ));
+    }
+
+    #[test]
+    fn test_invalid_offset_u16_overflow() {
+        let (platform, version) = setup_platform();
+
+        let request = GetIdentityKeysRequestV0 {
+            identity_id: vec![0; 32],
+            request_type: None,
+            limit: None,
+            offset: Some(u32::MAX),
+            prove: false,
+        };
+
+        let result = platform
+            .query_keys_v0(request, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::InvalidParameter(msg))] if msg == "offset out of bounds"
+        ));
+    }
+
+    #[test]
+    fn test_missing_request_type() {
+        let (platform, version) = setup_platform();
+
+        let request = GetIdentityKeysRequestV0 {
+            identity_id: vec![0; 32],
+            request_type: None,
+            limit: None,
+            offset: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_keys_v0(request, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::InvalidParameter(msg))] if msg == "key request must be defined"
+        ));
+    }
+
+    #[test]
+    fn test_missing_request() {
+        let (platform, version) = setup_platform();
+
+        let request = GetIdentityKeysRequestV0 {
+            identity_id: vec![0; 32],
+            request_type: Some(KeyRequestType { request: None }),
+            limit: None,
+            offset: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_keys_v0(request, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::InvalidParameter(msg))] if msg == "key request must be defined"
+        ));
+    }
+
+    #[test]
+    fn test_invalid_key_request_type() {
+        let (platform, version) = setup_platform();
+
+        let request = GetIdentityKeysRequestV0 {
+            identity_id: vec![0; 32],
+            request_type: Some(KeyRequestType {
+                request: Some(Request::SearchKey(SearchKey {
+                    purpose_map: [(
+                        0,
+                        SecurityLevelMap {
+                            security_level_map: [(u32::MAX, 0)].into_iter().collect(),
+                        },
+                    )]
+                    .into_iter()
+                    .collect(),
+                })),
+            }),
+            limit: None,
+            offset: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_keys_v0(request, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::InvalidKeyParameter(msg))] if msg == "security level out of bounds"
+        ));
+    }
+
+    #[test]
+    fn test_absent_keys() {
+        let (platform, version) = setup_platform();
+
+        let request = GetIdentityKeysRequestV0 {
+            identity_id: vec![0; 32],
+            request_type: Some(KeyRequestType {
+                request: Some(Request::AllKeys(AllKeys {})),
+            }),
+            limit: None,
+            offset: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_keys_v0(request, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.data,
+            Some(GetIdentityKeysResponseV0 {
+                result: Some(get_identity_keys_response_v0::Result::Keys(keys)),
+                ..
+            }) if keys.keys_bytes.is_empty()
+        ));
+    }
+
+    #[test]
+    fn test_absent_keys_proof() {
+        let (platform, version) = setup_platform();
+
+        let request = GetIdentityKeysRequestV0 {
+            identity_id: vec![0; 32],
+            request_type: Some(KeyRequestType {
+                request: Some(Request::AllKeys(AllKeys {})),
+            }),
+            limit: None,
+            offset: None,
+            prove: true,
+        };
+
+        let result = platform
+            .query_keys_v0(request, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.data,
+            Some(GetIdentityKeysResponseV0 {
+                result: Some(get_identity_keys_response_v0::Result::Proof(_)),
+                metadata: Some(_)
+            })
+        ));
     }
 }

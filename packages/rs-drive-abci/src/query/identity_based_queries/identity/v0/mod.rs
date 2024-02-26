@@ -1,13 +1,12 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
-use dapi_grpc::platform::v0::get_identity_response::GetIdentityResponseV0;
-use dapi_grpc::platform::v0::{get_identity_response, GetIdentityResponse, Proof};
-use dapi_grpc::Message;
+use dapi_grpc::platform::v0::get_identity_response::{
+    get_identity_response_v0, GetIdentityResponseV0,
+};
+use dapi_grpc::platform::v0::{get_identity_response, GetIdentityResponse};
 use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializable;
@@ -38,9 +37,7 @@ impl<C> Platform<C> {
 
             GetIdentityResponse {
                 version: Some(get_identity_response::Version::V0(GetIdentityResponseV0 {
-                    result: Some(
-                        get_identity_response::get_identity_response_v0::Result::Proof(proof),
-                    ),
+                    result: Some(get_identity_response_v0::Result::Proof(proof)),
                     metadata: Some(metadata),
                 })),
             }
@@ -61,16 +58,85 @@ impl<C> Platform<C> {
 
             GetIdentityResponse {
                 version: Some(get_identity_response::Version::V0(GetIdentityResponseV0 {
-                    result: Some(
-                        get_identity_response::get_identity_response_v0::Result::Identity(
-                            serialized_identity,
-                        ),
-                    ),
+                    result: Some(get_identity_response_v0::Result::Identity(
+                        serialized_identity,
+                    )),
                     metadata: Some(self.response_metadata_v0()),
                 })),
             }
         };
 
         Ok(QueryValidationResult::new_with_data(response))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::{assert_invalid_identifier, setup_platform};
+
+    #[test]
+    fn test_invalid_identity_id() {
+        let (platform, version) = setup_platform();
+
+        let version = PlatformVersion::latest();
+
+        let request = GetIdentityRequestV0 {
+            id: vec![0; 8],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identity_v0(request, version)
+            .expect("should execute query");
+
+        assert_invalid_identifier(result);
+    }
+
+    #[test]
+    fn test_identity_not_found() {
+        let (platform, version) = setup_platform();
+
+        let id = vec![0; 32];
+        let request = GetIdentityRequestV0 {
+            id: id.clone(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_identity_v0(request, version)
+            .expect("should execute query");
+
+        let validation_error = result.first_error().unwrap();
+
+        assert!(matches!(
+            validation_error,
+            QueryError::NotFound(msg) if msg.contains("identity")
+        ));
+    }
+
+    #[test]
+    fn test_identity_absence_proof() {
+        let (platform, version) = setup_platform();
+
+        let id = vec![0; 32];
+        let request = GetIdentityRequestV0 {
+            id: id.clone(),
+            prove: true,
+        };
+
+        let result = platform
+            .query_identity_v0(request, version)
+            .expect("should execute query");
+
+        assert!(matches!(
+            result.data,
+            Some(GetIdentityResponse {
+                version: Some(get_identity_response::Version::V0(GetIdentityResponseV0 {
+                    result: Some(get_identity_response_v0::Result::Proof(_)),
+                    metadata: Some(_)
+                }))
+            })
+        ))
     }
 }

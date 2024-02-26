@@ -3,15 +3,13 @@ mod v0;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_request::Version;
+use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_request::Version as RequestVersion;
+use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_response::Version as ResponseVersion;
 use dapi_grpc::platform::v0::{
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
 };
 use dapi_grpc::Message;
-use dpp::check_validation_result_with_data;
-use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C> {
@@ -34,7 +32,7 @@ impl<C> Platform<C> {
             .version_upgrade_state;
 
         let feature_version = match &version {
-            Version::V0(_) => 0,
+            RequestVersion::V0(_) => 0,
         };
         if !feature_version_bounds.check_version(feature_version) {
             return Ok(QueryValidationResult::new_with_error(
@@ -48,8 +46,14 @@ impl<C> Platform<C> {
             ));
         }
         match version {
-            Version::V0(request_v0) => {
-                self.query_version_upgrade_state_v0(request_v0, platform_version)
+            RequestVersion::V0(request_v0) => {
+                let result = self.query_version_upgrade_state_v0(request_v0, platform_version)?;
+
+                Ok(
+                    result.map(|response_v0| GetProtocolVersionUpgradeStateResponse {
+                        version: Some(ResponseVersion::V0(response_v0)),
+                    }),
+                )
             }
         }
     }
