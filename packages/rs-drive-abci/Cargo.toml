@@ -56,7 +56,7 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
 ], optional = false }
 atty = { version = "0.2.14", optional = false }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "81d28aa0b15fc0844dfa7f7251f6949f6c6c405a", features = [
-    "grpc-server",
+  "grpc-server",
 ] }
 thread-priority = "0.15.1"
 lazy_static = "1.4.0"
@@ -81,6 +81,7 @@ derive_more = "0.99.17"
 moka = { version = "0.11.1" }
 async-trait = "0.1.77"
 num_cpus = "1.16.0"
+console-subscriber = { version = "0.2.0", optional = true }
 
 [dev-dependencies]
 base64 = "0.20.0"
@@ -101,16 +102,17 @@ dpp = { path = "../rs-dpp", features = [
 ] }
 drive = { path = "../rs-drive" }
 strategy-tests = { path = "../strategy-tests" }
-console-subscriber = "0.2.0"
 
 # For tests of grovedb verify
 rocksdb = { version = "0.21.0" }
 integer-encoding = { version = "4.0.0" }
 
 [features]
-default = ["server", "mocks"]
+# TODO: Remove console for production
+default = ["server", "mocks", "console"]
 server = ["clap", "dotenvy"]
 mocks = ["mockall", "drive/fixtures-and-mocks"]
+console = ["console-subscriber"]
 
 
 [[bin]]

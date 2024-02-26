@@ -73,6 +73,7 @@ services:
       - ABCI_CONSENSUS_BIND_ADDRESS=tcp://0.0.0.0:26658
       - GRPC_BIND_ADDRESS=0.0.0.0:26670
       - PROMETHEUS_BIND_ADDRESS=http://0.0.0.0:29090
+      - TOKIO_CONSOLE_BIND=0.0.0.0:6669
     stop_grace_period: 30s
     expose:
       - 26658
@@ -84,6 +85,9 @@ services:
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/abci/logger.env
     profiles:
       - platform
+    ports:
+      # TODO: Must be configured
+      - "127.0.0.1:6669:6669"
 
   drive_tenderdash:
     image: ${PLATFORM_DRIVE_TENDERDASH_DOCKER_IMAGE:?err}

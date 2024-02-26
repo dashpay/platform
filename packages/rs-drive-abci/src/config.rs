@@ -27,12 +27,11 @@
 // DEALINGS IN THE SOFTWARE.
 
 use dashcore_rpc::json::QuorumType;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::config::DriveConfig;
-use serde::{de::DeserializeOwned, Deserialize, Serialize, Serializer};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::logging::LogConfigs;
 use crate::{abci::config::AbciConfig, error::Error};
@@ -211,9 +210,6 @@ pub struct PlatformConfig {
     /// This should be None, except in the case of Testing platform
     #[serde(skip)]
     pub testing_configs: PlatformTestConfig,
-
-    /// Initialize the tokio console
-    pub tokio_console: bool,
 }
 
 impl ExecutionConfig {
@@ -341,7 +337,6 @@ impl PlatformConfig {
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
             max_blocking_thread_num_cpu_multiplier: 5,
-            tokio_console: false,
         }
     }
 
@@ -363,7 +358,6 @@ impl PlatformConfig {
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
             max_blocking_thread_num_cpu_multiplier: 5,
-            tokio_console: false,
         }
     }
 
@@ -385,7 +379,6 @@ impl PlatformConfig {
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
             max_blocking_thread_num_cpu_multiplier: 5,
-            tokio_console: false,
         }
     }
 }
