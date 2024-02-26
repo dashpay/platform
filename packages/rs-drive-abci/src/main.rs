@@ -138,6 +138,11 @@ impl Cli {
 fn main() -> Result<(), ExitCode> {
     let cli = Cli::parse();
     let config = load_config(&cli.config);
+
+    if config.tokio_console {
+        console_subscriber::init();
+    }
+
     // We use `cancel` to notify other subsystems that the server is shutting down
     let cancel = CancellationToken::new();
 

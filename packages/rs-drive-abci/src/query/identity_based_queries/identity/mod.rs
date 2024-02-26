@@ -1,14 +1,9 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identity_request::Version;
 use dapi_grpc::platform::v0::{GetIdentityRequest, GetIdentityResponse};
-use dapi_grpc::tonic::Request;
-use dapi_grpc::Message;
-use dpp::check_validation_result_with_data;
-use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 
 mod v0;

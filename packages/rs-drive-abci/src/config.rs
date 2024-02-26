@@ -211,6 +211,9 @@ pub struct PlatformConfig {
     /// This should be None, except in the case of Testing platform
     #[serde(skip)]
     pub testing_configs: PlatformTestConfig,
+
+    /// Initialize the tokio console
+    pub tokio_console: bool,
 }
 
 impl ExecutionConfig {
@@ -338,6 +341,7 @@ impl PlatformConfig {
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
             max_blocking_thread_num_cpu_multiplier: 5,
+            tokio_console: false,
         }
     }
 
@@ -359,6 +363,7 @@ impl PlatformConfig {
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
             max_blocking_thread_num_cpu_multiplier: 5,
+            tokio_console: false,
         }
     }
 
@@ -380,6 +385,7 @@ impl PlatformConfig {
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
             max_blocking_thread_num_cpu_multiplier: 5,
+            tokio_console: false,
         }
     }
 }

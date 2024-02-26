@@ -5,10 +5,10 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_epochs_info_request::GetEpochsInfoRequestV0;
 use dapi_grpc::platform::v0::get_epochs_info_response::get_epochs_info_response_v0::EpochInfos;
-use dapi_grpc::platform::v0::get_epochs_info_response::GetEpochsInfoResponseV0;
-use dapi_grpc::platform::v0::{
-    get_epochs_info_response, GetEpochsInfoResponse, Proof, ResponseMetadata,
+use dapi_grpc::platform::v0::get_epochs_info_response::{
+    get_epochs_info_response_v0, GetEpochsInfoResponseV0,
 };
+use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::check_validation_result_with_data;
 
@@ -25,7 +25,7 @@ impl<C> Platform<C> {
             prove,
         }: GetEpochsInfoRequestV0,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetEpochsInfoResponse>, Error> {
+    ) -> Result<QueryValidationResult<GetEpochsInfoResponseV0>, Error> {
         let state = self.state.read().unwrap();
 
         let start_epoch = start_epoch.unwrap_or_else(|| {
@@ -81,17 +81,9 @@ impl<C> Platform<C> {
                     platform_version
                 ));
 
-            GetEpochsInfoResponse {
-                version: Some(get_epochs_info_response::Version::V0(
-                    GetEpochsInfoResponseV0 {
-                        result: Some(
-                            get_epochs_info_response::get_epochs_info_response_v0::Result::Proof(
-                                proof_response,
-                            ),
-                        ),
-                        metadata: Some(metadata),
-                    },
-                )),
+            GetEpochsInfoResponseV0 {
+                result: Some(get_epochs_info_response_v0::Result::Proof(proof_response)),
+                metadata: Some(metadata),
             }
         } else {
             drop(state);
@@ -106,31 +98,77 @@ impl<C> Platform<C> {
 
             let epoch_infos = result
                 .into_iter()
-                .map(|epoch_info| {
-                    get_epochs_info_response::get_epochs_info_response_v0::EpochInfo {
-                        number: epoch_info.index() as u32,
-                        first_block_height: epoch_info.first_block_height(),
-                        first_core_block_height: epoch_info.first_core_block_height(),
-                        start_time: epoch_info.first_block_time(),
-                        fee_multiplier: epoch_info.fee_multiplier(),
-                    }
+                .map(|epoch_info| get_epochs_info_response_v0::EpochInfo {
+                    number: epoch_info.index() as u32,
+                    first_block_height: epoch_info.first_block_height(),
+                    first_core_block_height: epoch_info.first_core_block_height(),
+                    start_time: epoch_info.first_block_time(),
+                    fee_multiplier: epoch_info.fee_multiplier(),
                 })
                 .collect();
 
-            GetEpochsInfoResponse {
-                version: Some(get_epochs_info_response::Version::V0(
-                    GetEpochsInfoResponseV0 {
-                        result: Some(
-                            get_epochs_info_response::get_epochs_info_response_v0::Result::Epochs(
-                                EpochInfos { epoch_infos },
-                            ),
-                        ),
-                        metadata: Some(metadata),
-                    },
-                )),
+            GetEpochsInfoResponseV0 {
+                result: Some(get_epochs_info_response_v0::Result::Epochs(EpochInfos {
+                    epoch_infos,
+                })),
+                metadata: Some(metadata),
             }
         };
 
         Ok(QueryValidationResult::new_with_data(response))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+
+    #[test]
+    fn test_query_empty_epoch_infos() {
+        let (platform, version) = setup_platform();
+
+        let request = GetEpochsInfoRequestV0 {
+            start_epoch: None, // 0
+            count: 5,
+            ascending: true,
+            prove: false,
+        };
+
+        let result = platform
+            .query_epoch_infos_v0(request, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.data,
+            Some(GetEpochsInfoResponseV0 {
+                result: Some(get_epochs_info_response_v0::Result::Epochs(EpochInfos { epoch_infos })),
+                metadata: Some(_),
+            }) if epoch_infos.is_empty()
+        ));
+    }
+
+    #[test]
+    fn test_query_empty_epoch_infos_descending() {
+        let (platform, version) = setup_platform();
+
+        let request = GetEpochsInfoRequestV0 {
+            start_epoch: None, // 0
+            count: 5,
+            ascending: false,
+            prove: false,
+        };
+
+        let validation_result = platform
+            .query_epoch_infos_v0(request, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            validation_result.data,
+            Some(GetEpochsInfoResponseV0 {
+                result: Some(get_epochs_info_response_v0::Result::Epochs(EpochInfos { epoch_infos })),
+                metadata: Some(_),
+            }) if epoch_infos.is_empty()
+        ));
     }
 }

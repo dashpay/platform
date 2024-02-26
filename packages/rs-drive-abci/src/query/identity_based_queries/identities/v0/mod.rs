@@ -3,7 +3,9 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identities_request::GetIdentitiesRequestV0;
-use dapi_grpc::platform::v0::get_identities_response::{GetIdentitiesResponseV0, IdentityEntry};
+use dapi_grpc::platform::v0::get_identities_response::{
+    get_identities_response_v0, GetIdentitiesResponseV0, IdentityEntry,
+};
 use dapi_grpc::platform::v0::{get_identities_response, GetIdentitiesResponse};
 use dpp::platform_value::Bytes32;
 use dpp::serialization::PlatformSerializable;
@@ -16,7 +18,7 @@ impl<C> Platform<C> {
         &self,
         GetIdentitiesRequestV0 { ids, prove }: GetIdentitiesRequestV0,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetIdentitiesResponse>, Error> {
+    ) -> Result<QueryValidationResult<GetIdentitiesResponseV0>, Error> {
         let identity_ids = check_validation_result_with_data!(ids
             .into_iter()
             .map(|identity_id_vec| {
@@ -39,17 +41,9 @@ impl<C> Platform<C> {
 
             let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
 
-            GetIdentitiesResponse {
-                version: Some(get_identities_response::Version::V0(
-                    GetIdentitiesResponseV0 {
-                        result: Some(
-                            get_identities_response::get_identities_response_v0::Result::Proof(
-                                proof,
-                            ),
-                        ),
-                        metadata: Some(metadata),
-                    },
-                )),
+            GetIdentitiesResponseV0 {
+                result: Some(get_identities_response_v0::Result::Proof(proof)),
+                metadata: Some(metadata),
             }
         } else {
             let identities = self.drive.fetch_full_identities(
@@ -76,22 +70,82 @@ impl<C> Platform<C> {
                 })
                 .collect::<Result<Vec<IdentityEntry>, ProtocolError>>()?;
 
-            GetIdentitiesResponse {
-                version: Some(get_identities_response::Version::V0(
-                    GetIdentitiesResponseV0 {
-                        result: Some(
-                            get_identities_response::get_identities_response_v0::Result::Identities(
-                                get_identities_response::Identities {
-                                    identity_entries: identities,
-                                },
-                            ),
-                        ),
-                        metadata: Some(self.response_metadata_v0()),
+            GetIdentitiesResponseV0 {
+                result: Some(get_identities_response_v0::Result::Identities(
+                    get_identities_response::Identities {
+                        identity_entries: identities,
                     },
                 )),
+                metadata: Some(self.response_metadata_v0()),
             }
         };
 
         Ok(QueryValidationResult::new_with_data(response))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::{assert_invalid_identifier, setup_platform};
+
+    #[test]
+    fn test_invalid_identity_id() {
+        let (platform, version) = setup_platform();
+
+        let request = GetIdentitiesRequestV0 {
+            ids: vec![vec![0; 8]],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_v0(request, version)
+            .expect("should query identities");
+
+        assert_invalid_identifier(result);
+    }
+
+    #[test]
+    fn test_identities_not_found() {
+        let (platform, version) = setup_platform();
+
+        let id = vec![0; 32];
+
+        let request = GetIdentitiesRequestV0 {
+            ids: vec![id.clone()],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_v0(request, version)
+            .expect("should query identities");
+
+        assert!(matches!(result.data, Some(GetIdentitiesResponseV0 {
+            result: Some(get_identities_response_v0::Result::Identities(identites)),
+            metadata: Some(_)
+        }) if identites.identity_entries.len() == 1 && identites.identity_entries[0].value.is_none()));
+    }
+
+    #[test]
+    fn test_identities_absence_proof() {
+        let (platform, version) = setup_platform();
+
+        let id = vec![0; 32];
+        let request = GetIdentitiesRequestV0 {
+            ids: vec![id.clone()],
+            prove: true,
+        };
+
+        let result = platform
+            .query_identities_v0(request, version)
+            .expect("should query identities");
+
+        assert!(matches!(
+            result.data,
+            Some(GetIdentitiesResponseV0 {
+                result: Some(get_identities_response_v0::Result::Proof(_)),
+                metadata: Some(_)
+            })
+        ));
     }
 }

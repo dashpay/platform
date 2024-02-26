@@ -1,17 +1,13 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_request::GetIdentitiesByPublicKeyHashesRequestV0;
+use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_response;
 use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_response::{
-    GetIdentitiesByPublicKeyHashesResponseV0, PublicKeyHashIdentityEntry,
+    get_identities_by_public_key_hashes_response_v0, GetIdentitiesByPublicKeyHashesResponseV0,
+    PublicKeyHashIdentityEntry,
 };
-use dapi_grpc::platform::v0::{
-    get_identities_by_public_key_hashes_response, GetIdentitiesByPublicKeyHashesResponse, Proof,
-};
-use dapi_grpc::Message;
 use dpp::platform_value::Bytes20;
 use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
@@ -26,7 +22,7 @@ impl<C> Platform<C> {
             prove,
         }: GetIdentitiesByPublicKeyHashesRequestV0,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetIdentitiesByPublicKeyHashesResponse>, Error> {
+    ) -> Result<QueryValidationResult<GetIdentitiesByPublicKeyHashesResponseV0>, Error> {
         let public_key_hashes = check_validation_result_with_data!(public_key_hashes
             .into_iter()
             .map(|pub_key_hash_vec| {
@@ -51,11 +47,9 @@ impl<C> Platform<C> {
 
             let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
 
-            GetIdentitiesByPublicKeyHashesResponse {
-                version: Some(get_identities_by_public_key_hashes_response::Version::V0(GetIdentitiesByPublicKeyHashesResponseV0 {
-                    result: Some(get_identities_by_public_key_hashes_response::get_identities_by_public_key_hashes_response_v0::Result::Proof(proof)),
-                    metadata: Some(metadata),
-                })),
+            GetIdentitiesByPublicKeyHashesResponseV0 {
+                result: Some(get_identities_by_public_key_hashes_response_v0::Result::Proof(proof)),
+                metadata: Some(metadata),
             }
         } else {
             let identities = self
@@ -77,18 +71,85 @@ impl<C> Platform<C> {
                 })
                 .collect::<Result<Vec<PublicKeyHashIdentityEntry>, ProtocolError>>()?;
 
-            GetIdentitiesByPublicKeyHashesResponse {
-                version: Some(get_identities_by_public_key_hashes_response::Version::V0(GetIdentitiesByPublicKeyHashesResponseV0 {
-                    metadata: Some(self.response_metadata_v0()),
-                    result: Some(get_identities_by_public_key_hashes_response::get_identities_by_public_key_hashes_response_v0::Result::Identities(
+            GetIdentitiesByPublicKeyHashesResponseV0 {
+                metadata: Some(self.response_metadata_v0()),
+                result: Some(
+                    get_identities_by_public_key_hashes_response_v0::Result::Identities(
                         get_identities_by_public_key_hashes_response::IdentitiesByPublicKeyHashes {
                             identity_entries: identities,
                         },
-                    )),
-                })),
+                    ),
+                ),
             }
         };
 
         Ok(QueryValidationResult::new_with_data(response))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+
+    #[test]
+    fn test_invalid_public_key_hash() {
+        let (platform, version) = setup_platform();
+
+        let request = GetIdentitiesByPublicKeyHashesRequestV0 {
+            public_key_hashes: vec![vec![0; 8]],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_by_public_key_hashes_v0(request, version)
+            .expect("should query identities by public key hashes");
+
+        assert!(
+            matches!(result.errors.as_slice(), [QueryError::InvalidArgument(msg)] if msg == "public key hash must be 20 bytes long")
+        );
+    }
+
+    #[test]
+    fn test_identities_not_found() {
+        let (platform, version) = setup_platform();
+
+        let request = GetIdentitiesByPublicKeyHashesRequestV0 {
+            public_key_hashes: vec![vec![0; 20]],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_by_public_key_hashes_v0(request, version)
+            .expect("expected query to succeed");
+
+        assert!(
+            matches!(result.data, Some(GetIdentitiesByPublicKeyHashesResponseV0 {
+            result: Some(get_identities_by_public_key_hashes_response_v0::Result::Identities(identites)),
+            metadata: Some(_)
+        }) if identites.identity_entries.len() == 1 && identites.identity_entries[0].value.is_none())
+        );
+    }
+
+    #[test]
+    fn test_identities_absence_proof() {
+        let (platform, version) = setup_platform();
+
+        let request = GetIdentitiesByPublicKeyHashesRequestV0 {
+            public_key_hashes: vec![vec![0; 20]],
+            prove: true,
+        };
+
+        let result = platform
+            .query_identities_by_public_key_hashes_v0(request, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.data,
+            Some(GetIdentitiesByPublicKeyHashesResponseV0 {
+                result: Some(get_identities_by_public_key_hashes_response_v0::Result::Proof(_)),
+                metadata: Some(_)
+            })
+        ));
     }
 }
