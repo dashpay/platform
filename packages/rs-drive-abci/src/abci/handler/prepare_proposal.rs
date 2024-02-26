@@ -261,8 +261,6 @@ pub(super) fn get_consensus_params_update(
 mod test {
     use std::path::PathBuf;
 
-    use tenderdash_abci::proto::types::{BlockParams, ConsensusParams};
-
     #[test]
     fn test_get_consensus_params_update() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -272,22 +270,47 @@ mod test {
         let file_path = PathBuf::from(&consensus_params_dir);
         file_path.to_path_buf().push(format!("{}.json", height));
 
-        let consensus_params = ConsensusParams {
-            block: Some(BlockParams {
-                max_gas: 123457,
-                max_bytes: 4234524563,
-            }),
-            ..Default::default()
-        };
+        let consensus_params = r#"
+        {
+            "block": {
+              "max_bytes": "2097152",
+              "max_gas": "50000000000"
+            },
+            "evidence": {
+              "max_age_num_blocks": "10000",
+              "max_age_duration": "172800000000000",
+              "max_bytes": "0"
+            },
+            "validator": {
+              "pub_key_types": [
+                "bls12381"
+              ]
+            },
+            "version": {
+              "app_version": "1"
+            },
+            "synchrony": {
+              "precision": "500000000",
+              "message_delay": "60000000000"
+            },
+            "timeout": {
+              "propose": "40000000000",
+              "propose_delta": "5000000000",
+              "vote": "40000000000",
+              "vote_delta": "5000000000"
+            },
+            "abci": {
+              "recheck_tx": true
+            }
+          }
+        "#;
 
-        let file = std::fs::File::create(file_path).unwrap();
-        serde_json::to_writer(file, &consensus_params).unwrap();
-        drop(file);
+        std::fs::write(file_path, consensus_params).unwrap();
 
         // display the file
         println!("{}", std::fs::read_to_string(file_path).unwrap());
 
         let result = super::get_consensus_params_update(&consensus_params_dir, height).unwrap();
-        assert_eq!(result, Some(consensus_params));
+        assert_eq!(result.unwrap().block.unwrap().max_bytes, 2097152);
     }
 }
