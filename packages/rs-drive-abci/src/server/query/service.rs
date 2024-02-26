@@ -29,36 +29,34 @@ pub struct QueryServer {
     platform: Arc<Platform<DefaultCoreRPC>>,
 }
 
-type QueryMethod<RQ, RS> = fn(
-    &Platform<DefaultCoreRPC>,
-    request: RQ,
-    platform_version: &PlatformVersion,
-) -> Result<QueryValidationResult<RS>, Error>;
+type QueryMethod<RQ, RS> =
+    fn(&Platform<DefaultCoreRPC>, RQ, &PlatformVersion) -> Result<QueryValidationResult<RS>, Error>;
 
 impl QueryServer {
     pub fn new(platform: Arc<Platform<DefaultCoreRPC>>) -> Self {
         Self { platform }
     }
 
-    fn handle_query<RQ, RS>(
+    async fn handle_blocking_query<RQ, RS>(
         &self,
         request: Request<RQ>,
         query_method: QueryMethod<RQ, RS>,
     ) -> Result<Response<RS>, Status>
     where
-        RS: Clone,
+        RS: Clone + Send + 'static,
+        RQ: Send + 'static,
     {
-        tokio::task::block_in_place(move || {
+        let platform = Arc::clone(&self.platform);
+
+        // TODO: Add logging instrumentation, or task name with Builder
+
+        tokio::task::spawn_blocking(move || {
             let Some(platform_version) = PlatformVersion::get_maybe_current() else {
                 return Err(Status::unavailable("platform is not initialized"));
             };
 
-            let mut result = query_method(
-                self.platform.as_ref(),
-                request.into_inner(),
-                platform_version,
-            )
-            .map_err(error_into_status)?;
+            let mut result = query_method(&platform, request.into_inner(), platform_version)
+                .map_err(error_into_status)?;
 
             if result.is_valid() {
                 let response = result
@@ -72,6 +70,8 @@ impl QueryServer {
                 Err(query_error_into_status(error))
             }
         })
+        .await
+        .map_err(|error| Status::internal(format!("join error: {}", error)))?
     }
 }
 
@@ -94,96 +94,108 @@ impl PlatformService for QueryServer {
         &self,
         request: Request<GetIdentityRequest>,
     ) -> Result<Response<GetIdentityResponse>, Status> {
-        self.handle_query(request, Platform::<DefaultCoreRPC>::query_identity)
+        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_identity)
+            .await
     }
 
     async fn get_identities(
         &self,
         request: Request<GetIdentitiesRequest>,
     ) -> Result<Response<GetIdentitiesResponse>, Status> {
-        self.handle_query(request, Platform::<DefaultCoreRPC>::query_identities)
+        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_identities)
+            .await
     }
 
     async fn get_identity_keys(
         &self,
         request: Request<GetIdentityKeysRequest>,
     ) -> Result<Response<GetIdentityKeysResponse>, Status> {
-        self.handle_query(request, Platform::<DefaultCoreRPC>::query_keys)
+        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_keys)
+            .await
     }
 
     async fn get_identity_balance(
         &self,
         request: Request<GetIdentityBalanceRequest>,
     ) -> Result<Response<GetIdentityBalanceResponse>, Status> {
-        self.handle_query(request, Platform::<DefaultCoreRPC>::query_balance)
+        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_balance)
+            .await
     }
 
     async fn get_identity_balance_and_revision(
         &self,
         request: Request<GetIdentityBalanceAndRevisionRequest>,
     ) -> Result<Response<GetIdentityBalanceAndRevisionResponse>, Status> {
-        self.handle_query(
+        self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_balance_and_revision,
         )
+        .await
     }
 
     async fn get_proofs(
         &self,
         request: Request<GetProofsRequest>,
     ) -> Result<Response<GetProofsResponse>, Status> {
-        self.handle_query(request, Platform::<DefaultCoreRPC>::query_proofs)
+        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_proofs)
+            .await
     }
 
     async fn get_data_contract(
         &self,
         request: Request<GetDataContractRequest>,
     ) -> Result<Response<GetDataContractResponse>, Status> {
-        self.handle_query(request, Platform::<DefaultCoreRPC>::query_data_contract)
+        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_data_contract)
+            .await
     }
 
     async fn get_data_contract_history(
         &self,
         request: Request<GetDataContractHistoryRequest>,
     ) -> Result<Response<GetDataContractHistoryResponse>, Status> {
-        self.handle_query(
+        self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_data_contract_history,
         )
+        .await
     }
 
     async fn get_data_contracts(
         &self,
         request: Request<GetDataContractsRequest>,
     ) -> Result<Response<GetDataContractsResponse>, Status> {
-        self.handle_query(request, Platform::<DefaultCoreRPC>::query_data_contracts)
+        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_data_contracts)
+            .await
     }
 
     async fn get_documents(
         &self,
         request: Request<GetDocumentsRequest>,
     ) -> Result<Response<GetDocumentsResponse>, Status> {
-        self.handle_query(request, Platform::<DefaultCoreRPC>::query_documents)
+        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_documents)
+            .await
     }
 
     async fn get_identities_by_public_key_hashes(
         &self,
         request: Request<GetIdentitiesByPublicKeyHashesRequest>,
     ) -> Result<Response<GetIdentitiesByPublicKeyHashesResponse>, Status> {
-        self.handle_query(
+        self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identities_by_public_key_hashes,
         )
+        .await
     }
 
     async fn get_identity_by_public_key_hash(
         &self,
         request: Request<GetIdentityByPublicKeyHashRequest>,
     ) -> Result<Response<GetIdentityByPublicKeyHashResponse>, Status> {
-        self.handle_query(
+        self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identity_by_public_key_hash,
         )
+        .await
     }
 
     async fn wait_for_state_transition_result(
@@ -204,26 +216,29 @@ impl PlatformService for QueryServer {
         &self,
         request: Request<GetProtocolVersionUpgradeStateRequest>,
     ) -> Result<Response<GetProtocolVersionUpgradeStateResponse>, Status> {
-        self.handle_query(
+        self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_version_upgrade_state,
         )
+        .await
     }
 
     async fn get_protocol_version_upgrade_vote_status(
         &self,
         request: Request<GetProtocolVersionUpgradeVoteStatusRequest>,
     ) -> Result<Response<GetProtocolVersionUpgradeVoteStatusResponse>, Status> {
-        self.handle_query(
+        self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_version_upgrade_vote_status,
         )
+        .await
     }
 
     async fn get_epochs_info(
         &self,
         request: Request<GetEpochsInfoRequest>,
     ) -> Result<Response<GetEpochsInfoResponse>, Status> {
-        self.handle_query(request, Platform::<DefaultCoreRPC>::query_epoch_infos)
+        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_epoch_infos)
+            .await
     }
 }

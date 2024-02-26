@@ -1,5 +1,6 @@
 use crate::abci::app::{PlatformApplication, TransactionalApplication};
 use crate::abci::handler;
+use crate::abci::handler::error::error_into_exception;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -81,19 +82,19 @@ where
         &self,
         request: proto::RequestInfo,
     ) -> Result<proto::ResponseInfo, proto::ResponseException> {
-        handler::info(self, request)
+        handler::info(self, request).map_err(error_into_exception)
     }
 
     fn init_chain(
         &self,
         request: proto::RequestInitChain,
     ) -> Result<proto::ResponseInitChain, proto::ResponseException> {
-        handler::init_chain(self, request)
+        handler::init_chain(self, request).map_err(error_into_exception)
     }
 
     fn query(
         &self,
-        request: proto::RequestQuery,
+        _request: proto::RequestQuery,
     ) -> Result<proto::ResponseQuery, proto::ResponseException> {
         unreachable!("query is not supported in full ABCI application")
     }
@@ -102,41 +103,41 @@ where
         &self,
         request: proto::RequestCheckTx,
     ) -> Result<proto::ResponseCheckTx, proto::ResponseException> {
-        handler::check_tx(self, request)
+        handler::check_tx(self.platform, request).map_err(error_into_exception)
     }
 
     fn extend_vote(
         &self,
         request: proto::RequestExtendVote,
     ) -> Result<proto::ResponseExtendVote, proto::ResponseException> {
-        handler::extend_vote(self, request)
+        handler::extend_vote(self, request).map_err(error_into_exception)
     }
 
     fn finalize_block(
         &self,
         request: proto::RequestFinalizeBlock,
     ) -> Result<proto::ResponseFinalizeBlock, proto::ResponseException> {
-        handler::finalize_block(self, request)
+        handler::finalize_block(self, request).map_err(error_into_exception)
     }
 
     fn prepare_proposal(
         &self,
         request: proto::RequestPrepareProposal,
     ) -> Result<proto::ResponsePrepareProposal, proto::ResponseException> {
-        handler::prepare_proposal(self, request)
+        handler::prepare_proposal(self, request).map_err(error_into_exception)
     }
 
     fn process_proposal(
         &self,
         request: proto::RequestProcessProposal,
     ) -> Result<proto::ResponseProcessProposal, proto::ResponseException> {
-        handler::process_proposal(self, request)
+        handler::process_proposal(self, request).map_err(error_into_exception)
     }
 
     fn verify_vote_extension(
         &self,
         request: proto::RequestVerifyVoteExtension,
     ) -> Result<proto::ResponseVerifyVoteExtension, proto::ResponseException> {
-        handler::verify_vote_extension(self, request)
+        handler::verify_vote_extension(self, request).map_err(error_into_exception)
     }
 }

@@ -7,7 +7,7 @@ use tenderdash_abci::proto::abci as proto;
 pub fn finalize_block<'a, A, C>(
     app: &A,
     request: proto::RequestFinalizeBlock,
-) -> Result<proto::ResponseFinalizeBlock, proto::ResponseException>
+) -> Result<proto::ResponseFinalizeBlock, Error>
 where
     A: PlatformApplication<C> + TransactionalApplication<'a>,
     C: CoreRPCLike,

@@ -12,7 +12,7 @@ use tenderdash_abci::proto::abci as proto;
 pub fn extend_vote<'a, A, C>(
     app: &A,
     request: proto::RequestExtendVote,
-) -> Result<proto::ResponseExtendVote, proto::ResponseException>
+) -> Result<proto::ResponseExtendVote, Error>
 where
     A: PlatformApplication<C> + TransactionalApplication<'a>,
     C: CoreRPCLike,

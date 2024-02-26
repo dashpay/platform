@@ -1,5 +1,6 @@
 use crate::abci::app::PlatformApplication;
 use crate::abci::handler;
+use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use async_trait::async_trait;
@@ -59,17 +60,32 @@ where
         &self,
         request: tonic::Request<proto::RequestEcho>,
     ) -> Result<tonic::Response<proto::ResponseEcho>, tonic::Status> {
-        handler::echo(request.into_inner())
-            .map(|response| tonic::Response::new(response))
-            .map_err(|e| tonic::Status::internal(e.error))
+        let response = handler::echo(self, request.into_inner()).map_err(error_into_status)?;
+
+        Ok(tonic::Response::new(response))
     }
 
     async fn check_tx(
         &self,
         request: tonic::Request<proto::RequestCheckTx>,
     ) -> Result<tonic::Response<proto::ResponseCheckTx>, tonic::Status> {
-        tokio::task::block_in_place(move || handler::check_tx(self, request.into_inner()))
-            .map(|response| tonic::Response::new(response))
-            .map_err(|e| tonic::Status::internal(e.error))
+        let platform = Arc::clone(&self.platform);
+
+        // TODO: Add logging instrumentation, or task name with Builder
+
+        tokio::task::spawn_blocking(move || {
+            let response =
+                handler::check_tx(&platform, request.into_inner()).map_err(error_into_status)?;
+
+            Ok(tonic::Response::new(response))
+        })
+        .await
+        .map_err(|error| {
+            tonic::Status::internal(format!("check tx panics: {}", error.to_string()))
+        })?
     }
+}
+
+pub fn error_into_status(error: Error) -> tonic::Status {
+    tonic::Status::internal(error.to_string())
 }

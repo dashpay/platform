@@ -1,39 +1,34 @@
-use crate::abci::app::PlatformApplication;
 use crate::abci::handler::error::consensus::AbciResponseInfoGetter;
 use crate::abci::handler::error::HandlerError;
+use crate::error::Error;
+use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::fee::SignedCredits;
 use tenderdash_abci::proto::abci as proto;
 
-pub fn check_tx<A, C>(
-    app: &A,
+pub fn check_tx<C>(
+    platform: &Platform<C>,
     request: proto::RequestCheckTx,
-) -> Result<proto::ResponseCheckTx, proto::ResponseException>
+) -> Result<proto::ResponseCheckTx, Error>
 where
-    A: PlatformApplication<C>,
     C: CoreRPCLike,
 {
     let _timer = crate::metrics::abci_request_duration("check_tx");
 
-    let platform_state = app.platform().state.read().unwrap();
+    let platform_state = platform.state.read().unwrap();
     let platform_version = platform_state.current_platform_version()?;
     drop(platform_state);
 
     let proto::RequestCheckTx { tx, r#type } = request;
-    match app
-        .platform()
-        .check_tx(tx.as_slice(), r#type.try_into()?, platform_version)
-    {
+    match platform.check_tx(tx.as_slice(), r#type.try_into()?, platform_version) {
         Ok(validation_result) => {
             let first_consensus_error = validation_result.errors.first();
 
             let (code, info) = if let Some(consensus_error) = first_consensus_error {
                 (
                     consensus_error.code(),
-                    consensus_error
-                        .response_info_for_version(platform_version)
-                        .map_err(proto::ResponseException::from)?,
+                    consensus_error.response_info_for_version(platform_version)?,
                 )
             } else {
                 // If there are no execution errors the code will be 0

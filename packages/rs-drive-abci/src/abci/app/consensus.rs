@@ -1,5 +1,6 @@
-use crate::abci::app::{NamedApplication, PlatformApplication, TransactionalApplication};
+use crate::abci::app::{PlatformApplication, TransactionalApplication};
 use crate::abci::handler;
+use crate::abci::handler::error::error_into_exception;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -19,12 +20,6 @@ pub struct ConsensusAbciApplication<'a, C> {
     platform: &'a Platform<C>,
     /// The current transaction
     transaction: RwLock<Option<Transaction<'a>>>,
-}
-
-impl<'a, C> NamedApplication for ConsensusAbciApplication<'a, C> {
-    fn name(&self) -> String {
-        String::from("Consensus")
-    }
 }
 
 impl<'a, C> ConsensusAbciApplication<'a, C> {
@@ -88,14 +83,14 @@ where
         &self,
         request: proto::RequestInfo,
     ) -> Result<proto::ResponseInfo, proto::ResponseException> {
-        handler::info(self, request)
+        handler::info(self, request).map_err(error_into_exception)
     }
 
     fn init_chain(
         &self,
         request: proto::RequestInitChain,
     ) -> Result<proto::ResponseInitChain, proto::ResponseException> {
-        handler::init_chain(self, request)
+        handler::init_chain(self, request).map_err(error_into_exception)
     }
 
     fn query(
@@ -116,34 +111,34 @@ where
         &self,
         request: proto::RequestExtendVote,
     ) -> Result<proto::ResponseExtendVote, proto::ResponseException> {
-        handler::extend_vote(self, request)
+        handler::extend_vote(self, request).map_err(error_into_exception)
     }
 
     fn finalize_block(
         &self,
         request: proto::RequestFinalizeBlock,
     ) -> Result<proto::ResponseFinalizeBlock, proto::ResponseException> {
-        handler::finalize_block(self, request)
+        handler::finalize_block(self, request).map_err(error_into_exception)
     }
 
     fn prepare_proposal(
         &self,
         request: proto::RequestPrepareProposal,
     ) -> Result<proto::ResponsePrepareProposal, proto::ResponseException> {
-        handler::prepare_proposal(self, request)
+        handler::prepare_proposal(self, request).map_err(error_into_exception)
     }
 
     fn process_proposal(
         &self,
         request: proto::RequestProcessProposal,
     ) -> Result<proto::ResponseProcessProposal, proto::ResponseException> {
-        handler::process_proposal(self, request)
+        handler::process_proposal(self, request).map_err(error_into_exception)
     }
 
     fn verify_vote_extension(
         &self,
         request: proto::RequestVerifyVoteExtension,
     ) -> Result<proto::ResponseVerifyVoteExtension, proto::ResponseException> {
-        handler::verify_vote_extension(self, request)
+        handler::verify_vote_extension(self, request).map_err(error_into_exception)
     }
 }

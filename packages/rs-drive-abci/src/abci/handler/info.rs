@@ -1,23 +1,22 @@
 use crate::abci::app::PlatformApplication;
+use crate::abci::AbciError;
+use crate::error::Error;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use tenderdash_abci::proto::abci as proto;
 
-pub fn info<A, C>(
-    app: &A,
-    request: proto::RequestInfo,
-) -> Result<proto::ResponseInfo, proto::ResponseException>
+pub fn info<A, C>(app: &A, request: proto::RequestInfo) -> Result<proto::ResponseInfo, Error>
 where
     A: PlatformApplication<C>,
     C: CoreRPCLike,
 {
     if !tenderdash_abci::check_version(&request.abci_version) {
-        return Err(proto::ResponseException::from(format!(
-            "tenderdash requires ABCI version {}, our version is {}",
-            request.abci_version,
-            tenderdash_abci::proto::ABCI_VERSION
-        )));
+        return Err(AbciError::AbciVersionMismatch {
+            tenderdash: request.abci_version,
+            drive: tenderdash_abci::proto::ABCI_VERSION.to_string(),
+        }
+        .into());
     }
 
     let state_guard = app.platform().state.read().unwrap();

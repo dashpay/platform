@@ -151,11 +151,20 @@ fn main() -> Result<(), ExitCode> {
     // TODO: 8 MB stack threads as some recursions in GroveDB can be pretty deep
     //  We could remove such a stack stack size once deletion of a node doesn't recurse in grovedb
 
+    // TODO: Expose limits as configuration so we can easily tune them without rebuilding
+
+    // TODO: We might want to limit worker threads
+    // TODO: Figure out how many blocking threads and grpc concurrency we should set
     let runtime = Builder::new_multi_thread()
-        .enable_all()
         .thread_stack_size(8 * 1024 * 1024)
+        .thread_name("main".to_string())
+        .enable_all()
+        // TODO: We probably we want to have them bigger than concurrency limit in tonic to make
+        //  sure that other libraries have room to spawn them
+        .max_blocking_threads(num_cpus::get() * 5)
         .build()
         .expect("cannot initialize tokio runtime");
+
     let rt_guard = runtime.enter();
 
     runtime.spawn(handle_signals(cancel.clone(), loggers));

@@ -170,6 +170,11 @@ pub struct PlatformConfig {
     /// Address to listen for gRPC connection.
     pub grpc_bind_address: String,
 
+    /// Multiplier for num cpu to set max number of blocking threads
+    /// of the main runtime
+    #[serde(default = "default_max_blocking_thread_num_cpu_multiplier")]
+    pub max_blocking_thread_num_cpu_multiplier: u8,
+
     /// Execution config
     #[serde(flatten)]
     pub execution: ExecutionConfig,
@@ -309,6 +314,10 @@ impl Default for PlatformConfig {
     }
 }
 
+fn default_max_blocking_thread_num_cpu_multiplier() -> u8 {
+    5
+}
+
 #[allow(missing_docs)]
 impl PlatformConfig {
     pub fn default_local() -> Self {
@@ -328,6 +337,7 @@ impl PlatformConfig {
             initial_protocol_version: 1,
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
+            max_blocking_thread_num_cpu_multiplier: 5,
         }
     }
 
@@ -348,6 +358,7 @@ impl PlatformConfig {
             initial_protocol_version: 1,
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
+            max_blocking_thread_num_cpu_multiplier: 5,
         }
     }
 
@@ -368,6 +379,7 @@ impl PlatformConfig {
             initial_protocol_version: 1,
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
+            max_blocking_thread_num_cpu_multiplier: 5,
         }
     }
 }

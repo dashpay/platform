@@ -1,4 +1,5 @@
 use crate::abci::app::{PlatformApplication, TransactionalApplication};
+use crate::error::Error;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use tenderdash_abci::proto::abci as proto;
@@ -6,7 +7,7 @@ use tenderdash_abci::proto::abci as proto;
 pub fn init_chain<'a, A, C>(
     app: &A,
     request: proto::RequestInitChain,
-) -> Result<proto::ResponseInitChain, proto::ResponseException>
+) -> Result<proto::ResponseInitChain, Error>
 where
     A: PlatformApplication<C> + TransactionalApplication<'a>,
     C: CoreRPCLike,

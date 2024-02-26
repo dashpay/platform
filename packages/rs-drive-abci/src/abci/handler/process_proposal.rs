@@ -18,7 +18,7 @@ use tenderdash_abci::proto::abci::tx_record::TxAction;
 pub fn process_proposal<'a, A, C>(
     app: &A,
     request: proto::RequestProcessProposal,
-) -> Result<proto::ResponseProcessProposal, proto::ResponseException>
+) -> Result<proto::ResponseProcessProposal, Error>
 where
     A: PlatformApplication<C> + TransactionalApplication<'a>,
     C: CoreRPCLike,

@@ -18,7 +18,7 @@ use tenderdash_abci::proto::types::CoreChainLock;
 pub fn prepare_proposal<'a, A, C>(
     app: &A,
     mut request: proto::RequestPrepareProposal,
-) -> Result<proto::ResponsePrepareProposal, proto::ResponseException>
+) -> Result<proto::ResponsePrepareProposal, Error>
 where
     A: PlatformApplication<C> + TransactionalApplication<'a>,
     C: CoreRPCLike,
@@ -102,13 +102,13 @@ where
     let transaction = transaction_guard.as_ref().unwrap();
 
     // Running the proposal executes all the state transitions for the block
-    let run_result = app
+    let mut run_result = app
         .platform()
         .run_block_proposal(block_proposal, true, transaction)?;
 
     if !run_result.is_valid() {
         // This is a system error, because we are proposing
-        return Err(run_result.errors.first().unwrap().to_string().into());
+        return Err(run_result.errors.remove(0).into());
     }
 
     let block_execution_outcome::v0::BlockExecutionOutcome {

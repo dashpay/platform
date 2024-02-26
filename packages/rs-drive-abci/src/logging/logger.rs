@@ -314,17 +314,17 @@ impl Logger {
         let formatter = fmt::layer::<Registry>()
             .with_writer(make_writer)
             .with_ansi(ansi)
-            .thread_names(true)
-            .thread_ids(true);
+            .with_thread_names(true)
+            .with_thread_ids(true);
 
         let formatter = match self.format {
-            LogFormat::Full => formatter.with_filter(filter),
-            LogFormat::Compact => formatter.compact().with_filter(filter),
-            LogFormat::Pretty => formatter.pretty().with_filter(filter),
-            LogFormat::Json => formatter.json().with_filter(filter),
+            LogFormat::Full => formatter.with_filter(filter).boxed(),
+            LogFormat::Compact => formatter.compact().with_filter(filter).boxed(),
+            LogFormat::Pretty => formatter.pretty().with_filter(filter).boxed(),
+            LogFormat::Json => formatter.json().with_filter(filter).boxed(),
         };
 
-        Ok(formatter.boxed())
+        Ok(formatter)
     }
 
     /// Rotate log files

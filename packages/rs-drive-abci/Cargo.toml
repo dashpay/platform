@@ -56,6 +56,7 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
 ], optional = false }
 atty = { version = "0.2.14", optional = false }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "271dc51ea60625b3503a09e58882e680ade9da8c", features = ["grpc-server"] }
+thread-priority = "0.15.1"
 lazy_static = "1.4.0"
 itertools = { version = "0.10.5" }
 file-rotate = { version = "0.7.3" }
@@ -73,9 +74,11 @@ tokio = { version = "1", features = [
     "time",
 ] }
 tokio-util = { version = "0.7.8" }
+tower = { version = "0.4.13" }
 derive_more = "0.99.17"
 moka = { version = "0.11.1" }
 async-trait = "0.1.77"
+num_cpus = "1.16.0"
 
 [dev-dependencies]
 base64 = "0.20.0"

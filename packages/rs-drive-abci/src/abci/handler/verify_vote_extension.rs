@@ -1,4 +1,5 @@
 use crate::abci::app::PlatformApplication;
+use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
 use crate::rpc::core::CoreRPCLike;
@@ -10,7 +11,7 @@ use tenderdash_abci::proto::abci::ExtendVoteExtension;
 pub fn verify_vote_extension<A, C>(
     app: &A,
     request: proto::RequestVerifyVoteExtension,
-) -> Result<proto::ResponseVerifyVoteExtension, proto::ResponseException>
+) -> Result<proto::ResponseVerifyVoteExtension, Error>
 where
     A: PlatformApplication<C>,
     C: CoreRPCLike,

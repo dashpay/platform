@@ -20,7 +20,7 @@ drive = { path = "../rs-drive", default-features = false, features = [
     "verify",
 ] }
 dpp = { path = "../rs-dpp" }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", tag = "v0.14.0-dev.6" }
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "271dc51ea60625b3503a09e58882e680ade9da8c" }
 tracing = { version = "0.1.37" }
 serde = { version = "1.0.171", default-features = false, optional = true }
 serde_json = { version = "1.0.103", features = [
