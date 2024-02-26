@@ -20,7 +20,7 @@ if ! test -f ./wasm/wasm_dpp_bg.wasm; then
 fi
 
 echo 'Converting wasm binary into base64 module'
-WASM_BUILD_BASE_64="$(base64 -i './wasm/wasm_dpp_bg.wasm')"
+WASM_BUILD_BASE_64="$(base64 -w 0 './wasm/wasm_dpp_bg.wasm')"
 echo 'module.exports = "'"${WASM_BUILD_BASE_64}"'"' > './dist/wasm/wasm_dpp_bg.js'
 
 ## save directly to dist folder to avoid re-generating TS declarations
