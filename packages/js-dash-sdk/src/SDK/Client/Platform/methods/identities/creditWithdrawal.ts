@@ -4,6 +4,7 @@ import broadcastStateTransition from '../../broadcastStateTransition';
 import { Platform } from '../../Platform';
 import { signStateTransition } from '../../signStateTransition';
 import { nearestGreaterFibonacci } from '../../../../../utils/fibonacci';
+import { Metadata } from '../../IStateTransitionResult';
 
 export const STATUSES = {
   PENDING: 0,
@@ -44,7 +45,7 @@ export async function creditWithdrawal(
   options: WithdrawalOptions = {
     signingKeyIndex: 2,
   },
-): Promise<any> {
+): Promise<Metadata> {
   await this.initialize();
 
   const { dpp } = this;
@@ -104,13 +105,17 @@ export async function creditWithdrawal(
 
   this.nonceManager.setIdentityNonce(identity.getId(), identityNonce);
   // Skipping validation because it's already done above
-  await broadcastStateTransition(this, identityCreditWithdrawalTransition, {
-    skipValidation: true,
-  });
+  const stateTransitionResult = await broadcastStateTransition(
+    this,
+    identityCreditWithdrawalTransition,
+    {
+      skipValidation: true,
+    },
+  );
 
   this.logger.silly('[Identity#creditWithdrawal] Broadcasted IdentityCreditWithdrawalTransition');
 
-  return true;
+  return stateTransitionResult.metadata;
 }
 
 export default creditWithdrawal;
