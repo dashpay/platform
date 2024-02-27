@@ -2,7 +2,7 @@
 name = "platform-value"
 authors = ["Samuel Westrich <sam@dash.org>"]
 description = "A simple value module"
-version = "1.0.0-pr.1694.6"
+version = "1.0.0-pr.1694.7"
 edition = "2021"
 rust-version = "1.76"
 license = "MIT"

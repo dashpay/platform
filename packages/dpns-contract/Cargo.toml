@@ -1,7 +1,7 @@
 [package]
 name = "dpns-contract"
 description = "DPNS data contract schema and tools"
-version = "1.0.0-pr.1694.6"
+version = "1.0.0-pr.1694.7"
 edition = "2021"
 rust-version = "1.76"
 license = "MIT"
