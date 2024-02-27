@@ -297,7 +297,6 @@ COPY --from=build-dashmate-helper /platform/package.json /platform/yarn.lock /pl
 COPY --from=build-dashmate-helper /platform/packages/dashmate packages/dashmate
 COPY --from=build-dashmate-helper /platform/packages/dashpay-contract packages/dashpay-contract
 COPY --from=build-dashmate-helper /platform/packages/wallet-lib packages/wallet-lib
-COPY --from=build-dashmate-helper /platform/packages/js-dash-sdk packages/js-dash-sdk
 COPY --from=build-dashmate-helper /platform/packages/js-dapi-client packages/js-dapi-client
 COPY --from=build-dashmate-helper /platform/packages/js-grpc-common packages/js-grpc-common
 COPY --from=build-dashmate-helper /platform/packages/dapi-grpc packages/dapi-grpc
@@ -307,7 +306,6 @@ COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-co
 COPY --from=build-dashmate-helper /platform/packages/feature-flags-contract packages/feature-flags-contract
 COPY --from=build-dashmate-helper /platform/packages/dpns-contract packages/dpns-contract
 COPY --from=build-dashmate-helper /platform/packages/data-contracts packages/data-contracts
-COPY --from=build-dashmate-helper /platform/packages/wasm-dpp packages/wasm-dpp
 
 ENV DASHMATE_HOME_DIR=/home/dashmate/.dashmate
 ENV DASHMATE_HELPER=1

@@ -15,6 +15,7 @@ use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::DefaultCoreRPC;
 use itertools::Itertools;
 use std::fs::remove_file;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -23,6 +24,9 @@ use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{registry, Layer, Registry};
 
 const SHUTDOWN_TIMEOUT_MILIS: u64 = 5000; // 5s; Docker defaults to 10s
 
@@ -109,7 +113,7 @@ impl Cli {
                 // Drive and Tenderdash rely on Core. Various functions will fail if Core is not synced.
                 // We need to make sure that Core is ready before we start Drive ABCI app
                 // Tenderdash won't start too until ABCI port is open.
-                //wait_for_core_to_sync_v0(&core_rpc, cancel.clone()).map_err(|e| e.to_string())?;
+                wait_for_core_to_sync_v0(&core_rpc, cancel.clone()).map_err(|e| e.to_string())?;
 
                 if cancel.is_cancelled() {
                     return Ok(());
@@ -160,7 +164,44 @@ fn main() -> Result<(), ExitCode> {
 
     let loggers = configure_logging(&cli, &config).expect("failed to configure logging");
 
+    // If tokio console is enabled, we install loggers together with tokio console
+    // due to type compatibility issue
+
+    #[cfg(not(feature = "console"))]
+    loggers.install();
+
+    #[cfg(feature = "console")]
+    if config.tokio_console_enabled {
+        // Initialize Tokio console subscriber
+
+        let socket_addr: SocketAddr = config
+            .tokio_console_address
+            .parse()
+            .expect("cannot parse tokio console address");
+
+        let console_layer = console_subscriber::ConsoleLayer::builder()
+            .retention(Duration::from_secs(config.tokio_console_retention_secs))
+            .server_addr(socket_addr)
+            .spawn();
+
+        tracing_subscriber::registry()
+            .with(
+                loggers
+                    .tracing_subscriber_layers()
+                    .expect("should return layers"),
+            )
+            .with(console_layer)
+            .try_init()
+            .expect("can't init tracing subscribers");
+    } else {
+        loggers.install();
+    }
+
+    // Log panics
+
     install_panic_hook(cancel.clone());
+
+    // Start runtime in the main thread
 
     let runtime_guard = runtime.enter();
 
@@ -356,7 +397,6 @@ fn configure_logging(cli: &Cli, config: &PlatformConfig) -> Result<Loggers, logg
     }
 
     let loggers = LogBuilder::new().with_configs(&configs)?.build();
-    loggers.install();
 
     tracing::info!("Configured log destinations: {}", configs.keys().join(","));
 

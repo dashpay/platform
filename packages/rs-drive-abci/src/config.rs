@@ -169,11 +169,6 @@ pub struct PlatformConfig {
     /// Address to listen for gRPC connection.
     pub grpc_bind_address: String,
 
-    /// Multiplier for num cpu to set max number of blocking threads
-    /// of the main runtime
-    #[serde(default = "default_max_blocking_thread_num_cpu_multiplier")]
-    pub max_blocking_thread_num_cpu_multiplier: u8,
-
     /// Execution config
     #[serde(flatten)]
     pub execution: ExecutionConfig,
@@ -210,6 +205,17 @@ pub struct PlatformConfig {
     /// This should be None, except in the case of Testing platform
     #[serde(skip)]
     pub testing_configs: PlatformTestConfig,
+
+    /// Enable tokio console (console feature must be enabled)
+    pub tokio_console_enabled: bool,
+
+    /// Tokio console address to connect to
+    #[serde(default = "PlatformConfig::default_tokio_console_address")]
+    pub tokio_console_address: String,
+
+    /// Number of seconds to store task information if there is no clients connected
+    #[serde(default = "PlatformConfig::default_tokio_console_retention_secs")]
+    pub tokio_console_retention_secs: u64,
 }
 
 impl ExecutionConfig {
@@ -234,6 +240,14 @@ impl PlatformConfig {
     fn default_initial_protocol_version() -> ProtocolVersion {
         //todo: versioning
         1
+    }
+
+    fn default_tokio_console_address() -> String {
+        String::from("127.0.0.1:6669")
+    }
+
+    fn default_tokio_console_retention_secs() -> u64 {
+        60 * 3
     }
 
     /// Return type of quorum
@@ -313,10 +327,6 @@ impl Default for PlatformConfig {
     }
 }
 
-fn default_max_blocking_thread_num_cpu_multiplier() -> u8 {
-    5
-}
-
 #[allow(missing_docs)]
 impl PlatformConfig {
     pub fn default_local() -> Self {
@@ -333,10 +343,12 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
+            tokio_console_enabled: false,
+            tokio_console_address: PlatformConfig::default_tokio_console_address(),
+            tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
             initial_protocol_version: 1,
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
-            max_blocking_thread_num_cpu_multiplier: 5,
         }
     }
 
@@ -357,7 +369,9 @@ impl PlatformConfig {
             initial_protocol_version: 1,
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
-            max_blocking_thread_num_cpu_multiplier: 5,
+            tokio_console_enabled: false,
+            tokio_console_address: PlatformConfig::default_tokio_console_address(),
+            tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
         }
     }
 
@@ -378,7 +392,9 @@ impl PlatformConfig {
             initial_protocol_version: 1,
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
-            max_blocking_thread_num_cpu_multiplier: 5,
+            tokio_console_enabled: false,
+            tokio_console_address: PlatformConfig::default_tokio_console_address(),
+            tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
         }
     }
 }

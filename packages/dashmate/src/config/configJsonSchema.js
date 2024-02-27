@@ -513,6 +513,28 @@ export default {
                     additionalProperties: false,
                   },
                 },
+                tokioConsole: {
+                  type: 'object',
+                  properties: {
+                    enabled: {
+                      type: 'boolean',
+                    },
+                    host: {
+                      type: 'string',
+                      minLength: 1,
+                      format: 'ipv4',
+                    },
+                    port: {
+                      $ref: '#/definitions/port',
+                    },
+                    retention_secs: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                  },
+                  required: ['enabled', 'host', 'port', 'retention_secs'],
+                  additionalProperties: false,
+                },
                 validatorSet: {
                   type: 'object',
                   properties: {
@@ -551,7 +573,7 @@ export default {
                 },
               },
               additionalProperties: false,
-              required: ['docker', 'logs', 'validatorSet', 'chainLock', 'epochTime'],
+              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime'],
             },
             tenderdash: {
               type: 'object',
