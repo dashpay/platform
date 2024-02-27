@@ -144,6 +144,8 @@ fn main() -> Result<(), ExitCode> {
     // TODO: We might want to limit worker threads
     // TODO: Figure out how many blocking threads and grpc concurrency we should set
     let runtime = Builder::new_multi_thread()
+        // TODO: 8 MB stack threads as some recursions in GroveDB can be pretty deep
+        //  We could remove such a stack stack size once deletion of a node doesn't recurse in grovedb
         .thread_stack_size(8 * 1024 * 1024)
         .enable_all()
         // TODO: We probably we want to have them bigger than concurrency limit in tonic to make
@@ -159,9 +161,6 @@ fn main() -> Result<(), ExitCode> {
     let loggers = configure_logging(&cli, &config).expect("failed to configure logging");
 
     install_panic_hook(cancel.clone());
-
-    // TODO: 8 MB stack threads as some recursions in GroveDB can be pretty deep
-    //  We could remove such a stack stack size once deletion of a node doesn't recurse in grovedb
 
     let runtime_guard = runtime.enter();
 
