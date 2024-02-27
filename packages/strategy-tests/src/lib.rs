@@ -1038,6 +1038,7 @@ impl Strategy {
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
                         match update_op {
                             IdentityUpdateOp::IdentityUpdateAddKeys(keys_count) => {
+                                // again, count is the number of state transitions and keys_count is the number of keys to add per ST
                                 (0..count).for_each(|_| {
                                     current_identities.iter_mut().enumerate().for_each(|(i, random_identity)| {
                                         if i >= count.into() { return; }
@@ -1052,10 +1053,9 @@ impl Strategy {
                                                 platform_version,
                                             );
                                         operations.push(state_transition);
-                                        finalize_block_operations.push(IdentityAddKeys(
-                                            keys_to_add_at_end_block.0,
-                                            keys_to_add_at_end_block.1,
-                                        ));
+                                        for key in keys_to_add_at_end_block.1 {
+                                            random_identity.add_public_key(key);
+                                        }
                                     });
                                 });
                             }
