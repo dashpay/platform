@@ -2,11 +2,11 @@
 name = "drive-abci"
 version = "1.0.0-pr.1694.7"
 authors = [
-  "Samuel Westrich <sam@dash.org>",
-  "Ivan Shumkov <ivan@shumkov.ru>",
-  "Djavid Gabibiyan <djavid@dash.org>",
-  "Lukasz Klimek <lukasz.klimek@dash.org>",
-  "Igor Markin <igor.markin@dash.org>",
+    "Samuel Westrich <sam@dash.org>",
+    "Ivan Shumkov <ivan@shumkov.ru>",
+    "Djavid Gabibiyan <djavid@dash.org>",
+    "Lukasz Klimek <lukasz.klimek@dash.org>",
+    "Igor Markin <igor.markin@dash.org>",
 ]
 edition = "2021"
 rust-version = "1.76"
@@ -19,12 +19,12 @@ chrono = "0.4.20"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_with = { version = "3.1.0", features = [
-  "hex",
-  "macros",
+    "hex",
+    "macros",
 ], default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
-  "full",
-  "grovedb_operations_logging",
+    "full",
+    "grovedb_operations_logging",
 ] }
 thiserror = "1.0.30"
 rand = "0.8.5"
@@ -46,17 +46,17 @@ envy = { version = "0.4.2" }
 dotenvy = { version = "0.15.7", optional = true }
 dapi-grpc = { path = "../dapi-grpc", features = ["platform", "server"] }
 tracing-subscriber = { version = "0.3.16", default-features = false, features = [
-  "env-filter",
-  "ansi",
-  "json",
-  "fmt",
-  "std",
-  "registry",
-  "tracing-log",
+    "env-filter",
+    "ansi",
+    "json",
+    "fmt",
+    "std",
+    "registry",
+    "tracing-log",
 ], optional = false }
 atty = { version = "0.2.14", optional = false }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "81d28aa0b15fc0844dfa7f7251f6949f6c6c405a", features = [
-  "grpc-server",
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "47d4105a49a4a332d5578a91371333686c7c5b1a", features = [
+    "grpc-server",
 ] }
 thread-priority = "0.15.1"
 lazy_static = "1.4.0"
@@ -70,10 +70,10 @@ metrics-exporter-prometheus = { version = "0.12" }
 url = { version = "2.3.1" }
 ureq = { "version" = "2.6.2" }
 tokio = { version = "1", features = [
-  "macros",
-  "signal",
-  "rt-multi-thread",
-  "time",
+    "macros",
+    "signal",
+    "rt-multi-thread",
+    "time",
 ] }
 tokio-util = { version = "0.7.8" }
 tower = { version = "0.4.13" }
@@ -86,19 +86,19 @@ console-subscriber = { version = "0.2.0", optional = true }
 [dev-dependencies]
 base64 = "0.20.0"
 platform-version = { path = "../rs-platform-version", features = [
-  "mock-versions",
+    "mock-versions",
 ] }
 dpp = { path = "../rs-dpp", features = [
-  "abci",
-  "random-documents",
-  "state-transition-signing",
-  "random-identities",
-  "random-public-keys",
-  "random-document-types",
-  "fixtures-and-mocks",
-  "identity-value-conversion",
-  "data-contract-json-conversion",
-  "data-contract-cbor-conversion",
+    "abci",
+    "random-documents",
+    "state-transition-signing",
+    "random-identities",
+    "random-public-keys",
+    "random-document-types",
+    "fixtures-and-mocks",
+    "identity-value-conversion",
+    "data-contract-json-conversion",
+    "data-contract-cbor-conversion",
 ] }
 drive = { path = "../rs-drive" }
 strategy-tests = { path = "../strategy-tests" }
