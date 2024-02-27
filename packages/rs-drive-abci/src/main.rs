@@ -109,7 +109,7 @@ impl Cli {
                 // Drive and Tenderdash rely on Core. Various functions will fail if Core is not synced.
                 // We need to make sure that Core is ready before we start Drive ABCI app
                 // Tenderdash won't start too until ABCI port is open.
-                wait_for_core_to_sync_v0(&core_rpc, cancel.clone()).map_err(|e| e.to_string())?;
+                //wait_for_core_to_sync_v0(&core_rpc, cancel.clone()).map_err(|e| e.to_string())?;
 
                 if cancel.is_cancelled() {
                     return Ok(());
@@ -139,8 +139,19 @@ fn main() -> Result<(), ExitCode> {
     let cli = Cli::parse();
     let config = load_config(&cli.config);
 
-    #[cfg(feature = "console")]
-    console_subscriber::init();
+    // Start tokio runtime and thread listening for signals.
+    // The runtime will be reused by Prometheus and rs-tenderdash-abci.
+    // TODO: We might want to limit worker threads
+    // TODO: Figure out how many blocking threads and grpc concurrency we should set
+    let runtime = Builder::new_multi_thread()
+        .thread_stack_size(8 * 1024 * 1024)
+        .enable_all()
+        // TODO: We probably we want to have them bigger than concurrency limit in tonic to make
+        //  sure that other libraries have room to spawn them
+        // TODO: Expose limits as configuration so we can easily tune them without rebuilding
+        // .max_blocking_threads(num_cpus::get() * 5)
+        .build()
+        .expect("cannot initialize tokio runtime");
 
     // We use `cancel` to notify other subsystems that the server is shutting down
     let cancel = CancellationToken::new();
@@ -149,32 +160,13 @@ fn main() -> Result<(), ExitCode> {
 
     install_panic_hook(cancel.clone());
 
-    // Start tokio runtime and thread listening for signals.
-    // The runtime will be reused by Prometheus and rs-tenderdash-abci.
-
     // TODO: 8 MB stack threads as some recursions in GroveDB can be pretty deep
     //  We could remove such a stack stack size once deletion of a node doesn't recurse in grovedb
 
-    // TODO: Expose limits as configuration so we can easily tune them without rebuilding
-
-    // TODO: We might want to limit worker threads
-    // TODO: Figure out how many blocking threads and grpc concurrency we should set
-    let runtime = Builder::new_multi_thread()
-        .thread_stack_size(8 * 1024 * 1024)
-        .thread_name("main".to_string())
-        .enable_all()
-        // TODO: We probably we want to have them bigger than concurrency limit in tonic to make
-        //  sure that other libraries have room to spawn them
-        .max_blocking_threads(num_cpus::get() * 5)
-        .build()
-        .expect("cannot initialize tokio runtime");
-
-    let rt_guard = runtime.enter();
+    let runtime_guard = runtime.enter();
 
     runtime.spawn(handle_signals(cancel.clone(), loggers));
 
-    // Main thread is not started in runtime, as it is synchronous and we don't want to run into
-    // potential, hard to debug, issues.
     let result = match cli.run(&runtime, config, cancel) {
         Ok(()) => {
             tracing::debug!("shutdown complete");
@@ -186,7 +178,7 @@ fn main() -> Result<(), ExitCode> {
         }
     };
 
-    drop(rt_guard);
+    drop(runtime_guard);
     runtime.shutdown_timeout(Duration::from_millis(SHUTDOWN_TIMEOUT_MILIS));
     tracing::info!("drive-abci server is stopped");
 

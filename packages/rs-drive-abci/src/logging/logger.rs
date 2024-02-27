@@ -184,8 +184,21 @@ impl Loggers {
             .map(|l| Ok(Box::new(l.layer()?)))
             .collect::<Result<Vec<_>, _>>()?;
 
+        // Initialize Tokio console subscriber
+
+        // #[cfg(feature = "console")]
+        // {
+        //     let console_layer = console_subscriber::spawn();
+        //     registry();
+        // }
+
+        // TODO: Must be under feature flag
+
+        let console_layer = console_subscriber::spawn();
+
         registry()
             .with(loggers)
+            .with(console_layer)
             .try_init()
             .map_err(Error::TryInitError)
     }

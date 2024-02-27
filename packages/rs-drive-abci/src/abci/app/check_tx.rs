@@ -10,6 +10,7 @@ use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::abci_application_server as grpc_abci_server;
 use tenderdash_abci::proto::tonic;
 use tokio;
+use tracing::Instrument;
 
 /// AbciApp is an implementation of gRPC ABCI Application, as defined by Tenderdash.
 ///
@@ -71,18 +72,26 @@ where
     ) -> Result<tonic::Response<proto::ResponseCheckTx>, tonic::Status> {
         let platform = Arc::clone(&self.platform);
 
-        // TODO: Add logging instrumentation, or task name with Builder
+        let proto_request = request.into_inner();
 
-        tokio::task::spawn_blocking(move || {
-            let response =
-                handler::check_tx(&platform, request.into_inner()).map_err(error_into_status)?;
+        let check_tx_type = proto::CheckTxType::try_from(proto_request.r#type)
+            .map_err(|_| tonic::Status::invalid_argument("invalid check tx type"))?;
 
-            Ok(tonic::Response::new(response))
-        })
-        .await
-        .map_err(|error| {
-            tonic::Status::internal(format!("check tx panics: {}", error.to_string()))
-        })?
+        let thread_name = match check_tx_type {
+            proto::CheckTxType::New => "check_tx",
+            proto::CheckTxType::Recheck => "re_check_tx",
+        };
+
+        tokio::task::Builder::new()
+            .name(thread_name)
+            .spawn_blocking(move || {
+                let response =
+                    handler::check_tx(&platform, proto_request).map_err(error_into_status)?;
+
+                Ok(tonic::Response::new(response))
+            })?
+            .await
+            .map_err(|error| tonic::Status::internal(format!("check tx panics: {}", error)))?
     }
 }
 

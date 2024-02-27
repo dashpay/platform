@@ -112,7 +112,7 @@ integer-encoding = { version = "4.0.0" }
 default = ["server", "mocks", "console"]
 server = ["clap", "dotenvy"]
 mocks = ["mockall", "drive/fixtures-and-mocks"]
-console = ["console-subscriber"]
+console = ["console-subscriber", "tokio/tracing"]
 
 
 [[bin]]

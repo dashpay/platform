@@ -87,7 +87,7 @@ services:
       - platform
     ports:
       # TODO: Must be configured
-      - "127.0.0.1:6669:6669"
+      - "127.0.0.1::6669"
 
   drive_tenderdash:
     image: ${PLATFORM_DRIVE_TENDERDASH_DOCKER_IMAGE:?err}

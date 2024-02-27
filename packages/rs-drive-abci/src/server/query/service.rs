@@ -24,6 +24,7 @@ use drive_abci::platform_types::platform::Platform;
 use drive_abci::query::QueryValidationResult;
 use drive_abci::rpc::core::DefaultCoreRPC;
 use std::sync::Arc;
+use tracing::Instrument;
 
 pub struct QueryServer {
     platform: Arc<Platform<DefaultCoreRPC>>,
@@ -41,6 +42,7 @@ impl QueryServer {
         &self,
         request: Request<RQ>,
         query_method: QueryMethod<RQ, RS>,
+        name: &str,
     ) -> Result<Response<RS>, Status>
     where
         RS: Clone + Send + 'static,
@@ -48,30 +50,33 @@ impl QueryServer {
     {
         let platform = Arc::clone(&self.platform);
 
-        // TODO: Add logging instrumentation, or task name with Builder
+        // TODO: Instrument with custom fields
 
-        tokio::task::spawn_blocking(move || {
-            let Some(platform_version) = PlatformVersion::get_maybe_current() else {
-                return Err(Status::unavailable("platform is not initialized"));
-            };
+        tokio::task::Builder::new()
+            .name("query")
+            .spawn_blocking(move || {
+                let Some(platform_version) = PlatformVersion::get_maybe_current() else {
+                    return Err(Status::unavailable("platform is not initialized"));
+                };
 
-            let mut result = query_method(&platform, request.into_inner(), platform_version)
-                .map_err(error_into_status)?;
+                let mut result = query_method(&platform, request.into_inner(), platform_version)
+                    .map_err(error_into_status)?;
 
-            if result.is_valid() {
-                let response = result
-                    .into_data()
-                    .map_err(|error| error_into_status(error.into()))?;
+                if result.is_valid() {
+                    let response = result
+                        .into_data()
+                        .map_err(|error| error_into_status(error.into()))?;
 
-                Ok(Response::new(response))
-            } else {
-                let error = result.errors.swap_remove(0);
+                    Ok(Response::new(response))
+                } else {
+                    let error = result.errors.swap_remove(0);
 
-                Err(query_error_into_status(error))
-            }
-        })
-        .await
-        .map_err(|error| Status::internal(format!("join error: {}", error)))?
+                    Err(query_error_into_status(error))
+                }
+            })?
+            .instrument(tracing::trace_span!("query", name))
+            .await
+            .map_err(|error| Status::internal(format!("join error: {}", error)))?
     }
 }
 
@@ -94,32 +99,48 @@ impl PlatformService for QueryServer {
         &self,
         request: Request<GetIdentityRequest>,
     ) -> Result<Response<GetIdentityResponse>, Status> {
-        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_identity)
-            .await
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity,
+            "identity",
+        )
+        .await
     }
 
     async fn get_identities(
         &self,
         request: Request<GetIdentitiesRequest>,
     ) -> Result<Response<GetIdentitiesResponse>, Status> {
-        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_identities)
-            .await
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identities,
+            "identities",
+        )
+        .await
     }
 
     async fn get_identity_keys(
         &self,
         request: Request<GetIdentityKeysRequest>,
     ) -> Result<Response<GetIdentityKeysResponse>, Status> {
-        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_keys)
-            .await
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_keys,
+            "identity keys",
+        )
+        .await
     }
 
     async fn get_identity_balance(
         &self,
         request: Request<GetIdentityBalanceRequest>,
     ) -> Result<Response<GetIdentityBalanceResponse>, Status> {
-        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_balance)
-            .await
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_balance,
+            "identity balance",
+        )
+        .await
     }
 
     async fn get_identity_balance_and_revision(
@@ -129,6 +150,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_balance_and_revision,
+            "identity balance and revision",
         )
         .await
     }
@@ -137,7 +159,7 @@ impl PlatformService for QueryServer {
         &self,
         request: Request<GetProofsRequest>,
     ) -> Result<Response<GetProofsResponse>, Status> {
-        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_proofs)
+        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_proofs, "proofs")
             .await
     }
 
@@ -145,8 +167,12 @@ impl PlatformService for QueryServer {
         &self,
         request: Request<GetDataContractRequest>,
     ) -> Result<Response<GetDataContractResponse>, Status> {
-        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_data_contract)
-            .await
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_data_contract,
+            "data contract",
+        )
+        .await
     }
 
     async fn get_data_contract_history(
@@ -156,6 +182,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_data_contract_history,
+            "data contract history",
         )
         .await
     }
@@ -164,16 +191,24 @@ impl PlatformService for QueryServer {
         &self,
         request: Request<GetDataContractsRequest>,
     ) -> Result<Response<GetDataContractsResponse>, Status> {
-        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_data_contracts)
-            .await
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_data_contracts,
+            "data contracts",
+        )
+        .await
     }
 
     async fn get_documents(
         &self,
         request: Request<GetDocumentsRequest>,
     ) -> Result<Response<GetDocumentsResponse>, Status> {
-        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_documents)
-            .await
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_documents,
+            "documents",
+        )
+        .await
     }
 
     async fn get_identities_by_public_key_hashes(
@@ -183,6 +218,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identities_by_public_key_hashes,
+            "identities by public key hashes",
         )
         .await
     }
@@ -194,6 +230,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identity_by_public_key_hash,
+            "identity by public key hash",
         )
         .await
     }
@@ -219,6 +256,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_version_upgrade_state,
+            "protocol version upgrade state",
         )
         .await
     }
@@ -230,6 +268,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_version_upgrade_vote_status,
+            "protocol version upgrade vote status",
         )
         .await
     }
@@ -238,7 +277,11 @@ impl PlatformService for QueryServer {
         &self,
         request: Request<GetEpochsInfoRequest>,
     ) -> Result<Response<GetEpochsInfoResponse>, Status> {
-        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_epoch_infos)
-            .await
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_epoch_infos,
+            "epochs",
+        )
+        .await
     }
 }
