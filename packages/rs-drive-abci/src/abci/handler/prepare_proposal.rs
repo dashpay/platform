@@ -251,7 +251,7 @@ where
 pub(super) fn get_consensus_params_update(
     consensus_params_dir: &str,
     height: i64,
-) -> Result<Option<ConsensusParams>, std::io::Error> {
+) -> Result<OptionConsensusParams>, std::io::Error> {
     if consensus_params_dir.is_empty() {
         return Ok(None);
     }
@@ -277,50 +277,46 @@ mod test {
         let consensus_params_dir = temp_dir.path().to_str().unwrap().to_string();
 
         let height = 123456;
-        let file_path = PathBuf::from(&consensus_params_dir);
-        file_path.to_path_buf().push(format!("{}.json", height));
+        let mut file_path = PathBuf::from(&consensus_params_dir);
+        file_path.push(format!("{}.json", height));
 
-        let consensus_params = r#"
-        {
+        let consensus_params = r#"{
             "block": {
-              "max_bytes": "2097152",
-              "max_gas": "50000000000"
+            "max_bytes": "2097152",
+            "max_gas": "40000000000"
             },
             "evidence": {
-              "max_age_num_blocks": "10000",
-              "max_age_duration": "172800000000000",
-              "max_bytes": "0"
+            "max_age_num_blocks": "100000",
+            "max_age_duration": "172800000000000",
+            "max_bytes": "0"
             },
             "validator": {
-              "pub_key_types": [
+            "pub_key_types": [
                 "bls12381"
-              ]
+            ]
             },
             "version": {
-              "app_version": "1"
+            "app_version": "1"
             },
             "synchrony": {
-              "precision": "500000000",
-              "message_delay": "60000000000"
+            "precision": "500000000",
+            "message_delay": "60000000000"
             },
             "timeout": {
-              "propose": "40000000000",
-              "propose_delta": "5000000000",
-              "vote": "40000000000",
-              "vote_delta": "5000000000"
+            "propose": "40000000000",
+            "propose_delta": "5000000000",
+            "vote": "40000000000",
+            "vote_delta": "5000000000"
             },
             "abci": {
-              "recheck_tx": true
+            "recheck_tx": true
             }
-          }
-        "#;
+        }"#;
 
-        std::fs::write(file_path, consensus_params).unwrap();
-
-        // display the file
-        println!("{}", std::fs::read_to_string(file_path).unwrap());
+        std::fs::write(&file_path, consensus_params).unwrap();
 
         let result = super::get_consensus_params_update(&consensus_params_dir, height).unwrap();
+        println!("{:?}", result);
         assert_eq!(result.unwrap().block.unwrap().max_bytes, 2097152);
     }
 }
