@@ -177,30 +177,22 @@ impl Loggers {
     /// drive_abci::logging::Loggers::default().try_install().ok();
     /// ```
     pub fn try_install(&self) -> Result<(), Error> {
-        // Based on examples from https://docs.rs/tracing-subscriber/0.3.17/tracing_subscriber/layer/index.html
-        let loggers = self
-            .0
-            .values()
-            .map(|l| Ok(Box::new(l.layer()?)))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // Initialize Tokio console subscriber
-
-        // #[cfg(feature = "console")]
-        // {
-        //     let console_layer = console_subscriber::spawn();
-        //     registry();
-        // }
-
-        // TODO: Must be under feature flag
-
-        let console_layer = console_subscriber::spawn();
+        let layers = self.tracing_subscriber_layers()?;
 
         registry()
-            .with(loggers)
-            .with(console_layer)
+            .with(layers)
             .try_init()
             .map_err(Error::TryInitError)
+    }
+
+    /// Returns tracing subscriber layers
+    pub fn tracing_subscriber_layers(&self) -> Result<Vec<Box<impl Layer<Registry>>>, Error> {
+        // Based on examples from https://docs.rs/tracing-subscriber/0.3.17/tracing_subscriber/layer/index.html
+
+        self.0
+            .values()
+            .map(|l| Ok(Box::new(l.layer()?)))
+            .collect::<Result<Vec<_>, _>>()
     }
 
     /// Flushes all loggers.

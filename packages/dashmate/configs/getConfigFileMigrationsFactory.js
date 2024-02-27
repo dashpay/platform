@@ -186,7 +186,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             if (defaultConfigs.has(name) && !options.platform.drive.tenderdash.metrics) {
-              options.platform.drive.tenderdash.metrics = defaultConfigs.get(name).get('platform.drive.tenderdash.metrics');
+              options.platform.drive.tenderdash.metrics = defaultConfigs.get(name)
+                .get('platform.drive.tenderdash.metrics');
             }
           });
         return configFile;
@@ -426,7 +427,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (defaultConfigs.has(name)) {
-              options.platform.drive.tenderdash.genesis = defaultConfigs.get(name).get('platform.drive.tenderdash.genesis');
+              options.platform.drive.tenderdash.genesis = defaultConfigs.get(name)
+                .get('platform.drive.tenderdash.genesis');
             }
             options.platform.dapi.api.docker.deploy = base.get('platform.dapi.api.docker.deploy');
 
@@ -437,7 +439,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               baseConfigName = 'testnet';
             }
 
-            options.platform.drive.abci.chainLock = defaultConfigs.get(baseConfigName).get('platform.drive.abci.chainLock');
+            options.platform.drive.abci.chainLock = defaultConfigs.get(baseConfigName)
+              .get('platform.drive.abci.chainLock');
           });
 
         return configFile;
@@ -457,6 +460,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             options.platform.drive.tenderdash.mempool.cacheSize = base.get('platform.drive.tenderdash.mempool.cacheSize');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.6': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.abci.tokioConsole = base.get('platform.drive.abci.tokioConsole');
           });
 
         return configFile;
