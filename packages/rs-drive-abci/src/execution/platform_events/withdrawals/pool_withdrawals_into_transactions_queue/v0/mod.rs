@@ -59,8 +59,6 @@ impl<C> Platform<C>
                     )));
                 };
 
-            println!("document: {:?}", document.id());
-            println!("transaction_index: {:?}", transaction_index);
             document.set_u64(
                 withdrawal::properties::TRANSACTION_INDEX,
                 *transaction_index,
@@ -71,7 +69,6 @@ impl<C> Platform<C>
                 withdrawals_contract::WithdrawalStatus::POOLED as u8,
             );
 
-            println!("updated_at: {:?}", block_info.time_ms);
             document.set_updated_at(Some(block_info.time_ms));
 
             document.increment_revision().map_err(|_| {
