@@ -17214,10 +17214,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["socks", [\
-      ["npm:2.8.0", {\
-        "packageLocation": "./.yarn/cache/socks-npm-2.8.0-9be534eccc-ed0224ce2c.zip/node_modules/socks/",\
+      ["npm:2.8.1", {\
+        "packageLocation": "./.yarn/cache/socks-npm-2.8.1-3b253d7256-a3cc38e071.zip/node_modules/socks/",\
         "packageDependencies": [\
-          ["socks", "npm:2.8.0"],\
+          ["socks", "npm:2.8.1"],\
           ["ip-address", "npm:9.0.5"],\
           ["smart-buffer", "npm:4.2.0"]\
         ],\
@@ -17231,7 +17231,7 @@ const RAW_RUNTIME_STATE =
           ["socks-proxy-agent", "npm:6.1.1"],\
           ["agent-base", "npm:6.0.2"],\
           ["debug", "virtual:4b12ba5111caf7e8338099bdbc7cb046a9f8e079a44e74d0c03dca469876e3071ebbe671c5e90ae6b78ae33e22c205fa5ed32169a4aabd1404b13c56d09986e1#npm:4.3.4"],\
-          ["socks", "npm:2.8.0"]\
+          ["socks", "npm:2.8.1"]\
         ],\
         "linkType": "HARD"\
       }],\
@@ -17241,7 +17241,7 @@ const RAW_RUNTIME_STATE =
           ["socks-proxy-agent", "npm:7.0.0"],\
           ["agent-base", "npm:6.0.2"],\
           ["debug", "virtual:4b12ba5111caf7e8338099bdbc7cb046a9f8e079a44e74d0c03dca469876e3071ebbe671c5e90ae6b78ae33e22c205fa5ed32169a4aabd1404b13c56d09986e1#npm:4.3.4"],\
-          ["socks", "npm:2.8.0"]\
+          ["socks", "npm:2.8.1"]\
         ],\
         "linkType": "HARD"\
       }],\
@@ -17251,7 +17251,7 @@ const RAW_RUNTIME_STATE =
           ["socks-proxy-agent", "npm:8.0.2"],\
           ["agent-base", "npm:7.1.0"],\
           ["debug", "virtual:4b12ba5111caf7e8338099bdbc7cb046a9f8e079a44e74d0c03dca469876e3071ebbe671c5e90ae6b78ae33e22c205fa5ed32169a4aabd1404b13c56d09986e1#npm:4.3.4"],\
-          ["socks", "npm:2.8.0"]\
+          ["socks", "npm:2.8.1"]\
         ],\
         "linkType": "HARD"\
       }]\
