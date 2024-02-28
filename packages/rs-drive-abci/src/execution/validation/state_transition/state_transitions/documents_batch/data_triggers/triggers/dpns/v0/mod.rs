@@ -469,6 +469,7 @@ mod test {
         );
         let data_contract = get_dpns_data_contract_fixture(
             Some(owner_id),
+            0,
             state_read_guard.current_protocol_version_in_consensus(),
         )
         .data_contract_owned();

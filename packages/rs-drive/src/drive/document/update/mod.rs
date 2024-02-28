@@ -1824,11 +1824,10 @@ mod tests {
             }
         });
 
-        let factory = DataContractFactory::new(1, Some(Box::new(TestEntropyGenerator::new())))
-            .expect("expected to create factory");
+        let factory = DataContractFactory::new(1).expect("expected to create factory");
 
         let contract = factory
-            .create_with_value_config(owner_id, documents, None, None)
+            .create_with_value_config(owner_id, 0, documents, None, None)
             .expect("data in fixture should be correct")
             .data_contract_owned();
 

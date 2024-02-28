@@ -181,6 +181,7 @@ mod test {
 
         let mut contact_request_document = get_contact_request_document_fixture(
             None,
+            0,
             None,
             state_read_guard.current_protocol_version_in_consensus(),
         );
@@ -188,7 +189,7 @@ mod test {
         let owner_id = &contact_request_document.owner_id();
 
         let data_contract =
-            get_dashpay_contract_fixture(None, protocol_version).data_contract_owned();
+            get_dashpay_contract_fixture(None, 0, protocol_version).data_contract_owned();
         let document_type = data_contract
             .document_type_for_name("contactRequest")
             .expect("expected a contact request");
@@ -271,6 +272,7 @@ mod test {
 
         let mut contact_request_document = get_contact_request_document_fixture(
             None,
+            0,
             None,
             state_write_guard.current_protocol_version_in_consensus(),
         );
@@ -279,6 +281,7 @@ mod test {
 
         let data_contract = get_dashpay_contract_fixture(
             None,
+            0,
             state_write_guard.current_protocol_version_in_consensus(),
         )
         .data_contract_owned();
@@ -387,11 +390,13 @@ mod test {
 
         let contact_request_document = get_contact_request_document_fixture(
             None,
+            0,
             None,
             state_write_guard.current_protocol_version_in_consensus(),
         );
         let data_contract = get_dashpay_contract_fixture(
             None,
+            0,
             state_write_guard.current_protocol_version_in_consensus(),
         )
         .data_contract_owned();

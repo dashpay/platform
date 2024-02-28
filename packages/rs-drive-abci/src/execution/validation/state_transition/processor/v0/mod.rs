@@ -340,6 +340,9 @@ impl StateTransitionNonceValidationV0 for StateTransition {
             StateTransition::DocumentsBatch(st) => {
                 st.validate_nonces(platform, block_info, tx, platform_version)
             }
+            StateTransition::DataContractCreate(st) => {
+                st.validate_nonces(platform, block_info, tx, platform_version)
+            }
             StateTransition::DataContractUpdate(st) => {
                 st.validate_nonces(platform, block_info, tx, platform_version)
             }

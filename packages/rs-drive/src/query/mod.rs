@@ -2047,7 +2047,7 @@ mod tests {
     #[test]
     fn test_drive_query_from_to_cbor() {
         let config = DriveConfig::default();
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2100,7 +2100,7 @@ mod tests {
                 ["lastName", "asc"],
             ]
         });
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2129,7 +2129,7 @@ mod tests {
             ],
             "invalid": 0,
         });
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2159,7 +2159,7 @@ mod tests {
             ],
         });
 
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2189,7 +2189,7 @@ mod tests {
             ],
         });
 
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2218,7 +2218,7 @@ mod tests {
                 ["lastName", "asc"],
             ],
         });
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2484,7 +2484,7 @@ mod tests {
             ],
         });
 
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2512,7 +2512,7 @@ mod tests {
             ],
         });
 
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2540,7 +2540,7 @@ mod tests {
             ],
         });
 
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2568,7 +2568,7 @@ mod tests {
             ],
         });
 
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
