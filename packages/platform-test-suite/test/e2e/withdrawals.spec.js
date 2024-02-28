@@ -104,7 +104,7 @@ describe('Withdrawals', function withdrawalsTest() {
       }, identity);
     });
 
-    it('should test identity recent index', async () => {
+    it('should be able to query recent withdrawal updates', async () => {
       const account = await client.getWalletAccount();
       const withdrawTo = await account.getUnusedAddress();
       const amountToWithdraw = 1000000;
