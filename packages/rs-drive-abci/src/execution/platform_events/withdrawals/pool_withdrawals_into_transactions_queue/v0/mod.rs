@@ -19,8 +19,8 @@ use crate::{
 };
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Pool withdrawal documents into transactions
     pub(super) fn pool_withdrawals_into_transactions_queue_v0(
@@ -53,11 +53,11 @@ impl<C> Platform<C>
 
         for document in documents.iter_mut() {
             let Some((transaction_index, _)) = untied_withdrawal_transactions.get(&document.id())
-                else {
-                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "transactions must contain a transaction",
-                    )));
-                };
+            else {
+                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "transactions must contain a transaction",
+                )));
+            };
 
             document.set_u64(
                 withdrawal::properties::TRANSACTION_INDEX,
@@ -141,9 +141,9 @@ impl<C> Platform<C>
 
 #[cfg(test)]
 mod tests {
-    use itertools::Itertools;
     use super::*;
     use dpp::block::epoch::Epoch;
+    use itertools::Itertools;
 
     use dpp::data_contracts::SystemDataContract;
     use dpp::identifier::Identifier;
@@ -196,7 +196,7 @@ mod tests {
             None,
             platform_version.protocol_version,
         )
-            .expect("expected withdrawal document");
+        .expect("expected withdrawal document");
 
         let document_type = data_contract
             .document_type_for_name(withdrawal::NAME)
@@ -224,7 +224,7 @@ mod tests {
             None,
             platform_version.protocol_version,
         )
-            .expect("expected withdrawal document");
+        .expect("expected withdrawal document");
 
         setup_document(
             &platform.drive,
@@ -252,14 +252,22 @@ mod tests {
             )
             .expect("to fetch withdrawal documents");
 
-        for (i, document) in updated_documents.into_iter()
+        for (i, document) in updated_documents
+            .into_iter()
             // Sort by index because updated_at is the same for all documents within batch
             .sorted_by(|a, b| {
-                let a_index = a.properties().get_u64(withdrawal::properties::TRANSACTION_INDEX).expect("to get transactionIndex");
-                let b_index = b.properties().get_u64(withdrawal::properties::TRANSACTION_INDEX).expect("to get transactionIndex");
+                let a_index = a
+                    .properties()
+                    .get_u64(withdrawal::properties::TRANSACTION_INDEX)
+                    .expect("to get transactionIndex");
+                let b_index = b
+                    .properties()
+                    .get_u64(withdrawal::properties::TRANSACTION_INDEX)
+                    .expect("to get transactionIndex");
                 a_index.cmp(&b_index)
             })
-            .enumerate() {
+            .enumerate()
+        {
             assert_eq!(document.revision(), Some(2));
 
             let tx_index = document
