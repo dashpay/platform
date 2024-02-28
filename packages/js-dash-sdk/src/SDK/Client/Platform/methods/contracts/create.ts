@@ -17,7 +17,12 @@ export async function create(
 
   await this.initialize();
 
-  const dataContract = this.dpp.dataContract.create(identity.getId(), contractDefinitions);
+  const identityNonce = await this.nonceManager.getIdentityNonce(identity.getId()) + 1;
+  const dataContract = this.dpp.dataContract.create(
+    identity.getId(),
+    BigInt(identityNonce),
+    contractDefinitions,
+  );
 
   this.logger.debug(`[Contracts#create] created data contract "${dataContract.getId()}"`);
 
