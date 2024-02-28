@@ -326,7 +326,9 @@ describe('Platform', () => {
       let dataContractFixture;
 
       before(async () => {
-        dataContractFixture = await getDataContractFixture(identity.getId());
+        const nextNonce = await client.platform.nonceManager
+          .bumpIdentityNonce(identity.getId());
+        dataContractFixture = await getDataContractFixture(nextNonce, identity.getId());
 
         await client.platform.contracts.publish(dataContractFixture, identity);
 

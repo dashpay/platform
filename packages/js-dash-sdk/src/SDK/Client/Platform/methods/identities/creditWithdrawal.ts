@@ -79,8 +79,7 @@ export async function creditWithdrawal(
 
   const coreFeePerByte = nearestGreaterFibonacci(minRelayFeePerByte);
 
-  const identityNonce = await this.nonceManager
-    .getIdentityNonce(identity.getId()) + 1;
+  const identityNonce = await this.nonceManager.bumpIdentityNonce(identity.getId());
 
   const identityCreditWithdrawalTransition = dpp.identity
     .createIdentityCreditWithdrawalTransition(
@@ -102,7 +101,6 @@ export async function creditWithdrawal(
     options.signingKeyIndex,
   );
 
-  this.nonceManager.setIdentityNonce(identity.getId(), identityNonce);
   // Skipping validation because it's already done above
   await broadcastStateTransition(this, identityCreditWithdrawalTransition, {
     skipValidation: true,

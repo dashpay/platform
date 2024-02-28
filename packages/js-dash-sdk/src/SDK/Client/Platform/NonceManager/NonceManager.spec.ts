@@ -43,6 +43,16 @@ describe('Dash - NonceManager', () => {
       expect(await nonceManager.getIdentityNonce(identityId)).to.be.equal(2);
       clock.restore();
     });
+
+    it('should bump identity nonce', async () => {
+      dapiClientMock.platform.getIdentityNonce.resolves({ identityNonce: 1 });
+      const prevNonce = await nonceManager.getIdentityNonce(identityId);
+      const nextNonce = await nonceManager.bumpIdentityNonce(identityId);
+      const currentNonce = await nonceManager.getIdentityNonce(identityId);
+      expect(nextNonce)
+        .to.equal(currentNonce)
+        .to.equal(prevNonce + 1);
+    });
   });
 
   describe('Identity contract nonce', () => {
@@ -72,6 +82,16 @@ describe('Dash - NonceManager', () => {
       expect(await nonceManager.getIdentityContractNonce(identityId, contractId))
         .to.be.equal(2);
       clock.restore();
+    });
+
+    it('should bump identity contract nonce', async () => {
+      dapiClientMock.platform.getIdentityContractNonce.resolves({ identityContractNonce: 1 });
+      const prevNonce = await nonceManager.getIdentityContractNonce(identityId, contractId);
+      const nextNonce = await nonceManager.bumpIdentityContractNonce(identityId, contractId);
+      const currentNonce = await nonceManager.getIdentityContractNonce(identityId, contractId);
+      expect(nextNonce)
+        .to.equal(currentNonce)
+        .to.equal(prevNonce + 1);
     });
   });
 });
