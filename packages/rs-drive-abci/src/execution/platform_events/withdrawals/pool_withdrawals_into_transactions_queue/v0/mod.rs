@@ -19,8 +19,8 @@ use crate::{
 };
 
 impl<C> Platform<C>
-where
-    C: CoreRPCLike,
+    where
+        C: CoreRPCLike,
 {
     /// Pool withdrawal documents into transactions
     pub(super) fn pool_withdrawals_into_transactions_queue_v0(
@@ -53,12 +53,14 @@ where
 
         for document in documents.iter_mut() {
             let Some((transaction_index, _)) = untied_withdrawal_transactions.get(&document.id())
-            else {
-                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "transactions must contain a transaction",
-                )));
-            };
+                else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "transactions must contain a transaction",
+                    )));
+                };
 
+            println!("document: {:?}", document.id());
+            println!("transaction_index: {:?}", transaction_index);
             document.set_u64(
                 withdrawal::properties::TRANSACTION_INDEX,
                 *transaction_index,
@@ -69,6 +71,7 @@ where
                 withdrawals_contract::WithdrawalStatus::POOLED as u8,
             );
 
+            println!("updated_at: {:?}", block_info.time_ms);
             document.set_updated_at(Some(block_info.time_ms));
 
             document.increment_revision().map_err(|_| {
@@ -141,6 +144,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
     use super::*;
     use dpp::block::epoch::Epoch;
 
@@ -195,7 +199,7 @@ mod tests {
             None,
             platform_version.protocol_version,
         )
-        .expect("expected withdrawal document");
+            .expect("expected withdrawal document");
 
         let document_type = data_contract
             .document_type_for_name(withdrawal::NAME)
@@ -223,7 +227,7 @@ mod tests {
             None,
             platform_version.protocol_version,
         )
-        .expect("expected withdrawal document");
+            .expect("expected withdrawal document");
 
         setup_document(
             &platform.drive,
@@ -251,7 +255,14 @@ mod tests {
             )
             .expect("to fetch withdrawal documents");
 
-        for (i, document) in updated_documents.into_iter().enumerate() {
+        for (i, document) in updated_documents.into_iter()
+            // Sort by index because updated_at is the same for all documents within batch
+            .sorted_by(|a, b| {
+                let a_index = a.properties().get_u64(withdrawal::properties::TRANSACTION_INDEX).expect("to get transactionIndex");
+                let b_index = b.properties().get_u64(withdrawal::properties::TRANSACTION_INDEX).expect("to get transactionIndex");
+                a_index.cmp(&b_index)
+            })
+            .enumerate() {
             assert_eq!(document.revision(), Some(2));
 
             let tx_index = document
