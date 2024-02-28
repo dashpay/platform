@@ -41,6 +41,8 @@ describe('DataContractFacade', () => {
     it('should create DataContract', () => {
       const result = dpp.dataContract.create(
         dataContract.getOwnerId(),
+        // eslint-disable-next-line
+        BigInt(1),
         dataContract.getDocumentSchemas(),
       );
 
@@ -65,6 +67,8 @@ describe('DataContractFacade', () => {
     it('should create DataContract from string', async () => {
       const contract = dpp.dataContract.create(
         dataContract.getOwnerId(),
+        // eslint-disable-next-line
+        BigInt(1),
         dataContract.getDocumentSchemas(),
       );
 
