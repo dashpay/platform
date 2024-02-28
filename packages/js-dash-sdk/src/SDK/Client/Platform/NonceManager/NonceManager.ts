@@ -1,13 +1,20 @@
 import DAPIClient from '@dashevo/dapi-client';
 import { Identifier } from '@dashevo/wasm-dpp';
 
-// TODO: re-fetch nonces by timeout
+type NonceState = {
+  value: number,
+  lastFetchedAt: number,
+};
+
+// 20 min
+export const NONCE_FETCH_INTERVAL = 1200 * 1000;
+
 class NonceManager {
   public dapiClient: DAPIClient;
 
-  private identityNonce: Map<Identifier, number>;
+  private identityNonce: Map<string, NonceState>;
 
-  private identityContractNonce: Map<Identifier, Map<Identifier, number>>;
+  private identityContractNonce: Map<string, Map<string, NonceState>>;
 
   constructor(dapiClient: DAPIClient) {
     this.dapiClient = dapiClient;
@@ -17,61 +24,122 @@ class NonceManager {
   }
 
   public setIdentityNonce(identityId: Identifier, nonce: number) {
-    this.identityNonce.set(identityId, nonce);
+    const identityIdStr = identityId.toString();
+    const nonceState = this.identityNonce.get(identityIdStr);
+
+    if (!nonceState) {
+      this.identityNonce.set(identityIdStr, {
+        value: nonce,
+        lastFetchedAt: Date.now(),
+      });
+    } else {
+      nonceState.value = nonce;
+    }
   }
 
   public async getIdentityNonce(identityId: Identifier): Promise<number> {
-    let nonce = this.identityNonce.get(identityId);
+    const identityIdStr = identityId.toString();
+    let nonceState = this.identityNonce.get(identityIdStr);
 
-    if (typeof nonce === 'undefined') {
-      ({ identityNonce: nonce } = await this.dapiClient.platform.getIdentityNonce(identityId));
+    if (typeof nonceState === 'undefined') {
+      const { identityNonce } = await this.dapiClient.platform.getIdentityNonce(identityId);
 
-      if (typeof nonce === 'undefined') {
+      if (typeof identityNonce === 'undefined') {
         throw new Error('Identity nonce is not found');
       }
 
-      this.identityNonce.set(identityId, nonce);
+      nonceState = {
+        value: identityNonce,
+        lastFetchedAt: Date.now(),
+      };
+
+      this.identityNonce.set(identityIdStr, nonceState);
+    } else {
+      const now = Date.now();
+      if (now - nonceState.lastFetchedAt > NONCE_FETCH_INTERVAL) {
+        const { identityNonce } = await this.dapiClient.platform.getIdentityNonce(identityId);
+
+        if (typeof identityNonce === 'undefined') {
+          throw new Error('Identity nonce is not found');
+        }
+
+        nonceState.value = identityNonce;
+        nonceState.lastFetchedAt = now;
+      }
     }
 
-    return nonce;
+    return nonceState.value;
   }
 
   public setIdentityContractNonce(identityId: Identifier, contractId: Identifier, nonce: number) {
-    let contractNonce = this.identityContractNonce.get(identityId);
+    const identityIdStr = identityId.toString();
+    const contractIdStr = contractId.toString();
+
+    let contractNonce = this.identityContractNonce.get(identityIdStr);
 
     if (!contractNonce) {
       contractNonce = new Map();
-      this.identityContractNonce.set(identityId, contractNonce);
+      this.identityContractNonce.set(identityIdStr, contractNonce);
     }
 
-    contractNonce.set(contractId, nonce);
+    const nonceState = contractNonce.get(contractIdStr);
+
+    if (!nonceState) {
+      contractNonce.set(contractIdStr, {
+        value: nonce,
+        lastFetchedAt: Date.now(),
+      });
+    } else {
+      nonceState.value = nonce;
+    }
   }
 
   public async getIdentityContractNonce(
     identityId: Identifier,
     contractId: Identifier,
   ): Promise<number> {
-    let contractNonce = this.identityContractNonce.get(identityId);
+    const identityIdStr = identityId.toString();
+    const contractIdStr = contractId.toString();
+
+    let contractNonce = this.identityContractNonce.get(identityIdStr);
 
     if (!contractNonce) {
       contractNonce = new Map();
-      this.identityContractNonce.set(identityId, contractNonce);
+      this.identityContractNonce.set(identityIdStr, contractNonce);
     }
 
-    let nonce = contractNonce.get(contractId);
+    let nonceState = contractNonce.get(contractIdStr);
 
-    if (typeof nonce === 'undefined') {
-      ({ identityContractNonce: nonce } = await this.dapiClient.platform
-        .getIdentityContractNonce(identityId, contractId));
+    if (typeof nonceState === 'undefined') {
+      const { identityContractNonce } = await this.dapiClient.platform
+        .getIdentityContractNonce(identityId, contractId);
 
-      if (typeof nonce === 'undefined') {
+      if (typeof identityContractNonce === 'undefined') {
         throw new Error('Identity contract nonce is not found');
       }
 
-      contractNonce.set(identityId, nonce);
+      nonceState = {
+        value: identityContractNonce,
+        lastFetchedAt: Date.now(),
+      };
+
+      contractNonce.set(contractIdStr, nonceState);
+    } else {
+      const now = Date.now();
+      if (now - nonceState.lastFetchedAt > NONCE_FETCH_INTERVAL) {
+        const { identityContractNonce } = await this.dapiClient.platform
+          .getIdentityContractNonce(identityId, contractId);
+
+        if (typeof identityContractNonce === 'undefined') {
+          throw new Error('Identity nonce is not found');
+        }
+
+        nonceState.value = identityContractNonce;
+        nonceState.lastFetchedAt = now;
+      }
     }
 
-    return nonce;
+    return nonceState.value;
   }
 }
 

@@ -146,33 +146,6 @@ describe('Withdrawals', function withdrawalsTest() {
         },
       );
 
-      const identityId = identity.getId();
-      const dataContractId = client.getApps().get('withdrawals').contractId;
-      const { identityContractNonce } = await client.getDAPIClient().platform
-        .getIdentityContractNonce(identityId, dataContractId);
-
-      const stateTransition = client.platform.dpp.document.createStateTransition({
-        create: [withdrawal],
-      }, {
-        [identityId.toString()]: {
-          [dataContractId.toString()]: identityContractNonce,
-        },
-      });
-
-      stateTransition.setSignaturePublicKeyId(1);
-
-      const account = await client.getWalletAccount();
-
-      const { privateKey } = account.identities.getIdentityHDKeyById(
-        identity.getId().toString(),
-        1,
-      );
-
-      await stateTransition.sign(
-        identity.getPublicKeyById(1),
-        privateKey.toBuffer(),
-      );
-
       try {
         await client.platform.documents.broadcast({
           create: [withdrawal],

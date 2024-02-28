@@ -2,7 +2,7 @@ const Dash = require('dash');
 
 const { createFakeInstantLock } = require('dash/build/utils/createFakeIntantLock');
 
-const { hash } = require('@dashevo/wasm-dpp/lib/utils/hash');
+const { hash, sha256 } = require('@dashevo/wasm-dpp/lib/utils/hash');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
@@ -658,9 +658,7 @@ describe('Platform', () => {
       });
     });
 
-    // TODO(rs-drive-abci): fix
-    //   fetching by opreatorIdentityId returns empty bytes and serialization fails
-    describe.skip('Masternodes', () => {
+    describe('Masternodes', () => {
       let dapiClient;
       const network = process.env.NETWORK;
 
@@ -707,7 +705,7 @@ describe('Platform', () => {
           if (transaction.extraPayload.operatorReward > 0) {
             const operatorPubKey = Buffer.from(masternodeEntry.pubKeyOperator, 'hex');
 
-            const operatorIdentityHash = hash(
+            const operatorIdentityHash = sha256(
               Buffer.concat([
                 Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
                 operatorPubKey,
