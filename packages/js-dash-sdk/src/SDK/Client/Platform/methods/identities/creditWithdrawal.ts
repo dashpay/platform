@@ -1,10 +1,10 @@
 import { Identity } from '@dashevo/wasm-dpp';
 import { Address, Script } from '@dashevo/dashcore-lib';
+import { Metadata } from '@dashevo/dapi-client/lib/methods/platform/response/Metadata';
 import broadcastStateTransition from '../../broadcastStateTransition';
 import { Platform } from '../../Platform';
 import { signStateTransition } from '../../signStateTransition';
 import { nearestGreaterFibonacci } from '../../../../../utils/fibonacci';
-import { Metadata } from '../../IStateTransitionResult';
 
 export const STATUSES = {
   PENDING: 0,
