@@ -259,6 +259,9 @@ RUN addgroup -g $USER_GID $USERNAME && \
 USER $USERNAME
 
 ENV RUST_BACKTRACE=1
+ENV CONSENSUS_PARAMS_DIR=${DB_PATH}/consensus-params
+RUN mkdir -p "${CONSENSUS_PARAMS_DIR}"
+
 WORKDIR /var/lib/dash/rs-drive-abci
 ENTRYPOINT ["/usr/bin/drive-abci"]
 CMD ["start"]
