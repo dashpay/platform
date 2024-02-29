@@ -208,7 +208,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     remove_votes_for_identity: 0,
                 },
                 setup: DriveVoteSetupMethodVersions {
-                    setup_initial_vote_tree_main_structure: 0,
+                    add_initial_vote_tree_main_structure_operations: 0,
                 },
             },
             contract: DriveContractMethodVersions {

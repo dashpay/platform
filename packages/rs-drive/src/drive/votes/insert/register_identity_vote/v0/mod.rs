@@ -1,6 +1,5 @@
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
 use dpp::fee::fee_result::FeeResult;
 use dpp::voting::Vote;
 use grovedb::TransactionArg;

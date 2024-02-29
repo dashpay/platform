@@ -35,12 +35,9 @@ use crate::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
 use crate::drive::batch::GroveDbOpBatch;
 
 use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-use crate::drive::identity::add_initial_withdrawal_state_structure_operations;
-use crate::drive::protocol_upgrade::add_initial_fork_update_structure_operations;
 use crate::drive::system::misc_path_vec;
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
-use crate::fee_pools::add_create_fee_pool_trees_operations;
 
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
@@ -186,19 +183,19 @@ impl Drive {
         );
 
         // In Pools: initialize the pools with epochs
-        add_create_fee_pool_trees_operations(&mut batch, self.config.epochs_per_era)?;
+        Drive::add_create_fee_pool_trees_operations(&mut batch, self.config.epochs_per_era)?;
 
         // In Withdrawals
-        add_initial_withdrawal_state_structure_operations(&mut batch);
+        Drive::add_initial_withdrawal_state_structure_operations(&mut batch);
 
         // For Versioning via forks
-        add_initial_fork_update_structure_operations(&mut batch);
+        Drive::add_initial_fork_update_structure_operations(&mut batch);
+
+        // For the vote tree structure
+        Drive::add_initial_vote_tree_main_structure_operations(&mut batch, platform_version)?;
+
 
         self.grove_apply_batch(batch, false, transaction, drive_version)?;
-
-        // We can then setup the initial vote tree main structure
-
-        self.setup_initial_vote_tree_main_structure(transaction, platform_version)?;
 
         Ok(())
     }

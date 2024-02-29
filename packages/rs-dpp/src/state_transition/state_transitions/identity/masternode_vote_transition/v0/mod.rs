@@ -88,6 +88,7 @@ mod test {
                 },
                 resource_vote: ResourceVote::TowardsIdentity(Identifier::random()),
             }),
+            nonce: 1,
             signature_public_key_id: rng.gen(),
             signature: [0; 65].to_vec().into(),
         };

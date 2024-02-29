@@ -246,7 +246,7 @@ pub struct DriveVoteMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVoteSetupMethodVersions {
-    pub setup_initial_vote_tree_main_structure: FeatureVersion,
+    pub add_initial_vote_tree_main_structure_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

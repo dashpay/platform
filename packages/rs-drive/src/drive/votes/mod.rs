@@ -35,17 +35,37 @@ pub(in crate::drive::votes) fn vote_root_path<'a>() -> [&'a [u8]; 1] {
     [Into::<&[u8; 1]>::into(RootTree::Votes)]
 }
 
+pub(in crate::drive::votes) fn vote_root_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+    ]
+}
+
 pub(in crate::drive::votes) fn vote_decisions_tree_path<'a>() -> [&'a [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::Votes),
-        Into::<&[u8; 1]>::into(VOTE_DECISIONS_TREE_KEY),
+        &[VOTE_DECISIONS_TREE_KEY as u8],
+    ]
+}
+
+pub(in crate::drive::votes) fn vote_decisions_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![VOTE_DECISIONS_TREE_KEY as u8],
     ]
 }
 
 pub(in crate::drive::votes) fn vote_contested_resource_tree_path<'a>() -> [&'a [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::Votes),
-        Into::<&[u8; 1]>::into(CONTESTED_RESOURCE_TREE_KEY),
+        &[CONTESTED_RESOURCE_TREE_KEY as u8],
+    ]
+}
+
+pub(in crate::drive::votes) fn vote_contested_resource_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![CONTESTED_RESOURCE_TREE_KEY as u8],
     ]
 }
 
@@ -53,8 +73,16 @@ pub(in crate::drive::votes) fn vote_contested_resource_end_date_queries_tree_pat
 ) -> [&'a [u8]; 3] {
     [
         Into::<&[u8; 1]>::into(RootTree::Votes),
-        Into::<&[u8; 1]>::into(CONTESTED_RESOURCE_TREE_KEY),
-        Into::<&[u8; 1]>::into(END_DATE_QUERIES_TREE_KEY),
+        &[CONTESTED_RESOURCE_TREE_KEY as u8],
+        &[END_DATE_QUERIES_TREE_KEY as u8],
+    ]
+}
+
+pub(in crate::drive::votes) fn vote_contested_resource_end_date_queries_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![CONTESTED_RESOURCE_TREE_KEY as u8],
+        vec![END_DATE_QUERIES_TREE_KEY as u8],
     ]
 }
 
@@ -62,18 +90,27 @@ pub(in crate::drive::votes) fn vote_contested_resource_identity_votes_tree_path<
 ) -> [&'a [u8]; 3] {
     [
         Into::<&[u8; 1]>::into(RootTree::Votes),
-        Into::<&[u8; 1]>::into(CONTESTED_RESOURCE_TREE_KEY),
-        Into::<&[u8; 1]>::into(IDENTITY_VOTES_TREE_KEY),
+        &[CONTESTED_RESOURCE_TREE_KEY as u8],
+        &[IDENTITY_VOTES_TREE_KEY as u8],
     ]
 }
+
+pub(in crate::drive::votes) fn vote_contested_resource_identity_votes_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Votes as u8],
+        vec![CONTESTED_RESOURCE_TREE_KEY as u8],
+        vec![IDENTITY_VOTES_TREE_KEY as u8],
+    ]
+}
+
 
 pub(in crate::drive::votes) fn vote_contested_resource_identity_votes_tree_path_for_identity<'a>(
     identity_id: &[u8; 32],
 ) -> [&'a [u8]; 4] {
     [
         Into::<&[u8; 1]>::into(RootTree::Votes),
-        Into::<&[u8; 1]>::into(CONTESTED_RESOURCE_TREE_KEY),
-        Into::<&[u8; 1]>::into(IDENTITY_VOTES_TREE_KEY),
+        &[CONTESTED_RESOURCE_TREE_KEY as u8],
+        &[IDENTITY_VOTES_TREE_KEY as u8],
         identity_id,
     ]
 }
