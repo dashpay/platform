@@ -10,7 +10,6 @@ use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::abci_application_server as grpc_abci_server;
 use tenderdash_abci::proto::tonic;
 use tokio;
-use tracing::Instrument;
 
 /// AbciApp is an implementation of gRPC ABCI Application, as defined by Tenderdash.
 ///

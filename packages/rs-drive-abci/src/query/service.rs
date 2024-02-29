@@ -1,4 +1,8 @@
-use crate::server::query::error::{error_into_status, query_error_into_status};
+use crate::error::query::QueryError;
+use crate::error::Error;
+use crate::platform_types::platform::Platform;
+use crate::query::QueryValidationResult;
+use crate::rpc::core::DefaultCoreRPC;
 use async_trait::async_trait;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
@@ -19,21 +23,19 @@ use dapi_grpc::platform::v0::{
 use dapi_grpc::tonic::{Request, Response, Status};
 use dpp::version::PlatformVersion;
 use dpp::version::PlatformVersionCurrentVersion;
-use drive_abci::error::Error;
-use drive_abci::platform_types::platform::Platform;
-use drive_abci::query::QueryValidationResult;
-use drive_abci::rpc::core::DefaultCoreRPC;
 use std::sync::Arc;
 use tracing::Instrument;
 
-pub struct QueryServer {
+/// Service to handle platform queries
+pub struct QueryService {
     platform: Arc<Platform<DefaultCoreRPC>>,
 }
 
 type QueryMethod<RQ, RS> =
     fn(&Platform<DefaultCoreRPC>, RQ, &PlatformVersion) -> Result<QueryValidationResult<RS>, Error>;
 
-impl QueryServer {
+impl QueryService {
+    /// Creates new QueryService
     pub fn new(platform: Arc<Platform<DefaultCoreRPC>>) -> Self {
         Self { platform }
     }
@@ -42,15 +44,13 @@ impl QueryServer {
         &self,
         request: Request<RQ>,
         query_method: QueryMethod<RQ, RS>,
-        name: &str,
+        endpoint_name: &str,
     ) -> Result<Response<RS>, Status>
     where
         RS: Clone + Send + 'static,
         RQ: Send + 'static,
     {
         let platform = Arc::clone(&self.platform);
-
-        // TODO: Instrument with custom fields
 
         tokio::task::Builder::new()
             .name("query")
@@ -74,7 +74,7 @@ impl QueryServer {
                     Err(query_error_into_status(error))
                 }
             })?
-            .instrument(tracing::trace_span!("query", name))
+            .instrument(tracing::trace_span!("query", endpoint_name))
             .await
             .map_err(|error| Status::internal(format!("join error: {}", error)))?
     }
@@ -87,12 +87,12 @@ fn respond_with_unimplemented<RS>(name: &str) -> Result<Response<RS>, Status> {
 }
 
 #[async_trait]
-impl PlatformService for QueryServer {
+impl PlatformService for QueryService {
     async fn broadcast_state_transition(
         &self,
         _request: Request<BroadcastStateTransitionRequest>,
     ) -> Result<Response<BroadcastStateTransitionResponse>, Status> {
-        respond_with_unimplemented("broadcast state transition")
+        respond_with_unimplemented("broadcast_state_transition")
     }
 
     async fn get_identity(
@@ -102,7 +102,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identity,
-            "identity",
+            "get_identity",
         )
         .await
     }
@@ -114,7 +114,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identities,
-            "identities",
+            "get_identities",
         )
         .await
     }
@@ -126,7 +126,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_keys,
-            "identity keys",
+            "get_identity_keys",
         )
         .await
     }
@@ -138,7 +138,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_balance,
-            "identity balance",
+            "get_identity_balance",
         )
         .await
     }
@@ -150,7 +150,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_balance_and_revision,
-            "identity balance and revision",
+            "get_identity_balance_and_revision",
         )
         .await
     }
@@ -159,8 +159,12 @@ impl PlatformService for QueryServer {
         &self,
         request: Request<GetProofsRequest>,
     ) -> Result<Response<GetProofsResponse>, Status> {
-        self.handle_blocking_query(request, Platform::<DefaultCoreRPC>::query_proofs, "proofs")
-            .await
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_proofs,
+            "get_proofs",
+        )
+        .await
     }
 
     async fn get_data_contract(
@@ -170,7 +174,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_data_contract,
-            "data contract",
+            "get_data_contract",
         )
         .await
     }
@@ -182,7 +186,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_data_contract_history,
-            "data contract history",
+            "get_data_contract_history",
         )
         .await
     }
@@ -194,7 +198,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_data_contracts,
-            "data contracts",
+            "get_data_contracts",
         )
         .await
     }
@@ -206,7 +210,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_documents,
-            "documents",
+            "get_documents",
         )
         .await
     }
@@ -218,7 +222,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identities_by_public_key_hashes,
-            "identities by public key hashes",
+            "get_identities_by_public_key_hashes",
         )
         .await
     }
@@ -230,7 +234,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identity_by_public_key_hash,
-            "identity by public key hash",
+            "get_identity_by_public_key_hash",
         )
         .await
     }
@@ -239,14 +243,14 @@ impl PlatformService for QueryServer {
         &self,
         _request: Request<WaitForStateTransitionResultRequest>,
     ) -> Result<Response<WaitForStateTransitionResultResponse>, Status> {
-        respond_with_unimplemented("wait for state transition result")
+        respond_with_unimplemented("wait_for_state_transition_result")
     }
 
     async fn get_consensus_params(
         &self,
         _request: Request<GetConsensusParamsRequest>,
     ) -> Result<Response<GetConsensusParamsResponse>, Status> {
-        respond_with_unimplemented("get consensus params")
+        respond_with_unimplemented("get_consensus_params")
     }
 
     async fn get_protocol_version_upgrade_state(
@@ -256,7 +260,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_version_upgrade_state,
-            "protocol version upgrade state",
+            "get_protocol_version_upgrade_state",
         )
         .await
     }
@@ -268,7 +272,7 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_version_upgrade_vote_status,
-            "protocol version upgrade vote status",
+            "get_protocol_version_upgrade_vote_status",
         )
         .await
     }
@@ -280,8 +284,25 @@ impl PlatformService for QueryServer {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_epoch_infos,
-            "epochs",
+            "get_epochs_info",
         )
         .await
     }
+}
+
+fn query_error_into_status(error: QueryError) -> Status {
+    match error {
+        QueryError::NotFound(message) => Status::not_found(message),
+        QueryError::InvalidArgument(message) => Status::invalid_argument(message),
+        QueryError::Query(error) => Status::invalid_argument(error.to_string()),
+        _ => {
+            tracing::error!("unexpected query error: {:?}", error);
+
+            Status::unknown(error.to_string())
+        }
+    }
+}
+
+fn error_into_status(error: Error) -> Status {
+    Status::internal(format!("query: {}", error))
 }

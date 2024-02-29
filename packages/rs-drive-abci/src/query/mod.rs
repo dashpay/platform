@@ -3,15 +3,14 @@ mod document_query;
 mod identity_based_queries;
 mod proofs;
 mod response_metadata;
+mod service;
 mod system;
 
 use crate::error::query::QueryError;
-use crate::error::Error;
-use crate::platform_types::platform::Platform;
 
-use crate::error::execution::ExecutionError;
 use dpp::validation::ValidationResult;
-use dpp::version::PlatformVersion;
+
+pub use service::QueryService;
 
 /// A query validation result
 pub type QueryValidationResult<TData> = ValidationResult<TData, QueryError>;
