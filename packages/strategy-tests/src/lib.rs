@@ -352,7 +352,7 @@ impl Strategy {
         Ok(state_transitions)
     }
 
-    /// Generates state transitions for the inital contracts of the contracts_with_updates field.
+    /// Generates state transitions for the initial contracts of the contracts_with_updates field.
     ///
     /// This method creates state transitions for data contracts by iterating over the contracts with updates
     /// present in the strategy. For each contract:
@@ -382,6 +382,7 @@ impl Strategy {
     pub fn contract_state_transitions(
         &mut self,
         current_identities: &Vec<Identity>,
+        identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         signer: &SimpleSigner,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
@@ -400,11 +401,13 @@ impl Strategy {
 
                 let contract = created_contract.data_contract_mut();
 
-                let bytes32 = Bytes32::random_with_rng(rng);
+                let identity_nonce = identity_nonce_counter.entry(identity.id).or_default();
+                *identity_nonce += 1;
 
                 contract.set_owner_id(identity.id);
                 let old_id = contract.id();
-                let new_id = DataContract::generate_data_contract_id_v0(identity.id, bytes32);
+                let new_id =
+                    DataContract::generate_data_contract_id_v0(identity.id, *identity_nonce);
                 contract.set_id(new_id);
 
                 id_mapping.insert(old_id, new_id); // Store the mapping
@@ -422,7 +425,7 @@ impl Strategy {
 
                 let state_transition = DataContractCreateTransition::new_from_data_contract(
                     contract.clone(),
-                    bytes32,
+                    *identity_nonce,
                     &identity,
                     2, // key id 1 should always be a high or critical auth key in these tests
                     signer,
@@ -1277,8 +1280,13 @@ impl Strategy {
         // Do certain things on the first block
         if block_info.height == config.start_block_height {
             // Add initial contracts for contracts_with_updates on first block of strategy
-            let mut contract_state_transitions =
-                self.contract_state_transitions(current_identities, signer, rng, platform_version);
+            let mut contract_state_transitions = self.contract_state_transitions(
+                current_identities,
+                identity_nonce_counter,
+                signer,
+                rng,
+                platform_version,
+            );
             state_transitions.append(&mut contract_state_transitions);
         } else {
             // Do operations

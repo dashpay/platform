@@ -1162,6 +1162,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1241,6 +1242,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1248,6 +1250,7 @@ mod tests {
 
         let mut contract_update_1 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-1.json",
+            1,
             true,
             platform_version,
         )
@@ -1258,6 +1261,7 @@ mod tests {
 
         let mut contract_update_2 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-2.json",
+            1,
             true,
             platform_version,
         )
@@ -1345,6 +1349,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1420,6 +1425,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1505,6 +1511,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1608,6 +1615,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1715,7 +1723,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "edf712041923f8707e2b9b21a876cdc70a26dca939a0a28bfdd1802bfba9ca6a".to_string()
+            "8f55b983f206f005897ce067091f144787b21d7c840c47d49fdba5edae3645c5".to_string()
         )
     }
 
@@ -1725,6 +1733,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1835,7 +1844,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "7e870501f9fa6d0d7794407c787c1017dfc97afc59dffa166a561335ff5043cc".to_string()
+            "6b5f954928a3f477b9371106f9594046ae3e059bf7eecf60f5f80f59719b8361".to_string()
         )
     }
 
@@ -1845,6 +1854,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1954,6 +1964,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -2063,6 +2074,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -2170,6 +2182,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )

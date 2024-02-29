@@ -326,7 +326,7 @@ mod tests {
         }
         .into();
 
-        let dashpay = get_dashpay_contract_fixture(Some(identity.id()), protocol_version);
+        let dashpay = get_dashpay_contract_fixture(Some(identity.id()), 1, protocol_version);
         let mut create_contract_state_transition: StateTransition = dashpay
             .try_into_platform_versioned(platform_version)
             .expect("expected a state transition");
@@ -430,7 +430,7 @@ mod tests {
         }
         .into();
 
-        let dashpay = get_dashpay_contract_fixture(Some(identity.id()), protocol_version);
+        let dashpay = get_dashpay_contract_fixture(Some(identity.id()), 1, protocol_version);
         let mut create_contract_state_transition: StateTransition = dashpay
             .try_into_platform_versioned(platform_version)
             .expect("expected a state transition");
@@ -560,7 +560,7 @@ mod tests {
             .expect("serialized state transition");
 
         let dashpay =
-            get_dashpay_contract_fixture(Some(identity.id()), platform_version.protocol_version);
+            get_dashpay_contract_fixture(Some(identity.id()), 1, platform_version.protocol_version);
         let dashpay_contract = dashpay.data_contract().clone();
         let mut create_contract_state_transition: StateTransition = dashpay
             .try_into_platform_versioned(platform_version)

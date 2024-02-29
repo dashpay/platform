@@ -105,7 +105,7 @@ mod test {
                 .expect("expected to get platform version");
             drop(state);
             let mut data_contract =
-                get_data_contract_fixture(None, current_protocol_version).data_contract_owned();
+                get_data_contract_fixture(None, 0, current_protocol_version).data_contract_owned();
             data_contract.config_mut().set_keeps_history(true);
             data_contract.config_mut().set_readonly(false);
 
