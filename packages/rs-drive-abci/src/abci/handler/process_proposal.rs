@@ -209,8 +209,8 @@ where
             .filter(|execution_result| {
                 matches!(
                     execution_result,
-                    StateTransitionExecutionResult::SuccessfulExecution(_, _)
-                        | StateTransitionExecutionResult::PaidConsensusError(_)
+                    StateTransitionExecutionResult::SuccessfulExecution(..)
+                        | StateTransitionExecutionResult::PaidConsensusError(..)
                 )
             })
             .map(|execution_result| execution_result.try_into_platform_versioned(platform_version))
@@ -219,6 +219,7 @@ where
         let response = proto::ResponseProcessProposal {
             app_hash: app_hash.to_vec(),
             tx_results,
+            // TODO: Must be reject if results are different
             status: proto::response_process_proposal::ProposalStatus::Accept.into(),
             validator_set_update,
             // TODO: Implement consensus param updates

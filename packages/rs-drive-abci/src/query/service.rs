@@ -14,11 +14,13 @@ use dapi_grpc::platform::v0::{
     GetIdentitiesByPublicKeyHashesResponse, GetIdentitiesRequest, GetIdentitiesResponse,
     GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
     GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest,
-    GetIdentityByPublicKeyHashResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
-    GetIdentityRequest, GetIdentityResponse, GetProofsRequest, GetProofsResponse,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
-    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
-    WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
+    GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
+    GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
+    GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
+    GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeVoteStatusResponse, WaitForStateTransitionResultRequest,
+    WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use dpp::version::PlatformVersion;
@@ -127,6 +129,30 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_keys,
             "get_identity_keys",
+        )
+        .await
+    }
+
+    async fn get_identity_nonce(
+        &self,
+        request: Request<GetIdentityNonceRequest>,
+    ) -> Result<Response<GetIdentityNonceResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity_nonce,
+            "get_identity_nonce",
+        )
+        .await
+    }
+
+    async fn get_identity_contract_nonce(
+        &self,
+        request: Request<GetIdentityContractNonceRequest>,
+    ) -> Result<Response<GetIdentityContractNonceResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity_contract_nonce,
+            "get_identity_contract_nonce",
         )
         .await
     }

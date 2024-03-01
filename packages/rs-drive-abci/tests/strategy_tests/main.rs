@@ -1717,8 +1717,6 @@ mod tests {
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
 
-        // TODO: Figure out why hash changed. It was 301a9e2630e5017a1d45a492a1e23837ab7369049c617d8202db22f924a911f3
-
         assert_eq!(
             hex::encode(
                 outcome

@@ -22,8 +22,8 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        let platform_version = platform.version;
+
         match platform_version
             .drive_abci
             .validation_and_processing

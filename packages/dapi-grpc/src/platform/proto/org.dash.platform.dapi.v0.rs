@@ -2851,6 +2851,20 @@ pub mod platform_server {
             tonic::Response<super::GetIdentityKeysResponse>,
             tonic::Status,
         >;
+        async fn get_identity_nonce(
+            &self,
+            request: tonic::Request<super::GetIdentityNonceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetIdentityNonceResponse>,
+            tonic::Status,
+        >;
+        async fn get_identity_contract_nonce(
+            &self,
+            request: tonic::Request<super::GetIdentityContractNonceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetIdentityContractNonceResponse>,
+            tonic::Status,
+        >;
         async fn get_identity_balance(
             &self,
             request: tonic::Request<super::GetIdentityBalanceRequest>,
@@ -3200,6 +3214,100 @@ pub mod platform_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = getIdentityKeysSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/org.dash.platform.dapi.v0.Platform/getIdentityNonce" => {
+                    #[allow(non_camel_case_types)]
+                    struct getIdentityNonceSvc<T: Platform>(pub Arc<T>);
+                    impl<
+                        T: Platform,
+                    > tonic::server::UnaryService<super::GetIdentityNonceRequest>
+                    for getIdentityNonceSvc<T> {
+                        type Response = super::GetIdentityNonceResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetIdentityNonceRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).get_identity_nonce(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = getIdentityNonceSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/org.dash.platform.dapi.v0.Platform/getIdentityContractNonce" => {
+                    #[allow(non_camel_case_types)]
+                    struct getIdentityContractNonceSvc<T: Platform>(pub Arc<T>);
+                    impl<
+                        T: Platform,
+                    > tonic::server::UnaryService<super::GetIdentityContractNonceRequest>
+                    for getIdentityContractNonceSvc<T> {
+                        type Response = super::GetIdentityContractNonceResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::GetIdentityContractNonceRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).get_identity_contract_nonce(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = getIdentityContractNonceSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

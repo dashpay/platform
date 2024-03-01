@@ -80,7 +80,7 @@ pub enum AbciError {
     BlsErrorOfTenderdashThresholdMechanism(BlsError, String),
 
     /// Incompatibility version Error on info handshake between Drive ABCI and Tenderdash
-    #[error("ABCI version mismatch. Tenderdash requires ABCI version {tenderdash}, drive version is {drive}")]
+    #[error("ABCI version mismatch. Tenderdash requires ABCI protobuf definitions version {tenderdash}, our version is {drive}")]
     AbciVersionMismatch {
         /// ABCI version in Tenderdash
         tenderdash: String,
