@@ -15,6 +15,7 @@ use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
 
 use crate::balances::credits::CREDITS_PER_DUFF;
+use crate::prelude::IdentityNonce;
 use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::{Identifier, Revision},
@@ -43,7 +44,7 @@ pub struct IdentityCreditWithdrawalTransitionV0 {
     pub core_fee_per_byte: u32,
     pub pooling: Pooling,
     pub output_script: CoreScript,
-    pub revision: Revision,
+    pub nonce: IdentityNonce,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]

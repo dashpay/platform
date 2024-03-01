@@ -37,7 +37,12 @@ pub fn create_feature_flag_data_trigger_v0(
     _platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
-    let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
+    let data_contract_fetch_info = document_transition
+        .base()
+        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "expecting action to have a base",
+        )))?
+        .data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
 
     let document_create_transition = match document_transition {
@@ -46,7 +51,12 @@ pub fn create_feature_flag_data_trigger_v0(
             return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
                 format!(
                     "the Document Transition {} isn't 'CREATE",
-                    document_transition.base().id()
+                    document_transition
+                        .base()
+                        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "expecting action to have a base"
+                        )))?
+                        .id()
                 ),
             )))
         }
@@ -66,7 +76,12 @@ pub fn create_feature_flag_data_trigger_v0(
     if enable_at_height < latest_block_height {
         let err = DataTriggerConditionError::new(
             data_contract.id(),
-            document_transition.base().id(),
+            document_transition
+                .base()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "expecting action to have a base",
+                )))?
+                .id(),
             "This identity can't activate selected feature flag".to_string(),
         );
 
@@ -78,7 +93,12 @@ pub fn create_feature_flag_data_trigger_v0(
     if context.owner_id != &feature_flags_contract::OWNER_ID {
         let err = DataTriggerConditionError::new(
             data_contract.id(),
-            document_transition.base().id(),
+            document_transition
+                .base()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "expecting action to have a base",
+                )))?
+                .id(),
             "This identity can't activate selected feature flag".to_string(),
         );
 

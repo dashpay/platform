@@ -1,3 +1,4 @@
+use crate::prelude::IdentityNonce;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::{
     identity::KeyID,
@@ -9,6 +10,8 @@ pub trait IdentityUpdateTransitionAccessorsV0 {
     fn identity_id(&self) -> Identifier;
     fn set_revision(&mut self, revision: Revision);
     fn revision(&self) -> Revision;
+    fn set_nonce(&mut self, nonce: IdentityNonce);
+    fn nonce(&self) -> IdentityNonce;
     fn set_public_keys_to_add(&mut self, add_public_keys: Vec<IdentityPublicKeyInCreation>);
     fn public_keys_to_add(&self) -> &[IdentityPublicKeyInCreation];
     fn public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKeyInCreation];

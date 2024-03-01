@@ -33,6 +33,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -40,6 +41,7 @@ mod tests {
 
         let mut contract_update_1 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-bad-update-skipped-position.json",
+            2,
             false,
             platform_version,
         )
@@ -60,6 +62,7 @@ mod tests {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -136,6 +139,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
@@ -334,6 +338,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer),
             },
             total_hpmns: 100,

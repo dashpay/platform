@@ -26,7 +26,7 @@ use crate::errors::consensus::basic::identity::{
 
 use crate::errors::consensus::state::identity::{
     DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
-    MissingIdentityPublicKeyIdsErrorWasm,
+    InvalidIdentityNonceErrorWasm, MissingIdentityPublicKeyIdsErrorWasm,
 };
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::BasicError::{
@@ -59,14 +59,16 @@ use dpp::consensus::state::data_trigger::DataTriggerError::{
 use wasm_bindgen::{JsError, JsValue};
 
 use crate::errors::consensus::basic::data_contract::{
-    DataContractHaveNewUniqueIndexErrorWasm, DataContractImmutablePropertiesUpdateErrorWasm,
+    DataContractEmptySchemaErrorWasm, DataContractHaveNewUniqueIndexErrorWasm,
+    DataContractImmutablePropertiesUpdateErrorWasm,
     DataContractInvalidIndexDefinitionUpdateErrorWasm, DataContractUniqueIndicesChangedErrorWasm,
     IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm,
 };
 use crate::errors::consensus::basic::document::{
     DuplicateDocumentTransitionsWithIdsErrorWasm, DuplicateDocumentTransitionsWithIndicesErrorWasm,
-    InvalidDocumentTransitionActionErrorWasm, InvalidDocumentTransitionIdErrorWasm,
-    MissingDataContractIdErrorWasm, MissingDocumentTypeErrorWasm,
+    IdentityContractNonceOutOfBoundsErrorWasm, InvalidDocumentTransitionActionErrorWasm,
+    InvalidDocumentTransitionIdErrorWasm, MissingDataContractIdErrorWasm,
+    MissingDocumentTypeErrorWasm,
 };
 use crate::errors::consensus::basic::state_transition::{
     InvalidStateTransitionTypeErrorWasm, MissingStateTransitionTypeErrorWasm,
@@ -211,6 +213,7 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::InvalidAssetLockProofValueError(e) => {
             InvalidAssetLockProofValueErrorWasm::from(e).into()
         }
+        StateError::InvalidIdentityNonceError(e) => InvalidIdentityNonceErrorWasm::from(e).into(),
         // TODO(versioning): restore
         _ => todo!(),
     }
@@ -306,6 +309,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::IncompatibleDataContractSchemaError(err) => {
             IncompatibleDataContractSchemaErrorWasm::from(err).into()
         }
+        BasicError::DataContractEmptySchemaError(err) => {
+            DataContractEmptySchemaErrorWasm::from(err).into()
+        }
         BasicError::InvalidIdentityKeySignatureError(err) => {
             InvalidIdentityKeySignatureErrorWasm::from(err).into()
         }
@@ -314,6 +320,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::IdentityCreditTransferToSelfError(err) => {
             IdentityCreditTransferToSelfErrorWasm::from(err).into()
+        }
+        BasicError::IdentityContractNonceOutOfBoundsError(err) => {
+            IdentityContractNonceOutOfBoundsErrorWasm::from(err).into()
         }
         ProtocolVersionParsingError(e) => ProtocolVersionParsingErrorWasm::from(e).into(),
         SerializedObjectParsingError(e) => SerializedObjectParsingErrorWasm::from(e).into(),

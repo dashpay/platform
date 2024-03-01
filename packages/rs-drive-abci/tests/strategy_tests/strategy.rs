@@ -1,12 +1,16 @@
 use crate::masternodes::MasternodeListItemWithUpdates;
 use crate::query::QueryStrategy;
 use crate::BlockHeight;
-
+use dashcore_rpc::dashcore::{self, Network, PrivateKey};
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::block::block_info::BlockInfo;
+use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
+use dpp::{NativeBlsModule, ProtocolError};
 
+use dpp::dashcore::secp256k1::SecretKey;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
+use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
@@ -15,7 +19,7 @@ use strategy_tests::operations::{
 
 use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
-use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{Identity, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
@@ -26,6 +30,7 @@ use drive::drive::flags::StorageFlags::SingleEpoch;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
 
+use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use drive::query::DriveQuery;
@@ -35,12 +40,16 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
 use strategy_tests::Strategy;
+use strategy_tests::transitions::{create_state_transitions_for_identities, instant_asset_lock_proof_fixture};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ops::AddAssign;
+use std::str::FromStr;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::BinaryData;
+use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 use dpp::state_transition::documents_batch_transition::document_create_transition::{DocumentCreateTransition, DocumentCreateTransitionV0};
 use dpp::state_transition::documents_batch_transition::document_transition::document_delete_transition::DocumentDeleteTransitionV0;
@@ -336,7 +345,7 @@ impl NetworkStrategy {
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Vec<(Identity, StateTransition)> {
+    ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
         let mut state_transitions = vec![];
         if block_info.height == 1 && !self.strategy.start_identities.is_empty() {
             state_transitions.append(&mut self.strategy.start_identities.clone());
@@ -344,17 +353,16 @@ impl NetworkStrategy {
         let frequency = &self.strategy.identities_inserts;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
-            state_transitions.append(
-                &mut strategy_tests::transitions::create_identities_state_transitions(
-                    count,
-                    5,
-                    signer,
-                    rng,
-                    platform_version,
-                ),
-            )
+            let mut new_transitions = NetworkStrategy::create_identities_state_transitions(
+                count,
+                5,
+                signer,
+                rng,
+                platform_version,
+            );
+            state_transitions.append(&mut new_transitions);
         }
-        state_transitions
+        Ok(state_transitions)
     }
 
     pub fn contract_state_transitions(
@@ -375,13 +383,14 @@ impl NetworkStrategy {
                     .clone()
                     .into_partial_identity_info();
 
-                let entropy_used = *created_contract.entropy_used();
+                let identity_nonce = created_contract.identity_nonce();
 
                 let contract = created_contract.data_contract_mut();
 
                 contract.set_owner_id(identity.id);
                 let old_id = contract.id();
-                let new_id = DataContract::generate_data_contract_id_v0(identity.id, entropy_used);
+                let new_id =
+                    DataContract::generate_data_contract_id_v0(identity.id, identity_nonce);
                 contract.set_id(new_id);
 
                 if let Some(contract_updates) = contract_updates {
@@ -409,7 +418,7 @@ impl NetworkStrategy {
 
                 let state_transition = DataContractCreateTransition::new_from_data_contract(
                     contract.clone(),
-                    *created_contract.entropy_used(),
+                    identity_nonce,
                     &identity,
                     1, //key id 1 should always be a high or critical auth key in these tests
                     signer,
@@ -427,6 +436,7 @@ impl NetworkStrategy {
         current_identities: &Vec<Identity>,
         block_height: u64,
         signer: &SimpleSigner,
+        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
         self.strategy
@@ -446,10 +456,16 @@ impl NetworkStrategy {
                     .clone()
                     .into_partial_identity_info();
 
+                let identity_contract_nonce = contract_nonce_counter
+                    .entry((identity.id, contract_update.data_contract().id()))
+                    .or_default();
+                *identity_contract_nonce += 1;
+
                 let state_transition = DataContractUpdateTransition::new_from_data_contract(
                     contract_update.data_contract().clone(),
                     &identity,
                     1, //key id 1 should always be a high or critical auth key in these tests
+                    *identity_contract_nonce,
                     signer,
                     platform_version,
                     None,
@@ -468,6 +484,8 @@ impl NetworkStrategy {
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
+        identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
+        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
@@ -504,10 +522,23 @@ impl NetworkStrategy {
                                     } else {
                                         None
                                     };
+
+                                let identity_contract_nonce = contract_nonce_counter
+                                    .entry((identity.id(), contract.id()))
+                                    .or_default();
+                                let gap = self
+                                    .strategy
+                                    .identity_contract_nonce_gaps
+                                    .as_ref()
+                                    .map_or(0, |gap_amount| gap_amount.events_if_hit(rng))
+                                    as u64;
+                                *identity_contract_nonce += 1 + gap;
+
                                 let document_create_transition: DocumentCreateTransition =
                                     DocumentCreateTransitionV0 {
                                         base: DocumentBaseTransitionV0 {
                                             id: document.id(),
+                                            identity_contract_nonce: *identity_contract_nonce,
                                             document_type_name: document_type.name().clone(),
                                             data_contract_id: contract.id(),
                                         }
@@ -611,10 +642,17 @@ impl NetworkStrategy {
                                     } else {
                                         None
                                     };
+
+                                let identity_contract_nonce = contract_nonce_counter
+                                    .entry((identity.id(), contract.id()))
+                                    .or_default();
+                                *identity_contract_nonce += 1;
+
                                 let document_create_transition: DocumentCreateTransition =
                                     DocumentCreateTransitionV0 {
                                         base: DocumentBaseTransitionV0 {
                                             id: document.id(),
+                                            identity_contract_nonce: *identity_contract_nonce,
                                             document_type_name: document_type.name().clone(),
                                             data_contract_id: contract.id(),
                                         }
@@ -706,10 +744,17 @@ impl NetworkStrategy {
                                 .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
+                            let identity_contract_nonce = contract_nonce_counter
+                                .get_mut(&(identity.id, contract.id()))
+                                .expect(
+                                    "the identity should already have a nonce for that contract",
+                                );
+                            *identity_contract_nonce += 1;
                             let document_delete_transition: DocumentDeleteTransition =
                                 DocumentDeleteTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
                                         id: document.id(),
+                                        identity_contract_nonce: *identity_contract_nonce,
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),
                                     }
@@ -793,10 +838,17 @@ impl NetworkStrategy {
                                 .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
+                            let identity_contract_nonce = contract_nonce_counter
+                                .get_mut(&(identity.id, contract.id()))
+                                .expect(
+                                    "the identity should already have a nonce for that contract",
+                                );
+                            *identity_contract_nonce += 1;
                             let document_replace_transition: DocumentReplaceTransition =
                                 DocumentReplaceTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
                                         id: document.id(),
+                                        identity_contract_nonce: *identity_contract_nonce,
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),
                                     }
@@ -850,13 +902,11 @@ impl NetworkStrategy {
                             .collect();
 
                         for random_identity in random_identities {
-                            operations.push(
-                                strategy_tests::transitions::create_identity_top_up_transition(
-                                    rng,
-                                    random_identity,
-                                    platform_version,
-                                ),
-                            );
+                            operations.push(NetworkStrategy::create_identity_top_up_transition(
+                                rng,
+                                random_identity,
+                                platform_version,
+                            ));
                         }
                     }
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
@@ -870,6 +920,7 @@ impl NetworkStrategy {
                                         strategy_tests::transitions::create_identity_update_transition_add_keys(
                                             random_identity,
                                             *count,
+                                            identity_nonce_counter,
                                             signer,
                                             rng,
                                             platform_version,
@@ -885,6 +936,7 @@ impl NetworkStrategy {
                                         strategy_tests::transitions::create_identity_update_transition_disable_keys(
                                             random_identity,
                                             *count,
+                                            identity_nonce_counter,
                                             block_info.time_ms,
                                             signer,
                                             rng,
@@ -905,6 +957,7 @@ impl NetworkStrategy {
                             let state_transition =
                                 strategy_tests::transitions::create_identity_withdrawal_transition(
                                     random_identity,
+                                    identity_nonce_counter,
                                     signer,
                                     rng,
                                 );
@@ -912,16 +965,26 @@ impl NetworkStrategy {
                         }
                     }
                     OperationType::IdentityTransfer if current_identities.len() > 1 => {
-                        // chose 2 last identities
-                        let indices: Vec<usize> =
-                            vec![current_identities.len() - 2, current_identities.len() - 1];
+                        let identities_clone = current_identities.clone();
 
-                        let owner = current_identities.get(indices[0]).unwrap();
-                        let recipient = current_identities.get(indices[1]).unwrap();
+                        // Sender is the first in the list, which should be loaded_identity
+                        let owner = &mut current_identities[0];
+                        // Recipient is the second in the list
+                        let recipient = &identities_clone[1];
+
+                        let fetched_owner_balance = platform
+                            .drive
+                            .fetch_identity_balance(owner.id().to_buffer(), None, platform_version)
+                            .expect("expected to be able to get identity")
+                            .expect("expected to get an identity");
 
                         let state_transition =
                             strategy_tests::transitions::create_identity_credit_transfer_transition(
-                                owner, recipient, signer, 1000,
+                                owner,
+                                recipient,
+                                identity_nonce_counter,
+                                signer,
+                                fetched_owner_balance - 100,
                             );
                         operations.push(state_transition);
                     }
@@ -947,6 +1010,8 @@ impl NetworkStrategy {
         platform: &Platform<MockCoreRPCLike>,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
+        identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
+        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
@@ -955,11 +1020,20 @@ impl NetworkStrategy {
         let platform_version = platform_state
             .current_platform_version()
             .expect("expected platform version");
-        let identity_state_transitions =
+
+        let identity_state_transitions_result =
             self.identity_state_transitions_for_block(block_info, signer, rng, platform_version);
-        let (mut new_identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
-            identity_state_transitions.into_iter().unzip();
-        current_identities.append(&mut new_identities);
+
+        // Handle the Result returned by identity_state_transitions_for_block
+        let (mut identities, mut state_transitions) = match identity_state_transitions_result {
+            Ok(transitions) => transitions.into_iter().unzip(),
+            Err(error) => {
+                eprintln!("Error creating identity state transitions: {:?}", error);
+                (vec![], vec![])
+            }
+        };
+
+        current_identities.append(&mut identities);
 
         if block_info.height == 1 {
             // add contracts on block 1
@@ -970,10 +1044,12 @@ impl NetworkStrategy {
             // Don't do any state transitions on block 1
             let (mut document_state_transitions, mut add_to_finalize_block_operations) = self
                 .state_transitions_for_block(
-                    platform,
+                    &platform,
                     block_info,
                     current_identities,
                     signer,
+                    identity_nonce_counter,
+                    contract_nonce_counter,
                     rng,
                     platform_version,
                 );
@@ -986,12 +1062,56 @@ impl NetworkStrategy {
                 current_identities,
                 block_info.height,
                 signer,
+                contract_nonce_counter,
                 platform_version,
             );
             state_transitions.append(&mut contract_update_state_transitions);
         }
 
         (state_transitions, finalize_block_operations)
+    }
+
+    // add this because strategy tests library now requires a callback and uses the actual chain.
+    fn create_identities_state_transitions(
+        count: u16,
+        key_count: KeyID,
+        signer: &mut SimpleSigner,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Vec<(Identity, StateTransition)> {
+        let (identities, keys) = Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(
+            count,
+            key_count,
+            rng,
+            platform_version,
+        )
+        .expect("expected to create identities");
+        signer.add_keys(keys);
+        create_state_transitions_for_identities(identities, signer, rng, platform_version)
+    }
+
+    // add this because strategy tests library now requires a callback and uses the actual chain.
+    fn create_identity_top_up_transition(
+        rng: &mut StdRng,
+        identity: &Identity,
+        platform_version: &PlatformVersion,
+    ) -> StateTransition {
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(rng, platform_version)
+            .unwrap();
+        let sk: [u8; 32] = pk.try_into().unwrap();
+        let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
+        let asset_lock_proof =
+            instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
+
+        IdentityTopUpTransition::try_from_identity(
+            identity,
+            asset_lock_proof,
+            secret_key.as_ref(),
+            platform_version,
+            None,
+        )
+        .expect("expected to create top up transition")
     }
 }
 
@@ -1016,6 +1136,10 @@ pub struct ChainExecutionOutcome<'a> {
     pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     pub current_quorum_hash: QuorumHash,
     pub current_proposer_versions: Option<HashMap<ProTxHash, ValidatorVersionMigration>>,
+    /// Identity nonce counters
+    pub identity_nonce_counter: BTreeMap<Identifier, IdentityNonce>,
+    /// Identity Contract nonce counters
+    pub identity_contract_nonce_counter: BTreeMap<(Identifier, Identifier), IdentityNonce>,
     pub end_epoch_index: u16,
     pub end_time_ms: u64,
     pub strategy: NetworkStrategy,
@@ -1043,6 +1167,8 @@ pub struct ChainExecutionParameters {
     // the first option is if it is set
     // the second option is if we are even upgrading
     pub current_proposer_versions: Option<Option<HashMap<ProTxHash, ValidatorVersionMigration>>>,
+    pub current_identity_nonce_counter: BTreeMap<Identifier, IdentityNonce>,
+    pub current_identity_contract_nonce_counter: BTreeMap<(Identifier, Identifier), IdentityNonce>,
     pub start_time_ms: u64,
     pub current_time_ms: u64,
 }

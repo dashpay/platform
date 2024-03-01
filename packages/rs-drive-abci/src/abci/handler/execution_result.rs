@@ -25,8 +25,7 @@ impl TryIntoPlatformVersioned<ExecTxResult> for StateTransitionExecutionResult {
                     ..Default::default()
                 }
             }
-            StateTransitionExecutionResult::UnpaidConsensusError(error)
-            | StateTransitionExecutionResult::PaidConsensusError(error) => ExecTxResult {
+            StateTransitionExecutionResult::UnpaidConsensusError(error) => ExecTxResult {
                 code: HandlerError::from(&error).code(),
                 info: error.response_info_for_version(platform_version)?,
                 // TODO: We need to pass processing fees as well
@@ -34,6 +33,16 @@ impl TryIntoPlatformVersioned<ExecTxResult> for StateTransitionExecutionResult {
                 gas_used: 0,
                 ..Default::default()
             },
+            StateTransitionExecutionResult::PaidConsensusError(error, actual_fees) => {
+                ExecTxResult {
+                    code: HandlerError::from(&error).code(),
+                    info: error.response_info_for_version(platform_version)?,
+                    // TODO: Improve gas wanted
+                    gas_wanted: actual_fees.total_base_fee() as SignedCredits,
+                    gas_used: actual_fees.total_base_fee() as SignedCredits,
+                    ..Default::default()
+                }
+            }
             StateTransitionExecutionResult::DriveAbciError(message) => ExecTxResult {
                 code: HandlerError::Internal(message).code(),
                 // TODO: That would be nice to provide more information about the error for debugging

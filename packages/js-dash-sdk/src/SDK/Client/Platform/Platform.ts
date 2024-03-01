@@ -36,6 +36,7 @@ import broadcastStateTransition from './broadcastStateTransition';
 
 import logger, { ConfigurableLogger } from '../../../logger';
 import Fetcher from './Fetcher';
+import NonceManager from './NonceManager/NonceManager';
 
 /**
  * Interface for PlatformOpts
@@ -153,6 +154,8 @@ export class Platform {
 
   protected fetcher: Fetcher;
 
+  public nonceManager: NonceManager;
+
   /**
      * Construct some instance of Platform
      *
@@ -203,6 +206,7 @@ export class Platform {
     }
 
     this.fetcher = new Fetcher(this.client.getDAPIClient());
+    this.nonceManager = new NonceManager(this.client.getDAPIClient());
   }
 
   async initialize() {

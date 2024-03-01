@@ -23,6 +23,7 @@ mod tests {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,

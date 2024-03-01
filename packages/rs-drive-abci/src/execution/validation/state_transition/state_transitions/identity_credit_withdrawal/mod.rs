@@ -1,3 +1,5 @@
+mod balance;
+mod nonce;
 mod state;
 mod structure;
 
@@ -18,7 +20,8 @@ use crate::execution::validation::state_transition::identity_credit_withdrawal::
 use crate::execution::validation::state_transition::identity_credit_withdrawal::structure::v0::IdentityCreditWithdrawalStateTransitionStructureValidationV0;
 
 use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionStateValidationV0, StateTransitionStructureValidationV0,
+    StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0,
+    StateTransitionStructureKnownInStateValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -49,24 +52,22 @@ impl StateTransitionActionTransformerV0 for IdentityCreditWithdrawalTransition {
     }
 }
 
-impl StateTransitionStructureValidationV0 for IdentityCreditWithdrawalTransition {
-    fn validate_structure(
+impl StateTransitionBasicStructureValidationV0 for IdentityCreditWithdrawalTransition {
+    fn validate_basic_structure(
         &self,
-        _platform: &PlatformStateRef,
-        _action: Option<&StateTransitionAction>,
-        protocol_version: u32,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let platform_version = PlatformVersion::get(protocol_version)?;
         match platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
             .identity_credit_withdrawal_state_transition
-            .structure
+            .base_structure
         {
             0 => self.validate_base_structure_v0(),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "identity credit withdrawal transition: validate_structure".to_string(),
+                method: "identity credit withdrawal transition: validate_basic_structure"
+                    .to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

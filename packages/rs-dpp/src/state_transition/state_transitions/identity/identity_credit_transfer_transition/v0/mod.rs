@@ -10,7 +10,7 @@ mod version;
 
 use crate::identity::KeyID;
 
-use crate::prelude::{Identifier, Revision};
+use crate::prelude::{Identifier, IdentityNonce, Revision};
 
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -40,7 +40,7 @@ pub struct IdentityCreditTransferTransitionV0 {
     pub identity_id: Identifier,
     pub recipient_id: Identifier,
     pub amount: u64,
-    pub revision: Revision,
+    pub nonce: IdentityNonce,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]
@@ -77,7 +77,7 @@ mod test {
             identity_id: Identifier::random(),
             recipient_id: Identifier::random(),
             amount: rng.gen(),
-            revision: 1,
+            nonce: 1,
             signature_public_key_id: rng.gen(),
             signature: [0; 65].to_vec().into(),
         };

@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn test_find_best_index() {
         let document_type = construct_indexed_document_type();
-        let contract = get_dpns_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_dpns_data_contract_fixture(None, 0, 1).data_contract_owned();
 
         let platform_version = PlatformVersion::latest();
 
@@ -140,7 +140,7 @@ mod tests {
     #[test]
     fn test_find_best_index_error() {
         let document_type = construct_indexed_document_type();
-        let contract = get_dpns_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_dpns_data_contract_fixture(None, 0, 1).data_contract_owned();
 
         let platform_version = PlatformVersion::latest();
 

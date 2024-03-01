@@ -2,7 +2,7 @@ const Dash = require('dash');
 
 const { createFakeInstantLock } = require('dash/build/utils/createFakeIntantLock');
 
-const { hash } = require('@dashevo/wasm-dpp/lib/utils/hash');
+const { hash, sha256 } = require('@dashevo/wasm-dpp/lib/utils/hash');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
@@ -66,7 +66,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(4028);
+      expect(broadcastError.getCause().getCode()).to.equal(4029);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
         InvalidAssetLockProofValueError,
       );
@@ -326,7 +326,9 @@ describe('Platform', () => {
       let dataContractFixture;
 
       before(async () => {
-        dataContractFixture = await getDataContractFixture(identity.getId());
+        const nextNonce = await client.platform.nonceManager
+          .bumpIdentityNonce(identity.getId());
+        dataContractFixture = await getDataContractFixture(nextNonce, identity.getId());
 
         await client.platform.contracts.publish(dataContractFixture, identity);
 
@@ -658,9 +660,7 @@ describe('Platform', () => {
       });
     });
 
-    // TODO(rs-drive-abci): fix
-    //   fetching by opreatorIdentityId returns empty bytes and serialization fails
-    describe.skip('Masternodes', () => {
+    describe('Masternodes', () => {
       let dapiClient;
       const network = process.env.NETWORK;
 
@@ -707,7 +707,7 @@ describe('Platform', () => {
           if (transaction.extraPayload.operatorReward > 0) {
             const operatorPubKey = Buffer.from(masternodeEntry.pubKeyOperator, 'hex');
 
-            const operatorIdentityHash = hash(
+            const operatorIdentityHash = sha256(
               Buffer.concat([
                 Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
                 operatorPubKey,

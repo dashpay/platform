@@ -151,6 +151,8 @@ function platformHandlersFactory(
     getEpochsInfo: wrapInErrorHandler(unimplementedHandlerFactory('getEpochsInfo')),
     getProtocolVersionUpgradeVoteStatus: wrapInErrorHandler(unimplementedHandlerFactory('getProtocolVersionUpgradeVoteStatus')),
     getProtocolVersionUpgradeState: wrapInErrorHandler(unimplementedHandlerFactory('getProtocolVersionUpgradeState')),
+    getIdentityContractNonce: wrapInErrorHandler(unimplementedHandlerFactory('getIdentityContractNonce')),
+    getIdentityNonce: wrapInErrorHandler(unimplementedHandlerFactory('getIdentityNonce')),
   };
 }
 

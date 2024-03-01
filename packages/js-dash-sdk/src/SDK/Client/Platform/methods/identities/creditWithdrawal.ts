@@ -1,5 +1,6 @@
 import { Identity } from '@dashevo/wasm-dpp';
 import { Address, Script } from '@dashevo/dashcore-lib';
+import { Metadata } from '@dashevo/dapi-client/lib/methods/platform/response/Metadata';
 import broadcastStateTransition from '../../broadcastStateTransition';
 import { Platform } from '../../Platform';
 import { signStateTransition } from '../../signStateTransition';
@@ -44,7 +45,7 @@ export async function creditWithdrawal(
   options: WithdrawalOptions = {
     signingKeyIndex: 2,
   },
-): Promise<any> {
+): Promise<Metadata> {
   await this.initialize();
 
   const { dpp } = this;
@@ -79,7 +80,7 @@ export async function creditWithdrawal(
 
   const coreFeePerByte = nearestGreaterFibonacci(minRelayFeePerByte);
 
-  const revision = identity.getRevision();
+  const identityNonce = await this.nonceManager.bumpIdentityNonce(identity.getId());
 
   const identityCreditWithdrawalTransition = dpp.identity
     .createIdentityCreditWithdrawalTransition(
@@ -89,7 +90,7 @@ export async function creditWithdrawal(
       DEFAULT_POOLING,
       // @ts-ignore
       outputScript.toBuffer(),
-      BigInt(revision + 1),
+      BigInt(identityNonce),
     );
 
   this.logger.silly('[Identity#creditWithdrawal] Created IdentityCreditWithdrawalTransition');
@@ -101,13 +102,18 @@ export async function creditWithdrawal(
     options.signingKeyIndex,
   );
 
-  await broadcastStateTransition(this, identityCreditWithdrawalTransition, {
-    skipValidation: true,
-  });
+  // Skipping validation because it's already done above
+  const stateTransitionResult = await broadcastStateTransition(
+    this,
+    identityCreditWithdrawalTransition,
+    {
+      skipValidation: true,
+    },
+  );
 
   this.logger.silly('[Identity#creditWithdrawal] Broadcasted IdentityCreditWithdrawalTransition');
 
-  return true;
+  return stateTransitionResult.metadata;
 }
 
 export default creditWithdrawal;

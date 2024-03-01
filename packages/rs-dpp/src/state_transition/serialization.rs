@@ -121,6 +121,7 @@ mod tests {
             signature_public_key_id: 0,
             identity_id: identity.id(),
             revision: 1,
+            nonce: 1,
             add_public_keys: add_public_keys_in_creation,
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
@@ -187,6 +188,7 @@ mod tests {
             signature_public_key_id: 0,
             identity_id: identity.id(),
             revision: 1,
+            nonce: 1,
             add_public_keys: add_public_keys_in_creation,
             disable_public_keys: vec![3, 4, 5],
             public_keys_disabled_at: Some(15),
@@ -243,7 +245,7 @@ mod tests {
             core_fee_per_byte: 34,
             pooling: Pooling::Standard,
             output_script: CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
-            revision: 1,
+            nonce: 1,
             signature_public_key_id: 0,
             signature: [1u8; 65].to_vec().into(),
         };
@@ -264,6 +266,7 @@ mod tests {
             .expect("expected a random identity");
         let created_data_contract = get_data_contract_fixture(
             Some(identity.id()),
+            0,
             LATEST_PLATFORM_VERSION.protocol_version,
         );
         let data_contract_create_transition: DataContractCreateTransition = created_data_contract
@@ -285,10 +288,10 @@ mod tests {
         let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
         let mut created_data_contract =
-            get_data_contract_fixture(Some(identity.id()), platform_version.protocol_version);
-        created_data_contract.set_entropy_used(Default::default());
+            get_data_contract_fixture(Some(identity.id()), 0, platform_version.protocol_version);
         let data_contract_update_transition =
             DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
+                identity_contract_nonce: 1,
                 data_contract: created_data_contract
                     .data_contract_owned()
                     .try_into_platform_versioned(platform_version)
@@ -308,7 +311,9 @@ mod tests {
     #[test]
     fn document_batch_transition_10_created_documents_ser_de() {
         let platform_version = PlatformVersion::latest();
-        let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
+
+        let mut nonces = BTreeMap::new();
+        let data_contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
         let documents = get_extended_documents_fixture_with_owner_id_from_contract(
             &data_contract,
@@ -329,8 +334,10 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
-        let transitions =
-            get_document_transitions_fixture([(DocumentTransitionActionType::Create, documents)]);
+        let transitions = get_document_transitions_fixture(
+            [(DocumentTransitionActionType::Create, documents)],
+            &mut nonces,
+        );
         let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
             owner_id: data_contract.owner_id(),
             transitions,

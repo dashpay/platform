@@ -38,7 +38,12 @@ pub fn delete_withdrawal_data_trigger_v0(
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
-    let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
+    let data_contract_fetch_info = document_transition
+        .base()
+        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "expecting action to have a base",
+        )))?
+        .data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
     let mut result = DataTriggerExecutionResult::default();
 
@@ -46,7 +51,12 @@ pub fn delete_withdrawal_data_trigger_v0(
         return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
             format!(
                 "the Document Transition {} isn't 'DELETE",
-                document_transition.base().id()
+                document_transition
+                    .base()
+                    .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "expecting action to have a base"
+                    )))?
+                    .id()
             ),
         )));
     };
@@ -162,12 +172,13 @@ mod tests {
         let platform_version = state_read_guard.current_platform_version().unwrap();
 
         let transition_execution_context = StateTransitionExecutionContextV0::default();
-        let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
+        let data_contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
         let owner_id = data_contract.owner_id();
 
         let base_transition: DocumentBaseTransitionAction = DocumentBaseTransitionActionV0 {
             id: Default::default(),
+            identity_contract_nonce: 1,
             document_type_name: "".to_string(),
             data_contract: Arc::new(DataContractFetchInfo::dpns_contract_fixture(1)),
         }
@@ -310,6 +321,7 @@ mod tests {
             DocumentDeleteTransitionAction::V0(DocumentDeleteTransitionActionV0 {
                 base: DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
                     id: document.id(),
+                    identity_contract_nonce: 1,
                     document_type_name: "withdrawal".to_string(),
                     data_contract: Arc::new(DataContractFetchInfo::withdrawals_contract_fixture(
                         platform_version.protocol_version,

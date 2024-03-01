@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::execution::check_tx::CheckTxLevel;
+use crate::execution::check_tx::{CheckTxLevel, CheckTxResult};
 use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
 
 #[cfg(test)]
@@ -85,14 +85,14 @@ where
     ///
     /// # Returns
     ///
-    /// * `Result<ValidationResult<FeeResult, ConsensusError>, Error>` - If the state transition passes all
+    /// * `Result<ValidationResult<CheckTxResult, ConsensusError>, Error>` - If the state transition passes all
     ///   checks, it returns a `ValidationResult` with fee information. If any check fails, it returns an `Error`.
     pub(super) fn check_tx_v0(
         &self,
         raw_tx: &[u8],
         check_tx_level: CheckTxLevel,
         platform_version: &PlatformVersion,
-    ) -> Result<ValidationResult<Option<FeeResult>, ConsensusError>, Error> {
+    ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
         let state_transition = match StateTransition::deserialize_from_bytes(raw_tx) {
             Ok(state_transition) => state_transition,
             Err(err) => {
@@ -120,19 +120,31 @@ where
             block_info: &block_info,
         };
 
-        let execution_event = state_transition_to_execution_event_for_check_tx(
+        let unique_identifiers = state_transition.unique_identifiers();
+
+        let validation_result = state_transition_to_execution_event_for_check_tx(
             &platform_ref,
             state_transition,
             check_tx_level,
         )?;
 
         // We should run the execution event in dry run to see if we would have enough fees for the transition
-        execution_event.and_then_borrowed_validation(|execution_event| {
+        validation_result.and_then_borrowed_validation(|execution_event| {
             if let Some(execution_event) = execution_event {
                 self.validate_fees_of_event(execution_event, &block_info, None, platform_version)
-                    .map(|validation_result| validation_result.map(Some))
+                    .map(|validation_result| {
+                        validation_result.map(|fee_result| CheckTxResult {
+                            level: check_tx_level,
+                            fee_result: Some(fee_result),
+                            unique_identifiers,
+                        })
+                    })
             } else {
-                Ok(ValidationResult::new_with_data(None))
+                Ok(ValidationResult::new_with_data(CheckTxResult {
+                    level: check_tx_level,
+                    fee_result: None,
+                    unique_identifiers,
+                }))
             }
         })
     }
@@ -328,7 +340,7 @@ mod tests {
         }
         .into();
 
-        let dashpay = get_dashpay_contract_fixture(Some(identity.id()), protocol_version);
+        let dashpay = get_dashpay_contract_fixture(Some(identity.id()), 1, protocol_version);
         let mut create_contract_state_transition: StateTransition = dashpay
             .try_into_platform_versioned(platform_version)
             .expect("expected a state transition");
@@ -432,7 +444,7 @@ mod tests {
         }
         .into();
 
-        let dashpay = get_dashpay_contract_fixture(Some(identity.id()), protocol_version);
+        let dashpay = get_dashpay_contract_fixture(Some(identity.id()), 1, protocol_version);
         let mut create_contract_state_transition: StateTransition = dashpay
             .try_into_platform_versioned(platform_version)
             .expect("expected a state transition");
@@ -563,7 +575,7 @@ mod tests {
             .expect("serialized state transition");
 
         let dashpay =
-            get_dashpay_contract_fixture(Some(identity.id()), platform_version.protocol_version);
+            get_dashpay_contract_fixture(Some(identity.id()), 1, platform_version.protocol_version);
         let dashpay_contract = dashpay.data_contract().clone();
         let mut create_contract_state_transition: StateTransition = dashpay
             .try_into_platform_versioned(platform_version)
@@ -606,6 +618,7 @@ mod tests {
                 profile,
                 entropy.0,
                 &key,
+                1,
                 &signer,
                 platform_version,
                 None,
@@ -623,6 +636,7 @@ mod tests {
                 altered_document,
                 profile,
                 &key,
+                2,
                 &signer,
                 platform_version,
                 None,
@@ -1359,6 +1373,7 @@ mod tests {
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: dpns_contract::OWNER_ID_BYTES.into(),
             revision: 0,
+            nonce: 1,
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
@@ -1469,6 +1484,7 @@ mod tests {
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: dashpay_contract::OWNER_ID_BYTES.into(),
             revision: 1,
+            nonce: 1,
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key.clone())],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
@@ -1492,6 +1508,7 @@ mod tests {
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: dashpay_contract::OWNER_ID_BYTES.into(),
             revision: 1,
+            nonce: 1,
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,

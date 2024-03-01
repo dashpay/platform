@@ -1,6 +1,6 @@
 [package]
 name = "dpp"
-version = "1.0.0-pr.1694.7"
+version = "1.0.0-dev.5"
 edition = "2021"
 rust-version = "1.76"
 authors = [
@@ -12,6 +12,7 @@ authors = [
 ]
 
 [dependencies]
+tracing = "0.1.4"
 anyhow = { version = "1.0.75" }
 async-trait = { version = "0.1.68" }
 base64 = "0.20.0"

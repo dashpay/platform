@@ -152,7 +152,7 @@ where
 
                         tracing::debug!(
                             ?errors,
-                            "Invalid unknown state transition ({}): {}",
+                            "State transition beyond max encoded bytes limit ({}): {}",
                             st_hash,
                             message
                         );
@@ -202,14 +202,66 @@ where
             // There are two cases when the user can't pay fees:
             // 1. The state transition is funded by an asset lock transactions. This transactions are
             //    placed on the payment blockchain and they can't be partially spent.
-            // 2. We can't prove that the state transition is assosiated with identity or identity balance is not
-            //    enough to cover processing fees
-            // TODO: process_state_transition should return fees for invalid state transitions as well so we can
-            //  deduct the fees from balance if identity is valid
+            // 2. We can't prove that the state transition is associated with the identity
+            // 3. The revision given by the state transition isn't allowed based on the state
             let state_transition_execution_result = if is_st_asset_lock_funded {
                 StateTransitionExecutionResult::UnpaidConsensusError(first_consensus_error)
+            } else if let Ok(execution_event) = st_validation_result.into_data() {
+                // In this case the execution event will be to pay for the state transition processing
+                // This ONLY pays for what is needed to prevent attacks on the system
+
+                let event_execution_result = self
+                    .execute_event(execution_event, block_info, transaction, platform_version)
+                    .map_err(|error| StateTransitionAwareError {
+                        error,
+                        raw_state_transition: raw_state_transition.into(),
+                    })?;
+
+                match event_execution_result {
+                    EventExecutionResult::SuccessfulPaidExecution(_, actual_fees) => {
+                        tracing::debug!(
+                            "{} state transition ({}) not processed, but paid for processing",
+                            state_transition_name,
+                            st_hash,
+                        );
+
+                        StateTransitionExecutionResult::PaidConsensusError(
+                            first_consensus_error,
+                            actual_fees,
+                        )
+                    }
+                    EventExecutionResult::SuccessfulFreeExecution => {
+                        tracing::debug!(
+                            "Free {} state transition ({}) successfully processed",
+                            state_transition_name,
+                            st_hash,
+                        );
+
+                        StateTransitionExecutionResult::UnpaidConsensusError(first_consensus_error)
+                    }
+                    EventExecutionResult::ConsensusExecutionError(mut validation_result) => {
+                        let payment_consensus_error = validation_result
+                            .errors
+                            // the first error must be present for an invalid result
+                            .remove(0);
+
+                        tracing::debug!(
+                            main_error = ?first_consensus_error,
+                            payment_error = ?payment_consensus_error,
+                            "Not able to reduce balance for identity {} state transition ({})",
+                            state_transition_name,
+                            st_hash,
+                        );
+
+                        StateTransitionExecutionResult::DriveAbciError(format!(
+                            "{} {}",
+                            first_consensus_error.to_string(),
+                            payment_consensus_error.to_string()
+                        ))
+                    }
+                }
             } else {
-                StateTransitionExecutionResult::PaidConsensusError(first_consensus_error)
+                StateTransitionExecutionResult::UnpaidConsensusError(first_consensus_error)
             };
 
             return Ok(state_transition_execution_result);

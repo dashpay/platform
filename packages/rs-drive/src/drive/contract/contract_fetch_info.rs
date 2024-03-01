@@ -2,6 +2,7 @@ use crate::drive::flags::StorageFlags;
 use dpp::data_contract::DataContract;
 use dpp::data_contracts;
 use dpp::fee::fee_result::FeeResult;
+use dpp::prelude::IdentityNonce;
 use dpp::system_data_contracts::load_system_data_contract;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::tests::fixtures::get_dashpay_contract_fixture;
@@ -32,7 +33,7 @@ pub struct DataContractFetchInfo {
 impl DataContractFetchInfo {
     /// This should ONLY be used for tests
     pub fn dpns_contract_fixture(protocol_version: u32) -> Self {
-        let dpns = get_dpns_data_contract_fixture(None, protocol_version);
+        let dpns = get_dpns_data_contract_fixture(None, 0, protocol_version);
         DataContractFetchInfo {
             contract: dpns.data_contract_owned(),
             storage_flags: None,
@@ -43,7 +44,7 @@ impl DataContractFetchInfo {
 
     /// This should ONLY be used for tests
     pub fn dashpay_contract_fixture(protocol_version: u32) -> Self {
-        let dashpay = get_dashpay_contract_fixture(None, protocol_version);
+        let dashpay = get_dashpay_contract_fixture(None, 0, protocol_version);
         DataContractFetchInfo {
             contract: dashpay.data_contract_owned(),
             storage_flags: None,

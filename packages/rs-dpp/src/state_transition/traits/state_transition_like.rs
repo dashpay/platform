@@ -57,4 +57,8 @@ pub trait StateTransitionLike:
 
     /// Get owner ID
     fn owner_id(&self) -> Identifier;
+
+    /// unique identifiers for the state transition
+    /// This is often only one String except in the case of a documents batch state transition
+    fn unique_identifiers(&self) -> Vec<String>;
 }

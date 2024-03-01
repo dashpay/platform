@@ -27,6 +27,7 @@ fn create_data_contract(
 
     let mut data_contract = factory.create_with_value_config(
         owner_id,
+        0,
         document_schemas.into(),
         None,
         definitions.map(|def| def.into()),
@@ -42,7 +43,7 @@ pub fn load_system_data_contract(
     system_contract: SystemDataContract,
     platform_version: &PlatformVersion,
 ) -> Result<DataContract, ProtocolError> {
-    let factory = DataContractFactory::new(platform_version.protocol_version, None)?;
+    let factory = DataContractFactory::new(platform_version.protocol_version)?;
 
     create_data_contract(&factory, system_contract, platform_version)
 }
@@ -51,7 +52,7 @@ pub fn load_system_data_contracts(
     system_contracts: BTreeSet<SystemDataContract>,
     platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<SystemDataContract, DataContract>, ProtocolError> {
-    let factory = DataContractFactory::new(platform_version.protocol_version, None)?;
+    let factory = DataContractFactory::new(platform_version.protocol_version)?;
 
     system_contracts
         .into_iter()

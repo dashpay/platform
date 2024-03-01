@@ -1,5 +1,6 @@
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Address;
+use dpp::identity::accessors::IdentityGettersV0;
 
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::signer::Signer;
@@ -8,6 +9,7 @@ use dpp::identity::Identity;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
 use dpp::state_transition::identity_credit_withdrawal_transition::methods::IdentityCreditWithdrawalTransitionMethodsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -17,6 +19,7 @@ use rs_dapi_client::{DapiRequest, RequestSettings};
 
 #[async_trait::async_trait]
 pub trait WithdrawFromIdentity {
+    /// Function to withdraw credits from an identity. Returns the final identity balance.
     async fn withdraw<S: Signer + Send>(
         &self,
         sdk: &Sdk,
@@ -24,6 +27,7 @@ pub trait WithdrawFromIdentity {
         amount: u64,
         core_fee_per_byte: Option<u32>,
         signer: S,
+        settings: Option<PutSettings>,
     ) -> Result<u64, Error>;
 }
 
@@ -36,7 +40,9 @@ impl WithdrawFromIdentity for Identity {
         amount: u64,
         core_fee_per_byte: Option<u32>,
         signer: S,
+        settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
+        let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
         let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
             self,
             CoreScript::new(address.script_pubkey()),
@@ -44,6 +50,7 @@ impl WithdrawFromIdentity for Identity {
             Pooling::Never,
             core_fee_per_byte.unwrap_or(1),
             signer,
+            new_identity_nonce,
             sdk.version(),
             None,
         )?;
@@ -52,7 +59,7 @@ impl WithdrawFromIdentity for Identity {
 
         request
             .clone()
-            .execute(sdk, RequestSettings::default())
+            .execute(sdk, settings.unwrap_or_default().request_settings)
             .await?;
 
         let request = state_transition.wait_for_state_transition_result_request()?;

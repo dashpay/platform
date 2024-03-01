@@ -1,7 +1,7 @@
 [package]
 name = "drive"
 description = "Dash drive built on top of GroveDB"
-version = "1.0.0-pr.1694.7"
+version = "1.0.0-dev.5"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -20,7 +20,7 @@ ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-nul
 integer-encoding = { version = "4.0.0" }
 rand = { version = "0.8.4", features = ["small_rng"] }
 byteorder = { version = "1.4.3" }
-indexmap = { version = "1.8.0" }
+indexmap = { version = "2.0.2" }
 sqlparser = { version = "0.38.0" }
 thiserror = { version = "1.0.30" }
 moka = { version = "0.11.1", features = ["future", "futures-util"] }
@@ -38,11 +38,11 @@ serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
 enum-map = { version = "2.0.3", optional = true }
 intmap = { version = "2.0.0", features = ["serde"], optional = true }
 chrono = { version = "0.4.20", optional = true }
-itertools = { version = "0.10.5", optional = true }
-grovedb = { git = "https://github.com/dashpay/grovedb", rev = "b40dd1a35f852c81caeda2d3c2910c40fae3a67f", optional = true }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "b40dd1a35f852c81caeda2d3c2910c40fae3a67f", optional = true }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "b40dd1a35f852c81caeda2d3c2910c40fae3a67f" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "b40dd1a35f852c81caeda2d3c2910c40fae3a67f", optional = true }
+itertools = { version = "0.11.0", optional = true }
+grovedb = { git = "https://github.com/dashpay/grovedb", rev = "d007bed7544bf837bdf155e696a530b90d5f82e5", optional = true }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "d007bed7544bf837bdf155e696a530b90d5f82e5", optional = true }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "d007bed7544bf837bdf155e696a530b90d5f82e5" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "d007bed7544bf837bdf155e696a530b90d5f82e5", optional = true }
 
 [dev-dependencies]
 anyhow = { version = "1.0.75" }
@@ -67,7 +67,7 @@ name = "benchmarks"
 harness = false
 
 [features]
-default = ["full", "verify"]
+default = ["full", "verify", "fixtures-and-mocks"]
 fixtures-and-mocks = ["full", "dpp/fixtures-and-mocks", "verify"]
 full = [
   "grovedb/estimated_costs",

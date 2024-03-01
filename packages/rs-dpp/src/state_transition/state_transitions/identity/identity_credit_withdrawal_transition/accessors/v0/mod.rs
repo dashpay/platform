@@ -1,5 +1,5 @@
 use crate::identity::core_script::CoreScript;
-use crate::prelude::Revision;
+use crate::prelude::{IdentityNonce, Revision};
 use crate::withdrawal::Pooling;
 use platform_value::Identifier;
 
@@ -8,8 +8,8 @@ pub trait IdentityCreditWithdrawalTransitionAccessorsV0 {
     fn set_identity_id(&mut self, identity_id: Identifier);
     fn amount(&self) -> u64;
     fn set_amount(&mut self, amount: u64);
-    fn revision(&self) -> Revision;
-    fn set_revision(&mut self, revision: Revision);
+    fn nonce(&self) -> IdentityNonce;
+    fn set_nonce(&mut self, nonce: IdentityNonce);
     fn pooling(&self) -> Pooling;
     fn set_pooling(&mut self, pooling: Pooling);
     fn core_fee_per_byte(&self) -> u32;

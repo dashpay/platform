@@ -1,5 +1,8 @@
 use crate::error::Error;
-use dpp::consensus::basic::data_contract::InvalidDataContractIdError;
+use dpp::consensus::basic::data_contract::{
+    DataContractEmptySchemaError, InvalidDataContractIdError,
+};
+use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
@@ -39,7 +42,7 @@ impl DataContractCreatedStateTransitionStructureValidationV0 for DataContractCre
         // Validate data contract id
         let generated_id = DataContract::generate_data_contract_id_v0(
             self.data_contract().owner_id(),
-            self.entropy(),
+            self.identity_nonce(),
         );
 
         if generated_id != self.data_contract().id() {
