@@ -32,7 +32,8 @@
 ARG ALPINE_VERSION=3.18
 ARG PROTOC_VERSION=25.2
 ARG RUSTC_WRAPPER
-
+# Update using scripts/update-rust-toolchain.sh
+ARG RUST_VERSION=1.76
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
 #
@@ -67,13 +68,13 @@ RUN npm config set --global audit false
 # Install latest Rust toolbox
 
 ARG TARGETARCH
-
+ARG RUST_VERSION
 # TODO: It doesn't sharing PATH between stages, so we need "source $HOME/.cargo/env" everywhere
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
     --profile minimal \
     -y \
     # Rust version the same as in /README.md
-    --default-toolchain stable \
+    --default-toolchain ${RUST_VERSION} \
     --target wasm32-unknown-unknown
 
 # Install protoc - protobuf compiler

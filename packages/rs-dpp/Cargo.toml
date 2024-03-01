@@ -2,7 +2,8 @@
 name = "dpp"
 version = "1.0.0-dev.5"
 edition = "2021"
-rust-version = "1.73"
+# Update using scripts/update-rust-toolchain.sh
+rust-version = "1.76"
 authors = [
     "Anton Suprunchuk <anton.suprunchuk@gmail.com>",
     "Samuel Westrich <sam@dash.org>",
