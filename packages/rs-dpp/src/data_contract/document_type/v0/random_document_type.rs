@@ -115,7 +115,7 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use serde_json::json;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::ops::Range;
 
 impl DocumentTypeV0 {
@@ -218,12 +218,40 @@ impl DocumentTypeV0 {
             .cloned()
             .collect_vec();
 
+        // Generate indices
         let mut indices = Vec::with_capacity(index_count as usize);
+        let mut existing_combinations = HashSet::new();
 
         for _ in 0..index_count {
-            match Index::random(&ten_field_names, &indices, rng) {
-                Ok(index) => indices.push(index),
-                Err(_) => break,
+            let mut attempt = 0;
+            let max_attempts = 10;
+            let mut index_created = false;
+
+            while attempt < max_attempts && !index_created {
+                attempt += 1;
+                match Index::random(&ten_field_names, &indices, rng) {
+                    Ok(index) => {
+                        // Generate a key to represent the combination of properties in this index
+                        let combination_key = index.properties.iter()
+                            .map(|p| p.name.clone())
+                            .collect::<Vec<_>>()
+                            .join(",");
+
+                        // Check if this combination has already been used
+                        if existing_combinations.insert(combination_key) {
+                            // This is a new combination, so we can add the index
+                            indices.push(index);
+                            index_created = true;
+                        }
+                    },
+                    Err(_) => break,
+                }
+            }
+
+            if !index_created {
+                // Unable to create a unique index after several attempts
+                // You might want to handle this case, e.g., by logging a warning or adjusting the logic
+                break;
             }
         }
 
