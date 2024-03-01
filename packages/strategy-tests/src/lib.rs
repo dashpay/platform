@@ -284,7 +284,7 @@ impl Strategy {
             .filter_map(|operation| {
                 match &operation.op_type {
                     OperationType::Document(document) => Some(document.contract.id()),
-                    //todo add data contract updates
+                    OperationType::ContractUpdate(op) => Some(op.contract.id()),
                     _ => None,
                 }
             })
