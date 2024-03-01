@@ -466,8 +466,11 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       },
       '1.0.0-dev.6': (configFile) => {
         Object.entries(configFile.configs)
-          .forEach(([, options]) => {
+          .forEach(([name, options]) => {
             options.platform.drive.abci.tokioConsole = base.get('platform.drive.abci.tokioConsole');
+
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            options.platform.drive.tenderdash.docker.image = defaultConfig.get('platform.drive.tenderdash.docker.image');
           });
 
         return configFile;
