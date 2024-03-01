@@ -12,7 +12,7 @@ use dpp::data_contract::DataContract;
 
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
-use dpp::identity::{Identity, KeyType, PartialIdentity, Purpose, SecurityLevel};
+use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
@@ -1041,14 +1041,17 @@ impl Strategy {
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
                         match update_op {
                             IdentityUpdateOp::IdentityUpdateAddKeys(keys_count) => {
-                                (0..count).for_each(|_| {
+                                (0..count).for_each(|n| {
                                     current_identities.iter_mut().enumerate().for_each(|(i, random_identity)| {
                                         if i >= count.into() { return; }
+
+                                        let keys_already_added = n * keys_count;
 
                                         let (state_transition, keys_to_add_at_end_block) =
                                             crate::transitions::create_identity_update_transition_add_keys(
                                                 random_identity,
                                                 *keys_count,
+                                                keys_already_added.into(),
                                                 identity_nonce_counter,
                                                 signer,
                                                 rng,

@@ -920,6 +920,7 @@ impl NetworkStrategy {
                                         strategy_tests::transitions::create_identity_update_transition_add_keys(
                                             random_identity,
                                             *count,
+                                            0,
                                             identity_nonce_counter,
                                             signer,
                                             rng,
