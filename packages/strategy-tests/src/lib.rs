@@ -281,12 +281,10 @@ impl Strategy {
     pub fn used_contract_ids(&self) -> BTreeSet<Identifier> {
         self.operations
             .iter()
-            .filter_map(|operation| {
-                match &operation.op_type {
-                    OperationType::Document(document) => Some(document.contract.id()),
-                    OperationType::ContractUpdate(op) => Some(op.contract.id()),
-                    _ => None,
-                }
+            .filter_map(|operation| match &operation.op_type {
+                OperationType::Document(document) => Some(document.contract.id()),
+                OperationType::ContractUpdate(op) => Some(op.contract.id()),
+                _ => None,
             })
             .collect()
     }
@@ -1120,24 +1118,22 @@ impl Strategy {
                             operations.push(state_transition);
                         }
                     }
-                    OperationType::ContractCreate(
-                        params, 
-                        doc_type_count
-                    ) if !current_identities.is_empty() => {
+                    OperationType::ContractCreate(params, doc_type_count)
+                        if !current_identities.is_empty() =>
+                    {
                         // Create `count` ContractCreate transitions and push to operations vec
                         for _ in 0..count {
                             // Get the contract owner_id from loaded_identity and loaded_identity nonce
                             let identity = &current_identities[0];
-                            let identity_nonce = identity_nonce_counter
-                                .entry(identity.id())
-                                .or_default();
+                            let identity_nonce =
+                                identity_nonce_counter.entry(identity.id()).or_default();
                             *identity_nonce += 1;
                             let owner_id = identity.id();
 
                             // Generate a contract id
                             let contract_id = DataContract::generate_data_contract_id_v0(
                                 owner_id,
-                                *identity_nonce
+                                *identity_nonce,
                             );
 
                             // Create `doc_type_count` doc types
@@ -1151,9 +1147,14 @@ impl Strategy {
                                 ) {
                                     Ok(new_document_type) => {
                                         let mut doc_type_clone = new_document_type.schema().clone();
-                                        let name = doc_type_clone.remove("title").expect("Expected to get a doc type title in ContractCreate");
+                                        let name = doc_type_clone.remove("title").expect(
+                                            "Expected to get a doc type title in ContractCreate",
+                                        );
                                         if let Value::Map(ref mut map) = doc_types {
-                                            map.push((Value::Text(name.to_string()), doc_type_clone));
+                                            map.push((
+                                                Value::Text(name.to_string()),
+                                                doc_type_clone,
+                                            ));
                                         } else {
                                             error!("doc_types is not a Value::Map as expected");
                                         }
@@ -1161,14 +1162,16 @@ impl Strategy {
                                     Err(e) => {
                                         error!("Error generating random document type: {:?}", e)
                                     }
-                                }    
+                                }
                             }
 
-                            let contract_factory = match DataContractFactory::new(platform_version.protocol_version) {
+                            let contract_factory = match DataContractFactory::new(
+                                platform_version.protocol_version,
+                            ) {
                                 Ok(contract_factory) => contract_factory,
                                 Err(e) => {
                                     error!("Failed to get DataContractFactory while creating random contract: {e}");
-                                    continue
+                                    continue;
                                 }
                             };
 
@@ -1182,29 +1185,36 @@ impl Strategy {
                                 Ok(contract) => contract,
                                 Err(e) => {
                                     error!("Failed to create random data contract: {e}");
-                                    continue
+                                    continue;
                                 }
                             };
 
-                            let transition = match contract_factory.create_data_contract_create_transition(created_data_contract) {
+                            let transition = match contract_factory
+                                .create_data_contract_create_transition(created_data_contract)
+                            {
                                 Ok(transition) => transition,
                                 Err(e) => {
                                     error!("Failed to create ContractCreate transition: {e}");
-                                    continue
+                                    continue;
                                 }
                             };
 
                             // Sign transition
-                            let public_key = identity.get_public_key_by_id(2 as KeyID).expect("Expected to get identity public key in ContractCreate");
-                            let mut state_transition = StateTransition::DataContractCreate(transition);
+                            let public_key = identity
+                                .get_public_key_by_id(2 as KeyID)
+                                .expect("Expected to get identity public key in ContractCreate");
+                            let mut state_transition =
+                                StateTransition::DataContractCreate(transition);
                             if let Err(e) = state_transition.sign_external(
                                 public_key,
                                 signer,
-                                None::<fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>>,
+                                None::<
+                                    fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>,
+                                >,
                             ) {
                                 error!("Error signing state transition: {:?}", e);
                             }
-                                                                                    
+
                             operations.push(state_transition);
                         }
                     }

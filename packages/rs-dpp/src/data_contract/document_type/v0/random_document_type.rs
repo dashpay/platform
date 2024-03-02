@@ -232,7 +232,9 @@ impl DocumentTypeV0 {
                 match Index::random(&ten_field_names, &indices, rng) {
                     Ok(index) => {
                         // Generate a key to represent the combination of properties in this index
-                        let combination_key = index.properties.iter()
+                        let combination_key = index
+                            .properties
+                            .iter()
                             .map(|p| p.name.clone())
                             .collect::<Vec<_>>()
                             .join(",");
@@ -243,7 +245,7 @@ impl DocumentTypeV0 {
                             indices.push(index);
                             index_created = true;
                         }
-                    },
+                    }
                     Err(_) => break,
                 }
             }
