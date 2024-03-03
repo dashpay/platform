@@ -18,7 +18,7 @@ use dpp::version::PlatformVersion;
 use std::collections::HashMap;
 
 /// This will validate that all keys are valid against the state
-pub(super) fn validate_unique_identity_public_key_hashes_in_state_v0(
+pub(super) fn validate_unique_identity_public_key_hashes_not_in_state_v0(
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
     drive: &Drive,
     _execution_context: &mut StateTransitionExecutionContext,

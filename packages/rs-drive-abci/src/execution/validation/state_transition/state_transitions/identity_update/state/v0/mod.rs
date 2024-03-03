@@ -24,7 +24,7 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::common::validate_identity_public_key_contract_bounds::validate_identity_public_keys_contract_bounds;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_dont_exist_in_state::validate_identity_public_key_ids_dont_exist_in_state;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_exist_in_state::validate_identity_public_key_ids_exist_in_state;
-use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_in_state;
+use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_not_in_state;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_update) trait IdentityUpdateStateTransitionStateValidationV0
@@ -55,7 +55,7 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
 
         // Now we should check the state of added keys to make sure there aren't any that already exist
         validation_result.add_errors(
-            validate_unique_identity_public_key_hashes_in_state(
+            validate_unique_identity_public_key_hashes_not_in_state(
                 self.public_keys_to_add(),
                 drive,
                 &mut state_transition_execution_context,

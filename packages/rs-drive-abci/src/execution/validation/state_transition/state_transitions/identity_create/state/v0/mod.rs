@@ -33,7 +33,7 @@ use dpp::version::DefaultForPlatformVersion;
 use drive::grovedb::TransactionArg;
 
 use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
-use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_in_state;
+use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_not_in_state;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_create) trait IdentityCreateStateTransitionStateValidationV0
 {
@@ -90,7 +90,7 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
 
         // Now we should check the state of added keys to make sure there aren't any that already exist
         validation_result.add_errors(
-            validate_unique_identity_public_key_hashes_in_state(
+            validate_unique_identity_public_key_hashes_not_in_state(
                 self.public_keys(),
                 drive,
                 &mut state_transition_execution_context,
