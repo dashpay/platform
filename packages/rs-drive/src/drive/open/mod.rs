@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::RwLock;
 
 impl Drive {
-    /// Opens GroveDB primary database
+    /// Opens GroveDB database
     ///
     /// This is a non-versioned method which opens a specified path as a GroveDB instance and returns a `Drive`
     /// instance with this GroveDB, cache and other configurations.
@@ -33,13 +33,6 @@ impl Drive {
     ) -> Result<(Self, Option<ProtocolVersion>), Error> {
         let grove = GroveDb::open(path)?;
 
-        Self::new_drive_with_grovedb_and_config(grove, config)
-    }
-
-    fn new_drive_with_grovedb_and_config(
-        grove: GroveDb,
-        config: Option<DriveConfig>,
-    ) -> Result<(Self, Option<ProtocolVersion>), Error> {
         let config = config.unwrap_or_default();
         let genesis_time_ms = config.default_genesis_time;
         let data_contracts_global_cache_size = config.data_contracts_global_cache_size;
