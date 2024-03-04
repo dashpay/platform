@@ -121,8 +121,7 @@ impl<C> Platform<C> {
             (
                 SystemDataContract::MasternodeRewards,
                 (
-                    system_data_contracts
-                        .read_masternode_reward_shares(),
+                    system_data_contracts.read_masternode_reward_shares(),
                     system_identity_public_keys.masternode_reward_shares_contract_owner(),
                 ),
             ),
