@@ -42,22 +42,22 @@ impl SystemDataContracts {
     }
 
     /// Returns withdrawals contract
-    pub fn withdrawals(&self) -> RwLockReadGuard<DataContract> {
+    pub fn read_withdrawals(&self) -> RwLockReadGuard<DataContract> {
         self.withdrawals.read().unwrap()
     }
 
     /// Returns DPNS contract
-    pub fn dpns(&self) -> RwLockReadGuard<DataContract> {
+    pub fn read_dpns(&self) -> RwLockReadGuard<DataContract> {
         self.dpns.read().unwrap()
     }
 
     /// Returns Dashpay contract
-    pub fn dashpay(&self) -> RwLockReadGuard<DataContract> {
+    pub fn read_dashpay(&self) -> RwLockReadGuard<DataContract> {
         self.dashpay.read().unwrap()
     }
 
     /// Returns Masternode reward shares contract
-    pub fn masternode_reward_shares(&self) -> RwLockReadGuard<DataContract> {
+    pub fn read_masternode_reward_shares(&self) -> RwLockReadGuard<DataContract> {
         self.masternode_reward_shares.read().unwrap()
     }
 }

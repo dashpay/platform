@@ -133,7 +133,7 @@ where
             return Ok(());
         }
 
-        let withdrawals_contract = self.drive.cache.system_data_contracts.withdrawals();
+        let withdrawals_contract = self.drive.cache.system_data_contracts.read_withdrawals();
 
         self.drive.add_update_multiple_documents_operations(
             &documents_to_update,

@@ -74,7 +74,7 @@ where
             transaction_indices.last().expect("must be present")
         );
 
-        let withdrawals_contract = self.drive.cache.system_data_contracts.withdrawals();
+        let withdrawals_contract = self.drive.cache.system_data_contracts.read_withdrawals();
 
         self.drive.add_update_multiple_documents_operations(
             &documents,

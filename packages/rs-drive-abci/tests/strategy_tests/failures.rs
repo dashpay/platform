@@ -260,7 +260,12 @@ mod tests {
             platform_version,
         );
 
-        let dpns_contract = platform.drive.cache.system_data_contracts.dpns().clone();
+        let dpns_contract = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .read_dpns()
+            .clone();
 
         let dpns_contract_for_type = dpns_contract.clone();
 

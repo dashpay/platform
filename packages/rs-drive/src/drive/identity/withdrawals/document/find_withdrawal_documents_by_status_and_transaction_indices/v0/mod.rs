@@ -60,7 +60,7 @@ impl Drive {
             },
         );
 
-        let contract = self.cache.system_data_contracts.withdrawals();
+        let contract = self.cache.system_data_contracts.read_withdrawals();
 
         let document_type = contract.document_type_for_name(withdrawal::NAME)?;
 
