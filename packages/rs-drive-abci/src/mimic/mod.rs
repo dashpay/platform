@@ -182,11 +182,11 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
 
         tx_results.iter().try_for_each(|tx_result| {
             if tx_result.code > 0 && !expect_validation_errors.contains(&tx_result.code) {
+                // Deserialize the tx result info that contains
+                // encoded consensus error if error code is greater than 0
                 let info_bytes = decode(&tx_result.info, Encoding::Base64)
                     .expect("can't decode tx result info from base64 to bytes");
 
-                // first we need to deserialize the document and contract indices
-                // we would need dedicated deserialization functions based on the document type
                 let info_cbor_map: BTreeMap<String, CborValue> =
                     ciborium::de::from_reader(info_bytes.as_slice()).map_err(|_| {
                         ProtocolError::StructureError(StructureError::InvalidCBOR(
@@ -203,6 +203,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
 
                 let serialized_error = data_map.get_bytes("serializedError").unwrap();
 
+                // Deserialize the consensus error
                 let error = ConsensusError::deserialize_from_bytes(&serialized_error)
                     .expect("expected to deserialize consensus error");
 

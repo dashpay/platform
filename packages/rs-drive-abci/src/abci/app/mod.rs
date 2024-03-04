@@ -1,11 +1,12 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use drive::grovedb::Transaction;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 
 mod check_tx;
-/// Block update
 mod consensus;
+/// Convert state transition execution result into ABCI response
+pub mod execution_result;
 mod full;
 
 use crate::rpc::core::DefaultCoreRPC;

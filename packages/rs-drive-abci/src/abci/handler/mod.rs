@@ -38,7 +38,6 @@
 mod check_tx;
 mod echo;
 pub mod error;
-pub mod execution_result;
 mod extend_vote;
 mod finalize_block;
 mod info;
