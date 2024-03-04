@@ -166,6 +166,9 @@ fn main() -> Result<(), ExitCode> {
 
     #[cfg(feature = "console")]
     if config.tokio_console_enabled {
+        #[cfg(not(tokio_unstable))]
+        panic!("tokio_unstable flag should be set");
+
         // Initialize Tokio console subscriber
 
         let socket_addr: SocketAddr = config
