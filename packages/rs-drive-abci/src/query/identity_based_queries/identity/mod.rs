@@ -2,7 +2,8 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_identity_request::Version;
+use dapi_grpc::platform::v0::get_identity_request::Version as RequestVersion;
+use dapi_grpc::platform::v0::get_identity_response::Version as ResponseVersion;
 use dapi_grpc::platform::v0::{GetIdentityRequest, GetIdentityResponse};
 use dpp::version::PlatformVersion;
 
@@ -28,7 +29,7 @@ impl<C> Platform<C> {
             .identity;
 
         let feature_version = match &version {
-            Version::V0(_) => 0,
+            RequestVersion::V0(_) => 0,
         };
         if !feature_version_bounds.check_version(feature_version) {
             return Ok(QueryValidationResult::new_with_error(
@@ -42,7 +43,13 @@ impl<C> Platform<C> {
             ));
         }
         match version {
-            Version::V0(request_v0) => self.query_identity_v0(request_v0, platform_version),
+            RequestVersion::V0(request_v0) => {
+                let result = self.query_identity_v0(request_v0, platform_version)?;
+
+                Ok(result.map(|response| GetIdentityResponse {
+                    version: Some(ResponseVersion::V0(response)),
+                }))
+            }
         }
     }
 }

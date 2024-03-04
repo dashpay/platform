@@ -18,7 +18,7 @@ impl<C> Platform<C> {
         &self,
         GetIdentityRequestV0 { id, prove }: GetIdentityRequestV0,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetIdentityResponse>, Error> {
+    ) -> Result<QueryValidationResult<GetIdentityResponseV0>, Error> {
         let identity_id: Identifier =
             check_validation_result_with_data!(id.try_into().map_err(|_| {
                 QueryError::InvalidArgument(
@@ -35,11 +35,9 @@ impl<C> Platform<C> {
 
             let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
 
-            GetIdentityResponse {
-                version: Some(get_identity_response::Version::V0(GetIdentityResponseV0 {
-                    result: Some(get_identity_response_v0::Result::Proof(proof)),
-                    metadata: Some(metadata),
-                })),
+            GetIdentityResponseV0 {
+                result: Some(get_identity_response_v0::Result::Proof(proof)),
+                metadata: Some(metadata),
             }
         } else {
             let maybe_identity = self.drive.fetch_full_identity(
@@ -56,13 +54,11 @@ impl<C> Platform<C> {
                 .serialize_consume_to_bytes()
                 .map_err(Error::Protocol)?;
 
-            GetIdentityResponse {
-                version: Some(get_identity_response::Version::V0(GetIdentityResponseV0 {
-                    result: Some(get_identity_response_v0::Result::Identity(
-                        serialized_identity,
-                    )),
-                    metadata: Some(self.response_metadata_v0()),
-                })),
+            GetIdentityResponseV0 {
+                result: Some(get_identity_response_v0::Result::Identity(
+                    serialized_identity,
+                )),
+                metadata: Some(self.response_metadata_v0()),
             }
         };
 
@@ -131,11 +127,9 @@ mod tests {
 
         assert!(matches!(
             result.data,
-            Some(GetIdentityResponse {
-                version: Some(get_identity_response::Version::V0(GetIdentityResponseV0 {
-                    result: Some(get_identity_response_v0::Result::Proof(_)),
-                    metadata: Some(_)
-                }))
+            Some(GetIdentityResponseV0 {
+                result: Some(get_identity_response_v0::Result::Proof(_)),
+                metadata: Some(_)
             })
         ))
     }
