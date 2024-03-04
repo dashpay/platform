@@ -55,16 +55,14 @@ where
     pub(super) fn process_raw_state_transitions_v0(
         &self,
         raw_state_transitions: &Vec<Vec<u8>>,
-        block_platform_state: PlatformState,
+        block_platform_state: &PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-    ) -> Result<(StateTransitionsProcessingResult, PlatformState), Error> {
-        let state_lock = RwLock::new(block_platform_state);
-
+    ) -> Result<StateTransitionsProcessingResult, Error> {
         let platform_ref = PlatformRef {
             drive: &self.drive,
-            state: &state_lock,
+            state: block_platform_state,
             version: platform_version,
             config: &self.config,
             core_rpc: &self.core_rpc,
@@ -105,7 +103,7 @@ where
             processing_result.add(execution_result)?;
         }
 
-        Ok((processing_result, state_lock.into_inner().unwrap()))
+        Ok(processing_result)
     }
 
     fn process_raw_state_transition(

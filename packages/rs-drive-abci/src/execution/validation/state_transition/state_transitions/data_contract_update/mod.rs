@@ -192,7 +192,7 @@ mod tests {
 
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
-                state: &platform.state,
+                state: &state,
                 version: state
                     .current_platform_version()
                     .expect("should return current platform version"),
@@ -276,7 +276,7 @@ mod tests {
 
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
-                state: &platform.state,
+                state: &state,
                 version: state
                     .current_platform_version()
                     .expect("should return current platform version"),
@@ -430,7 +430,7 @@ mod tests {
 
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
-                state: &platform.state,
+                state: &state,
                 version: state
                     .current_platform_version()
                     .expect("should return current platform version"),

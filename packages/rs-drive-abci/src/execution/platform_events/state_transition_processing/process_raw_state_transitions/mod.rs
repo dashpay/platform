@@ -38,11 +38,11 @@ where
     pub(in crate::execution) fn process_raw_state_transitions(
         &self,
         raw_state_transitions: &Vec<Vec<u8>>,
-        block_platform_state: PlatformState,
+        block_platform_state: &PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-    ) -> Result<(StateTransitionsProcessingResult, PlatformState), Error> {
+    ) -> Result<StateTransitionsProcessingResult, Error> {
         match platform_version
             .drive_abci
             .methods

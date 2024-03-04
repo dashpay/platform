@@ -38,7 +38,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     let state = abci_app.platform.state.read().unwrap();
     let platform = PlatformRef {
         drive: &abci_app.platform.drive,
-        state: &abci_app.platform.state,
+        state: &state,
         version: state
             .current_platform_version()
             .expect("expected a version"),

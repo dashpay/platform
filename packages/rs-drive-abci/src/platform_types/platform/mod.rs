@@ -45,7 +45,7 @@ pub struct PlatformRef<'a, C> {
     /// Drive
     pub drive: &'a Drive,
     /// State
-    pub state: &'a RwLock<PlatformState>,
+    pub state: &'a PlatformState,
     /// Version
     pub version: &'a PlatformVersion,
     /// Configuration
@@ -62,8 +62,8 @@ pub struct PlatformStateRef<'a> {
     /// Drive
     pub drive: &'a Drive,
     /// State
-    pub state: &'a RwLock<PlatformState>,
-    /// Current platform version
+    pub state: &'a PlatformState,
+    /// Version
     pub version: &'a PlatformVersion,
     /// Configuration
     pub config: &'a PlatformConfig,
@@ -88,7 +88,7 @@ impl<'a, C> From<&PlatformRef<'a, C>> for PlatformStateRef<'a> {
             state,
             config,
             version,
-            last_committed_block_info: block_info,
+            last_committed_block_info,
             ..
         } = value;
 
@@ -97,7 +97,7 @@ impl<'a, C> From<&PlatformRef<'a, C>> for PlatformStateRef<'a> {
             state,
             config,
             version,
-            last_committed_block_info: block_info,
+            last_committed_block_info,
         }
     }
 }

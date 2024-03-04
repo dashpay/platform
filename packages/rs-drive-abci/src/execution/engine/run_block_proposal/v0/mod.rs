@@ -304,9 +304,9 @@ where
             )?;
 
         // Process transactions
-        let (state_transitions_result, block_platform_state) = self.process_raw_state_transitions(
+        let state_transitions_result = self.process_raw_state_transitions(
             raw_state_transitions,
-            block_platform_state,
+            &block_platform_state,
             &block_info,
             transaction,
             platform_version,

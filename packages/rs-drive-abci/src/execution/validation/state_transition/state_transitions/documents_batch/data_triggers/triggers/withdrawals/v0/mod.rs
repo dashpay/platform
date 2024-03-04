@@ -162,7 +162,7 @@ mod tests {
         let state_read_guard = platform.state.read().unwrap();
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &platform.state,
+            state: &state_read_guard,
             version: state_read_guard
                 .current_platform_version()
                 .expect("should return current protocol version"),
@@ -257,7 +257,7 @@ mod tests {
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &platform.state,
+            state: &state_read_guard,
             version: state_read_guard
                 .current_platform_version()
                 .expect("should return current protocol version"),

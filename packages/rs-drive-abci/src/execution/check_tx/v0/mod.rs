@@ -44,14 +44,12 @@ where
 
         let platform_ref = PlatformRef {
             drive: &self.drive,
-            state: &self.state,
+            state: &state_read_guard,
             version: state_read_guard.current_platform_version()?,
             config: &self.config,
             core_rpc: &self.core_rpc,
             last_committed_block_info: block_info,
         };
-
-        drop(state_read_guard);
 
         let state_transition_execution_event =
             process_state_transition(&platform_ref, state_transition, Some(transaction))?;
@@ -104,20 +102,18 @@ where
             }
         };
 
+        // TODO: We lock state for entire check tx execution that could lead to performance issues
+        //  and writer starvation.
+
         let state_read_guard = self.state.read().unwrap();
-
-        // Latest committed or genesis block info
-        let block_info = state_read_guard.any_block_info().clone();
-
-        drop(state_read_guard);
 
         let platform_ref = PlatformRef {
             drive: &self.drive,
-            state: &self.state,
+            state: &state_read_guard,
             version: platform_version,
             config: &self.config,
             core_rpc: &self.core_rpc,
-            last_committed_block_info: &block_info,
+            last_committed_block_info: state_read_guard.any_block_info(),
         };
 
         let unique_identifiers = state_transition.unique_identifiers();
@@ -131,14 +127,19 @@ where
         // We should run the execution event in dry run to see if we would have enough fees for the transition
         validation_result.and_then_borrowed_validation(|execution_event| {
             if let Some(execution_event) = execution_event {
-                self.validate_fees_of_event(execution_event, &block_info, None, platform_version)
-                    .map(|validation_result| {
-                        validation_result.map(|fee_result| CheckTxResult {
-                            level: check_tx_level,
-                            fee_result: Some(fee_result),
-                            unique_identifiers,
-                        })
+                self.validate_fees_of_event(
+                    execution_event,
+                    state_read_guard.any_block_info(),
+                    None,
+                    platform_version,
+                )
+                .map(|validation_result| {
+                    validation_result.map(|fee_result| CheckTxResult {
+                        level: check_tx_level,
+                        fee_result: Some(fee_result),
+                        unique_identifiers,
                     })
+                })
             } else {
                 Ok(ValidationResult::new_with_data(CheckTxResult {
                     level: check_tx_level,
@@ -289,7 +290,7 @@ mod tests {
             .platform
             .process_raw_state_transitions(
                 &vec![tx.clone()],
-                state.clone(),
+                &state,
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
@@ -380,7 +381,7 @@ mod tests {
             .platform
             .process_raw_state_transitions(
                 &vec![serialized.clone()],
-                state.clone(),
+                &state,
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
@@ -484,7 +485,7 @@ mod tests {
             .platform
             .process_raw_state_transitions(
                 &vec![serialized.clone()],
-                state.clone(),
+                &state,
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
