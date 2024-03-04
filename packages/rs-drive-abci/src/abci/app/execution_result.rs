@@ -7,8 +7,6 @@ use dpp::version::PlatformVersion;
 use dpp::version::TryIntoPlatformVersioned;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
-// TODO: Move to consensus
-
 impl TryIntoPlatformVersioned<ExecTxResult> for StateTransitionExecutionResult {
     type Error = Error;
 
