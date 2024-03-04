@@ -36,7 +36,7 @@ where
         request_finalize_block: FinalizeBlockCleanedRequest,
         transaction: &Transaction,
     ) -> Result<block_execution_outcome::v0::BlockFinalizationOutcome, Error> {
-        let state = self.state.read().expect("expected to get state");
+        let state = self.state.read();
         let current_protocol_version = state.current_protocol_version_in_consensus();
         drop(state);
 

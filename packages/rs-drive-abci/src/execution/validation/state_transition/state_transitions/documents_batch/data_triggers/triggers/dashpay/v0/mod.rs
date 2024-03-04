@@ -168,7 +168,7 @@ mod test {
             .set_initial_state_structure();
 
         let mut nonce_counter = BTreeMap::new();
-        let state_read_guard = platform.state.read().unwrap();
+        let state_read_guard = platform.state.read();
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_read_guard,
@@ -242,7 +242,7 @@ mod test {
 
         let mut nonce_counter = BTreeMap::new();
 
-        let mut state_write_guard = platform.state.write().unwrap();
+        let mut state_write_guard = platform.state.write();
 
         state_write_guard.set_last_committed_block_info(Some(
             ExtendedBlockInfoV0 {
@@ -359,7 +359,7 @@ mod test {
 
         let mut nonce_counter = BTreeMap::new();
 
-        let mut state_write_guard = platform.state.write().unwrap();
+        let mut state_write_guard = platform.state.write();
 
         state_write_guard.set_last_committed_block_info(Some(
             ExtendedBlockInfoV0 {

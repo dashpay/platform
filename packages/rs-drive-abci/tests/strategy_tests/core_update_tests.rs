@@ -83,7 +83,7 @@ mod tests {
 
         // we expect to see quorums with banned members
 
-        let state = outcome.abci_app.platform.state.read().unwrap();
+        let state = outcome.abci_app.platform.state.read();
 
         let banned_count = state
             .validator_sets()
@@ -183,7 +183,7 @@ mod tests {
 
         // we expect to see quorums with banned members
 
-        let _state = outcome.abci_app.platform.state.read().unwrap();
+        let _state = outcome.abci_app.platform.state.read();
 
         // We should also see validator sets with less than the quorum size
 

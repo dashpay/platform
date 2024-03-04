@@ -39,7 +39,7 @@ where
         let state_transition =
             StateTransition::deserialize_from_bytes(raw_tx.as_slice()).map_err(Error::Protocol)?;
 
-        let state_read_guard = self.state.read().unwrap();
+        let state_read_guard = self.state.read();
 
         let platform_ref = PlatformRef {
             drive: &self.drive,
@@ -102,7 +102,7 @@ where
         // TODO: We lock state for entire check tx execution that could lead to performance issues
         //  and writer starvation.
 
-        let state_read_guard = self.state.read().unwrap();
+        let state_read_guard = self.state.read();
 
         let platform_ref = PlatformRef {
             drive: &self.drive,
@@ -216,7 +216,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let state = platform.state.read().unwrap();
+        let state = platform.state.read();
         let protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
@@ -310,7 +310,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let state = platform.state.read().unwrap();
+        let state = platform.state.read();
         let protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
@@ -414,7 +414,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let state = platform.state.read().unwrap();
+        let state = platform.state.read();
         let protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
@@ -519,7 +519,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.read();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -695,7 +695,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.read();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -823,7 +823,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.read();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -981,7 +981,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.read();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -1071,7 +1071,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.read();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -1291,7 +1291,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.read();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let genesis_time = 0;
@@ -1404,7 +1404,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.read();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let genesis_time = 0;

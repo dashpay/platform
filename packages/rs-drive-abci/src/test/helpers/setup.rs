@@ -113,7 +113,6 @@ impl TempPlatform<MockCoreRPCLike> {
                 self.platform
                     .state
                     .read()
-                    .unwrap()
                     .current_platform_version()
                     .expect("expected to get current platform version"),
             )
@@ -135,7 +134,7 @@ impl TempPlatform<MockCoreRPCLike> {
 
         let block_info = BlockInfo::default_with_current_time();
 
-        let mut platform_state = self.platform.state.write().unwrap();
+        let mut platform_state = self.platform.state.write();
         platform_state.set_genesis_block_info(Some(block_info));
         drop(platform_state);
 

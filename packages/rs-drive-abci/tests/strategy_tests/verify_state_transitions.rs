@@ -35,7 +35,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     expected_validation_errors: &[u32],
     platform_version: &PlatformVersion,
 ) -> bool {
-    let state = abci_app.platform.state.read().unwrap();
+    let state = abci_app.platform.state.read();
     let platform = PlatformRef {
         drive: &abci_app.platform.drive,
         state: &state,

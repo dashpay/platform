@@ -758,7 +758,6 @@ pub(crate) fn start_chain_for_strategy(
         .platform
         .state
         .read()
-        .unwrap()
         .current_validator_set_quorum_hash();
 
     continue_chain_for_strategy(
@@ -841,7 +840,7 @@ pub(crate) fn continue_chain_for_strategy(
     let mut state_transition_results_per_block = BTreeMap::new();
 
     for block_height in block_start..(block_start + block_count) {
-        let state = platform.state.read().expect("lock is poisoned");
+        let state = platform.state.read();
         let epoch_info = EpochInfoV0::calculate(
             first_block_time,
             current_time_ms,
@@ -977,7 +976,7 @@ pub(crate) fn continue_chain_for_strategy(
             continue;
         }
 
-        let platform_state = platform.state.read().expect("lock is poisoned");
+        let platform_state = platform.state.read();
 
         let platform_version = platform_state.current_platform_version().unwrap();
 
@@ -1067,7 +1066,6 @@ pub(crate) fn continue_chain_for_strategy(
         platform
             .state
             .read()
-            .expect("lock is poisoned")
             .last_committed_block_info()
             .as_ref()
             .unwrap()

@@ -26,7 +26,7 @@ impl<C> Platform<C> {
         }: GetEpochsInfoRequestV0,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetEpochsInfoResponseV0>, Error> {
-        let state = self.state.read().unwrap();
+        let state = self.state.read();
 
         let start_epoch = start_epoch.unwrap_or_else(|| {
             if ascending {

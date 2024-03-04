@@ -50,7 +50,7 @@ where
                     "there should be a block execution context",
                 )))?;
 
-        let mut state_cache = self.state.write().unwrap();
+        let mut state_cache = self.state.write();
 
         *state_cache = block_execution_context.block_platform_state_owned();
 
