@@ -9,14 +9,17 @@ use super::get_dashpay_contract_fixture;
 
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
+use crate::prelude::IdentityNonce;
 
 pub fn get_contact_request_document_fixture(
     owner_id: Option<Identifier>,
+    identity_nonce: IdentityNonce,
     additional_data: Option<Value>,
     protocol_version: u32,
 ) -> Document {
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
-    let data_contract = get_dashpay_contract_fixture(None, protocol_version).data_contract_owned();
+    let data_contract =
+        get_dashpay_contract_fixture(None, identity_nonce, protocol_version).data_contract_owned();
 
     let factory = DocumentFactory::new(protocol_version)
         .expect("expected to create factory for get_contact_request_document_fixture");
@@ -41,11 +44,13 @@ pub fn get_contact_request_document_fixture(
 #[cfg(feature = "extended-document")]
 pub fn get_contact_request_extended_document_fixture(
     owner_id: Option<Identifier>,
+    identity_nonce: IdentityNonce,
     additional_data: Option<Value>,
     protocol_version: u32,
 ) -> ExtendedDocument {
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
-    let data_contract = get_dashpay_contract_fixture(None, protocol_version).data_contract_owned();
+    let data_contract =
+        get_dashpay_contract_fixture(None, identity_nonce, protocol_version).data_contract_owned();
 
     let factory = DocumentFactory::new(protocol_version).expect("expected document factory");
 

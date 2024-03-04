@@ -32,8 +32,7 @@ pub struct DataContractFacadeWasm(pub(crate) Arc<DataContractFacade>);
 
 impl DataContractFacadeWasm {
     pub fn new(protocol_version: u32, entropy_generator: ExternalEntropyGenerator) -> Self {
-        let inner = DataContractFacade::new(protocol_version, Some(Box::new(entropy_generator)))
-            .expect("should create facade");
+        let inner = DataContractFacade::new(protocol_version).expect("should create facade");
 
         Self(Arc::new(inner))
     }
@@ -46,6 +45,7 @@ impl DataContractFacadeWasm {
     pub fn create(
         &self,
         owner_id: Vec<u8>,
+        identity_nonce: IdentityNonce,
         documents: JsValue,
         definitions: Option<js_sys::Object>,
     ) -> Result<DataContractWasm, JsValue> {
@@ -57,6 +57,7 @@ impl DataContractFacadeWasm {
         self.0
             .create(
                 id,
+                identity_nonce,
                 serde_wasm_bindgen::from_value(documents)?,
                 None,
                 definitions

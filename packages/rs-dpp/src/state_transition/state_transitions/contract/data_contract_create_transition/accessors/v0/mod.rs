@@ -1,10 +1,10 @@
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-use platform_value::Bytes32;
+use crate::prelude::IdentityNonce;
 
 pub trait DataContractCreateTransitionAccessorsV0 {
     fn data_contract(&self) -> &DataContractInSerializationFormat;
 
-    fn entropy(&self) -> &Bytes32;
+    fn identity_nonce(&self) -> IdentityNonce;
 
     fn set_data_contract(&mut self, data_contract: DataContractInSerializationFormat);
 }

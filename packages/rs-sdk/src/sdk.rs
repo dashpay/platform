@@ -9,14 +9,10 @@ use crate::internal_cache::InternalSdkCache;
 use crate::mock::MockResponse;
 #[cfg(feature = "mocks")]
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
-use crate::platform::transition::put_document::PutSettings;
+use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Fetch, Identifier};
 use dapi_grpc::mock::Mockable;
-use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0;
-use dapi_grpc::platform::v0::get_identity_contract_nonce_response::Version;
-use dapi_grpc::platform::v0::{
-    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, Proof, ResponseMetadata,
-};
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
 use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};

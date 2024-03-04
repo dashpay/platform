@@ -881,7 +881,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let created_contract =
-            get_dpns_data_contract_fixture(None, platform_version.protocol_version);
+            get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
 
         drive
             .apply_contract(

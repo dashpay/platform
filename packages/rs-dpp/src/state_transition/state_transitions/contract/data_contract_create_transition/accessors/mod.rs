@@ -2,6 +2,7 @@ mod v0;
 
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 
+use crate::prelude::IdentityNonce;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use platform_value::Bytes32;
 pub use v0::*;
@@ -13,9 +14,9 @@ impl DataContractCreateTransitionAccessorsV0 for DataContractCreateTransition {
         }
     }
 
-    fn entropy(&self) -> &Bytes32 {
+    fn identity_nonce(&self) -> IdentityNonce {
         match self {
-            DataContractCreateTransition::V0(transition) => &transition.entropy,
+            DataContractCreateTransition::V0(transition) => transition.identity_nonce,
         }
     }
 

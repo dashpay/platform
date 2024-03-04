@@ -266,6 +266,7 @@ mod tests {
             .expect("expected a random identity");
         let created_data_contract = get_data_contract_fixture(
             Some(identity.id()),
+            0,
             LATEST_PLATFORM_VERSION.protocol_version,
         );
         let data_contract_create_transition: DataContractCreateTransition = created_data_contract
@@ -287,8 +288,7 @@ mod tests {
         let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
         let mut created_data_contract =
-            get_data_contract_fixture(Some(identity.id()), platform_version.protocol_version);
-        created_data_contract.set_entropy_used(Default::default());
+            get_data_contract_fixture(Some(identity.id()), 0, platform_version.protocol_version);
         let data_contract_update_transition =
             DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
                 identity_contract_nonce: 1,
@@ -313,7 +313,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let mut nonces = BTreeMap::new();
-        let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
+        let data_contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
         let documents = get_extended_documents_fixture_with_owner_id_from_contract(
             &data_contract,

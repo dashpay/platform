@@ -35,7 +35,9 @@ describe('Platform', () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
-      dataContractFixture = await getDataContractFixture(identity.getId());
+      const identityNonce = await client.platform
+        .nonceManager.bumpIdentityNonce(identity.getId());
+      dataContractFixture = await getDataContractFixture(identityNonce, identity.getId());
 
       await client.platform.contracts.publish(dataContractFixture, identity);
 
@@ -50,7 +52,9 @@ describe('Platform', () => {
     });
 
     beforeEach(async () => {
-      dataContractFixture = await getDataContractFixture(identity.getId());
+      const identityNonce = await client.platform
+        .nonceManager.bumpIdentityNonce(identity.getId());
+      dataContractFixture = await getDataContractFixture(identityNonce, identity.getId());
     });
 
     after(async () => {

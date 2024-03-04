@@ -74,7 +74,8 @@ describe('Document', () => {
       },
     };
 
-    dataContract = dataContractFactory.create(ownerId, rawDataContract);
+    // eslint-disable-next-line
+    dataContract = dataContractFactory.create(ownerId, BigInt(1), rawDataContract);
 
     rawDocument = {
       $protocolVersion: getLatestProtocolVersion(),

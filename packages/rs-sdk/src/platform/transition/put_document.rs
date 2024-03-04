@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::{Error, Sdk};
 
+use crate::platform::transition::put_settings::PutSettings;
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentType;
@@ -16,13 +17,6 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
-
-/// The options when putting something to platform
-#[derive(Debug, Clone, Copy, Default)]
-pub struct PutSettings {
-    pub request_settings: RequestSettings,
-    pub identity_nonce_stale_time_s: Option<u64>,
-}
 
 #[async_trait::async_trait]
 /// A trait for putting a document to platform

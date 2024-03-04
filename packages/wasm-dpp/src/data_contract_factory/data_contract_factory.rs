@@ -33,9 +33,9 @@ impl DataContractFactoryWasm {
         external_entropy_generator_arg: Option<ExternalEntropyGenerator>,
     ) -> DataContractFactoryWasm {
         if let Some(external_entropy_generator) = external_entropy_generator_arg {
-            DataContractFactory::new(protocol_version, Some(Box::new(external_entropy_generator)))
+            DataContractFactory::new(protocol_version)
         } else {
-            DataContractFactory::new(protocol_version, None)
+            DataContractFactory::new(protocol_version)
         }
         .with_js_error()
         .expect("should create a factory")
@@ -46,6 +46,7 @@ impl DataContractFactoryWasm {
     pub fn create(
         &self,
         owner_id: Vec<u8>,
+        identity_nonce: u64,
         documents: JsValue,
         config: JsValue,
     ) -> Result<DataContractWasm, JsValue> {
@@ -64,7 +65,13 @@ impl DataContractFactoryWasm {
             .with_js_error()?;
         //todo: contract config
         self.0
-            .create_with_value_config(identifier, documents_object, contract_config, None)
+            .create_with_value_config(
+                identifier,
+                identity_nonce,
+                documents_object,
+                contract_config,
+                None,
+            )
             .map(Into::into)
             .with_js_error()
     }

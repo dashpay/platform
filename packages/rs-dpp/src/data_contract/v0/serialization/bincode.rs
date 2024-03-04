@@ -18,7 +18,7 @@ mod tests {
         let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
         let contract =
-            get_data_contract_fixture(Some(identity.id()), platform_version.protocol_version)
+            get_data_contract_fixture(Some(identity.id()), 0, platform_version.protocol_version)
                 .data_contract_owned();
         let bytes = contract
             .serialize_to_bytes_with_platform_version(LATEST_PLATFORM_VERSION)

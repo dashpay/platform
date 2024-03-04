@@ -69,14 +69,7 @@ where
                 withdrawals_contract::WithdrawalStatus::POOLED as u8,
             );
 
-            document.set_i64(
-                withdrawal::properties::UPDATED_AT,
-                block_info.time_ms.try_into().map_err(|_| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Can't convert u64 block time to i64 updated_at",
-                    ))
-                })?,
-            );
+            document.set_updated_at(Some(block_info.time_ms));
 
             document.increment_revision().map_err(|_| {
                 Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -150,6 +143,7 @@ where
 mod tests {
     use super::*;
     use dpp::block::epoch::Epoch;
+    use itertools::Itertools;
 
     use dpp::data_contracts::SystemDataContract;
     use dpp::identifier::Identifier;
@@ -258,7 +252,22 @@ mod tests {
             )
             .expect("to fetch withdrawal documents");
 
-        for (i, document) in updated_documents.into_iter().enumerate() {
+        for (i, document) in updated_documents
+            .into_iter()
+            // Sort by index because updated_at is the same for all documents within batch
+            .sorted_by(|a, b| {
+                let a_index = a
+                    .properties()
+                    .get_u64(withdrawal::properties::TRANSACTION_INDEX)
+                    .expect("to get transactionIndex");
+                let b_index = b
+                    .properties()
+                    .get_u64(withdrawal::properties::TRANSACTION_INDEX)
+                    .expect("to get transactionIndex");
+                a_index.cmp(&b_index)
+            })
+            .enumerate()
+        {
             assert_eq!(document.revision(), Some(2));
 
             let tx_index = document

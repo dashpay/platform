@@ -122,7 +122,7 @@ where
 
             document.set_u8(withdrawal::properties::STATUS, status.into());
 
-            document.set_u64(withdrawal::properties::UPDATED_AT, block_info.time_ms);
+            document.set_updated_at(Some(block_info.time_ms));
 
             document.increment_revision().map_err(Error::Protocol)?;
 

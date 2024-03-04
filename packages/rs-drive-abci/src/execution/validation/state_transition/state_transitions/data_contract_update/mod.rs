@@ -93,7 +93,7 @@ mod tests {
 
     fn setup_test() -> TestData<MockCoreRPCLike> {
         let platform_version = PlatformVersion::latest();
-        let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
+        let data_contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
 
         let config = PlatformConfig {

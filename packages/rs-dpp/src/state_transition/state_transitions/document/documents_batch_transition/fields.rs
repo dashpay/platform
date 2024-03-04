@@ -5,7 +5,8 @@ use crate::state_transition::documents_batch_transition::fields::property_names:
     OWNER_ID, TRANSITIONS_DATA_CONTRACT_ID, TRANSITIONS_ID,
 };
 pub use state_transitions::common_fields::property_names::{
-    ENTROPY, SIGNATURE, SIGNATURE_PUBLIC_KEY_ID, STATE_TRANSITION_PROTOCOL_VERSION, TRANSITION_TYPE,
+    IDENTITY_NONCE, SIGNATURE, SIGNATURE_PUBLIC_KEY_ID, STATE_TRANSITION_PROTOCOL_VERSION,
+    TRANSITION_TYPE,
 };
 
 pub mod property_names {

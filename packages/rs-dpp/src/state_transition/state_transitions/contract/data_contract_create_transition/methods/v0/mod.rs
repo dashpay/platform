@@ -2,10 +2,10 @@ use crate::data_contract::DataContract;
 use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
 
+use crate::prelude::IdentityNonce;
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
-use platform_value::Bytes32;
 use platform_version::version::PlatformVersion;
 
 pub trait DataContractCreateTransitionMethodsV0 {
@@ -14,7 +14,7 @@ pub trait DataContractCreateTransitionMethodsV0 {
     /// # Arguments
     ///
     /// * `data_contract` - A mutable `DataContract` instance, to be used in the transition.
-    /// * `entropy` - A `Bytes32` value providing additional randomness.
+    /// * `identity_nonce` - A `IdentityNonce` value providing additional randomness.
     /// * `identity` - A reference to a `PartialIdentity` object.
     /// * `key_id` - A `KeyID` identifier for the public key used for signing the transition.
     /// * `signer` - A reference to an object implementing the `Signer` trait.
@@ -28,7 +28,7 @@ pub trait DataContractCreateTransitionMethodsV0 {
     /// object. Otherwise, returns `ProtocolError`.
     fn new_from_data_contract<S: Signer>(
         data_contract: DataContract,
-        entropy: Bytes32,
+        identity_nonce: IdentityNonce,
         identity: &PartialIdentity,
         key_id: KeyID,
         signer: &S,

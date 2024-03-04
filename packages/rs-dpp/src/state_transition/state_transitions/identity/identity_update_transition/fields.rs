@@ -4,8 +4,8 @@ use crate::state_transition::identity_update_transition::fields::property_names:
     ADD_PUBLIC_KEYS_DATA, ADD_PUBLIC_KEYS_SIGNATURE,
 };
 pub use state_transitions::common_fields::property_names::{
-    ENTROPY, REVISION, SIGNATURE, SIGNATURE_PUBLIC_KEY_ID, STATE_TRANSITION_PROTOCOL_VERSION,
-    TRANSITION_TYPE,
+    IDENTITY_NONCE, REVISION, SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
+    STATE_TRANSITION_PROTOCOL_VERSION, TRANSITION_TYPE,
 };
 pub use state_transitions::identity::common_fields::property_names::IDENTITY_ID;
 

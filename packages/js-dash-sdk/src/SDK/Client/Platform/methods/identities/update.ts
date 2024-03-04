@@ -28,8 +28,7 @@ export async function update(
 
   const { dpp } = this;
 
-  const identityNonce = await this.nonceManager
-    .getIdentityNonce(identity.getId()) + 1;
+  const identityNonce = await this.nonceManager.bumpIdentityNonce(identity.getId());
 
   const identityUpdateTransition = dpp.identity.createIdentityUpdateTransition(
     identity,
@@ -94,7 +93,6 @@ export async function update(
   // }
   this.logger.silly('[Identity#update] Validated IdentityUpdateTransition');
 
-  this.nonceManager.setIdentityNonce(identity.getId(), identityNonce);
   // Skipping validation because it's already done above
   await broadcastStateTransition(this, identityUpdateTransition, {
     skipValidation: true,

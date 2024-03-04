@@ -9,7 +9,7 @@ describe('DataContract', () => {
   let documentSchema;
   let documentSchemas;
   let ownerId;
-  let entropy;
+  let identityNonce;
   let contractId;
   let dataContract;
   let schemaDefs;
@@ -48,7 +48,8 @@ describe('DataContract', () => {
     };
 
     ownerId = (await generateRandomIdentifier()).toBuffer();
-    entropy = Buffer.alloc(32, 420);
+    // eslint-disable-next-line
+    identityNonce = BigInt(1);
     contractId = (await generateRandomIdentifier()).toBuffer();
 
     schemaDefs = { something: { type: 'string' } };
@@ -287,11 +288,11 @@ describe('DataContract', () => {
     });
   });
 
-  describe('#setEntropy', () => {
+  describe('#setIdentityNonce', () => {
     it('should set entropy', () => {
-      dataContract.setEntropy(entropy);
+      dataContract.setIdentityNonce(identityNonce);
 
-      expect(dataContract.getEntropy()).to.deep.equal(entropy);
+      expect(dataContract.getIdentityNonce()).to.deep.equal(identityNonce);
     });
   });
 

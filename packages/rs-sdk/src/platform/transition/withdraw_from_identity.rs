@@ -9,7 +9,7 @@ use dpp::identity::Identity;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
-use crate::platform::transition::put_document::PutSettings;
+use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
 use dpp::state_transition::identity_credit_withdrawal_transition::methods::IdentityCreditWithdrawalTransitionMethodsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;

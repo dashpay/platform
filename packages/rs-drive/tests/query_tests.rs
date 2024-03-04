@@ -4855,11 +4855,11 @@ fn test_query_a_b_c_d_e_contract() {
       }
     });
 
-    let factory = DataContractFactory::new(platform_version.protocol_version, None)
-        .expect("should create factory");
+    let factory =
+        DataContractFactory::new(platform_version.protocol_version).expect("should create factory");
 
     let contract = factory
-        .create_with_value_config(owner_id, documents, None, None)
+        .create_with_value_config(owner_id, 0, documents, None, None)
         .expect("data in fixture should be correct")
         .data_contract_owned();
 

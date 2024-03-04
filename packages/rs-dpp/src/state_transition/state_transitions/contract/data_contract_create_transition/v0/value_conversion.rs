@@ -27,8 +27,8 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
                 .get_optional_integer(SIGNATURE_PUBLIC_KEY_ID)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            entropy: raw_object
-                .remove_optional_bytes_32(ENTROPY)
+            identity_nonce: raw_object
+                .get_optional_integer(IDENTITY_NONCE)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             data_contract: DataContract::from_value(
@@ -57,8 +57,8 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
                 .remove_optional_integer(SIGNATURE_PUBLIC_KEY_ID)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            entropy: raw_value_map
-                .remove_optional_bytes_32(ENTROPY)
+            identity_nonce: raw_value_map
+                .remove_optional_integer(IDENTITY_NONCE)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             data_contract: DataContract::from_value(

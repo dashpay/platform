@@ -8,6 +8,7 @@ use crate::{
 
 pub fn get_data_contract_fixture(
     owner_id: Option<Identifier>,
+    identity_nonce: IdentityNonce,
     protocol_version: u32,
 ) -> CreatedDataContract {
     let defs = platform_value!(
@@ -284,12 +285,11 @@ pub fn get_data_contract_fixture(
         }
     });
 
-    let factory =
-        DataContractFactory::new(protocol_version, None).expect("expected to create a factory");
+    let factory = DataContractFactory::new(protocol_version).expect("expected to create a factory");
 
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
 
     factory
-        .create_with_value_config(owner_id, documents, None, Some(defs))
+        .create_with_value_config(owner_id, identity_nonce, documents, None, Some(defs))
         .expect("data in fixture should be correct")
 }

@@ -383,13 +383,14 @@ impl NetworkStrategy {
                     .clone()
                     .into_partial_identity_info();
 
-                let entropy_used = *created_contract.entropy_used();
+                let identity_nonce = created_contract.identity_nonce();
 
                 let contract = created_contract.data_contract_mut();
 
                 contract.set_owner_id(identity.id);
                 let old_id = contract.id();
-                let new_id = DataContract::generate_data_contract_id_v0(identity.id, entropy_used);
+                let new_id =
+                    DataContract::generate_data_contract_id_v0(identity.id, identity_nonce);
                 contract.set_id(new_id);
 
                 if let Some(contract_updates) = contract_updates {
@@ -417,7 +418,7 @@ impl NetworkStrategy {
 
                 let state_transition = DataContractCreateTransition::new_from_data_contract(
                     contract.clone(),
-                    *created_contract.entropy_used(),
+                    identity_nonce,
                     &identity,
                     1, //key id 1 should always be a high or critical auth key in these tests
                     signer,

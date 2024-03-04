@@ -42,7 +42,7 @@ impl DataContractCreatedStateTransitionStructureValidationV0 for DataContractCre
         // Validate data contract id
         let generated_id = DataContract::generate_data_contract_id_v0(
             self.data_contract().owner_id(),
-            self.entropy(),
+            self.identity_nonce(),
         );
 
         if generated_id != self.data_contract().id() {
