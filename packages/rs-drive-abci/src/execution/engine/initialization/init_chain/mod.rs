@@ -21,7 +21,7 @@ where
         request: RequestInitChain,
         transaction: &Transaction,
     ) -> Result<ResponseInitChain, Error> {
-        let state = self.state.read().expect("expected to get state");
+        let state = self.state.read();
         let platform_version = state.current_platform_version()?;
         drop(state);
 

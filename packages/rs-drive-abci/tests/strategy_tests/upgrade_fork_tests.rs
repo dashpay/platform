@@ -127,7 +127,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -140,7 +139,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .current_protocol_version_in_consensus(),
                         1
                     );
@@ -160,7 +158,6 @@ mod tests {
                 let block_start = platform
                     .state
                     .read()
-                    .unwrap()
                     .last_committed_block_info()
                     .as_ref()
                     .unwrap()
@@ -210,7 +207,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -223,12 +219,11 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .current_protocol_version_in_consensus(),
                         1
                     );
                     assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
+                        platform.state.read().next_epoch_protocol_version(),
                         TEST_PROTOCOL_VERSION_2
                     );
                     assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
@@ -241,7 +236,6 @@ mod tests {
                 let block_start = platform
                     .state
                     .read()
-                    .unwrap()
                     .last_committed_block_info()
                     .as_ref()
                     .unwrap()
@@ -278,7 +272,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -291,12 +284,11 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .current_protocol_version_in_consensus(),
                         TEST_PROTOCOL_VERSION_2
                     );
                     assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
+                        platform.state.read().next_epoch_protocol_version(),
                         TEST_PROTOCOL_VERSION_2
                     );
                     assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
@@ -414,7 +406,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -427,14 +418,10 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .current_protocol_version_in_consensus(),
                         1
                     );
-                    assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
-                        1
-                    );
+                    assert_eq!(platform.state.read().next_epoch_protocol_version(), 1);
                     assert_eq!(
                         (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
                         (Some(&6), Some(&44))
@@ -447,7 +434,6 @@ mod tests {
                 let block_start = platform
                     .state
                     .read()
-                    .unwrap()
                     .last_committed_block_info()
                     .as_ref()
                     .unwrap()
@@ -494,7 +480,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -507,12 +492,11 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .current_protocol_version_in_consensus(),
                         1
                     );
                     assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
+                        platform.state.read().next_epoch_protocol_version(),
                         TEST_PROTOCOL_VERSION_2
                     );
                     assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
@@ -525,7 +509,6 @@ mod tests {
                 let block_start = platform
                     .state
                     .read()
-                    .unwrap()
                     .last_committed_block_info()
                     .as_ref()
                     .unwrap()
@@ -562,7 +545,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -575,12 +557,11 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .current_protocol_version_in_consensus(),
                         TEST_PROTOCOL_VERSION_2
                     );
                     assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
+                        platform.state.read().next_epoch_protocol_version(),
                         TEST_PROTOCOL_VERSION_2
                     );
                     assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
@@ -689,7 +670,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -702,14 +682,10 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .current_protocol_version_in_consensus(),
                         1
                     );
-                    assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
-                        1
-                    );
+                    assert_eq!(platform.state.read().next_epoch_protocol_version(), 1);
                     let counter = &platform
                         .drive
                         .cache
@@ -729,7 +705,6 @@ mod tests {
                 let block_start = platform
                     .state
                     .read()
-                    .unwrap()
                     .last_committed_block_info()
                     .as_ref()
                     .unwrap()
@@ -776,7 +751,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -789,12 +763,11 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .current_protocol_version_in_consensus(),
                         1
                     );
                     assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
+                        platform.state.read().next_epoch_protocol_version(),
                         TEST_PROTOCOL_VERSION_2
                     );
                     // the counter is for the current voting during that window
@@ -809,7 +782,6 @@ mod tests {
                 let block_start = platform
                     .state
                     .read()
-                    .unwrap()
                     .last_committed_block_info()
                     .as_ref()
                     .unwrap()
@@ -840,7 +812,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -853,12 +824,11 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .current_protocol_version_in_consensus(),
                         TEST_PROTOCOL_VERSION_2
                     );
                     assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
+                        platform.state.read().next_epoch_protocol_version(),
                         TEST_PROTOCOL_VERSION_2
                     );
                 }
@@ -964,7 +934,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -977,7 +946,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .current_protocol_version_in_consensus(),
                         1
                     );
@@ -989,7 +957,6 @@ mod tests {
                 let block_start = platform
                     .state
                     .read()
-                    .unwrap()
                     .last_committed_block_info()
                     .as_ref()
                     .unwrap()
@@ -1036,7 +1003,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -1049,12 +1015,11 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .current_protocol_version_in_consensus(),
                         1
                     );
                     assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
+                        platform.state.read().next_epoch_protocol_version(),
                         TEST_PROTOCOL_VERSION_2
                     );
                     assert_eq!(
@@ -1102,7 +1067,6 @@ mod tests {
                 let block_start = platform
                     .state
                     .read()
-                    .unwrap()
                     .last_committed_block_info()
                     .as_ref()
                     .unwrap()
@@ -1156,7 +1120,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -1169,20 +1132,15 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .current_protocol_version_in_consensus(),
                         TEST_PROTOCOL_VERSION_2
                     );
-                    assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
-                        1
-                    );
+                    assert_eq!(platform.state.read().next_epoch_protocol_version(), 1);
                 }
 
                 let block_start = platform
                     .state
                     .read()
-                    .unwrap()
                     .last_committed_block_info()
                     .as_ref()
                     .unwrap()
@@ -1224,7 +1182,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -1237,14 +1194,10 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .current_protocol_version_in_consensus(),
                         1
                     );
-                    assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
-                        1
-                    );
+                    assert_eq!(platform.state.read().next_epoch_protocol_version(), 1);
                 }
             })
             .expect("Failed to create thread with custom stack size");
@@ -1352,7 +1305,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -1365,12 +1317,11 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .current_protocol_version_in_consensus(),
                         1
                     );
                     assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
+                        platform.state.read().next_epoch_protocol_version(),
                         TEST_PROTOCOL_VERSION_2
                     );
                     assert_eq!(
@@ -1422,7 +1373,6 @@ mod tests {
                 let block_start = platform
                     .state
                     .read()
-                    .unwrap()
                     .last_committed_block_info()
                     .as_ref()
                     .unwrap()
@@ -1459,7 +1409,6 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -1472,12 +1421,11 @@ mod tests {
                         platform
                             .state
                             .read()
-                            .unwrap()
                             .current_protocol_version_in_consensus(),
                         TEST_PROTOCOL_VERSION_2
                     );
                     assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
+                        platform.state.read().next_epoch_protocol_version(),
                         TEST_PROTOCOL_VERSION_3
                     );
                     assert_eq!(

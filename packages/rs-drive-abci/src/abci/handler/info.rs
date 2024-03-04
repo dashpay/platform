@@ -19,7 +19,7 @@ where
         .into());
     }
 
-    let state_guard = app.platform().state.read().unwrap();
+    let state_guard = app.platform().state.read();
 
     let state_app_hash = state_guard
         .last_committed_block_app_hash()
