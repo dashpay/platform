@@ -17,13 +17,13 @@ json = ["dep:serde_json"]
 thiserror = { version = "1.0.39" }
 dapi-grpc = { path = "../dapi-grpc" }
 drive = { path = "../rs-drive", default-features = false, features = [
-    "verify",
+  "verify",
 ] }
 dpp = { path = "../rs-dpp" }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "81d28aa0b15fc0844dfa7f7251f6949f6c6c405a" }
 tracing = { version = "0.1.37" }
 serde = { version = "1.0.171", default-features = false, optional = true }
 serde_json = { version = "1.0.103", features = [
-    "preserve_order",
+  "preserve_order",
 ], optional = true }
 hex = { version = "0.4.3" }

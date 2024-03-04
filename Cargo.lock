@@ -1340,7 +1340,6 @@ dependencies = [
  "metrics-exporter-prometheus",
  "mockall",
  "moka",
- "num_cpus",
  "platform-version",
  "prost 0.12.3",
  "rand",

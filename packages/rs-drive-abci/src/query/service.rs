@@ -54,28 +54,40 @@ impl QueryService {
     {
         let platform = Arc::clone(&self.platform);
 
-        tokio::task::Builder::new()
+        let task = move || {
+            let Some(platform_version) = PlatformVersion::get_maybe_current() else {
+                return Err(Status::unavailable("platform is not initialized"));
+            };
+
+            let mut result = query_method(&platform, request.into_inner(), platform_version)
+                .map_err(error_into_status)?;
+
+            if result.is_valid() {
+                let response = result
+                    .into_data()
+                    .map_err(|error| error_into_status(error.into()))?;
+
+                Ok(Response::new(response))
+            } else {
+                let error = result.errors.swap_remove(0);
+
+                Err(query_error_into_status(error))
+            }
+        };
+
+        // Spawn a blocking task with name if tokio_unstable is enabled
+
+        #[cfg(tokio_unstable)]
+        let thread = tokio::task::Builder::new()
             .name("query")
-            .spawn_blocking(move || {
-                let Some(platform_version) = PlatformVersion::get_maybe_current() else {
-                    return Err(Status::unavailable("platform is not initialized"));
-                };
+            .spawn_blocking(task)?;
 
-                let mut result = query_method(&platform, request.into_inner(), platform_version)
-                    .map_err(error_into_status)?;
+        // And we go without name otherwise
 
-                if result.is_valid() {
-                    let response = result
-                        .into_data()
-                        .map_err(|error| error_into_status(error.into()))?;
+        #[cfg(not(tokio_unstable))]
+        let thread = tokio::task::spawn_blocking(task)?;
 
-                    Ok(Response::new(response))
-                } else {
-                    let error = result.errors.swap_remove(0);
-
-                    Err(query_error_into_status(error))
-                }
-            })?
+        thread
             .instrument(tracing::trace_span!("query", endpoint_name))
             .await
             .map_err(|error| Status::internal(format!("join error: {}", error)))?

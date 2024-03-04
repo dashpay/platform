@@ -145,17 +145,11 @@ fn main() -> Result<(), ExitCode> {
 
     // Start tokio runtime and thread listening for signals.
     // The runtime will be reused by Prometheus and rs-tenderdash-abci.
-    // TODO: We might want to limit worker threads
-    // TODO: Figure out how many blocking threads and grpc concurrency we should set
     let runtime = Builder::new_multi_thread()
         // TODO: 8 MB stack threads as some recursions in GroveDB can be pretty deep
         //  We could remove such a stack stack size once deletion of a node doesn't recurse in grovedb
         .thread_stack_size(8 * 1024 * 1024)
         .enable_all()
-        // TODO: We probably we want to have them bigger than concurrency limit in tonic to make
-        //  sure that other libraries have room to spawn them
-        // TODO: Expose limits as configuration so we can easily tune them without rebuilding
-        // .max_blocking_threads(num_cpus::get() * 5)
         .build()
         .expect("cannot initialize tokio runtime");
 
