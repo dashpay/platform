@@ -10,6 +10,7 @@ fn main() {
         PathBuf::from("protos/core/v0/core.proto"),
         PathBuf::from("src/core/proto"),
     );
+
     configure_core(core)
         .generate()
         .expect("generate core proto");
@@ -18,6 +19,7 @@ fn main() {
         PathBuf::from("protos/platform/v0/platform.proto"),
         PathBuf::from("src/platform/proto"),
     );
+
     configure_platform(platform)
         .generate()
         .expect("generate platform proto");
