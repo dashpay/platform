@@ -44,7 +44,6 @@ where
         let platform_ref = PlatformRef {
             drive: &self.drive,
             state: &state_read_guard,
-            version: state_read_guard.current_platform_version()?,
             config: &self.config,
             core_rpc: &self.core_rpc,
         };
@@ -58,7 +57,7 @@ where
                 execution_event,
                 state_read_guard.any_block_info(),
                 transaction,
-                platform_ref.version,
+                platform_ref.state.current_platform_version()?,
             )
         } else {
             Ok(ConsensusExecutionError(
@@ -108,7 +107,6 @@ where
         let platform_ref = PlatformRef {
             drive: &self.drive,
             state: &state_read_guard,
-            version: platform_version,
             config: &self.config,
             core_rpc: &self.core_rpc,
         };

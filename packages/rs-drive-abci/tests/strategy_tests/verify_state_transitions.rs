@@ -32,7 +32,6 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     abci_app: &FullAbciApplication<MockCoreRPCLike>,
     expected_root_hash: &[u8; 32],
     state_transitions: &[(StateTransition, ExecTxResult)],
-    block_info: &BlockInfo,
     expected_validation_errors: &[u32],
     platform_version: &PlatformVersion,
 ) -> bool {
@@ -40,9 +39,6 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     let platform = PlatformRef {
         drive: &abci_app.platform.drive,
         state: &state,
-        version: state
-            .current_platform_version()
-            .expect("expected a version"),
         config: &abci_app.platform.config,
         core_rpc: &abci_app.platform.core_rpc,
     };

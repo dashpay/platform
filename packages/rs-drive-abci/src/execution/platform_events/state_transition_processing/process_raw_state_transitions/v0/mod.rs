@@ -63,7 +63,6 @@ where
         let platform_ref = PlatformRef {
             drive: &self.drive,
             state: block_platform_state,
-            version: platform_version,
             config: &self.config,
             core_rpc: &self.core_rpc,
         };

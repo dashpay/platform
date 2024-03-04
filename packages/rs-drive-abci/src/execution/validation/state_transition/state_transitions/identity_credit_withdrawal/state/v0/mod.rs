@@ -38,7 +38,7 @@ impl IdentityCreditWithdrawalStateTransitionStateValidationV0
         let maybe_existing_identity_balance = platform.drive.fetch_identity_balance(
             self.identity_id().to_buffer(),
             tx,
-            platform.version,
+            platform.state.current_platform_version()?,
         )?;
 
         let Some(existing_identity_balance) = maybe_existing_identity_balance else {

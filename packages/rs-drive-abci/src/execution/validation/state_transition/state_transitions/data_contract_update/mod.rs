@@ -33,15 +33,16 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        match platform
-            .version
+        let platform_version = platform.state.current_platform_version()?;
+
+        match platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
             .contract_update_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(platform.version),
+            0 => self.transform_into_action_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -193,9 +194,6 @@ mod tests {
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
                 state: &state,
-                version: state
-                    .current_platform_version()
-                    .expect("should return current platform version"),
                 config: &platform.config,
                 core_rpc: &platform.core_rpc,
             };
@@ -276,9 +274,6 @@ mod tests {
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
                 state: &state,
-                version: state
-                    .current_platform_version()
-                    .expect("should return current platform version"),
                 config: &platform.config,
                 core_rpc: &platform.core_rpc,
             };
@@ -429,9 +424,6 @@ mod tests {
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
                 state: &state,
-                version: state
-                    .current_platform_version()
-                    .expect("should return current platform version"),
                 config: &platform.config,
                 core_rpc: &platform.core_rpc,
             };

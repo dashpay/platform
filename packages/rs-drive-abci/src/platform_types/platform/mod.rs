@@ -17,7 +17,6 @@ use dashcore_rpc::dashcore::BlockHash;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
-use dpp::block::block_info::BlockInfo;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use serde_json::json;
 
@@ -46,8 +45,6 @@ pub struct PlatformRef<'a, C> {
     pub drive: &'a Drive,
     /// State
     pub state: &'a PlatformState,
-    /// Version
-    pub version: &'a PlatformVersion,
     /// Configuration
     pub config: &'a PlatformConfig,
     /// Core RPC Client
@@ -61,8 +58,6 @@ pub struct PlatformStateRef<'a> {
     pub drive: &'a Drive,
     /// State
     pub state: &'a PlatformState,
-    /// Version
-    pub version: &'a PlatformVersion,
     /// Configuration
     pub config: &'a PlatformConfig,
 }
@@ -70,7 +65,6 @@ pub struct PlatformStateRef<'a> {
 impl<'a> Debug for PlatformStateRef<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("platform_state_ref")
-            .field("version", self.version)
             .field("config", self.config)
             .finish()
     }
@@ -82,7 +76,6 @@ impl<'a, C> From<&PlatformRef<'a, C>> for PlatformStateRef<'a> {
             drive,
             state,
             config,
-            version,
             ..
         } = value;
 
@@ -90,7 +83,6 @@ impl<'a, C> From<&PlatformRef<'a, C>> for PlatformStateRef<'a> {
             drive,
             state,
             config,
-            version,
         }
     }
 }

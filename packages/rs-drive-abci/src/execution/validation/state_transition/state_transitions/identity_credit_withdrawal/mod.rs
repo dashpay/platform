@@ -34,8 +34,9 @@ impl StateTransitionActionTransformerV0 for IdentityCreditWithdrawalTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        match platform
-            .version
+        let platform_version = platform.state.current_platform_version()?;
+
+        match platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
@@ -83,8 +84,9 @@ impl StateTransitionStateValidationV0 for IdentityCreditWithdrawalTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        match platform
-            .version
+        let platform_version = platform.state.current_platform_version()?;
+
+        match platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions

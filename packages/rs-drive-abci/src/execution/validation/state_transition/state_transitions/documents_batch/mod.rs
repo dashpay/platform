@@ -40,8 +40,9 @@ impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        match platform
-            .version
+        let platform_version = platform.state.current_platform_version()?;
+
+        match platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
@@ -165,8 +166,9 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        match platform
-            .version
+        let platform_version = platform.state.current_platform_version()?;
+
+        match platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
@@ -189,7 +191,7 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
                     documents_batch_transition_action,
                     &platform.into(),
                     tx,
-                    platform.version,
+                    platform_version,
                 )
             }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {

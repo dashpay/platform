@@ -34,15 +34,16 @@ impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        match platform
-            .version
+        let platform_version = platform.state.current_platform_version()?;
+
+        match platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
             .contract_create_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0::<C>(platform.version),
+            0 => self.transform_into_action_v0::<C>(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -82,15 +83,16 @@ impl StateTransitionStateValidationV0 for DataContractCreateTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        match platform
-            .version
+        let platform_version = platform.state.current_platform_version()?;
+
+        match platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
             .contract_create_state_transition
             .state
         {
-            0 => self.validate_state_v0(platform, tx, platform.version),
+            0 => self.validate_state_v0(platform, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_state".to_string(),
                 known_versions: vec![0],

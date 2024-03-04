@@ -33,8 +33,9 @@ impl StateTransitionActionTransformerV0 for IdentityCreditTransferTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        match platform
-            .version
+        let platform_version = platform.state.current_platform_version()?;
+
+        match platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
@@ -81,15 +82,16 @@ impl StateTransitionStateValidationV0 for IdentityCreditTransferTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        match platform
-            .version
+        let platform_version = platform.state.current_platform_version()?;
+
+        match platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
             .identity_credit_transfer_state_transition
             .state
         {
-            0 => self.validate_state_v0(platform, tx, platform.version),
+            0 => self.validate_state_v0(platform, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity credit transfer transition: validate_state".to_string(),
                 known_versions: vec![0],

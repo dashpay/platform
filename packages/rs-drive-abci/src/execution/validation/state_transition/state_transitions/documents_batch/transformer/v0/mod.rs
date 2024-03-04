@@ -131,6 +131,8 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
             }
         }
 
+        let platform_version = platform.state.current_platform_version()?;
+
         let validation_result = transitions_by_contracts_and_types
             .iter()
             .map(
@@ -143,7 +145,7 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
                         document_transitions_by_document_type,
                         execution_context,
                         transaction,
-                        platform.version,
+                        platform_version,
                     )
                 },
             )

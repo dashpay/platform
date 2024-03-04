@@ -1006,7 +1006,6 @@ pub(crate) fn continue_chain_for_strategy(
                 &abci_app,
                 &root_app_hash,
                 &state_transaction_results,
-                &block_info,
                 &expected_validation_errors,
                 platform_version,
             );
