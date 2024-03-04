@@ -30,8 +30,7 @@ impl<C> Platform<C> {
 
         // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
         // were on the future version
-        let mut protocol_versions_counter =
-            self.drive.cache.protocol_versions_counter.write().unwrap();
+        let mut protocol_versions_counter = self.drive.cache.protocol_versions_counter.write();
         let mut versions_passing_threshold =
             protocol_versions_counter.versions_passing_threshold(required_upgraded_hpns);
         drop(protocol_versions_counter);

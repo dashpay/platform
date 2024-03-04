@@ -27,8 +27,7 @@ impl<C> Platform<C> {
                 metadata: Some(metadata),
             }
         } else {
-            let protocol_versions_counter =
-                self.drive.cache.protocol_versions_counter.read().unwrap();
+            let protocol_versions_counter = self.drive.cache.protocol_versions_counter.read();
 
             let versions = protocol_versions_counter
                 .global_cache
@@ -99,7 +98,7 @@ mod tests {
 
         let drive = &platform.drive;
 
-        let mut version_counter = drive.cache.protocol_versions_counter.write().unwrap();
+        let mut version_counter = drive.cache.protocol_versions_counter.write();
 
         let transaction = drive.grove.start_transaction();
 
@@ -221,7 +220,7 @@ mod tests {
 
         let drive = &platform.drive;
 
-        let version_counter = &mut drive.cache.protocol_versions_counter.write().unwrap();
+        let version_counter = &mut drive.cache.protocol_versions_counter.write();
 
         let transaction = drive.grove.start_transaction();
 

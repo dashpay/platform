@@ -83,7 +83,7 @@ impl<C> Platform<C> {
 
         let system_data_contracts = &self.drive.cache.system_data_contracts;
 
-        let dpns_data_contract = system_data_contracts.read_dpns().clone();
+        let dpns_data_contract = system_data_contracts.read_dpns();
 
         let system_data_contract_types = BTreeMap::from_iter([
             (

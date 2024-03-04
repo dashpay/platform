@@ -15,8 +15,7 @@ where
             .data_contracts
             .merge_and_clear_block_cache();
 
-        let mut protocol_versions_counter =
-            self.drive.cache.protocol_versions_counter.write().unwrap();
+        let mut protocol_versions_counter = self.drive.cache.protocol_versions_counter.write();
 
         protocol_versions_counter.merge_block_cache()
     }

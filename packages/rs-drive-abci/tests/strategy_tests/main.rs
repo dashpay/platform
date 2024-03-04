@@ -781,12 +781,7 @@ mod tests {
         // will be able to propose a block (and then get paid later on).
 
         let platform = abci_app.platform;
-        let counter = &platform
-            .drive
-            .cache
-            .protocol_versions_counter
-            .read()
-            .unwrap();
+        let counter = &platform.drive.cache.protocol_versions_counter.read();
         platform
             .drive
             .fetch_versions_with_counter(None, &platform_version.drive)

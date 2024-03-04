@@ -7,13 +7,13 @@ use std::sync::{RwLock, RwLockReadGuard};
 /// System contracts
 pub struct SystemDataContracts {
     /// Withdrawal contract
-    withdrawals: RwLock<DataContract>,
+    withdrawals: parking_lot::RwLock<DataContract>,
     /// DPNS contract
-    dpns: RwLock<DataContract>,
+    dpns: parking_lot::RwLock<DataContract>,
     /// Dashpay contract
-    dashpay: RwLock<DataContract>,
+    dashpay: parking_lot::RwLock<DataContract>,
     /// Masternode reward shares contract
-    masternode_reward_shares: RwLock<DataContract>,
+    masternode_reward_shares: parking_lot::RwLock<DataContract>,
 }
 
 impl SystemDataContracts {
@@ -22,19 +22,19 @@ impl SystemDataContracts {
         platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         Ok(Self {
-            withdrawals: RwLock::new(load_system_data_contract(
+            withdrawals: parking_lot::RwLock::new(load_system_data_contract(
                 SystemDataContract::Withdrawals,
                 platform_version,
             )?),
-            dpns: RwLock::new(load_system_data_contract(
+            dpns: parking_lot::RwLock::new(load_system_data_contract(
                 SystemDataContract::DPNS,
                 platform_version,
             )?),
-            dashpay: RwLock::new(load_system_data_contract(
+            dashpay: parking_lot::RwLock::new(load_system_data_contract(
                 SystemDataContract::Dashpay,
                 platform_version,
             )?),
-            masternode_reward_shares: RwLock::new(load_system_data_contract(
+            masternode_reward_shares: parking_lot::RwLock::new(load_system_data_contract(
                 SystemDataContract::MasternodeRewards,
                 platform_version,
             )?),
@@ -42,22 +42,22 @@ impl SystemDataContracts {
     }
 
     /// Returns withdrawals contract
-    pub fn read_withdrawals(&self) -> RwLockReadGuard<DataContract> {
-        self.withdrawals.read().unwrap()
+    pub fn read_withdrawals(&self) -> parking_lot::RwLockReadGuard<DataContract> {
+        self.withdrawals.read()
     }
 
     /// Returns DPNS contract
-    pub fn read_dpns(&self) -> RwLockReadGuard<DataContract> {
-        self.dpns.read().unwrap()
+    pub fn read_dpns(&self) -> parking_lot::RwLockReadGuard<DataContract> {
+        self.dpns.read()
     }
 
     /// Returns Dashpay contract
-    pub fn read_dashpay(&self) -> RwLockReadGuard<DataContract> {
-        self.dashpay.read().unwrap()
+    pub fn read_dashpay(&self) -> parking_lot::RwLockReadGuard<DataContract> {
+        self.dashpay.read()
     }
 
     /// Returns Masternode reward shares contract
-    pub fn read_masternode_reward_shares(&self) -> RwLockReadGuard<DataContract> {
-        self.masternode_reward_shares.read().unwrap()
+    pub fn read_masternode_reward_shares(&self) -> parking_lot::RwLockReadGuard<DataContract> {
+        self.masternode_reward_shares.read()
     }
 }

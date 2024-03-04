@@ -145,7 +145,7 @@ mod tests {
 
         let drive = &platform.drive;
 
-        let version_counter = &mut drive.cache.protocol_versions_counter.write().unwrap();
+        let version_counter = &mut drive.cache.protocol_versions_counter.write();
         let transaction = drive.grove.start_transaction();
 
         version_counter
@@ -278,7 +278,7 @@ mod tests {
 
         let drive = &platform.drive;
 
-        let version_counter = &mut drive.cache.protocol_versions_counter.write().unwrap();
+        let version_counter = &mut drive.cache.protocol_versions_counter.write();
 
         let transaction = drive.grove.start_transaction();
 
