@@ -68,7 +68,7 @@ impl IdentityCreditWithdrawalStateTransitionStateValidationV0
         Ok(ConsensusValidationResult::new_with_data(
             IdentityCreditWithdrawalTransitionAction::from_identity_credit_withdrawal(
                 self,
-                platform.last_committed_block_info.time_ms,
+                platform.state.any_block_info().time_ms,
             )
             .into(),
         ))

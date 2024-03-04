@@ -34,7 +34,6 @@ where
     pub(in crate::execution) fn execute_tx(
         &self,
         raw_tx: Vec<u8>,
-        block_info: &dpp::block::block_info::BlockInfo,
         transaction: &Transaction,
     ) -> Result<EventExecutionResult, Error> {
         let state_transition =
@@ -48,7 +47,6 @@ where
             version: state_read_guard.current_platform_version()?,
             config: &self.config,
             core_rpc: &self.core_rpc,
-            last_committed_block_info: block_info,
         };
 
         let state_transition_execution_event =
@@ -58,7 +56,7 @@ where
             let execution_event = state_transition_execution_event.into_data()?;
             self.execute_event(
                 execution_event,
-                block_info,
+                state_read_guard.any_block_info(),
                 transaction,
                 platform_ref.version,
             )
@@ -113,7 +111,6 @@ where
             version: platform_version,
             config: &self.config,
             core_rpc: &self.core_rpc,
-            last_committed_block_info: state_read_guard.any_block_info(),
         };
 
         let unique_identifiers = state_transition.unique_identifiers();
@@ -653,11 +650,7 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let validation_result = platform
-            .execute_tx(
-                identity_create_serialized_transition,
-                platform_state.any_block_info(),
-                &transaction,
-            )
+            .execute_tx(identity_create_serialized_transition, &transaction)
             .expect("expected to execute identity_create tx");
 
         assert!(
@@ -667,19 +660,11 @@ mod tests {
         );
 
         let validation_result = platform
-            .execute_tx(
-                data_contract_create_serialized_transition,
-                platform_state.any_block_info(),
-                &transaction,
-            )
+            .execute_tx(data_contract_create_serialized_transition, &transaction)
             .expect("expected to execute data_contract_create tx");
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
         let validation_result = platform
-            .execute_tx(
-                documents_batch_create_serialized_transition,
-                platform_state.any_block_info(),
-                &transaction,
-            )
+            .execute_tx(documents_batch_create_serialized_transition, &transaction)
             .expect("expected to execute document_create tx");
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 
@@ -771,11 +756,7 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let validation_result = platform
-            .execute_tx(
-                identity_create_serialized_transition,
-                &BlockInfo::default(),
-                &transaction,
-            )
+            .execute_tx(identity_create_serialized_transition, &transaction)
             .expect("expected to execute identity_create tx");
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 
@@ -821,11 +802,7 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let validation_result = platform
-            .execute_tx(
-                identity_top_up_serialized_transition,
-                &BlockInfo::default(),
-                &transaction,
-            )
+            .execute_tx(identity_top_up_serialized_transition, &transaction)
             .expect("expected to execute identity top up tx");
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 
@@ -907,11 +884,7 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let validation_result = platform
-            .execute_tx(
-                identity_create_serialized_transition,
-                &BlockInfo::default(),
-                &transaction,
-            )
+            .execute_tx(identity_create_serialized_transition, &transaction)
             .expect("expected to execute identity_create tx");
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 
@@ -957,11 +930,7 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let validation_result = platform
-            .execute_tx(
-                identity_top_up_serialized_transition.clone(),
-                &BlockInfo::default(),
-                &transaction,
-            )
+            .execute_tx(identity_top_up_serialized_transition.clone(), &transaction)
             .expect("expected to execute identity top up tx");
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 
@@ -1163,11 +1132,7 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let validation_result = platform
-            .execute_tx(
-                identity_create_serialized_transition,
-                &BlockInfo::default(),
-                &transaction,
-            )
+            .execute_tx(identity_create_serialized_transition, &transaction)
             .expect("expected to execute identity_create tx");
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 
@@ -1213,11 +1178,7 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let validation_result = platform
-            .execute_tx(
-                identity_top_up_serialized_transition.clone(),
-                &BlockInfo::default(),
-                &transaction,
-            )
+            .execute_tx(identity_top_up_serialized_transition.clone(), &transaction)
             .expect("expected to execute identity top up tx");
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 

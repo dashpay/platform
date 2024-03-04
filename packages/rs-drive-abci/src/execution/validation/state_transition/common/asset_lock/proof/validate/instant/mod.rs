@@ -10,6 +10,7 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 // TODO: Versioning
 impl AssetLockProofValidation for InstantAssetLockProof {
@@ -25,7 +26,7 @@ impl AssetLockProofValidation for InstantAssetLockProof {
 
         let is_instant_lock_signature_valid = self.instant_lock().verify_signature(
             platform_ref.core_rpc,
-            platform_ref.last_committed_block_info.core_height,
+            platform_ref.state.last_committed_core_height(),
         )?;
 
         if !is_instant_lock_signature_valid {

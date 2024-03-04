@@ -153,7 +153,7 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
                 // We need to verify the time the keys were disabled
 
                 let window_validation_result = validate_time_in_block_time_window(
-                    platform.last_committed_block_info.time_ms,
+                    platform.state.any_block_info().time_ms,
                     disabled_at_ms,
                     platform.config.block_spacing_ms,
                     platform_version,

@@ -52,8 +52,6 @@ pub struct PlatformRef<'a, C> {
     pub config: &'a PlatformConfig,
     /// Core RPC Client
     pub core_rpc: &'a C,
-    /// Block info
-    pub last_committed_block_info: &'a BlockInfo,
 }
 
 // @append_only
@@ -67,14 +65,11 @@ pub struct PlatformStateRef<'a> {
     pub version: &'a PlatformVersion,
     /// Configuration
     pub config: &'a PlatformConfig,
-    /// Block info
-    pub last_committed_block_info: &'a BlockInfo,
 }
 
 impl<'a> Debug for PlatformStateRef<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("platform_state_ref")
-            .field("block_info", &self.last_committed_block_info)
             .field("version", self.version)
             .field("config", self.config)
             .finish()
@@ -88,7 +83,6 @@ impl<'a, C> From<&PlatformRef<'a, C>> for PlatformStateRef<'a> {
             state,
             config,
             version,
-            last_committed_block_info,
             ..
         } = value;
 
@@ -97,7 +91,6 @@ impl<'a, C> From<&PlatformRef<'a, C>> for PlatformStateRef<'a> {
             state,
             config,
             version,
-            last_committed_block_info,
         }
     }
 }
