@@ -7,14 +7,13 @@ impl Drive {
         let genesis_time_ms = self.config.default_genesis_time;
         self.cache.data_contracts.clear();
 
-        let mut genesis_time_ms_cache = self.cache.genesis_time_ms.write().unwrap();
+        let mut genesis_time_ms_cache = self.cache.genesis_time_ms.write();
 
         *genesis_time_ms_cache = genesis_time_ms;
 
         drop(genesis_time_ms_cache);
 
-        let mut protocol_versions_counter_cache =
-            self.cache.protocol_versions_counter.write().unwrap();
+        let mut protocol_versions_counter_cache = self.cache.protocol_versions_counter.write();
 
         *protocol_versions_counter_cache = ProtocolVersionsCache::new();
     }
