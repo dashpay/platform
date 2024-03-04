@@ -4,6 +4,11 @@
 //! create various types of random documents.
 //!
 
+#[cfg(feature = "documents-faker")]
+use platform_value::Value;
+#[cfg(feature = "documents-faker")]
+use std::collections::BTreeMap;
+
 use crate::data_contract::document_type::property_names::{CREATED_AT, UPDATED_AT};
 use crate::data_contract::document_type::random_document::{
     CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
@@ -29,10 +34,9 @@ impl CreateRandomDocument for DocumentTypeV0 {
         entropy: &Bytes32,
         count: u32,
         platform_version: &PlatformVersion,
+        substitutions: &BTreeMap<&str, Value>,
     ) -> Result<Vec<Document>, ProtocolError> {
         use anyhow::Context;
-
-        use platform_value::{Value, ValueMapHelper};
 
         use crate::document::{
             extended_document_property_names::FEATURE_VERSION,
@@ -114,19 +118,24 @@ impl CreateRandomDocument for DocumentTypeV0 {
                         // This moves stored properties back to the document so it could skip unnecessary
                         // and wrong deserialization part
                         d.properties.iter_mut().for_each(|(k, v)| {
-                            properties.remove(k).into_iter().for_each(|prop| {
-                                // TODO: schema and internal DocumentType representations are incompatible
-                                // Properties are tweaked though, because the only integer type supported by
-                                // DPP is i64, while `platform_value::Value` distincts them, and json schema is
-                                // even more permissive; however, we want our proofs to work and proofs use the
-                                // DPP model.
-                                *v = match prop {
-                                    Value::U64(x) => Value::I64(x as i64),
-                                    Value::U32(x) => Value::I64(x as i64),
-                                    Value::I32(x) => Value::I64(x as i64),
-                                    x => x,
-                                };
-                            })
+                            substitutions
+                                .get(k.as_str())
+                                .cloned()
+                                .or(properties.remove(k))
+                                .into_iter()
+                                .for_each(|prop| {
+                                    // TODO: schema and internal DocumentType representations are incompatible
+                                    // Properties are tweaked though, because the only integer type supported by
+                                    // DPP is i64, while `platform_value::Value` distincts them, and json schema is
+                                    // even more permissive; however, we want our proofs to work and proofs use the
+                                    // DPP model.
+                                    *v = match prop {
+                                        Value::U64(x) => Value::I64(x as i64),
+                                        Value::U32(x) => Value::I64(x as i64),
+                                        Value::I32(x) => Value::I64(x as i64),
+                                        x => x,
+                                    };
+                                })
                         });
                     }
                     _ => {}

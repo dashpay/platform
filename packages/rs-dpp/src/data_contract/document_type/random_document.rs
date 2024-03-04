@@ -1,11 +1,17 @@
+#[cfg(feature = "documents-faker")]
+use std::collections::BTreeMap;
+
+use bincode::{Decode, Encode};
+#[cfg(feature = "documents-faker")]
+use platform_value::Value;
+use platform_value::{Bytes32, Identifier};
+use rand::prelude::StdRng;
+
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::document::Document;
 use crate::identity::Identity;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_value::{Bytes32, Identifier};
-use rand::prelude::StdRng;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode)]
 pub enum DocumentFieldFillType {
@@ -36,6 +42,7 @@ pub trait CreateRandomDocument {
         entropy: &Bytes32,
         count: u32,
         platform_version: &PlatformVersion,
+        substitutions: &BTreeMap<&str, Value>,
     ) -> Result<Vec<Document>, ProtocolError>;
 
     /// Random documents with DoNotFillIfNotRequired and AnyDocumentFillSize
@@ -106,10 +113,11 @@ impl CreateRandomDocument for DocumentType {
         entropy: &Bytes32,
         count: u32,
         platform_version: &PlatformVersion,
+        substitutions: &BTreeMap<&str, Value>,
     ) -> Result<Vec<Document>, ProtocolError> {
         match self {
             DocumentType::V0(v0) => {
-                v0.random_documents_faker(owner_id, entropy, count, platform_version)
+                v0.random_documents_faker(owner_id, entropy, count, platform_version, substitutions)
             }
         }
     }
@@ -231,10 +239,11 @@ impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
         entropy: &Bytes32,
         count: u32,
         platform_version: &PlatformVersion,
+        substitutions: &BTreeMap<&str, Value>,
     ) -> Result<Vec<Document>, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => {
-                v0.random_documents_faker(owner_id, entropy, count, platform_version)
+                v0.random_documents_faker(owner_id, entropy, count, platform_version, substitutions)
             }
         }
     }
