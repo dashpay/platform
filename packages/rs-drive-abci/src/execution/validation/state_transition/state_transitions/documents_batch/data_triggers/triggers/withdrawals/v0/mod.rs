@@ -167,7 +167,7 @@ mod tests {
         let platform_version = state_read_guard.current_platform_version().unwrap();
 
         let transition_execution_context = StateTransitionExecutionContextV0::default();
-        let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
+        let data_contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
         let owner_id = data_contract.owner_id();
 

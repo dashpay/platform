@@ -168,7 +168,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract = get_dashpay_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_dashpay_contract_fixture(None, 0, 1).data_contract_owned();
         drive
             .apply_contract(
                 &contract,
@@ -189,7 +189,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract = get_dashpay_contract_with_generalized_encryption_key_fixture(None, 1)
+        let contract = get_dashpay_contract_with_generalized_encryption_key_fixture(None, 0, 1)
             .data_contract_owned();
         drive
             .apply_contract(

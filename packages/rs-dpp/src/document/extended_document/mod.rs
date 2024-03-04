@@ -604,7 +604,7 @@ mod test {
 
     fn new_example_document() -> ExtendedDocument {
         let data_contract =
-            get_dashpay_contract_fixture(None, LATEST_PLATFORM_VERSION.protocol_version)
+            get_dashpay_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version)
                 .data_contract_owned();
         let document_type = data_contract
             .document_type_for_name("profile")

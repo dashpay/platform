@@ -29,7 +29,7 @@ export default async function update(
   const dataContractId = dataContract.getId();
 
   const identityContractNonce = await this.nonceManager
-    .getIdentityContractNonce(identityId, dataContractId) + 1;
+    .bumpIdentityContractNonce(identityId, dataContractId);
 
   const dataContractUpdateTransition = dpp.dataContract
     .createDataContractUpdateTransition(updatedDataContract, BigInt(identityContractNonce));
@@ -37,7 +37,6 @@ export default async function update(
   this.logger.silly(`[DataContract#update] Created data contract update transition ${dataContract.getId()}`);
 
   await signStateTransition(this, dataContractUpdateTransition, identity, 2);
-  this.nonceManager.setIdentityContractNonce(identityId, dataContractId, identityContractNonce);
   // Broadcast state transition also wait for the result to be obtained
   await broadcastStateTransition(this, dataContractUpdateTransition);
 

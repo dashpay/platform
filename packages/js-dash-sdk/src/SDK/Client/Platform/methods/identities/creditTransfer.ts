@@ -16,7 +16,7 @@ export async function creditTransfer(
 
   recipientId = Identifier.from(recipientId);
 
-  const identityNonce = await this.nonceManager.getIdentityNonce(identity.getId()) + 1;
+  const identityNonce = await this.nonceManager.bumpIdentityNonce(identity.getId());
 
   const identityCreditTransferTransition = dpp.identity
     .createIdentityCreditTransferTransition(
@@ -32,7 +32,6 @@ export async function creditTransfer(
 
   await signStateTransition(this, identityCreditTransferTransition, identity, signerKeyIndex);
 
-  this.nonceManager.setIdentityNonce(identity.getId(), identityNonce);
   // Skipping validation because it's already done above
   await broadcastStateTransition(this, identityCreditTransferTransition, {
     skipValidation: true,
