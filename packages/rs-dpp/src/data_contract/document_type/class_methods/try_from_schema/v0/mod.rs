@@ -120,7 +120,7 @@ impl DocumentTypeV0 {
             }
         }
 
-        let schema_map = schema.to_map().map_err(|err| {
+        let schema_map = schema.to_map_ref().map_err(|err| {
             ProtocolError::DataContractError(DataContractError::InvalidContractStructure(format!(
                 "document schema must be an object: {err}"
             )))

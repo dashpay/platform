@@ -6,7 +6,7 @@ pub(crate) mod context;
 mod put_contract;
 pub mod put_document;
 pub mod put_identity;
-pub(crate) mod put_settings;
+pub mod put_settings;
 pub mod top_up_identity;
 mod txid;
 pub mod withdraw_from_identity;

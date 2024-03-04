@@ -1205,12 +1205,12 @@ impl Value {
     ///         (Value::Text(String::from("key")), Value::Float(18.)),
     ///     ]
     /// );
-    /// assert_eq!(value.to_map(), Ok(&vec![(Value::Text(String::from("key")), Value::Float(18.))]));
+    /// assert_eq!(value.to_map(), Ok(vec![(Value::Text(String::from("key")), Value::Float(18.))]));
     ///
     /// let value = Value::Bool(true);
     /// assert_eq!(value.to_map(), Err(Error::StructureError("value is not a map".to_string())))
     /// ```
-    pub fn to_map(&self) -> Result<&ValueMap, Error> {
+    pub fn to_map(self) -> Result<ValueMap, Error> {
         match self {
             Value::Map(map) => Ok(map),
             _other => Err(Error::StructureError("value is not a map".to_string())),
