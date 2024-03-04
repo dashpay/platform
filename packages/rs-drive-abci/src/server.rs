@@ -21,13 +21,13 @@ pub fn start(
     cancel: CancellationToken,
 ) {
     let query_service = QueryService::new(Arc::clone(&platform));
-    let check_tx_server = CheckTxAbciApplication::new(Arc::clone(&platform));
+    let check_tx_service = CheckTxAbciApplication::new(Arc::clone(&platform));
 
     let grpc_server = dapi_grpc::tonic::transport::Server::builder()
         .add_service(dapi_grpc::platform::v0::platform_server::PlatformServer::new(query_service))
         .add_service(
             tenderdash_abci::proto::abci::abci_application_server::AbciApplicationServer::new(
-                check_tx_server,
+                check_tx_service,
             ),
         );
 

@@ -15,7 +15,6 @@ use tenderdash_abci::proto::abci as proto;
 /// AbciApp implements logic that should be triggered when Tenderdash performs various operations, like
 /// creating new proposal or finalizing new block.
 pub struct ConsensusAbciApplication<'a, C> {
-    // TODO: Why we do not own platform?
     /// Platform
     platform: &'a Platform<C>,
     /// The current transaction
