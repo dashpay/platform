@@ -81,14 +81,27 @@ where
             proto::CheckTxType::Recheck => "re_check_tx",
         };
 
-        tokio::task::Builder::new()
-            .name(thread_name)
-            .spawn_blocking(move || {
-                let response =
-                    handler::check_tx(&platform, proto_request).map_err(error_into_status)?;
+        let task = move || {
+            let response =
+                handler::check_tx(&platform, proto_request).map_err(error_into_status)?;
 
-                Ok(tonic::Response::new(response))
-            })?
+            Ok(tonic::Response::new(response))
+        };
+
+        // Spawn a new thread to handle the check_tx request with name
+        // if tokio_unstable is enabled
+
+        #[cfg(tokio_unstable)]
+        let thread = tokio::task::Builder::new()
+            .name(thread_name)
+            .spawn_blocking(task)?;
+
+        // And without name otherwise
+
+        #[cfg(not(tokio_unstable))]
+        let thread = tokio::task::spawn_blocking(task)?;
+
+        thread
             .await
             .map_err(|error| tonic::Status::internal(format!("check tx panics: {}", error)))?
     }
