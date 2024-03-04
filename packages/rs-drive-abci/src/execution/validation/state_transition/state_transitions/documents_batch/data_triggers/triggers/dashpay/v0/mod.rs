@@ -93,7 +93,7 @@ pub fn create_contact_request_data_trigger_v0(
         }
 
         if let Some(core_height_created_at) = maybe_core_height_created_at {
-            let core_chain_locked_height = context.platform.block_info.core_height;
+            let core_chain_locked_height = context.platform.last_committed_block_info.core_height;
 
             let height_window_start = core_chain_locked_height.saturating_sub(BLOCKS_SIZE_WINDOW);
             let height_window_end = core_chain_locked_height.saturating_add(BLOCKS_SIZE_WINDOW);
@@ -175,7 +175,7 @@ mod test {
             version: state_read_guard
                 .current_platform_version()
                 .expect("should return current protocol version"),
-            block_info: state_read_guard.any_block_info(),
+            last_committed_block_info: state_read_guard.any_block_info(),
             config: &platform.config,
         };
         let protocol_version = state_read_guard.current_protocol_version_in_consensus();
@@ -267,7 +267,7 @@ mod test {
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &platform.state,
-            block_info: state_write_guard.any_block_info(),
+            last_committed_block_info: state_write_guard.any_block_info(),
             version: state_write_guard
                 .current_platform_version()
                 .expect("should return current protocol version"),
@@ -392,7 +392,7 @@ mod test {
             version: state_write_guard
                 .current_platform_version()
                 .expect("should return current protocol version"),
-            block_info: state_write_guard.any_block_info(),
+            last_committed_block_info: state_write_guard.any_block_info(),
             config: &platform.config,
         };
         let protocol_version = state_write_guard.current_protocol_version_in_consensus();

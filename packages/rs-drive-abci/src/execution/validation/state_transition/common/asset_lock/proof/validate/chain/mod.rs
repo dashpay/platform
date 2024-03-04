@@ -21,10 +21,10 @@ impl AssetLockProofValidation for ChainAssetLockProof {
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let mut result = SimpleConsensusValidationResult::default();
 
-        if platform_ref.block_info.core_height < self.core_chain_locked_height {
+        if platform_ref.last_committed_block_info.core_height < self.core_chain_locked_height {
             result.add_error(InvalidAssetLockProofCoreChainHeightError::new(
                 self.core_chain_locked_height,
-                platform_ref.block_info.core_height,
+                platform_ref.last_committed_block_info.core_height,
             ));
 
             return Ok(result);

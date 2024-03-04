@@ -48,7 +48,7 @@ where
             version: state_read_guard.current_platform_version()?,
             config: &self.config,
             core_rpc: &self.core_rpc,
-            block_info,
+            last_committed_block_info: block_info,
         };
 
         drop(state_read_guard);
@@ -117,7 +117,7 @@ where
             version: platform_version,
             config: &self.config,
             core_rpc: &self.core_rpc,
-            block_info: &block_info,
+            last_committed_block_info: &block_info,
         };
 
         let unique_identifiers = state_transition.unique_identifiers();

@@ -71,7 +71,7 @@ pub fn create_feature_flag_data_trigger_v0(
         )))
     })?;
 
-    let latest_block_height = context.platform.block_info.height;
+    let latest_block_height = context.platform.last_committed_block_info.height;
 
     if enable_at_height < latest_block_height {
         let err = DataTriggerConditionError::new(

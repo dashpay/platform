@@ -198,7 +198,7 @@ mod tests {
                     .expect("should return current platform version"),
                 config: &platform.config,
                 core_rpc: &platform.core_rpc,
-                block_info: state.any_block_info(),
+                last_committed_block_info: state.any_block_info(),
             };
 
             let mut execution_context =
@@ -282,7 +282,7 @@ mod tests {
                     .expect("should return current platform version"),
                 config: &platform.config,
                 core_rpc: &platform.core_rpc,
-                block_info: &BlockInfo::default(),
+                last_committed_block_info: &BlockInfo::default(),
             };
 
             let mut execution_context =
@@ -436,7 +436,7 @@ mod tests {
                     .expect("should return current platform version"),
                 config: &platform.config,
                 core_rpc: &platform.core_rpc,
-                block_info: state.any_block_info(),
+                last_committed_block_info: state.any_block_info(),
             };
 
             let mut execution_context =

@@ -23,9 +23,10 @@ impl AssetLockProofValidation for InstantAssetLockProof {
 
         // Verify instant lock signature with Core
 
-        let is_instant_lock_signature_valid = self
-            .instant_lock()
-            .verify_signature(platform_ref.core_rpc, platform_ref.block_info.core_height)?;
+        let is_instant_lock_signature_valid = self.instant_lock().verify_signature(
+            platform_ref.core_rpc,
+            platform_ref.last_committed_block_info.core_height,
+        )?;
 
         if !is_instant_lock_signature_valid {
             result.add_error(InvalidInstantAssetLockProofSignatureError::new());

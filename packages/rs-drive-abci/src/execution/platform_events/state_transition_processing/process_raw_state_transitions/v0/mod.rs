@@ -68,7 +68,7 @@ where
             version: platform_version,
             config: &self.config,
             core_rpc: &self.core_rpc,
-            block_info,
+            last_committed_block_info: block_info,
         };
 
         let mut processing_result = StateTransitionsProcessingResult::default();

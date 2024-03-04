@@ -58,7 +58,7 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
         // Validate timestamps against block time
         // we do validation here but not in validate state because it's a cheap validation
         // and validate state implements expensive validation only
-        let latest_block_time_ms = platform.block_info.time_ms;
+        let latest_block_time_ms = platform.last_committed_block_info.time_ms;
         let average_block_spacing_ms = platform.config.block_spacing_ms;
 
         let validation_result = check_updated_inside_time_window(

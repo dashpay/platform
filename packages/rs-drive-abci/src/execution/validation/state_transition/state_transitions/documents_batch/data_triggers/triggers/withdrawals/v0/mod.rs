@@ -167,7 +167,7 @@ mod tests {
                 .current_platform_version()
                 .expect("should return current protocol version"),
             config: &platform.config,
-            block_info: state_read_guard.any_block_info(),
+            last_committed_block_info: state_read_guard.any_block_info(),
         };
         let platform_version = state_read_guard.current_platform_version().unwrap();
 
@@ -262,7 +262,7 @@ mod tests {
                 .current_platform_version()
                 .expect("should return current protocol version"),
             config: &platform.config,
-            block_info: state_read_guard.any_block_info(),
+            last_committed_block_info: state_read_guard.any_block_info(),
         };
 
         let transition_execution_context =
