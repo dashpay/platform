@@ -10,13 +10,15 @@ where
     Function: FnOnce() -> Output + Send + 'static,
     Output: Send + 'static,
 {
-    #[cfg(tokio_unstable)]
+    #[cfg(all(tokio_unstable, feature = "console"))]
     {
         tokio::task::Builder::new()
             .name(name)
             .spawn_blocking(function)
     }
 
-    #[cfg(not(tokio_unstable))]
-    tokio::task::spawn_blocking(function)
+    #[cfg(not(all(tokio_unstable, feature = "console")))]
+    {
+        Ok(tokio::task::spawn_blocking(function))
+    }
 }
