@@ -11,9 +11,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Option<Arc<DataContractFetchInfo>> {
         self.cache
-            .read()
-            .unwrap()
-            .cached_contracts
+            .data_contracts
             .get(contract_id, transaction.is_some())
             .map(|fetch_info| Arc::clone(&fetch_info))
     }

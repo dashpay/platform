@@ -59,8 +59,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
-        let mut cache = self.cache.write().unwrap();
-        let version_counter = &mut cache.protocol_versions_counter;
+        let version_counter = &mut self.cache.protocol_versions_counter.write().unwrap();
 
         version_counter.load_if_needed(self, transaction, drive_version)?;
 

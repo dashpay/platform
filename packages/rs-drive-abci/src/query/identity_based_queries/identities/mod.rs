@@ -1,30 +1,21 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_identities_request::Version;
-use dapi_grpc::platform::v0::GetIdentitiesRequest;
-use dapi_grpc::Message;
-use dpp::check_validation_result_with_data;
-use dpp::validation::ValidationResult;
+use dapi_grpc::platform::v0::get_identities_request::Version as RequestVersion;
+use dapi_grpc::platform::v0::get_identities_response::Version as ResponseVersion;
+use dapi_grpc::platform::v0::{GetIdentitiesRequest, GetIdentitiesResponse};
 use dpp::version::PlatformVersion;
 
 mod v0;
 
 impl<C> Platform<C> {
     /// Querying of an identity by a public key hash
-    pub(in crate::query) fn query_identities(
+    pub fn query_identities(
         &self,
-        state: &PlatformState,
-        query_data: &[u8],
+        GetIdentitiesRequest { version }: GetIdentitiesRequest,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let GetIdentitiesRequest { version } =
-            check_validation_result_with_data!(GetIdentitiesRequest::decode(query_data).map_err(
-                |e| QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
-            ));
-
+    ) -> Result<QueryValidationResult<GetIdentitiesResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::DecodingError("could not decode identities query".to_string()),
@@ -38,7 +29,7 @@ impl<C> Platform<C> {
             .identities;
 
         let feature_version = match &version {
-            Version::V0(_) => 0,
+            RequestVersion::V0(_) => 0,
         };
         if !feature_version_bounds.check_version(feature_version) {
             return Ok(QueryValidationResult::new_with_error(
@@ -52,8 +43,12 @@ impl<C> Platform<C> {
             ));
         }
         match version {
-            Version::V0(get_identity_request) => {
-                self.query_identities_v0(state, get_identity_request, platform_version)
+            RequestVersion::V0(request_v0) => {
+                let result = self.query_identities_v0(request_v0, platform_version)?;
+
+                Ok(result.map(|response_v0| GetIdentitiesResponse {
+                    version: Some(ResponseVersion::V0(response_v0)),
+                }))
             }
         }
     }

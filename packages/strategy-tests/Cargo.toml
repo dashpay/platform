@@ -2,12 +2,12 @@
 name = "strategy-tests"
 version = "1.0.0-dev.5"
 authors = [
-    "Samuel Westrich <sam@dash.org>",
-    "Ivan Shumkov <ivan@shumkov.ru>",
-    "Paul DeLucia <paul.delucia@dash.org>",
+  "Samuel Westrich <sam@dash.org>",
+  "Ivan Shumkov <ivan@shumkov.ru>",
+  "Paul DeLucia <paul.delucia@dash.org>",
 ]
 edition = "2021"
-rust-version = "1.73"
+rust-version = "1.76"
 license = "MIT"
 
 [dependencies]
@@ -15,29 +15,29 @@ tracing = "0.1.4"
 futures = "0.3"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 drive = { path = "../rs-drive", default-features = false, features = [
-    "verify",
+  "verify",
 ] }
 rand = "0.8.5"
 hex = "0.4.3"
 serde_json = "1.0"
 dpp = { path = "../rs-dpp", features = [
-    "abci",
-    "random-documents",
-    "state-transition-signing",
-    "random-identities",
-    "random-public-keys",
-    "random-document-types",
-    "fixtures-and-mocks",
-    "identity-value-conversion",
-    "data-contract-json-conversion",
-    "data-contract-cbor-conversion",
+  "abci",
+  "random-documents",
+  "state-transition-signing",
+  "random-identities",
+  "random-public-keys",
+  "random-document-types",
+  "fixtures-and-mocks",
+  "identity-value-conversion",
+  "data-contract-json-conversion",
+  "data-contract-cbor-conversion",
 ] }
 simple-signer = { path = "../simple-signer" }
 platform-version = { path = "../rs-platform-version" }
 
 [dev-dependencies]
 platform-version = { path = "../rs-platform-version", features = [
-    "mock-versions",
+  "mock-versions",
 ] }
 
 # For tests of grovedb verify

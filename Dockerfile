@@ -73,7 +73,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
     --profile minimal \
     -y \
     # Rust version the same as in /README.md
-    --default-toolchain stable \
+    --default-toolchain 1.76 \
     --target wasm32-unknown-unknown
 
 # Install protoc - protobuf compiler
@@ -265,6 +265,7 @@ CMD ["start"]
 
 # ABCI interface
 EXPOSE 26658
+EXPOSE 26659
 # Prometheus port
 EXPOSE 29090
 
@@ -296,7 +297,6 @@ COPY --from=build-dashmate-helper /platform/package.json /platform/yarn.lock /pl
 COPY --from=build-dashmate-helper /platform/packages/dashmate packages/dashmate
 COPY --from=build-dashmate-helper /platform/packages/dashpay-contract packages/dashpay-contract
 COPY --from=build-dashmate-helper /platform/packages/wallet-lib packages/wallet-lib
-COPY --from=build-dashmate-helper /platform/packages/js-dash-sdk packages/js-dash-sdk
 COPY --from=build-dashmate-helper /platform/packages/js-dapi-client packages/js-dapi-client
 COPY --from=build-dashmate-helper /platform/packages/js-grpc-common packages/js-grpc-common
 COPY --from=build-dashmate-helper /platform/packages/dapi-grpc packages/dapi-grpc

@@ -362,9 +362,7 @@ mod tests {
         // Commit transaction and merge block (transactional) cache to global cache
         transaction.commit().expect("expected to commit");
 
-        let mut drive_cache = drive.cache.write().unwrap();
-        drive_cache.cached_contracts.merge_block_cache();
-        drop(drive_cache);
+        drive.cache.data_contracts.merge_and_clear_block_cache();
 
         /*
          *DataContracts fetched with user query and during block execution must have equal costs

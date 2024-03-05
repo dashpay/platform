@@ -77,7 +77,8 @@ export default function setupLocalPresetTaskFactory(
           ctx.minerInterval = await task.prompt({
             type: 'input',
             message: 'Enter the interval between core blocks',
-            initial: configFile.getConfig('base').get('core.miner.interval'),
+            initial: configFile.getConfig('base')
+              .get('core.miner.interval'),
             validate: (state) => {
               if (state.match(/\d+(\.\d+)?([ms])/)) {
                 return true;
@@ -178,7 +179,8 @@ export default function setupLocalPresetTaskFactory(
                 config.set('core.rpc.password', generateRandomString(12));
                 config.set('externalIp', hostDockerInternalIp);
 
-                const subnet = config.get('docker.network.subnet').split('.');
+                const subnet = config.get('docker.network.subnet')
+                  .split('.');
                 subnet[2] = nodeIndex;
 
                 config.set('docker.network.subnet', subnet.join('.'));
@@ -212,20 +214,21 @@ export default function setupLocalPresetTaskFactory(
                 } else {
                   config.set('description', `local node #${nodeIndex}`);
 
+                  config.set('platform.drive.tenderdash.mode', 'validator');
+
                   const key = generateTenderdashNodeKey();
                   const id = deriveTenderdashNodeId(key);
 
                   config.set('platform.drive.tenderdash.node.id', id);
                   config.set('platform.drive.tenderdash.node.key', key);
 
+                  config.set('platform.drive.abci.tokioConsole.port', config.get('platform.drive.abci.tokioConsole.port') + (i * 100));
                   config.set('platform.dapi.envoy.http.port', config.get('platform.dapi.envoy.http.port') + (i * 100));
                   config.set('platform.drive.tenderdash.p2p.port', config.get('platform.drive.tenderdash.p2p.port') + (i * 100));
                   config.set('platform.drive.tenderdash.rpc.port', config.get('platform.drive.tenderdash.rpc.port') + (i * 100));
                   config.set('platform.drive.tenderdash.pprof.port', config.get('platform.drive.tenderdash.pprof.port') + (i * 100));
                   config.set('platform.drive.tenderdash.metrics.port', config.get('platform.drive.tenderdash.metrics.port') + (i * 100));
                   config.set('platform.drive.tenderdash.moniker', config.name);
-
-                  config.set('platform.drive.tenderdash.mode', 'validator');
 
                   // Setup logs
                   if (ctx.debugLogs) {
@@ -239,26 +242,37 @@ export default function setupLocalPresetTaskFactory(
                     config.set('platform.drive.tenderdash.log.level', 'debug');
                   }
 
-                  config.set('platform.dpns.masterPublicKey', dpnsDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
-                  config.set('platform.dpns.secondPublicKey', dpnsDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.dpns.masterPublicKey', dpnsDerivedMasterPrivateKey.privateKey.toPublicKey()
+                    .toString());
+                  config.set('platform.dpns.secondPublicKey', dpnsDerivedSecondPrivateKey.privateKey.toPublicKey()
+                    .toString());
 
-                  config.set('platform.featureFlags.masterPublicKey', featureFlagsDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
-                  config.set('platform.featureFlags.secondPublicKey', featureFlagsDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.featureFlags.masterPublicKey', featureFlagsDerivedMasterPrivateKey.privateKey.toPublicKey()
+                    .toString());
+                  config.set('platform.featureFlags.secondPublicKey', featureFlagsDerivedSecondPrivateKey.privateKey.toPublicKey()
+                    .toString());
 
-                  config.set('platform.dashpay.masterPublicKey', dashpayDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
-                  config.set('platform.dashpay.secondPublicKey', dashpayDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.dashpay.masterPublicKey', dashpayDerivedMasterPrivateKey.privateKey.toPublicKey()
+                    .toString());
+                  config.set('platform.dashpay.secondPublicKey', dashpayDerivedSecondPrivateKey.privateKey.toPublicKey()
+                    .toString());
 
-                  config.set('platform.withdrawals.masterPublicKey', withdrawalsDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
-                  config.set('platform.withdrawals.secondPublicKey', withdrawalsDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.withdrawals.masterPublicKey', withdrawalsDerivedMasterPrivateKey.privateKey.toPublicKey()
+                    .toString());
+                  config.set('platform.withdrawals.secondPublicKey', withdrawalsDerivedSecondPrivateKey.privateKey.toPublicKey()
+                    .toString());
 
                   config.set(
                     'platform.masternodeRewardShares.masterPublicKey',
                     masternodeRewardSharesDerivedMasterPrivateKey.privateKey
-                      .toPublicKey().toString(),
-                  ); config.set(
+                      .toPublicKey()
+                      .toString(),
+                  );
+                  config.set(
                     'platform.masternodeRewardShares.secondPublicKey',
                     masternodeRewardSharesDerivedSecondPrivateKey.privateKey
-                      .toPublicKey().toString(),
+                      .toPublicKey()
+                      .toString(),
                   );
                 }
               },
@@ -290,8 +304,7 @@ export default function setupLocalPresetTaskFactory(
           const subTasks = platformConfigs.map((config) => ({
             title: `Generate certificate for ${config.getName()}`,
             task: async () => obtainSelfSignedCertificateTask(config),
-          }
-          ));
+          }));
 
           return new Listr(subTasks);
         },

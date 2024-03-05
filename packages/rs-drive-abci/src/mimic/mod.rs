@@ -1,7 +1,9 @@
-use crate::abci::server::AbciApplication;
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use std::collections::BTreeMap;
+
+use crate::abci::app::FullAbciApplication;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
 use crate::mimic::test_quorum::TestQuorumInfo;
@@ -9,11 +11,18 @@ use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::{
     make_extend_vote_request_id, UnsignedWithdrawalTxs,
 };
 use crate::rpc::core::CoreRPCLike;
+use ciborium::Value as CborValue;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
-use dpp::serialization::PlatformSerializable;
+use dpp::data_contract::errors::StructureError;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::platform_value::string_encoding::{decode, Encoding};
+use dpp::platform_value::Value;
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
+use dpp::ProtocolError;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
@@ -72,7 +81,7 @@ pub struct MimicExecuteBlockOptions {
     pub independent_process_proposal_verification: bool,
 }
 
-impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
+impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
     /// Execute a block with various state transitions
     /// Returns the withdrawal transactions that were signed in the block
     pub fn mimic_execute_block(
@@ -173,7 +182,32 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         tx_results.iter().try_for_each(|tx_result| {
             if tx_result.code > 0 && !expect_validation_errors.contains(&tx_result.code) {
-                Err(Error::Abci(AbciError::GenericWithCode(tx_result.code)))
+                // Deserialize the tx result info that contains
+                // encoded consensus error if error code is greater than 0
+                let info_bytes = decode(&tx_result.info, Encoding::Base64)
+                    .expect("can't decode tx result info from base64 to bytes");
+
+                let info_cbor_map: BTreeMap<String, CborValue> =
+                    ciborium::de::from_reader(info_bytes.as_slice()).map_err(|_| {
+                        ProtocolError::StructureError(StructureError::InvalidCBOR(
+                            "unable to decode document for document call",
+                        ))
+                    })?;
+                let info_map: BTreeMap<String, Value> = Value::convert_from_cbor_map(info_cbor_map)
+                    .map_err(ProtocolError::ValueError)?;
+
+                let data_map: BTreeMap<String, &Value> = info_map
+                    .get_optional_str_value_map("data")
+                    .expect("expected data map")
+                    .unwrap();
+
+                let serialized_error = data_map.get_bytes("serializedError").unwrap();
+
+                // Deserialize the consensus error
+                let error = ConsensusError::deserialize_from_bytes(&serialized_error)
+                    .expect("expected to deserialize consensus error");
+
+                Err(Error::Abci(AbciError::InvalidStateTransition(error)))
             } else {
                 Ok(())
             }
@@ -386,7 +420,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             if !expect_vote_extension_errors
                 && response_validate_vote_extension.status != VerifyStatus::Accept as i32
             {
-                return Err(Error::Abci(AbciError::GenericWithCode(1)));
+                return Err(Error::Abci(AbciError::InvalidVoteExtensionsVerification));
             }
         }
 

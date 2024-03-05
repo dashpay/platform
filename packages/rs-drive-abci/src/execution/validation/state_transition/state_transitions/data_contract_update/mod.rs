@@ -33,8 +33,8 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        let platform_version = platform.state.current_platform_version()?;
+
         match platform_version
             .drive_abci
             .validation_and_processing
@@ -138,6 +138,7 @@ mod tests {
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
         use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+        use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
         use dpp::version::TryFromPlatformVersioned;
         use platform_version::version::LATEST_PLATFORM_VERSION;
         use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
@@ -188,12 +189,13 @@ mod tests {
                 signature_public_key_id: 0,
             };
 
+            let state = platform.state.read().unwrap();
+
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
-                state: &platform.state.read().unwrap(),
+                state: &state,
                 config: &platform.config,
                 core_rpc: &platform.core_rpc,
-                block_info: &BlockInfo::default(),
             };
 
             let mut execution_context =
@@ -267,12 +269,13 @@ mod tests {
                 signature_public_key_id: 0,
             };
 
+            let state = platform.state.read().unwrap();
+
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
-                state: &platform.state.read().unwrap(),
+                state: &state,
                 config: &platform.config,
                 core_rpc: &platform.core_rpc,
-                block_info: &BlockInfo::default(),
             };
 
             let mut execution_context =
@@ -416,12 +419,13 @@ mod tests {
 
             let state_transition: DataContractUpdateTransition = state_transition.into();
 
+            let state = platform.state.read().unwrap();
+
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
-                state: &platform.state.read().unwrap(),
+                state: &state,
                 config: &platform.config,
                 core_rpc: &platform.core_rpc,
-                block_info: &BlockInfo::default(),
             };
 
             let mut execution_context =

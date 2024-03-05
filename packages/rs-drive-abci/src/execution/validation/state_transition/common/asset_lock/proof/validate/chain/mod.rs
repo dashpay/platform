@@ -10,6 +10,7 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 // TODO: Versioning
 impl AssetLockProofValidation for ChainAssetLockProof {
@@ -21,10 +22,10 @@ impl AssetLockProofValidation for ChainAssetLockProof {
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let mut result = SimpleConsensusValidationResult::default();
 
-        if platform_ref.block_info.core_height < self.core_chain_locked_height {
+        if platform_ref.state.last_committed_core_height() < self.core_chain_locked_height {
             result.add_error(InvalidAssetLockProofCoreChainHeightError::new(
                 self.core_chain_locked_height,
-                platform_ref.block_info.core_height,
+                platform_ref.state.last_committed_core_height(),
             ));
 
             return Ok(result);
