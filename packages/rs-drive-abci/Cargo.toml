@@ -13,6 +13,7 @@ rust-version = "1.76"
 license = "MIT"
 
 [dependencies]
+arc-swap = "1.7.0"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
 chrono = "0.4.20"

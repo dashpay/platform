@@ -16,7 +16,7 @@ where
 {
     let _timer = crate::metrics::abci_request_duration("check_tx");
 
-    let platform_state = platform.state.read().unwrap();
+    let platform_state = platform.state.load();
     let platform_version = platform_state.current_platform_version()?;
     drop(platform_state);
 

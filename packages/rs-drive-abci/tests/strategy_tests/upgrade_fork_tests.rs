@@ -110,8 +110,11 @@ mod tests {
                     config.clone(),
                     13,
                 );
+
+                let platform = abci_app.platform;
+                let state = platform.state.load();
+
                 {
-                    let platform = abci_app.platform;
                     let counter = platform
                         .drive
                         .cache
@@ -124,10 +127,7 @@ mod tests {
                         .expect("expected to get versions");
 
                     assert_eq!(
-                        platform
-                            .state
-                            .read()
-                            .unwrap()
+                        state
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -136,14 +136,7 @@ mod tests {
                             .index,
                         0
                     );
-                    assert_eq!(
-                        platform
-                            .state
-                            .read()
-                            .unwrap()
-                            .current_protocol_version_in_consensus(),
-                        1
-                    );
+                    assert_eq!(state.current_protocol_version_in_consensus(), 1);
                     assert_eq!(
                         (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
                         (Some(&17), Some(&414))
@@ -154,13 +147,8 @@ mod tests {
                 // we did not yet hit the epoch change
                 // let's go a little longer
 
-                let platform = abci_app.platform;
-
                 let hour_in_ms = 1000 * 60 * 60;
-                let block_start = platform
-                    .state
-                    .read()
-                    .unwrap()
+                let block_start = state
                     .last_committed_block_info()
                     .as_ref()
                     .unwrap()
@@ -199,6 +187,8 @@ mod tests {
                     config.clone(),
                     StrategyRandomness::SeedEntropy(7),
                 );
+
+                let state = platform.state.load();
                 {
                     let counter = &platform
                         .drive
@@ -207,10 +197,7 @@ mod tests {
                         .read()
                         .unwrap();
                     assert_eq!(
-                        platform
-                            .state
-                            .read()
-                            .unwrap()
+                        state
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -219,18 +206,8 @@ mod tests {
                             .index,
                         1
                     );
-                    assert_eq!(
-                        platform
-                            .state
-                            .read()
-                            .unwrap()
-                            .current_protocol_version_in_consensus(),
-                        1
-                    );
-                    assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
-                        TEST_PROTOCOL_VERSION_2
-                    );
+                    assert_eq!(state.current_protocol_version_in_consensus(), 1);
+                    assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
                     assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&154));
                 }
@@ -238,16 +215,14 @@ mod tests {
                 // we locked in
                 // let's go a little longer to see activation
 
-                let block_start = platform
-                    .state
-                    .read()
-                    .unwrap()
+                let block_start = state
                     .last_committed_block_info()
                     .as_ref()
                     .unwrap()
                     .basic_info()
                     .height
                     + 1;
+
                 let ChainExecutionOutcome { .. } = continue_chain_for_strategy(
                     abci_app,
                     ChainExecutionParameters {
@@ -267,6 +242,9 @@ mod tests {
                     config,
                     StrategyRandomness::SeedEntropy(18),
                 );
+
+                let state = platform.state.load();
+
                 {
                     let counter = &platform
                         .drive
@@ -275,10 +253,7 @@ mod tests {
                         .read()
                         .unwrap();
                     assert_eq!(
-                        platform
-                            .state
-                            .read()
-                            .unwrap()
+                        state
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -288,17 +263,10 @@ mod tests {
                         2
                     );
                     assert_eq!(
-                        platform
-                            .state
-                            .read()
-                            .unwrap()
-                            .current_protocol_version_in_consensus(),
+                        state.current_protocol_version_in_consensus(),
                         TEST_PROTOCOL_VERSION_2
                     );
-                    assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
-                        TEST_PROTOCOL_VERSION_2
-                    );
+                    assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
                     assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&122));
                 }
@@ -397,8 +365,11 @@ mod tests {
                     config.clone(),
                     13,
                 );
+
+                let platform = abci_app.platform;
+                let state = platform.state.load();
+
                 {
-                    let platform = abci_app.platform;
                     let counter = &platform
                         .drive
                         .cache
@@ -411,10 +382,7 @@ mod tests {
                         .expect("expected to get versions");
 
                     assert_eq!(
-                        platform
-                            .state
-                            .read()
-                            .unwrap()
+                        state
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -423,18 +391,8 @@ mod tests {
                             .index,
                         0
                     );
-                    assert_eq!(
-                        platform
-                            .state
-                            .read()
-                            .unwrap()
-                            .current_protocol_version_in_consensus(),
-                        1
-                    );
-                    assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
-                        1
-                    );
+                    assert_eq!(state.current_protocol_version_in_consensus(), 1);
+                    assert_eq!(state.next_epoch_protocol_version(), 1);
                     assert_eq!(
                         (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
                         (Some(&6), Some(&44))
@@ -444,10 +402,7 @@ mod tests {
 
                 let platform = abci_app.platform;
 
-                let block_start = platform
-                    .state
-                    .read()
-                    .unwrap()
+                let block_start = state
                     .last_committed_block_info()
                     .as_ref()
                     .unwrap()
@@ -483,6 +438,8 @@ mod tests {
                     config.clone(),
                     StrategyRandomness::SeedEntropy(7),
                 );
+
+                let state = platform.state.load();
                 {
                     let counter = &platform
                         .drive
@@ -491,10 +448,7 @@ mod tests {
                         .read()
                         .unwrap();
                     assert_eq!(
-                        platform
-                            .state
-                            .read()
-                            .unwrap()
+                        state
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -503,18 +457,8 @@ mod tests {
                             .index,
                         1
                     );
-                    assert_eq!(
-                        platform
-                            .state
-                            .read()
-                            .unwrap()
-                            .current_protocol_version_in_consensus(),
-                        1
-                    );
-                    assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
-                        TEST_PROTOCOL_VERSION_2
-                    );
+                    assert_eq!(state.current_protocol_version_in_consensus(), 1);
+                    assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
                     assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&1));
                 }
@@ -522,10 +466,7 @@ mod tests {
                 // we locked in
                 // let's go 120 blocks more to see activation
 
-                let block_start = platform
-                    .state
-                    .read()
-                    .unwrap()
+                let block_start = state
                     .last_committed_block_info()
                     .as_ref()
                     .unwrap()
@@ -551,6 +492,7 @@ mod tests {
                     config,
                     StrategyRandomness::SeedEntropy(18),
                 );
+                let state = platform.state.load();
                 {
                     let counter = &platform
                         .drive
@@ -559,10 +501,7 @@ mod tests {
                         .read()
                         .unwrap();
                     assert_eq!(
-                        platform
-                            .state
-                            .read()
-                            .unwrap()
+                        state
                             .last_committed_block_info()
                             .as_ref()
                             .unwrap()
@@ -572,17 +511,10 @@ mod tests {
                         2
                     );
                     assert_eq!(
-                        platform
-                            .state
-                            .read()
-                            .unwrap()
-                            .current_protocol_version_in_consensus(),
+                        state.current_protocol_version_in_consensus(),
                         TEST_PROTOCOL_VERSION_2
                     );
-                    assert_eq!(
-                        platform.state.read().unwrap().next_epoch_protocol_version(),
-                        TEST_PROTOCOL_VERSION_2
-                    );
+                    assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
                     assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&1));
                 }

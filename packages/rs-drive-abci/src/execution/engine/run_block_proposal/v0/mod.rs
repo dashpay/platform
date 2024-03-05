@@ -29,6 +29,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::verify_chain_lock_result::v0::VerifyChainLockResult;
 use crate::rpc::core::CoreRPCLike;
+use std::borrow::BorrowMut;
 
 impl<C> Platform<C>
 where
@@ -77,7 +78,7 @@ where
         );
 
         // Start by getting information from the state
-        let state = self.state.read().unwrap();
+        let state = self.state.load_full();
 
         let last_block_time_ms = state.last_committed_block_time_ms();
         let last_block_height =
@@ -86,7 +87,8 @@ where
             state.last_committed_known_core_height_or(self.config.abci.genesis_core_height);
         let hpmn_list_len = state.hpmn_list_len() as u32;
 
-        let mut block_platform_state = state.clone();
+        // Create a bock state from previous committed state
+        let mut block_platform_state = (*state).clone();
 
         // Init block execution context
         let block_state_info = block_state_info::v0::BlockStateInfoV0::from_block_proposal(
@@ -216,7 +218,6 @@ where
             transaction,
             platform_version,
         )?;
-        drop(state);
 
         // Update the validator proposed app version
         self.drive
@@ -360,7 +361,6 @@ where
             .block_state_info_mut()
             .set_app_hash(Some(root_hash));
 
-        let state = self.state.read().unwrap();
         let validator_set_update =
             self.validator_set_update(&state, &mut block_execution_context, platform_version)?;
 

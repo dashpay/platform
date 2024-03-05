@@ -45,7 +45,7 @@ where
         transaction: &Transaction,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
-        let state = self.state.read().expect("expected to get state");
+        let state = self.state.load();
         let platform_version = state.current_platform_version()?;
         drop(state);
 

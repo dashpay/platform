@@ -5,7 +5,7 @@ use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 
 impl<C> Platform<C> {
     pub(in crate::query) fn response_metadata_v0(&self) -> ResponseMetadata {
-        let state = self.state.read().unwrap();
+        let state = self.state.load();
 
         ResponseMetadata {
             height: state.last_committed_height(),
@@ -21,7 +21,7 @@ impl<C> Platform<C> {
         &self,
         proof: Vec<u8>,
     ) -> (ResponseMetadata, Proof) {
-        let state = self.state.read().unwrap();
+        let state = self.state.load();
 
         let metadata = ResponseMetadata {
             height: state.last_committed_height(),

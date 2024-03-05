@@ -429,12 +429,7 @@ mod tests {
             })),
         };
 
-        let platform_state = outcome
-            .abci_app
-            .platform
-            .state
-            .read()
-            .expect("expected to read state");
+        let platform_state = outcome.abci_app.platform.state.load();
 
         let protocol_version = platform_state.current_protocol_version_in_consensus();
 
@@ -536,12 +531,7 @@ mod tests {
             })),
         };
 
-        let platform_state = outcome
-            .abci_app
-            .platform
-            .state
-            .read()
-            .expect("expected to read state");
+        let platform_state = outcome.abci_app.platform.state.load();
 
         let protocol_version = platform_state.current_protocol_version_in_consensus();
 
@@ -644,12 +634,7 @@ mod tests {
             })),
         };
 
-        let platform_state = outcome
-            .abci_app
-            .platform
-            .state
-            .read()
-            .expect("expected to read state");
+        let platform_state = outcome.abci_app.platform.state.load();
 
         let protocol_version = platform_state.current_protocol_version_in_consensus();
 

@@ -7,10 +7,11 @@ use std::fmt::{Debug, Formatter};
 
 #[cfg(any(feature = "mocks", test))]
 use crate::rpc::core::MockCoreRPCLike;
+use arc_swap::ArcSwap;
 use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use dashcore_rpc::dashcore::BlockHash;
 
@@ -29,7 +30,7 @@ pub struct Platform<C> {
     /// Drive
     pub drive: Drive,
     /// State
-    pub state: RwLock<PlatformState>,
+    pub state: ArcSwap<PlatformState>,
     /// Configuration
     pub config: PlatformConfig,
     /// Block execution context
@@ -154,8 +155,7 @@ impl Platform<MockCoreRPCLike> {
             persisted_state.current_protocol_version_in_consensus(),
         )?);
 
-        let mut state_cache = self.state.write().unwrap();
-        *state_cache = persisted_state;
+        self.state.store(Arc::new(persisted_state));
 
         Ok(true)
     }
@@ -220,7 +220,7 @@ impl<C> Platform<C> {
 
         let platform: Platform<C> = Platform {
             drive,
-            state: RwLock::new(platform_state),
+            state: ArcSwap::new(Arc::new(platform_state)),
             config,
             block_execution_context: RwLock::new(None),
             core_rpc,
@@ -249,7 +249,7 @@ impl<C> Platform<C> {
 
         Ok(Platform {
             drive,
-            state: RwLock::new(platform_state),
+            state: ArcSwap::new(Arc::new(platform_state)),
             config,
             block_execution_context: RwLock::new(None),
             core_rpc,

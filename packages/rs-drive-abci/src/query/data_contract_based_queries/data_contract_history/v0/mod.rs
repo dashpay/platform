@@ -137,7 +137,7 @@ mod tests {
 
     /// Set up simple contract history with one update
     fn set_up_history(platform: &TempPlatform<MockCoreRPCLike>) -> DataContract {
-        let state = platform.platform.state.read().unwrap();
+        let state = platform.platform.state.load();
         let current_protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(current_protocol_version)
             .expect("expected to get platform version");

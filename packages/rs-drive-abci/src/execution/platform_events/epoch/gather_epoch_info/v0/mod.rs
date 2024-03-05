@@ -17,7 +17,7 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<EpochInfoV0, Error> {
         // Start by getting information from the state
-        let state = self.state.read().unwrap();
+        let state = self.state.load();
         let last_block_time_ms = state.last_committed_block_time_ms();
         drop(state);
 

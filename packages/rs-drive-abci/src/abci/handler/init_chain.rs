@@ -2,6 +2,7 @@ use crate::abci::app::{PlatformApplication, TransactionalApplication};
 use crate::error::Error;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
+use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
 
 pub fn init_chain<'a, A, C>(
@@ -22,12 +23,12 @@ where
     if block_context.is_some() {
         tracing::warn!("block context was present during init chain, restarting");
         let protocol_version_in_consensus = app.platform().config.initial_protocol_version;
-        let mut platform_state_write_guard = app.platform().state.write().unwrap();
-        *platform_state_write_guard = PlatformState::default_with_protocol_versions(
+        let initial_platform_state = PlatformState::default_with_protocol_versions(
             protocol_version_in_consensus,
             protocol_version_in_consensus,
         );
-        drop(platform_state_write_guard);
+
+        app.platform().state.store(Arc::new(initial_platform_state));
     }
     drop(block_execution_context);
 

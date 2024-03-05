@@ -117,7 +117,7 @@ mod test {
     //     let platform = TestPlatformBuilder::new()
     //         .build_with_mock_rpc()
     //         .set_initial_state_structure();
-    //     let state_read_guard = platform.state.read().unwrap();
+    //     let state_read_guard = platform.state.load();
     //
     //     let platform_ref = PlatformStateRef {
     //         drive: &platform.drive,

@@ -30,7 +30,7 @@ where
     // propose one
     // This is done before all else
 
-    let state = app.platform().state.read().unwrap();
+    let state = app.platform().state.load();
 
     let last_committed_core_height = state.last_committed_core_height();
 

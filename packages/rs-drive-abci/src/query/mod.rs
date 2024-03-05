@@ -37,8 +37,7 @@ mod tests {
         let platform_version = platform
             .platform
             .state
-            .read()
-            .unwrap()
+            .load()
             .current_platform_version()
             .unwrap();
 

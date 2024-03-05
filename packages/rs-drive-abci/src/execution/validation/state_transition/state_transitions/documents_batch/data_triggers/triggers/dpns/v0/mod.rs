@@ -444,7 +444,7 @@ mod test {
 
         let mut nonce_counter = BTreeMap::new();
 
-        let state_read_guard = platform.state.read().unwrap();
+        let state_read_guard = platform.state.load();
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
