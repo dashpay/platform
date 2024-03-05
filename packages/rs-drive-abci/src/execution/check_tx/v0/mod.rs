@@ -55,7 +55,7 @@ where
             let execution_event = state_transition_execution_event.into_data()?;
             self.execute_event(
                 execution_event,
-                state_read_guard.any_block_info(),
+                state_read_guard.last_block_info(),
                 transaction,
                 platform_ref.state.current_platform_version()?,
             )
@@ -124,7 +124,7 @@ where
             if let Some(execution_event) = execution_event {
                 self.validate_fees_of_event(
                     execution_event,
-                    state_read_guard.any_block_info(),
+                    state_read_guard.last_block_info(),
                     None,
                     platform_version,
                 )
