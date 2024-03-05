@@ -326,11 +326,9 @@ mod tests {
         assert_eq!(last_block_height, 15);
         assert_eq!(last_block_app_hash, known_root_hash);
 
-        let block_start = abci_app
-            .platform
-            .state
-            .read()
-            .unwrap()
+        let state = abci_app.platform.state.load();
+
+        let block_start = state
             .last_committed_block_info()
             .as_ref()
             .unwrap()
@@ -462,11 +460,9 @@ mod tests {
         assert_eq!(last_block_height, 15);
         assert_eq!(last_block_app_hash, known_root_hash);
 
-        let block_start = abci_app
-            .platform
-            .state
-            .read()
-            .unwrap()
+        let state = abci_app.platform.state.load();
+
+        let block_start = state
             .last_committed_block_info()
             .as_ref()
             .unwrap()
@@ -794,11 +790,10 @@ mod tests {
             .fetch_versions_with_counter(None, &platform_version.drive)
             .expect("expected to get versions");
 
+        let state = abci_app.platform.state.load();
+
         assert_eq!(
-            platform
-                .state
-                .read()
-                .unwrap()
+            state
                 .last_committed_block_info()
                 .as_ref()
                 .unwrap()
@@ -3632,11 +3627,9 @@ mod tests {
         assert_eq!(last_block_height, 100);
         assert_eq!(last_block_app_hash, known_root_hash);
 
-        let block_start = abci_app
-            .platform
-            .state
-            .read()
-            .unwrap()
+        let state = abci_app.platform.state.load();
+
+        let block_start = state
             .last_committed_block_info()
             .as_ref()
             .unwrap()
