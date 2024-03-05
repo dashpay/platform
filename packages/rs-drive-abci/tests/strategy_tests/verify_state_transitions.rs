@@ -135,7 +135,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         &root_hash,
                         expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.any_block_info()
+                        platform.state.last_committed_block_info()
                     );
 
                     if *was_executed {
@@ -180,7 +180,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         &root_hash,
                         expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.any_block_info()
+                        platform.state.last_committed_block_info()
                     );
                     if *was_executed {
                         assert_eq!(
@@ -308,7 +308,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             &root_hash,
                             expected_root_hash,
                             "state last block info {:?}",
-                            platform.state.any_block_info()
+                            platform.state.last_committed_block_info()
                         );
 
                         match document_transition_action {
@@ -410,7 +410,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         &root_hash,
                         expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.any_block_info()
+                        platform.state.last_committed_block_info()
                     );
                     if *was_executed {
                         // other state transitions might have happened in the same block the identity
@@ -457,7 +457,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         &root_hash,
                         expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.any_block_info()
+                        platform.state.last_committed_block_info()
                     );
 
                     if *was_executed {
@@ -514,7 +514,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         &root_hash,
                         expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.any_block_info()
+                        platform.state.last_committed_block_info()
                     );
 
                     //todo: we need to do more here
@@ -556,7 +556,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         &root_hash,
                         expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.any_block_info()
+                        platform.state.last_committed_block_info()
                     );
                     // we need to verify that the partial identity has all keys we added
                     let has_all_keys = identity_update_transition
@@ -615,7 +615,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         &root_hash_identity,
                         expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.any_block_info()
+                        platform.state.last_committed_block_info()
                     );
 
                     let (root_hash_recipient, balance_recipient) =
@@ -631,7 +631,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         &root_hash_recipient,
                         expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.any_block_info()
+                        platform.state.last_committed_block_info()
                     );
 
                     if *was_executed {
