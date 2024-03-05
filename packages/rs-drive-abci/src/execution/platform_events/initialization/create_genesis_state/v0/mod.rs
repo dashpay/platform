@@ -83,20 +83,20 @@ impl<C> Platform<C> {
 
         let system_data_contracts = &self.drive.cache.system_data_contracts;
 
-        let dpns_data_contract = system_data_contracts.read_dpns().clone();
+        let dpns_data_contract = system_data_contracts.read_dpns();
 
         let system_data_contract_types = BTreeMap::from_iter([
             (
                 SystemDataContract::DPNS,
                 (
-                    system_data_contracts.read_dpns().clone(),
+                    system_data_contracts.read_dpns(),
                     system_identity_public_keys.dpns_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::Withdrawals,
                 (
-                    system_data_contracts.read_withdrawals().clone(),
+                    system_data_contracts.read_withdrawals(),
                     system_identity_public_keys.withdrawals_contract_owner(),
                 ),
             ),
@@ -114,22 +114,20 @@ impl<C> Platform<C> {
             (
                 SystemDataContract::Dashpay,
                 (
-                    system_data_contracts.read_dashpay().clone(),
+                    system_data_contracts.read_dashpay(),
                     system_identity_public_keys.dashpay_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::MasternodeRewards,
                 (
-                    system_data_contracts
-                        .read_masternode_reward_shares()
-                        .clone(),
+                    system_data_contracts.read_masternode_reward_shares(),
                     system_identity_public_keys.masternode_reward_shares_contract_owner(),
                 ),
             ),
         ]);
 
-        for (_, (data_contract, identity_public_keys_set)) in system_data_contract_types {
+        for (_, (data_contract, identity_public_keys_set)) in &system_data_contract_types {
             let public_keys = [
                 (
                     0,
@@ -193,10 +191,10 @@ impl<C> Platform<C> {
         Ok(())
     }
 
-    fn register_system_data_contract_operations(
+    fn register_system_data_contract_operations<'a>(
         &self,
-        data_contract: DataContract,
-        operations: &mut Vec<DriveOperation>,
+        data_contract: &'a DataContract,
+        operations: &mut Vec<DriveOperation<'a>>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let serialization =
@@ -204,7 +202,7 @@ impl<C> Platform<C> {
         operations.push(DriveOperation::DataContractOperation(
             //todo: remove cbor
             DataContractOperationType::ApplyContractWithSerialization {
-                contract: Cow::Owned(data_contract),
+                contract: Cow::Borrowed(data_contract),
                 serialized_contract: serialization,
                 storage_flags: None,
             },

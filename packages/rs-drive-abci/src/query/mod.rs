@@ -38,7 +38,6 @@ mod tests {
             .platform
             .state
             .read()
-            .unwrap()
             .current_platform_version()
             .unwrap();
 

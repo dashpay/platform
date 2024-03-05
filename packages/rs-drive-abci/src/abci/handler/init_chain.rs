@@ -22,7 +22,7 @@ where
     if block_context.is_some() {
         tracing::warn!("block context was present during init chain, restarting");
         let protocol_version_in_consensus = app.platform().config.initial_protocol_version;
-        let mut platform_state_write_guard = app.platform().state.write().unwrap();
+        let mut platform_state_write_guard = app.platform().state.write();
         *platform_state_write_guard = PlatformState::default_with_protocol_versions(
             protocol_version_in_consensus,
             protocol_version_in_consensus,

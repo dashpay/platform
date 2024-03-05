@@ -77,7 +77,7 @@ where
         );
 
         // Start by getting information from the state
-        let state = self.state.read().unwrap();
+        let state = self.state.read();
 
         let last_block_time_ms = state.last_committed_block_time_ms();
         let last_block_height =
@@ -360,7 +360,7 @@ where
             .block_state_info_mut()
             .set_app_hash(Some(root_hash));
 
-        let state = self.state.read().unwrap();
+        let state = self.state.read();
         let validator_set_update =
             self.validator_set_update(&state, &mut block_execution_context, platform_version)?;
 
