@@ -1,6 +1,9 @@
 const { expect } = require('chai');
 const crypto = require('crypto');
-const { DashPlatformProtocol, JsonSchemaError } = require('@dashevo/wasm-dpp');
+const {
+  DashPlatformProtocol,
+  JsonSchemaError
+} = require('@dashevo/wasm-dpp');
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 const schema = require('../../schema/v1/dashpay.schema.json');
 
@@ -10,10 +13,16 @@ const encoded64Chars = '4fafc98bbfe597f7ba2c9f767d52036d2226175960a908e355e5c575
 
 const expectJsonSchemaError = (validationResult) => {
   const errors = validationResult.getErrors();
-  expect(errors).to.have.length(1);
+  expect(errors)
+    .to
+    .have
+    .length(1);
 
   const error = validationResult.getErrors()[0];
-  expect(error).to.be.instanceof(JsonSchemaError);
+  expect(error)
+    .to
+    .be
+    .instanceof(JsonSchemaError);
 
   return error;
 };
@@ -29,11 +38,14 @@ describe('Dashpay Contract', () => {
     );
 
     identityId = await generateRandomIdentifier();
-    contract = dpp.dataContract.create(identityId, schema);
+    contract = dpp.dataContract.create(identityId, BigInt(1), schema);
   });
 
   it('should have a valid contract definition', async () => {
-    expect(() => dpp.dataContract.create(identityId, schema)).to.not.throw();
+    expect(() => dpp.dataContract.create(identityId, schema))
+      .to
+      .not
+      .throw();
   });
 
   describe('Documents', () => {
@@ -55,8 +67,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('maxLength');
-          expect(error.instancePath).to.deep.equal('/displayName');
+          expect(error.keyword)
+            .to
+            .equal('maxLength');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/displayName');
         });
       });
 
@@ -68,8 +85,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('maxLength');
-          expect(error.instancePath).to.deep.equal('/publicMessage');
+          expect(error.keyword)
+            .to
+            .equal('maxLength');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/publicMessage');
         });
       });
 
@@ -81,8 +103,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('format');
-          expect(error.instancePath).to.deep.equal('/avatarUrl');
+          expect(error.keyword)
+            .to
+            .equal('format');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/avatarUrl');
         });
 
         it('should have less than 2048 chars length', async () => {
@@ -92,8 +119,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('maxLength');
-          expect(error.instancePath).to.deep.equal('/avatarUrl');
+          expect(error.keyword)
+            .to
+            .equal('maxLength');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/avatarUrl');
         });
 
         it('should be of type URL', async () => {
@@ -103,8 +135,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('format');
-          expect(error.instancePath).to.deep.equal('/avatarUrl');
+          expect(error.keyword)
+            .to
+            .equal('format');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/avatarUrl');
         });
       });
 
@@ -116,8 +153,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minItems');
-          expect(error.instancePath).to.deep.equal('/avatarHash');
+          expect(error.keyword)
+            .to
+            .equal('minItems');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/avatarHash');
         });
 
         it('should have maximum length of 32', async () => {
@@ -127,8 +169,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('maxItems');
-          expect(error.instancePath).to.deep.equal('/avatarHash');
+          expect(error.keyword)
+            .to
+            .equal('maxItems');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/avatarHash');
         });
 
         it('should be of type array', async () => {
@@ -138,8 +185,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('type');
-          expect(error.instancePath).to.deep.equal('/avatarHash');
+          expect(error.keyword)
+            .to
+            .equal('type');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/avatarHash');
         });
       });
 
@@ -151,8 +203,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minItems');
-          expect(error.instancePath).to.deep.equal('/avatarFingerprint');
+          expect(error.keyword)
+            .to
+            .equal('minItems');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/avatarFingerprint');
         });
 
         it('should have maximum length of 8', async () => {
@@ -162,8 +219,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('maxItems');
-          expect(error.instancePath).to.deep.equal('/avatarFingerprint');
+          expect(error.keyword)
+            .to
+            .equal('maxItems');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/avatarFingerprint');
         });
 
         it('should be of type array', async () => {
@@ -173,8 +235,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('type');
-          expect(error.instancePath).to.deep.equal('/avatarFingerprint');
+          expect(error.keyword)
+            .to
+            .equal('type');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/avatarFingerprint');
         });
       });
 
@@ -185,8 +252,13 @@ describe('Dashpay Contract', () => {
         const validationResult = document.validate(dpp.protocolVersion);
         const error = expectJsonSchemaError(validationResult);
 
-        expect(error.keyword).to.equal('additionalProperties');
-        expect(error.params.additionalProperties).to.deep.equal(['someOtherProperty']);
+        expect(error.keyword)
+          .to
+          .equal('additionalProperties');
+        expect(error.params.additionalProperties)
+          .to
+          .deep
+          .equal(['someOtherProperty']);
       });
 
       it('should be valid', async () => {
@@ -194,7 +266,10 @@ describe('Dashpay Contract', () => {
 
         const result = profile.validate(dpp.protocolVersion);
 
-        expect(result.isValid()).to.be.true();
+        expect(result.isValid())
+          .to
+          .be
+          .true();
       });
     });
 
@@ -218,8 +293,12 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('encToUserId');
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('encToUserId');
         });
 
         it('should have exactly 32 chars length', async () => {
@@ -229,8 +308,12 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('maxItems');
-          expect(error.instancePath).to.equal('/encToUserId');
+          expect(error.keyword)
+            .to
+            .equal('maxItems');
+          expect(error.instancePath)
+            .to
+            .equal('/encToUserId');
         });
 
         it('should have more or 32 chars length', async () => {
@@ -240,8 +323,12 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minItems');
-          expect(error.instancePath).to.equal('/encToUserId');
+          expect(error.keyword)
+            .to
+            .equal('minItems');
+          expect(error.instancePath)
+            .to
+            .equal('/encToUserId');
         });
       });
 
@@ -253,8 +340,12 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('rootEncryptionKeyIndex');
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('rootEncryptionKeyIndex');
         });
 
         it('should not be less than 0', async () => {
@@ -264,8 +355,12 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minimum');
-          expect(error.instancePath).to.equal('/rootEncryptionKeyIndex');
+          expect(error.keyword)
+            .to
+            .equal('minimum');
+          expect(error.instancePath)
+            .to
+            .equal('/rootEncryptionKeyIndex');
         });
       });
 
@@ -277,8 +372,12 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('privateData');
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('privateData');
         });
       });
 
@@ -289,8 +388,13 @@ describe('Dashpay Contract', () => {
         const validationResult = document.validate(dpp.protocolVersion);
         const error = expectJsonSchemaError(validationResult);
 
-        expect(error.keyword).to.equal('additionalProperties');
-        expect(error.params.additionalProperties).to.deep.equal(['someOtherProperty']);
+        expect(error.keyword)
+          .to
+          .equal('additionalProperties');
+        expect(error.params.additionalProperties)
+          .to
+          .deep
+          .equal(['someOtherProperty']);
       });
     });
 
@@ -315,8 +419,12 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('toUserId');
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('toUserId');
         });
       });
 
@@ -328,8 +436,12 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('encryptedPublicKey');
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('encryptedPublicKey');
         });
       });
 
@@ -341,8 +453,12 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('senderKeyIndex');
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('senderKeyIndex');
         });
 
         it('should not be less than 0', async () => {
@@ -352,8 +468,12 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minimum');
-          expect(error.instancePath).to.equal('/senderKeyIndex');
+          expect(error.keyword)
+            .to
+            .equal('minimum');
+          expect(error.instancePath)
+            .to
+            .equal('/senderKeyIndex');
         });
       });
 
@@ -365,8 +485,12 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('recipientKeyIndex');
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('recipientKeyIndex');
         });
 
         it('should not be less than 0', async () => {
@@ -376,8 +500,12 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minimum');
-          expect(error.instancePath).to.equal('/recipientKeyIndex');
+          expect(error.keyword)
+            .to
+            .equal('minimum');
+          expect(error.instancePath)
+            .to
+            .equal('/recipientKeyIndex');
         });
       });
 
@@ -389,8 +517,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minItems');
-          expect(error.instancePath).to.deep.equal('/encryptedAccountLabel');
+          expect(error.keyword)
+            .to
+            .equal('minItems');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/encryptedAccountLabel');
         });
 
         it('should have maximum length of 80', async () => {
@@ -400,8 +533,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('maxItems');
-          expect(error.instancePath).to.deep.equal('/encryptedAccountLabel');
+          expect(error.keyword)
+            .to
+            .equal('maxItems');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/encryptedAccountLabel');
         });
 
         it('should be of type array', async () => {
@@ -411,8 +549,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('type');
-          expect(error.instancePath).to.deep.equal('/encryptedAccountLabel');
+          expect(error.keyword)
+            .to
+            .equal('type');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/encryptedAccountLabel');
         });
       });
 
@@ -424,8 +567,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minItems');
-          expect(error.instancePath).to.deep.equal('/autoAcceptProof');
+          expect(error.keyword)
+            .to
+            .equal('minItems');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/autoAcceptProof');
         });
 
         it('should have maximum length of 102', async () => {
@@ -435,8 +583,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('maxItems');
-          expect(error.instancePath).to.deep.equal('/autoAcceptProof');
+          expect(error.keyword)
+            .to
+            .equal('maxItems');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/autoAcceptProof');
         });
 
         it('should be of type array', async () => {
@@ -446,8 +599,13 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('type');
-          expect(error.instancePath).to.deep.equal('/autoAcceptProof');
+          expect(error.keyword)
+            .to
+            .equal('type');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/autoAcceptProof');
         });
       });
 
@@ -459,8 +617,12 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('accountReference');
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('accountReference');
         });
 
         it('should not be less than 0', async () => {
@@ -470,8 +632,12 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minimum');
-          expect(error.instancePath).to.equal('/accountReference');
+          expect(error.keyword)
+            .to
+            .equal('minimum');
+          expect(error.instancePath)
+            .to
+            .equal('/accountReference');
         });
       });
 
@@ -483,8 +649,12 @@ describe('Dashpay Contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minimum');
-          expect(error.instancePath).to.equal('/coreHeightCreatedAt');
+          expect(error.keyword)
+            .to
+            .equal('minimum');
+          expect(error.instancePath)
+            .to
+            .equal('/coreHeightCreatedAt');
         });
       });
 
@@ -495,8 +665,13 @@ describe('Dashpay Contract', () => {
         const validationResult = document.validate(dpp.protocolVersion);
         const error = expectJsonSchemaError(validationResult);
 
-        expect(error.keyword).to.equal('additionalProperties');
-        expect(error.params.additionalProperties).to.deep.equal(['someOtherProperty']);
+        expect(error.keyword)
+          .to
+          .equal('additionalProperties');
+        expect(error.params.additionalProperties)
+          .to
+          .deep
+          .equal(['someOtherProperty']);
       });
     });
   });

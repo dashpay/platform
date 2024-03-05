@@ -1,4 +1,7 @@
-const { DashPlatformProtocol, JsonSchemaError } = require('@dashevo/wasm-dpp');
+const {
+  DashPlatformProtocol,
+  JsonSchemaError
+} = require('@dashevo/wasm-dpp');
 
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
@@ -8,10 +11,16 @@ const featureFlagsContractDocumentsSchema = require('../../schema/v1/feature-fla
 
 const expectJsonSchemaError = (validationResult, errorCount = 1) => {
   const errors = validationResult.getErrors();
-  expect(errors).to.have.length(errorCount);
+  expect(errors)
+    .to
+    .have
+    .length(errorCount);
 
   const error = validationResult.getErrors()[0];
-  expect(error).to.be.instanceof(JsonSchemaError);
+  expect(error)
+    .to
+    .be
+    .instanceof(JsonSchemaError);
 
   return error;
 };
@@ -28,12 +37,24 @@ describe('Feature Flags contract', () => {
 
     identityId = await generateRandomIdentifier();
 
-    dataContract = dpp.dataContract.create(identityId, featureFlagsContractDocumentsSchema);
+    dataContract = dpp.dataContract.create(
+      identityId,
+      BigInt(1),
+      featureFlagsContractDocumentsSchema,
+    );
   });
 
   it('should have a valid contract definition', async () => {
-    expect(() => dpp.dataContract.create(identityId, featureFlagsContractDocumentsSchema))
-      .to.not.throw();
+    expect(() => {
+      dpp.dataContract.create(
+        identityId,
+        BigInt(1),
+        featureFlagsContractDocumentsSchema,
+      );
+    })
+      .to
+      .not
+      .throw();
   });
 
   describe('documents', () => {
@@ -68,8 +89,12 @@ describe('Feature Flags contract', () => {
         const validationResult = document.validate(dpp.protocolVersion);
         const error = expectJsonSchemaError(validationResult, 2);
 
-        expect(error.keyword).to.equal('minProperties');
-        expect(error.params.minProperties).to.equal(3);
+        expect(error.keyword)
+          .to
+          .equal('minProperties');
+        expect(error.params.minProperties)
+          .to
+          .equal(3);
       });
 
       it('should not have additional properties', async () => {
@@ -86,8 +111,13 @@ describe('Feature Flags contract', () => {
         const validationResult = document.validate(dpp.protocolVersion);
         const error = expectJsonSchemaError(validationResult);
 
-        expect(error.keyword).to.equal('additionalProperties');
-        expect(error.params.additionalProperties).to.deep.equal(['someOtherProperty']);
+        expect(error.keyword)
+          .to
+          .equal('additionalProperties');
+        expect(error.params.additionalProperties)
+          .to
+          .deep
+          .equal(['someOtherProperty']);
       });
 
       describe('enabledAtHeight', () => {
@@ -98,8 +128,12 @@ describe('Feature Flags contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('enableAtHeight');
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('enableAtHeight');
         });
 
         it('should be integer', () => {
@@ -109,8 +143,12 @@ describe('Feature Flags contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('type');
-          expect(error.params.type).to.equal('integer');
+          expect(error.keyword)
+            .to
+            .equal('type');
+          expect(error.params.type)
+            .to
+            .equal('integer');
         });
 
         it('should be at least 1', () => {
@@ -120,8 +158,12 @@ describe('Feature Flags contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minimum');
-          expect(error.params.minimum).to.equal(1);
+          expect(error.keyword)
+            .to
+            .equal('minimum');
+          expect(error.params.minimum)
+            .to
+            .equal(1);
         });
       });
 
@@ -140,8 +182,12 @@ describe('Feature Flags contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minProperties');
-          expect(error.params.minProperties).to.equal(1);
+          expect(error.keyword)
+            .to
+            .equal('minProperties');
+          expect(error.params.minProperties)
+            .to
+            .equal(1);
         });
 
         describe('maxBytes', () => {
@@ -154,8 +200,12 @@ describe('Feature Flags contract', () => {
             const validationResult = document.validate(dpp.protocolVersion);
             const error = expectJsonSchemaError(validationResult);
 
-            expect(error.keyword).to.equal('type');
-            expect(error.params.type).to.equal('integer');
+            expect(error.keyword)
+              .to
+              .equal('type');
+            expect(error.params.type)
+              .to
+              .equal('integer');
           });
 
           it('should be at least 1', async () => {
@@ -167,8 +217,12 @@ describe('Feature Flags contract', () => {
             const validationResult = document.validate(dpp.protocolVersion);
             const error = expectJsonSchemaError(validationResult);
 
-            expect(error.keyword).to.equal('minimum');
-            expect(error.params.minimum).to.equal(1);
+            expect(error.keyword)
+              .to
+              .equal('minimum');
+            expect(error.params.minimum)
+              .to
+              .equal(1);
           });
         });
 
@@ -182,8 +236,12 @@ describe('Feature Flags contract', () => {
             const validationResult = document.validate(dpp.protocolVersion);
             const error = expectJsonSchemaError(validationResult);
 
-            expect(error.keyword).to.equal('type');
-            expect(error.params.type).to.equal('integer');
+            expect(error.keyword)
+              .to
+              .equal('type');
+            expect(error.params.type)
+              .to
+              .equal('integer');
           });
 
           it('should be at least 1', async () => {
@@ -195,8 +253,12 @@ describe('Feature Flags contract', () => {
             const validationResult = document.validate(dpp.protocolVersion);
             const error = expectJsonSchemaError(validationResult);
 
-            expect(error.keyword).to.equal('minimum');
-            expect(error.params.minimum).to.equal(1);
+            expect(error.keyword)
+              .to
+              .equal('minimum');
+            expect(error.params.minimum)
+              .to
+              .equal(1);
           });
         });
 
@@ -205,7 +267,10 @@ describe('Feature Flags contract', () => {
 
           const result = updateConsensusParams.validate(dpp.protocolVersion);
 
-          expect(result.isValid()).to.be.true();
+          expect(result.isValid())
+            .to
+            .be
+            .true();
         });
       });
 
@@ -228,8 +293,12 @@ describe('Feature Flags contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minProperties');
-          expect(error.params.minProperties).to.equal(1);
+          expect(error.keyword)
+            .to
+            .equal('minProperties');
+          expect(error.params.minProperties)
+            .to
+            .equal(1);
         });
 
         describe('maxBytes', () => {
@@ -242,8 +311,12 @@ describe('Feature Flags contract', () => {
             const validationResult = document.validate(dpp.protocolVersion);
             const error = expectJsonSchemaError(validationResult);
 
-            expect(error.keyword).to.equal('type');
-            expect(error.params.type).to.equal('integer');
+            expect(error.keyword)
+              .to
+              .equal('type');
+            expect(error.params.type)
+              .to
+              .equal('integer');
           });
 
           it('should be at least 1', async () => {
@@ -255,8 +328,12 @@ describe('Feature Flags contract', () => {
             const validationResult = document.validate(dpp.protocolVersion);
             const error = expectJsonSchemaError(validationResult);
 
-            expect(error.keyword).to.equal('minimum');
-            expect(error.params.minimum).to.equal(1);
+            expect(error.keyword)
+              .to
+              .equal('minimum');
+            expect(error.params.minimum)
+              .to
+              .equal(1);
           });
         });
 
@@ -270,8 +347,12 @@ describe('Feature Flags contract', () => {
             const validationResult = document.validate(dpp.protocolVersion);
             const error = expectJsonSchemaError(validationResult);
 
-            expect(error.keyword).to.equal('type');
-            expect(error.params.type).to.equal('integer');
+            expect(error.keyword)
+              .to
+              .equal('type');
+            expect(error.params.type)
+              .to
+              .equal('integer');
           });
 
           it('should be at least 1', async () => {
@@ -283,8 +364,12 @@ describe('Feature Flags contract', () => {
             const validationResult = document.validate(dpp.protocolVersion);
             const error = expectJsonSchemaError(validationResult);
 
-            expect(error.keyword).to.equal('minimum');
-            expect(error.params.minimum).to.equal(1);
+            expect(error.keyword)
+              .to
+              .equal('minimum');
+            expect(error.params.minimum)
+              .to
+              .equal(1);
           });
         });
 
@@ -297,8 +382,12 @@ describe('Feature Flags contract', () => {
               const validationResult = document.validate(dpp.protocolVersion);
               const error = expectJsonSchemaError(validationResult);
 
-              expect(error.keyword).to.equal('required');
-              expect(error.params.missingProperty).to.equal('seconds');
+              expect(error.keyword)
+                .to
+                .equal('required');
+              expect(error.params.missingProperty)
+                .to
+                .equal('seconds');
             });
 
             it('should be integer', () => {
@@ -308,8 +397,12 @@ describe('Feature Flags contract', () => {
               const validationResult = document.validate(dpp.protocolVersion);
               const error = expectJsonSchemaError(validationResult);
 
-              expect(error.keyword).to.equal('type');
-              expect(error.params.type).to.equal('integer');
+              expect(error.keyword)
+                .to
+                .equal('type');
+              expect(error.params.type)
+                .to
+                .equal('integer');
             });
 
             it('should be at least 1', () => {
@@ -319,8 +412,12 @@ describe('Feature Flags contract', () => {
               const validationResult = document.validate(dpp.protocolVersion);
               const error = expectJsonSchemaError(validationResult);
 
-              expect(error.keyword).to.equal('minimum');
-              expect(error.params.minimum).to.equal(1);
+              expect(error.keyword)
+                .to
+                .equal('minimum');
+              expect(error.params.minimum)
+                .to
+                .equal(1);
             });
           });
 
@@ -332,8 +429,12 @@ describe('Feature Flags contract', () => {
               const validationResult = document.validate(dpp.protocolVersion);
               const error = expectJsonSchemaError(validationResult);
 
-              expect(error.keyword).to.equal('required');
-              expect(error.params.missingProperty).to.equal('nanos');
+              expect(error.keyword)
+                .to
+                .equal('required');
+              expect(error.params.missingProperty)
+                .to
+                .equal('nanos');
             });
 
             it('should be integer', () => {
@@ -343,8 +444,12 @@ describe('Feature Flags contract', () => {
               const validationResult = document.validate(dpp.protocolVersion);
               const error = expectJsonSchemaError(validationResult);
 
-              expect(error.keyword).to.equal('type');
-              expect(error.params.type).to.equal('integer');
+              expect(error.keyword)
+                .to
+                .equal('type');
+              expect(error.params.type)
+                .to
+                .equal('integer');
             });
 
             it('should be at least 0', () => {
@@ -354,8 +459,12 @@ describe('Feature Flags contract', () => {
               const validationResult = document.validate(dpp.protocolVersion);
               const error = expectJsonSchemaError(validationResult);
 
-              expect(error.keyword).to.equal('minimum');
-              expect(error.params.minimum).to.equal(0);
+              expect(error.keyword)
+                .to
+                .equal('minimum');
+              expect(error.params.minimum)
+                .to
+                .equal(0);
             });
           });
         });
@@ -365,7 +474,10 @@ describe('Feature Flags contract', () => {
 
           const result = updateConsensusParams.validate(dpp.protocolVersion);
 
-          expect(result.isValid()).to.be.true();
+          expect(result.isValid())
+            .to
+            .be
+            .true();
         });
       });
 
@@ -383,8 +495,12 @@ describe('Feature Flags contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minProperties');
-          expect(error.params.minProperties).to.equal(1);
+          expect(error.keyword)
+            .to
+            .equal('minProperties');
+          expect(error.params.minProperties)
+            .to
+            .equal(1);
         });
 
         describe('appVersion', () => {
@@ -397,8 +513,12 @@ describe('Feature Flags contract', () => {
             const validationResult = document.validate(dpp.protocolVersion);
             const error = expectJsonSchemaError(validationResult);
 
-            expect(error.keyword).to.equal('type');
-            expect(error.params.type).to.equal('integer');
+            expect(error.keyword)
+              .to
+              .equal('type');
+            expect(error.params.type)
+              .to
+              .equal('integer');
           });
 
           it('should be at least 1', async () => {
@@ -410,8 +530,12 @@ describe('Feature Flags contract', () => {
             const validationResult = document.validate(dpp.protocolVersion);
             const error = expectJsonSchemaError(validationResult);
 
-            expect(error.keyword).to.equal('minimum');
-            expect(error.params.minimum).to.equal(1);
+            expect(error.keyword)
+              .to
+              .equal('minimum');
+            expect(error.params.minimum)
+              .to
+              .equal(1);
           });
         });
 
@@ -420,7 +544,10 @@ describe('Feature Flags contract', () => {
 
           const result = updateConsensusParams.validate(dpp.protocolVersion);
 
-          expect(result.isValid()).to.be.true();
+          expect(result.isValid())
+            .to
+            .be
+            .true();
         });
       });
 
@@ -429,7 +556,10 @@ describe('Feature Flags contract', () => {
 
         const result = updateConsensusParams.validate(dpp.protocolVersion);
 
-        expect(result.isValid()).to.be.true();
+        expect(result.isValid())
+          .to
+          .be
+          .true();
       });
     });
   });
