@@ -1,6 +1,6 @@
 const {
   DashPlatformProtocol,
-  JsonSchemaError
+  JsonSchemaError,
 } = require('@dashevo/wasm-dpp');
 
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
