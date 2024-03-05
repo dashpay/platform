@@ -21,7 +21,7 @@ import Config from '../../src/config/Config.js';
 
 const {
   contractId: dpnsContractId,
-  ownerId: dpnsOwnerId
+  ownerId: dpnsOwnerId,
 } = DPNSContract;
 
 const { contractId: dashpayContractId } = DashPayContract;

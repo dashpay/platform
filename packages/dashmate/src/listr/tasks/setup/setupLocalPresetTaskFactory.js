@@ -302,10 +302,9 @@ export default function setupLocalPresetTaskFactory(
           const platformConfigs = ctx.configGroup.filter((config) => config.get('platform.enable'));
 
           const subTasks = platformConfigs.map((config) => ({
-              title: `Generate certificate for ${config.getName()}`,
-              task: async () => obtainSelfSignedCertificateTask(config),
-            }
-          ));
+            title: `Generate certificate for ${config.getName()}`,
+            task: async () => obtainSelfSignedCertificateTask(config),
+          }));
 
           return new Listr(subTasks);
         },
