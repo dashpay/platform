@@ -37,8 +37,7 @@ where
                 .into_iter()
                 .next()
                 .unwrap(),
-        )
-        .into());
+        ));
     }
 
     drop(transaction_guard);
