@@ -1200,8 +1200,11 @@ impl Strategy {
                             };
 
                             // Sign transition
-                            let public_key = identity
-                                .get_public_key_by_id(2 as KeyID)
+                            let public_key = identity.get_first_public_key_matching(
+                                    Purpose::AUTHENTICATION,
+                                    HashSet::from([SecurityLevel::CRITICAL]),
+                                    HashSet::from([KeyType::ECDSA_SECP256K1]),
+                                )
                                 .expect("Expected to get identity public key in ContractCreate");
                             let mut state_transition =
                                 StateTransition::DataContractCreate(transition);
