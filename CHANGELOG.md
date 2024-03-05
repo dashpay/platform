@@ -1,3 +1,42 @@
+## [1.0.0-dev.6](https://github.com/dashpay/platform/compare/v1.0.0-dev.5...v1.0.0-dev.6) (2024-03-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** identity nonce for Data Contract Create (#1724)
+
+### Features
+
+* add ContractUpdate to used_contract_ids function
+* **platform:** identity nonce for Data Contract Create ([#1724](https://github.com/dashpay/platform/issues/1724))
+* **sdk:** add fetch_current_with_metadata to ExtendedEpochInfo ([#1708](https://github.com/dashpay/platform/issues/1708))
+* **sdk:** fetch with metadata ([#1707](https://github.com/dashpay/platform/issues/1707))
+* **sdk:** re-fetch nonce on interval ([#1706](https://github.com/dashpay/platform/issues/1706))
+
+
+### Bug Fixes
+
+* **drive-abci:** reject reward shares operations ([#1722](https://github.com/dashpay/platform/issues/1722))
+* make strategy tests compatible with all networks and platform tui ([#1705](https://github.com/dashpay/platform/issues/1705))
+* **sdk:** nonce manager caching bug ([#1711](https://github.com/dashpay/platform/issues/1711))
+* **test-suite:** masternode identities ([#1709](https://github.com/dashpay/platform/issues/1709))
+
+
+### Performance Improvements
+
+* query and check tx parallel processing ([#1694](https://github.com/dashpay/platform/issues/1694))
+
+
+### Miscellaneous Chores
+
+* fix npm audit warning ([#1723](https://github.com/dashpay/platform/issues/1723))
+
+
+### Tests
+
+* **test-suite:** restore dpns tests ([#1725](https://github.com/dashpay/platform/issues/1725))
+* **test-suite:** withdrawals identityRecent index ([#1716](https://github.com/dashpay/platform/issues/1716))
+
 ## [1.0.0-dev.5](https://github.com/dashpay/platform/compare/v1.0.0-dev.4...v1.0.0-dev.5) (2024-02-20)
 
 ### ⚠ BREAKING CHANGES
