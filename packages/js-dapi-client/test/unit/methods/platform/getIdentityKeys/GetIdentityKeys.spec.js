@@ -22,7 +22,6 @@ describe('GetIdentityKeysResponse', () => {
 
   beforeEach(async () => {
     metadataFixture = getMetadataFixture();
-    // keys = [new Uint8Array([0])];// , new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6])];
     keys = [Buffer.alloc(41).fill(1), Buffer.alloc(48).fill(2), Buffer.alloc(55).fill(3)];
     proofFixture = getProofFixture();
 
