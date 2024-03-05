@@ -3,9 +3,8 @@ use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_request::GetIde
 use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_response::PublicKeyHashIdentityEntry;
 use dapi_grpc::platform::v0::{
     get_identities_by_public_key_hashes_request, get_identities_by_public_key_hashes_response,
-    GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse, Proof,
+    GetIdentitiesByPublicKeyHashesRequest, Proof,
 };
-use dapi_grpc::Message;
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -16,7 +15,8 @@ use dpp::validation::SimpleValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::verify::RootHash;
 use drive::drive::Drive;
-use drive_abci::abci::{AbciApplication, AbciError};
+use drive_abci::abci::app::FullAbciApplication;
+use drive_abci::abci::AbciError;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
@@ -169,7 +169,7 @@ impl QueryStrategy {
         &self,
         proof_verification: &ProofVerification,
         current_identities: &Vec<Identity>,
-        abci_app: &AbciApplication<MockCoreRPCLike>,
+        abci_app: &FullAbciApplication<MockCoreRPCLike>,
         seed: StrategyRandomness,
         platform_version: &PlatformVersion,
     ) {
@@ -196,7 +196,7 @@ impl QueryStrategy {
         proof_verification: &ProofVerification,
         current_identities: &Vec<Identity>,
         frequency: &Frequency,
-        abci_app: &AbciApplication<MockCoreRPCLike>,
+        abci_app: &FullAbciApplication<MockCoreRPCLike>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) {
@@ -240,14 +240,9 @@ impl QueryStrategy {
                     },
                 )),
             };
-            let encoded_request = request.encode_to_vec();
             let query_validation_result = abci_app
                 .platform
-                .query(
-                    "/identities/by-public-key-hash",
-                    encoded_request.as_slice(),
-                    platform_version,
-                )
+                .query_identities_by_public_key_hashes(request, platform_version)
                 .expect("expected to run query");
 
             assert!(
@@ -256,11 +251,9 @@ impl QueryStrategy {
                 query_validation_result.errors
             );
 
-            let query_data = query_validation_result
+            let response = query_validation_result
                 .into_data()
                 .expect("expected data on query_validation_result");
-            let response = GetIdentitiesByPublicKeyHashesResponse::decode(query_data.as_slice())
-                .expect("expected to deserialize");
 
             let versioned_result = response.version.expect("expected a result");
             match versioned_result {
@@ -332,18 +325,12 @@ mod tests {
     use crate::strategy::NetworkStrategy;
 
     use dapi_grpc::platform::v0::get_epochs_info_request::{GetEpochsInfoRequestV0, Version};
-    use dapi_grpc::platform::v0::{
-        get_epochs_info_response, GetEpochsInfoRequest, GetEpochsInfoResponse,
-    };
+    use dapi_grpc::platform::v0::{get_epochs_info_response, GetEpochsInfoRequest};
     use dpp::block::epoch::EpochIndex;
     use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
-    use dpp::data_contract::accessors::v0::DataContractV0Getters;
-
-    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
     use dpp::version::PlatformVersion;
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
-
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
@@ -351,8 +338,6 @@ mod tests {
     use strategy_tests::Strategy;
 
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
-
-    use tenderdash_abci::Application;
 
     macro_rules! extract_single_variant_or_panic {
         ($expression:expr, $pattern:pat, $binding:ident) => {
@@ -442,8 +427,7 @@ mod tests {
                 ascending: true,
                 prove: false,
             })),
-        }
-        .encode_to_vec();
+        };
 
         let platform_state = outcome
             .abci_app
@@ -451,19 +435,21 @@ mod tests {
             .state
             .read()
             .expect("expected to read state");
+
         let protocol_version = platform_state.current_protocol_version_in_consensus();
+
         drop(platform_state);
+
         let platform_version = PlatformVersion::get(protocol_version)
             .expect("expected to get current platform version");
+
         let validation_result = outcome
             .abci_app
             .platform
-            .query("/epochInfos", &request, platform_version)
+            .query_epoch_infos(request, platform_version)
             .expect("expected query to succeed");
-        let response = GetEpochsInfoResponse::decode(
-            validation_result.data.expect("expected data").as_slice(),
-        )
-        .expect("expected to decode response");
+
+        let response = validation_result.into_data().expect("expected data");
 
         let result = extract_single_variant_or_panic!(
             response.version.expect("expected a versioned response"),
@@ -548,8 +534,7 @@ mod tests {
                 ascending: false,
                 prove: false,
             })),
-        }
-        .encode_to_vec();
+        };
 
         let platform_state = outcome
             .abci_app
@@ -557,19 +542,21 @@ mod tests {
             .state
             .read()
             .expect("expected to read state");
+
         let protocol_version = platform_state.current_protocol_version_in_consensus();
+
         drop(platform_state);
+
         let platform_version = PlatformVersion::get(protocol_version)
             .expect("expected to get current platform version");
+
         let validation_result = outcome
             .abci_app
             .platform
-            .query("/epochInfos", &request, platform_version)
+            .query_epoch_infos(request, platform_version)
             .expect("expected query to succeed");
-        let response = GetEpochsInfoResponse::decode(
-            validation_result.data.expect("expected data").as_slice(),
-        )
-        .expect("expected to decode response");
+
+        let response = validation_result.into_data().expect("expected data");
 
         let result = extract_single_variant_or_panic!(
             response.version.expect("expected a versioned response"),
@@ -655,8 +642,7 @@ mod tests {
                 ascending: true,
                 prove: true,
             })),
-        }
-        .encode_to_vec();
+        };
 
         let platform_state = outcome
             .abci_app
@@ -664,20 +650,23 @@ mod tests {
             .state
             .read()
             .expect("expected to read state");
+
         let protocol_version = platform_state.current_protocol_version_in_consensus();
+
         let current_epoch = platform_state.last_committed_block_epoch_ref().index;
+
         drop(platform_state);
+
         let platform_version = PlatformVersion::get(protocol_version)
             .expect("expected to get current platform version");
+
         let validation_result = outcome
             .abci_app
             .platform
-            .query("/epochInfos", &request, platform_version)
+            .query_epoch_infos(request, platform_version)
             .expect("expected query to succeed");
-        let response = GetEpochsInfoResponse::decode(
-            validation_result.data.expect("expected data").as_slice(),
-        )
-        .expect("expected to decode response");
+
+        let response = validation_result.data.expect("expected data");
 
         let result = extract_single_variant_or_panic!(
             response.version.expect("expected a versioned response"),
@@ -715,18 +704,15 @@ mod tests {
                 ascending: false,
                 prove: true,
             })),
-        }
-        .encode_to_vec();
+        };
 
         let validation_result = outcome
             .abci_app
             .platform
-            .query("/epochInfos", &request, platform_version)
+            .query_epoch_infos(request, platform_version)
             .expect("expected query to succeed");
-        let response = GetEpochsInfoResponse::decode(
-            validation_result.data.expect("expected data").as_slice(),
-        )
-        .expect("expected to decode response");
+
+        let response = validation_result.data.expect("expected data");
 
         let get_epochs_info_response::Version::V0(response_v0) =
             response.version.expect("expected a versioned response");

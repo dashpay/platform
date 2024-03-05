@@ -20,8 +20,7 @@ impl DriveOperationFinalizeTask {
     pub fn execute(self, drive: &Drive, _platform_version: &PlatformVersion) {
         match self {
             DriveOperationFinalizeTask::RemoveDataContractFromCache { contract_id } => {
-                let mut drive_cache = drive.cache.write().unwrap();
-                drive_cache.cached_contracts.remove(contract_id.to_buffer());
+                drive.cache.data_contracts.remove(contract_id.to_buffer());
             }
         }
     }

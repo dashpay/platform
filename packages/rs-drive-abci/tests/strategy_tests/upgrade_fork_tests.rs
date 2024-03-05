@@ -112,8 +112,12 @@ mod tests {
                 );
                 {
                     let platform = abci_app.platform;
-                    let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = platform
+                        .drive
+                        .cache
+                        .protocol_versions_counter
+                        .read()
+                        .unwrap();
                     platform
                         .drive
                         .fetch_versions_with_counter(None, &platform_version.drive)
@@ -196,8 +200,12 @@ mod tests {
                     StrategyRandomness::SeedEntropy(7),
                 );
                 {
-                    let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = &platform
+                        .drive
+                        .cache
+                        .protocol_versions_counter
+                        .read()
+                        .unwrap();
                     assert_eq!(
                         platform
                             .state
@@ -260,8 +268,12 @@ mod tests {
                     StrategyRandomness::SeedEntropy(18),
                 );
                 {
-                    let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = &platform
+                        .drive
+                        .cache
+                        .protocol_versions_counter
+                        .read()
+                        .unwrap();
                     assert_eq!(
                         platform
                             .state
@@ -387,8 +399,12 @@ mod tests {
                 );
                 {
                     let platform = abci_app.platform;
-                    let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = &platform
+                        .drive
+                        .cache
+                        .protocol_versions_counter
+                        .read()
+                        .unwrap();
                     platform
                         .drive
                         .fetch_versions_with_counter(None, &platform_version.drive)
@@ -468,8 +484,12 @@ mod tests {
                     StrategyRandomness::SeedEntropy(7),
                 );
                 {
-                    let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = &platform
+                        .drive
+                        .cache
+                        .protocol_versions_counter
+                        .read()
+                        .unwrap();
                     assert_eq!(
                         platform
                             .state
@@ -532,8 +552,12 @@ mod tests {
                     StrategyRandomness::SeedEntropy(18),
                 );
                 {
-                    let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = &platform
+                        .drive
+                        .cache
+                        .protocol_versions_counter
+                        .read()
+                        .unwrap();
                     assert_eq!(
                         platform
                             .state
@@ -661,8 +685,6 @@ mod tests {
                 );
                 {
                     let platform = abci_app.platform;
-                    let drive_cache = platform.drive.cache.read().unwrap();
-                    let _counter = &drive_cache.protocol_versions_counter;
                     assert_eq!(
                         platform
                             .state
@@ -688,7 +710,12 @@ mod tests {
                         platform.state.read().unwrap().next_epoch_protocol_version(),
                         1
                     );
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = &platform
+                        .drive
+                        .cache
+                        .protocol_versions_counter
+                        .read()
+                        .unwrap();
                     assert_eq!(
                         (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
                         (Some(&35), Some(&64))
@@ -739,8 +766,12 @@ mod tests {
                     StrategyRandomness::SeedEntropy(7),
                 );
                 {
-                    let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = &platform
+                        .drive
+                        .cache
+                        .protocol_versions_counter
+                        .read()
+                        .unwrap();
                     assert_eq!(
                         platform
                             .state
@@ -805,7 +836,6 @@ mod tests {
                     StrategyRandomness::SeedEntropy(8),
                 );
                 {
-                    let _drive_cache = platform.drive.cache.read().unwrap();
                     assert_eq!(
                         platform
                             .state
@@ -930,8 +960,6 @@ mod tests {
                 );
                 {
                     let platform = abci_app.platform;
-                    let drive_cache = platform.drive.cache.read().unwrap();
-                    let _counter = &drive_cache.protocol_versions_counter;
                     assert_eq!(
                         platform
                             .state
@@ -998,8 +1026,12 @@ mod tests {
                     StrategyRandomness::SeedEntropy(99),
                 );
                 {
-                    let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = &platform
+                        .drive
+                        .cache
+                        .protocol_versions_counter
+                        .read()
+                        .unwrap();
                     assert_eq!(
                         platform
                             .state
@@ -1109,8 +1141,12 @@ mod tests {
                     StrategyRandomness::SeedEntropy(40),
                 );
                 {
-                    let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = &platform
+                        .drive
+                        .cache
+                        .protocol_versions_counter
+                        .read()
+                        .unwrap();
                     assert_eq!(
                         (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
                         (Some(&172), Some(&24))
@@ -1174,8 +1210,12 @@ mod tests {
                     StrategyRandomness::SeedEntropy(40),
                 );
                 {
-                    let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = &platform
+                        .drive
+                        .cache
+                        .protocol_versions_counter
+                        .read()
+                        .unwrap();
                     assert_eq!(
                         (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
                         (Some(&23), Some(&2))
@@ -1301,8 +1341,12 @@ mod tests {
                 } = run_chain_for_strategy(&mut platform, 1400, strategy, config.clone(), 15);
                 {
                     let platform = abci_app.platform;
-                    let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = &platform
+                        .drive
+                        .cache
+                        .protocol_versions_counter
+                        .read()
+                        .unwrap();
 
                     assert_eq!(
                         platform
@@ -1405,8 +1449,12 @@ mod tests {
                     StrategyRandomness::SeedEntropy(7),
                 );
                 {
-                    let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = &platform
+                        .drive
+                        .cache
+                        .protocol_versions_counter
+                        .read()
+                        .unwrap();
                     assert_eq!(
                         platform
                             .state
