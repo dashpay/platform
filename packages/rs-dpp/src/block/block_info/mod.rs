@@ -44,20 +44,6 @@ impl BlockInfo {
         }
     }
 
-    /// Create default block with current time
-    pub fn default_with_current_time() -> BlockInfo {
-        let now = SystemTime::now();
-        let time_ms = now
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-
-        BlockInfo {
-            time_ms,
-            ..Default::default()
-        }
-    }
-
     /// Create default block with specified fee epoch
     pub fn default_with_epoch(epoch: Epoch) -> BlockInfo {
         BlockInfo {

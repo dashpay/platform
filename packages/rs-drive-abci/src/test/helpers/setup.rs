@@ -133,12 +133,6 @@ impl TempPlatform<MockCoreRPCLike> {
             )
             .expect("should create root tree successfully");
 
-        let block_info = BlockInfo::default_with_current_time();
-
-        let mut platform_state = self.platform.state.write().unwrap();
-        platform_state.set_genesis_block_info(Some(block_info));
-        drop(platform_state);
-
         self
     }
 
