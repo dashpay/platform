@@ -74,7 +74,7 @@ describe('getIdentityKeysFactory', () => {
     };
   });
 
-  it('should return identity nonce', async () => {
+  it('should return identity keys', async () => {
     const result = await getIdentityKeys(identityId, keyIds, limit, options);
 
     const { GetIdentityKeysRequestV0 } = GetIdentityKeysRequest;
@@ -82,8 +82,9 @@ describe('getIdentityKeysFactory', () => {
     request.setV0(
       new GetIdentityKeysRequestV0()
         .setIdentityId(identityId)
-        .setRequestType(new KeyRequestType().setSpecificKeys(new SpecificKeys(keyIds)))
-        .setLimit(new UInt32Value([100]))
+        .setRequestType(new KeyRequestType().setSpecificKeys(new SpecificKeys()
+          .setKeyIdsList(keyIds)))
+        .setLimit(new UInt32Value([limit]))
         .setProve(false),
     );
 
@@ -110,8 +111,9 @@ describe('getIdentityKeysFactory', () => {
     request.setV0(
       new GetIdentityKeysRequestV0()
         .setIdentityId(identityId)
-        .setRequestType(new KeyRequestType().setSpecificKeys(new SpecificKeys(keyIds)))
-        .setLimit(new UInt32Value([100]))
+        .setRequestType(new KeyRequestType().setSpecificKeys(new SpecificKeys()
+          .setKeyIdsList(keyIds)))
+        .setLimit(new UInt32Value([limit]))
         .setProve(true),
     );
 
@@ -148,7 +150,8 @@ describe('getIdentityKeysFactory', () => {
     request.setV0(
       new GetIdentityKeysRequestV0()
         .setIdentityId(identityId)
-        .setRequestType(new KeyRequestType().setSpecificKeys(new SpecificKeys(keyIds)))
+        .setRequestType(new KeyRequestType().setSpecificKeys(new SpecificKeys()
+          .setKeyIdsList(keyIds)))
         .setLimit(new UInt32Value([100]))
         .setProve(false),
     );
