@@ -37,7 +37,7 @@ pub mod metrics;
 pub mod test;
 
 /// Mimic of block execution for tests
-#[cfg(all(feature = "server", any(feature = "mocks", test)))]
+#[cfg(any(feature = "mocks", test))]
 pub mod mimic;
 /// Platform module
 pub mod platform_types;
