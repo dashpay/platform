@@ -40,9 +40,9 @@ rust_decimal_macros = "1.25.0"
 mockall = { version = "0.11", optional = true }
 prost = { version = "0.12", default-features = false }
 tracing = { version = "0.1.37", default-features = false, features = [] }
-clap = { version = "4.4.10", optional = true, features = ["derive"] }
+clap = { version = "4.4.10", features = ["derive"] }
 envy = { version = "0.4.2" }
-dotenvy = { version = "0.15.7", optional = true }
+dotenvy = { version = "0.15.7" }
 dapi-grpc = { path = "../dapi-grpc" }
 tracing-subscriber = { version = "0.3.16", default-features = false, features = [
   "env-filter",
@@ -104,8 +104,7 @@ integer-encoding = { version = "4.0.0" }
 
 [features]
 # TODO: Remove console for production
-default = ["server", "mocks", "console"]
-server = ["clap", "dotenvy"]
+default = ["mocks", "console"]
 mocks = ["mockall", "drive/fixtures-and-mocks"]
 console = ["console-subscriber", "tokio/tracing"]
 
