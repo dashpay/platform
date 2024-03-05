@@ -1121,6 +1121,16 @@ impl Strategy {
                     OperationType::ContractCreate(params, doc_type_count)
                         if !current_identities.is_empty() =>
                     {
+                        let contract_factory = match DataContractFactory::new(
+                            platform_version.protocol_version,
+                        ) {
+                            Ok(contract_factory) => contract_factory,
+                            Err(e) => {
+                                error!("Failed to get DataContractFactory while creating random contract: {e}");
+                                continue;
+                            }
+                        };
+
                         // Create `count` ContractCreate transitions and push to operations vec
                         for _ in 0..count {
                             // Get the contract owner_id from loaded_identity and loaded_identity nonce
@@ -1164,16 +1174,6 @@ impl Strategy {
                                     }
                                 }
                             }
-
-                            let contract_factory = match DataContractFactory::new(
-                                platform_version.protocol_version,
-                            ) {
-                                Ok(contract_factory) => contract_factory,
-                                Err(e) => {
-                                    error!("Failed to get DataContractFactory while creating random contract: {e}");
-                                    continue;
-                                }
-                            };
 
                             let created_data_contract = match contract_factory.create(
                                 owner_id,
