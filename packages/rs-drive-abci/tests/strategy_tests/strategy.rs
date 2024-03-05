@@ -34,7 +34,6 @@ use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use drive::query::DriveQuery;
-use drive_abci::abci::AbciApplication;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
@@ -59,6 +58,7 @@ use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
+use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 
 use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;
@@ -1129,7 +1129,7 @@ pub struct ValidatorVersionMigration {
 
 #[derive(Debug)]
 pub struct ChainExecutionOutcome<'a> {
-    pub abci_app: AbciApplication<'a, MockCoreRPCLike>,
+    pub abci_app: FullAbciApplication<'a, MockCoreRPCLike>,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
     pub proposers: Vec<MasternodeListItemWithUpdates>,

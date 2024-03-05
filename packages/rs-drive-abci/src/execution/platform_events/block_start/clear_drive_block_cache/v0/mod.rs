@@ -9,9 +9,11 @@ where
     /// the block data contract cache and the block platform versions cache.
     ///
     pub(super) fn clear_drive_block_cache_v0(&self) {
-        let mut drive_cache = self.drive.cache.write().unwrap();
+        self.drive.cache.data_contracts.clear_block_cache();
 
-        drive_cache.cached_contracts.clear_block_cache();
-        drive_cache.protocol_versions_counter.clear_block_cache()
+        let mut protocol_versions_counter =
+            self.drive.cache.protocol_versions_counter.write().unwrap();
+
+        protocol_versions_counter.clear_block_cache()
     }
 }

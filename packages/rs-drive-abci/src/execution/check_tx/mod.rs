@@ -9,6 +9,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
 use dpp::validation::ValidationResult;
+use dpp::version::PlatformVersion;
 
 mod v0;
 
@@ -88,9 +89,8 @@ where
         &self,
         raw_tx: &[u8],
         check_tx_level: CheckTxLevel,
+        platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
-        let state = self.state.read().expect("expected to get state");
-        let platform_version = state.current_platform_version()?;
         match platform_version.drive_abci.methods.engine.check_tx {
             0 => self.check_tx_v0(raw_tx, check_tx_level, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {

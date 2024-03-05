@@ -14,7 +14,7 @@ offline-testing = []
 
 [dependencies]
 backon = "0.4.1"
-dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
+dapi-grpc = { path = "../dapi-grpc" }
 futures = "0.3.28"
 http = "0.2.9"
 rand = { version = "0.8.5", features = ["small_rng"] }

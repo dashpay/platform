@@ -40,15 +40,20 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut block_execution_context = self.block_execution_context.write().unwrap();
+        let mut block_execution_context_guard = self.block_execution_context.write().unwrap();
 
-        let block_execution_context = block_execution_context.take().ok_or(Error::Execution(
-            ExecutionError::CorruptedCodeExecution("there should be a block execution context"),
-        ))?;
+        let block_execution_context =
+            block_execution_context_guard
+                .take()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "there should be a block execution context",
+                )))?;
 
         let mut state_cache = self.state.write().unwrap();
 
         *state_cache = block_execution_context.block_platform_state_owned();
+
+        drop(block_execution_context_guard);
 
         if let Some(next_validator_set_quorum_hash) =
             state_cache.take_next_validator_set_quorum_hash()

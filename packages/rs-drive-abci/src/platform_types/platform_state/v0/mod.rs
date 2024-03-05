@@ -360,7 +360,7 @@ pub trait PlatformStateV0Methods {
     fn genesis_block_info(&self) -> Option<&BlockInfo>;
 
     /// Returns the last committed block info if present or the genesis block info if not or default one
-    fn any_block_info(&self) -> &BlockInfo;
+    fn last_block_info(&self) -> &BlockInfo;
 
     /// Sets the last committed block info.
     fn set_last_committed_block_info(&mut self, info: Option<ExtendedBlockInfo>);
@@ -782,7 +782,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
         &mut self.hpmn_masternode_list
     }
 
-    fn any_block_info(&self) -> &BlockInfo {
+    fn last_block_info(&self) -> &BlockInfo {
         self.last_committed_block_info
             .as_ref()
             .map(|b| b.basic_info())
