@@ -29,7 +29,7 @@ pub struct Platform<C> {
     /// Drive
     pub drive: Drive,
     /// State
-    // We use a tokio::sync::RwLock because of it's writer priority which is essential so our
+    // We use a parking_lot::RwLock because of it's writer priority which is essential so our
     // readers in check_tx don't starve block finalization
     // Todo: Block finalization can still be delayed until we acquire the write lock. We might want
     //  to think of a custom approach where the writer is always placed at the front of the queue.
