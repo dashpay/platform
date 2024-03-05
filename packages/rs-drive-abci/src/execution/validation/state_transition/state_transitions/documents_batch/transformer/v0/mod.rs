@@ -103,6 +103,7 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
         execution_context: &mut StateTransitionExecutionContext,
     ) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction>, Error> {
         let owner_id = self.owner_id();
+        let platform_version = platform.state.current_platform_version()?;
         let mut transitions_by_contracts_and_types: BTreeMap<
             &Identifier,
             BTreeMap<&String, Vec<&DocumentTransition>>,
@@ -130,8 +131,6 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
                 }
             }
         }
-
-        let platform_version = platform.state.current_platform_version()?;
 
         let validation_result = transitions_by_contracts_and_types
             .iter()

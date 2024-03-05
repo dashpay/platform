@@ -11,7 +11,6 @@ use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
 use dpp::{dashcore, ProtocolError};
-use std::sync::{RwLock, RwLockReadGuard};
 
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::state_transitions_processing_result::{

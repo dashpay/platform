@@ -1,7 +1,6 @@
 use crate::block::epoch::{Epoch, EPOCH_0};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use std::time::SystemTime;
 
 pub const DEFAULT_BLOCK_INFO: BlockInfo = BlockInfo {
     time_ms: 0,

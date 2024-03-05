@@ -27,7 +27,6 @@ pub(in crate::execution) fn state_transition_to_execution_event_for_check_tx<'a,
     check_tx_level: CheckTxLevel,
 ) -> Result<ConsensusValidationResult<Option<ExecutionEvent<'a>>>, Error> {
     let platform_version = platform.state.current_platform_version()?;
-
     match platform_version
         .drive_abci
         .validation_and_processing

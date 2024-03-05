@@ -35,10 +35,11 @@ impl IdentityCreditWithdrawalStateTransitionStateValidationV0
         platform: &PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let platform_version = platform.state.current_platform_version()?;
         let maybe_existing_identity_balance = platform.drive.fetch_identity_balance(
             self.identity_id().to_buffer(),
             tx,
-            platform.state.current_platform_version()?,
+            platform_version,
         )?;
 
         let Some(existing_identity_balance) = maybe_existing_identity_balance else {
@@ -65,10 +66,18 @@ impl IdentityCreditWithdrawalStateTransitionStateValidationV0
         &self,
         platform: &PlatformRef<C>,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let last_block_time =
+            platform
+                .state
+                .last_committed_block_time_ms()
+                .ok_or(Error::Execution(ExecutionError::StateNotInitialized(
+                    "expected a last platform block during identity update validation",
+                )))?;
+
         Ok(ConsensusValidationResult::new_with_data(
             IdentityCreditWithdrawalTransitionAction::from_identity_credit_withdrawal(
                 self,
-                platform.state.any_block_info().time_ms,
+                last_block_time,
             )
             .into(),
         ))

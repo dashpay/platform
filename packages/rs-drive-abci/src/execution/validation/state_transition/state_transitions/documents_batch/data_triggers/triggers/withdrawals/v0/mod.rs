@@ -152,7 +152,6 @@ mod tests {
     use dpp::withdrawal::Pooling;
     use drive::drive::contract::DataContractFetchInfo;
     use crate::execution::types::state_transition_execution_context::v0::StateTransitionExecutionContextV0;
-    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
     #[test]
     fn should_throw_error_if_withdrawal_not_found() {

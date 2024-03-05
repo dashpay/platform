@@ -78,32 +78,35 @@ impl DocumentCreateTransitionActionStructureValidationV0 for DocumentCreateTrans
         // Validate timestamps against block time
         // we do validation here but not in validate state because it's a cheap validation
         // and validate state implements expensive validation only
-        let latest_block_time_ms = platform.state.any_block_info().time_ms;
+        let latest_block_time_ms = platform.state.last_committed_block_time_ms();
         let average_block_spacing_ms = platform.config.block_spacing_ms;
 
         // We do not need to perform these checks on genesis
-        let validation_result = check_created_inside_time_window(
-            self,
-            latest_block_time_ms,
-            average_block_spacing_ms,
-            platform_version,
-        )?;
-        if !validation_result.is_valid() {
-            return Ok(validation_result);
-        }
+        if let Some(latest_block_time_ms) = latest_block_time_ms {
+            let validation_result = check_created_inside_time_window(
+                self,
+                latest_block_time_ms,
+                average_block_spacing_ms,
+                platform_version,
+            )?;
+            if !validation_result.is_valid() {
+                return Ok(validation_result);
+            }
 
-        let validation_result = check_updated_inside_time_window(
-            self,
-            latest_block_time_ms,
-            average_block_spacing_ms,
-            platform_version,
-        )?;
+            let validation_result = check_updated_inside_time_window(
+                self,
+                latest_block_time_ms,
+                average_block_spacing_ms,
+                platform_version,
+            )?;
 
-        if !validation_result.is_valid() {
-            return Ok(validation_result);
+            if !validation_result.is_valid() {
+                return Ok(validation_result);
+            }
         }
 
         // Validate user defined properties
+
         data_contract
             .validate_document_properties(document_type_name, self.data().into(), platform_version)
             .map_err(Error::Protocol)

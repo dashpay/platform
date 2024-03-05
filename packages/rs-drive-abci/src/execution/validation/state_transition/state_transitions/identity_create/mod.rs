@@ -36,7 +36,6 @@ impl StateTransitionActionTransformerV0 for IdentityCreateTransition {
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
-
         match platform_version
             .drive_abci
             .validation_and_processing
@@ -85,7 +84,6 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
-
         match platform_version
             .drive_abci
             .validation_and_processing
