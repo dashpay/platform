@@ -28,7 +28,7 @@ const { contractId: dashpayContractId } = DashPayContract;
 
 const {
   contractId: featureFlagsContractId,
-  ownerId: featureFlagsOwnerId
+  ownerId: featureFlagsOwnerId,
 } = FeatureFlagsContract;
 const { contractId: masternodeRewardSharesContractId } = MasternodeRewardSharesContract;
 const { contractId: withdrawalsContractId } = WithdrawalsContract;
