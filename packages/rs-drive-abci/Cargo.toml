@@ -112,4 +112,4 @@ console = ["console-subscriber", "tokio/tracing"]
 [[bin]]
 name = "drive-abci"
 path = "src/main.rs"
-required-features = ["server"]
+required-features = ["console"]
