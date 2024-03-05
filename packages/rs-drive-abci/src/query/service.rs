@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::query::QueryValidationResult;
 use crate::rpc::core::DefaultCoreRPC;
+use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
@@ -54,7 +55,7 @@ impl QueryService {
     {
         let platform = Arc::clone(&self.platform);
 
-        let task = move || {
+        spawn_blocking_task_with_name_if_supported("query", move || {
             let Some(platform_version) = PlatformVersion::get_maybe_current() else {
                 return Err(Status::unavailable("platform is not initialized"));
             };
@@ -73,24 +74,10 @@ impl QueryService {
 
                 Err(query_error_into_status(error))
             }
-        };
-
-        // Spawn a blocking task with name if tokio_unstable is enabled
-
-        #[cfg(tokio_unstable)]
-        let thread = tokio::task::Builder::new()
-            .name("query")
-            .spawn_blocking(task)?;
-
-        // And we go without name otherwise
-
-        #[cfg(not(tokio_unstable))]
-        let thread = tokio::task::spawn_blocking(task)?;
-
-        thread
-            .instrument(tracing::trace_span!("query", endpoint_name))
-            .await
-            .map_err(|error| Status::internal(format!("join error: {}", error)))?
+        })?
+        .instrument(tracing::trace_span!("query", endpoint_name))
+        .await
+        .map_err(|error| Status::internal(format!("join error: {}", error)))?
     }
 }
 

@@ -3,10 +3,10 @@
 
 use crate::abci::app::CheckTxAbciApplication;
 use crate::abci::app::ConsensusAbciApplication;
-use drive_abci::config::PlatformConfig;
-use drive_abci::platform_types::platform::Platform;
-use drive_abci::query::QueryService;
-use drive_abci::rpc::core::DefaultCoreRPC;
+use crate::config::PlatformConfig;
+use crate::platform_types::platform::Platform;
+use crate::query::QueryService;
+use crate::rpc::core::DefaultCoreRPC;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;

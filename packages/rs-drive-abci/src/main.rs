@@ -2,17 +2,14 @@
 //!
 //! RS-Drive-ABCI server starts a single-threaded server and listens to connections from Tenderdash.
 
-mod server;
-
 use clap::{Parser, Subcommand};
-use drive_abci::abci;
 use drive_abci::config::{FromEnv, PlatformConfig};
 use drive_abci::core::wait_for_core_to_sync::v0::wait_for_core_to_sync_v0;
-use drive_abci::logging;
 use drive_abci::logging::{LogBuilder, LogConfig, LogDestination, Loggers};
 use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::DefaultCoreRPC;
+use drive_abci::{logging, server};
 use itertools::Itertools;
 use std::fs::remove_file;
 use std::net::SocketAddr;
@@ -23,7 +20,6 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
-use tracing::warn;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{registry, Layer, Registry};
@@ -363,7 +359,7 @@ fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
         }
     } else if let Err(e) = dotenvy::dotenv() {
         if e.not_found() {
-            warn!("cannot find any matching .env file");
+            tracing::warn!("cannot find any matching .env file");
         } else {
             panic!("cannot load config file: {}", e);
         }

@@ -3,6 +3,7 @@ use crate::abci::handler;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -81,29 +82,14 @@ where
             proto::CheckTxType::Recheck => "re_check_tx",
         };
 
-        let task = move || {
+        spawn_blocking_task_with_name_if_supported(thread_name, move || {
             let response =
                 handler::check_tx(&platform, proto_request).map_err(error_into_status)?;
 
             Ok(tonic::Response::new(response))
-        };
-
-        // Spawn a new thread to handle the check_tx request with name
-        // if tokio_unstable is enabled
-
-        #[cfg(tokio_unstable)]
-        let thread = tokio::task::Builder::new()
-            .name(thread_name)
-            .spawn_blocking(task)?;
-
-        // And without name otherwise
-
-        #[cfg(not(tokio_unstable))]
-        let thread = tokio::task::spawn_blocking(task)?;
-
-        thread
-            .await
-            .map_err(|error| tonic::Status::internal(format!("check tx panics: {}", error)))?
+        })?
+        .await
+        .map_err(|error| tonic::Status::internal(format!("check tx panics: {}", error)))?
     }
 }
 

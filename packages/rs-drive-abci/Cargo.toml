@@ -58,7 +58,6 @@ atty = { version = "0.2.14", optional = false }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "81d28aa0b15fc0844dfa7f7251f6949f6c6c405a", features = [
   "grpc-server",
 ] }
-thread-priority = "0.15.1"
 lazy_static = "1.4.0"
 itertools = { version = "0.10.5" }
 file-rotate = { version = "0.7.3" }
@@ -69,7 +68,7 @@ metrics = { version = "0.21" }
 metrics-exporter-prometheus = { version = "0.12" }
 url = { version = "2.3.1" }
 ureq = { "version" = "2.6.2" }
-tokio = { version = "1", features = [
+tokio = { version = "1.36", features = [
   "macros",
   "signal",
   "rt-multi-thread",
