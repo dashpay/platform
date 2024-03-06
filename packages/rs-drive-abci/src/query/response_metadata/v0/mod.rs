@@ -5,6 +5,7 @@ use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 
 impl<C> Platform<C> {
     pub(in crate::query) fn response_metadata_v0(&self) -> ResponseMetadata {
+        // TODO: We should pass state here
         let state = self.state.load();
 
         ResponseMetadata {

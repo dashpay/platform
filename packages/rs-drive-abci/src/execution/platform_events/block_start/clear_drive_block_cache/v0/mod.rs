@@ -12,7 +12,7 @@ where
         self.drive.cache.data_contracts.clear_block_cache();
 
         let mut protocol_versions_counter =
-            self.drive.cache.protocol_versions_counter.write().unwrap();
+            self.drive.cache.protocol_versions_counter.write();
 
         protocol_versions_counter.clear_block_cache()
     }

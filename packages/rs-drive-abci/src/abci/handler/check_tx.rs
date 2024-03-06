@@ -18,8 +18,8 @@ where
 
     let platform_state = platform.state.load();
     let platform_version = platform_state.current_platform_version()?;
-    drop(platform_state);
 
+    // TODO: We should pass state to check tx to do not load it again
     let proto::RequestCheckTx { tx, r#type } = request;
     match platform.check_tx(tx.as_slice(), r#type.try_into()?, platform_version) {
         Ok(validation_result) => {

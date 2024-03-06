@@ -45,9 +45,9 @@ where
         transaction: &Transaction,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
+        // TODO: Do not load multiple time
         let state = self.state.load();
         let platform_version = state.current_platform_version()?;
-        drop(state);
 
         let epoch_info = self.gather_epoch_info(&block_proposal, transaction, platform_version)?;
 

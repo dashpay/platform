@@ -58,6 +58,7 @@ impl<'a, C> TransactionalApplication<'a> for FullAbciApplication<'a, C> {
             .ok_or(Error::Execution(ExecutionError::NotInTransaction(
                 "trying to commit a transaction, but we are not in one",
             )))?;
+        // TODO: Accept platform version here
         let platform_state = self.platform.state.load();
         let platform_version = platform_state.current_platform_version()?;
         self.platform

@@ -21,10 +21,11 @@ where
         request: RequestInitChain,
         transaction: &Transaction,
     ) -> Result<ResponseInitChain, Error> {
+        // TODO: We call it twice for init chain
         let state = self.state.load();
         let platform_version = state.current_platform_version()?;
-        drop(state);
 
+        let platform_version = PlatformVersion::get(current_protocol_version)?;
         match platform_version.drive_abci.methods.engine.init_chain {
             0 => self.init_chain_v0(request, transaction, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {

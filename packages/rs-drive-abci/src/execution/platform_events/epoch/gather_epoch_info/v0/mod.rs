@@ -16,10 +16,10 @@ impl<C> Platform<C> {
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<EpochInfoV0, Error> {
+        // TODO: Where are we calling this
         // Start by getting information from the state
         let state = self.state.load();
         let last_block_time_ms = state.last_committed_block_time_ms();
-        drop(state);
 
         // Init block execution context
         let block_state_info = block_state_info::v0::BlockStateInfoV0::from_block_proposal(

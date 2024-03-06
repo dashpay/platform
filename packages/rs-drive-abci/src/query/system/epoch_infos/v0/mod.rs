@@ -26,6 +26,7 @@ impl<C> Platform<C> {
         }: GetEpochsInfoRequestV0,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetEpochsInfoResponseV0>, Error> {
+        // TODO: Make sure we aren't reading state twice
         let state = self.state.load();
 
         let start_epoch = start_epoch.unwrap_or_else(|| {
@@ -70,8 +71,6 @@ impl<C> Platform<C> {
                 round: state.last_committed_block_round(),
             };
 
-            drop(state);
-
             proof_response.grovedb_proof =
                 check_validation_result_with_data!(self.drive.prove_epochs_infos(
                     start_epoch as u16,
@@ -86,8 +85,6 @@ impl<C> Platform<C> {
                 metadata: Some(metadata),
             }
         } else {
-            drop(state);
-
             let result = check_validation_result_with_data!(self.drive.get_epochs_infos(
                 start_epoch as u16,
                 count as u16,

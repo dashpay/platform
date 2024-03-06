@@ -28,6 +28,8 @@ where
             protocol_version_in_consensus,
         );
 
+        // TODO: We set it twice for init chain
+
         app.platform().state.store(Arc::new(initial_platform_state));
     }
     drop(block_execution_context);

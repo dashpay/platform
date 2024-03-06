@@ -299,7 +299,7 @@ mod tests {
         let state = abci_app.platform.state.load();
 
         let protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
+
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
 
@@ -433,7 +433,7 @@ mod tests {
         let state = abci_app.platform.state.load();
 
         let protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
+
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
 
@@ -779,12 +779,7 @@ mod tests {
         // will be able to propose a block (and then get paid later on).
 
         let platform = abci_app.platform;
-        let counter = &platform
-            .drive
-            .cache
-            .protocol_versions_counter
-            .read()
-            .unwrap();
+        let counter = &platform.drive.cache.protocol_versions_counter.read();
         platform
             .drive
             .fetch_versions_with_counter(None, &platform_version.drive)
@@ -3593,7 +3588,7 @@ mod tests {
 
         let state = abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
+
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
         let known_root_hash = abci_app

@@ -433,8 +433,6 @@ mod tests {
 
         let protocol_version = platform_state.current_protocol_version_in_consensus();
 
-        drop(platform_state);
-
         let platform_version = PlatformVersion::get(protocol_version)
             .expect("expected to get current platform version");
 
@@ -534,8 +532,6 @@ mod tests {
         let platform_state = outcome.abci_app.platform.state.load();
 
         let protocol_version = platform_state.current_protocol_version_in_consensus();
-
-        drop(platform_state);
 
         let platform_version = PlatformVersion::get(protocol_version)
             .expect("expected to get current platform version");
@@ -639,8 +635,6 @@ mod tests {
         let protocol_version = platform_state.current_protocol_version_in_consensus();
 
         let current_epoch = platform_state.last_committed_block_epoch_ref().index;
-
-        drop(platform_state);
 
         let platform_version = PlatformVersion::get(protocol_version)
             .expect("expected to get current platform version");

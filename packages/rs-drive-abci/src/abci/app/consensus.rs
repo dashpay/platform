@@ -59,6 +59,8 @@ impl<'a, C> TransactionalApplication<'a> for ConsensusAbciApplication<'a, C> {
                 "trying to commit a transaction, but we are not in one",
             )))?;
 
+        // TODO: Accept platform version here to do not touch state
+
         let platform_state = self.platform.state.load();
         let platform_version = platform_state.current_platform_version()?;
         self.platform

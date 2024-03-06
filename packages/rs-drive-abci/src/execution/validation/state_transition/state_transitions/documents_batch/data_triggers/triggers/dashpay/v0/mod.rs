@@ -168,14 +168,14 @@ mod test {
             .set_initial_state_structure();
 
         let mut nonce_counter = BTreeMap::new();
-        let state_read_guard = platform.state.load();
+        let state = platform.state.load();
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_read_guard,
+            state: &state,
             config: &platform.config,
         };
-        let protocol_version = state_read_guard.current_protocol_version_in_consensus();
-        let platform_version = state_read_guard
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version = state
             .current_platform_version()
             .expect("should return a platform version");
 
@@ -183,7 +183,7 @@ mod test {
             None,
             0,
             None,
-            state_read_guard.current_protocol_version_in_consensus(),
+            state.current_protocol_version_in_consensus(),
         );
         contact_request_document.set(CORE_HEIGHT_CREATED_AT, platform_value!(10u32));
         let owner_id = &contact_request_document.owner_id();

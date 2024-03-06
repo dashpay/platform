@@ -30,6 +30,7 @@ where
     // propose one
     // This is done before all else
 
+    // TODO: Make sure we aren't loading state twice
     let state = app.platform().state.load();
 
     let last_committed_core_height = state.last_committed_core_height();
@@ -46,8 +47,6 @@ where
         }
         Err(_) => None,
     };
-
-    drop(state);
 
     // Filter out transactions exceeding max_block_size
     let mut transactions_exceeding_max_block_size = Vec::new();

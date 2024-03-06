@@ -102,11 +102,11 @@ where
         // TODO: We lock state for entire check tx execution that could lead to performance issues
         //  and writer starvation.
 
-        let state_read_guard = self.state.load();
+        let state = self.state.load();
 
         let platform_ref = PlatformRef {
             drive: &self.drive,
-            state: &state_read_guard,
+            state: &state,
             config: &self.config,
             core_rpc: &self.core_rpc,
         };
@@ -124,7 +124,7 @@ where
             if let Some(execution_event) = execution_event {
                 self.validate_fees_of_event(
                     execution_event,
-                    state_read_guard.last_block_info(),
+                    state.last_block_info(),
                     None,
                     platform_version,
                 )

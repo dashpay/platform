@@ -52,8 +52,8 @@ impl Drive {
                     data_contracts_global_cache_size,
                     data_contracts_block_cache_size,
                 ),
-                genesis_time_ms: RwLock::new(genesis_time_ms),
-                protocol_versions_counter: RwLock::new(ProtocolVersionsCache::new()),
+                genesis_time_ms: parking_lot::RwLock::new(genesis_time_ms),
+                protocol_versions_counter: parking_lot::RwLock::new(ProtocolVersionsCache::new()),
                 system_data_contracts: SystemDataContracts::load_genesis_system_contracts(
                     platform_version,
                 )?,

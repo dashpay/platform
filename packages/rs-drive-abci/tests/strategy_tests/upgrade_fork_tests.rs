@@ -1016,8 +1016,8 @@ mod tests {
                         .drive
                         .cache
                         .protocol_versions_counter
-                        .read()
-                        .unwrap();
+                        .read();
+                    let counter = &platform.drive.cache.protocol_versions_counter.read();
                     assert_eq!(
                         (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
                         (Some(&172), Some(&24))
@@ -1069,12 +1069,7 @@ mod tests {
                 );
                 let state = platform.state.load();
                 {
-                    let counter = &platform
-                        .drive
-                        .cache
-                        .protocol_versions_counter
-                        .read()
-                        .unwrap();
+                    let counter = &platform.drive.cache.protocol_versions_counter.read();
                     assert_eq!(
                         (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
                         (Some(&23), Some(&2))
@@ -1188,12 +1183,7 @@ mod tests {
                 let state = abci_app.platform.state.load();
                 {
                     let platform = abci_app.platform;
-                    let counter = &platform
-                        .drive
-                        .cache
-                        .protocol_versions_counter
-                        .read()
-                        .unwrap();
+                    let counter = &platform.drive.cache.protocol_versions_counter.read();
 
                     assert_eq!(
                         state
@@ -1281,12 +1271,7 @@ mod tests {
                 );
                 let state = platform.state.load();
                 {
-                    let counter = &platform
-                        .drive
-                        .cache
-                        .protocol_versions_counter
-                        .read()
-                        .unwrap();
+                    let counter = &platform.drive.cache.protocol_versions_counter.read();
                     assert_eq!(
                         state
                             .last_committed_block_info()
