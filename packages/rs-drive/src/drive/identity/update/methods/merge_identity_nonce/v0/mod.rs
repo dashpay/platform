@@ -13,7 +13,6 @@ use dpp::prelude::IdentityNonce;
 use dpp::version::PlatformVersion;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
-use crate::drive::identity::update::methods::merge_identity_nonce::MergeIdentityContractNonceResultToResult;
 use dpp::identity::identity_nonce::MergeIdentityNonceResult;
 use std::collections::HashMap;
 

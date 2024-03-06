@@ -7,7 +7,7 @@ use crate::state_transition_action::identity::identity_credit_transfer::v0::Iden
 use derive_more::From;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
-use dpp::prelude::{IdentityNonce, Revision};
+use dpp::prelude::IdentityNonce;
 
 /// action
 #[derive(Debug, Clone, From)]
