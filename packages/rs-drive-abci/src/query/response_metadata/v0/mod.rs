@@ -4,44 +4,34 @@ use crate::platform_types::platform_state::PlatformState;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 
 impl<C> Platform<C> {
-    pub(in crate::query) fn response_metadata_v0(&self) -> ResponseMetadata {
-        // TODO: We should pass state here
-        let state = self.state.load();
-
+    pub(in crate::query) fn response_metadata_v0(
+        &self,
+        platform_state: &PlatformState,
+    ) -> ResponseMetadata {
         ResponseMetadata {
-            height: state.last_committed_height(),
-            core_chain_locked_height: state.last_committed_core_height(),
-            epoch: state.last_committed_block_epoch().index as u32,
-            time_ms: state.last_committed_block_time_ms().unwrap_or_default(),
+            height: platform_state.last_committed_height(),
+            core_chain_locked_height: platform_state.last_committed_core_height(),
+            epoch: platform_state.last_committed_block_epoch().index as u32,
+            time_ms: platform_state
+                .last_committed_block_time_ms()
+                .unwrap_or_default(),
             chain_id: self.config.abci.chain_id.clone(),
-            protocol_version: state.current_protocol_version_in_consensus(),
+            protocol_version: platform_state.current_protocol_version_in_consensus(),
         }
     }
 
-    pub(in crate::query) fn response_metadata_and_proof_v0(
+    pub(in crate::query) fn response_proof_v0(
         &self,
+        platform_state: &PlatformState,
         proof: Vec<u8>,
-    ) -> (ResponseMetadata, Proof) {
-        let state = self.state.load();
-
-        let metadata = ResponseMetadata {
-            height: state.last_committed_height(),
-            core_chain_locked_height: state.last_committed_core_height(),
-            epoch: state.last_committed_block_epoch().index as u32,
-            time_ms: state.last_committed_block_time_ms().unwrap_or_default(),
-            chain_id: self.config.abci.chain_id.clone(),
-            protocol_version: state.current_protocol_version_in_consensus(),
-        };
-
-        let proof = Proof {
+    ) -> Proof {
+        Proof {
             grovedb_proof: proof,
-            quorum_hash: state.last_committed_quorum_hash().to_vec(),
+            quorum_hash: platform_state.last_committed_quorum_hash().to_vec(),
             quorum_type: self.config.validator_set_quorum_type() as u32,
-            block_id_hash: state.last_committed_block_id_hash().to_vec(),
-            signature: state.last_committed_block_signature().to_vec(),
-            round: state.last_committed_block_round(),
-        };
-
-        (metadata, proof)
+            block_id_hash: platform_state.last_committed_block_id_hash().to_vec(),
+            signature: platform_state.last_committed_block_signature().to_vec(),
+            round: platform_state.last_committed_block_round(),
+        }
     }
 }

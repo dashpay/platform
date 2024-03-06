@@ -12,10 +12,11 @@ use dpp::version::PlatformVersion;
 impl<C> Platform<C> {
     pub(in crate::query) fn response_metadata(
         &self,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<ResponseMetadata, Error> {
         match platform_version.drive_abci.query.response_metadata {
-            0 => Ok(self.response_metadata_v0()),
+            0 => Ok(self.response_metadata_v0(platform_state)),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "response_metadata".to_string(),
                 known_versions: vec![0],

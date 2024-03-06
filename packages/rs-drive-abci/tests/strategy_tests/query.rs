@@ -202,6 +202,8 @@ impl QueryStrategy {
     ) {
         let events = frequency.events_if_hit(rng);
 
+        let platform_state = abci_app.platform.state.load();
+
         for _i in 0..events {
             let identity_count = rng.gen_range(1..10);
             let chosen_identities = current_identities.choose_multiple(rng, identity_count);
@@ -242,7 +244,7 @@ impl QueryStrategy {
             };
             let query_validation_result = abci_app
                 .platform
-                .query_identities_by_public_key_hashes(request, platform_version)
+                .query_identities_by_public_key_hashes(request, &platform_state, platform_version)
                 .expect("expected to run query");
 
             assert!(
@@ -439,7 +441,7 @@ mod tests {
         let validation_result = outcome
             .abci_app
             .platform
-            .query_epoch_infos(request, platform_version)
+            .query_epoch_infos(request, &platform_state, platform_version)
             .expect("expected query to succeed");
 
         let response = validation_result.into_data().expect("expected data");
@@ -539,7 +541,7 @@ mod tests {
         let validation_result = outcome
             .abci_app
             .platform
-            .query_epoch_infos(request, platform_version)
+            .query_epoch_infos(request, &platform_state, platform_version)
             .expect("expected query to succeed");
 
         let response = validation_result.into_data().expect("expected data");
@@ -642,7 +644,7 @@ mod tests {
         let validation_result = outcome
             .abci_app
             .platform
-            .query_epoch_infos(request, platform_version)
+            .query_epoch_infos(request, &platform_state, platform_version)
             .expect("expected query to succeed");
 
         let response = validation_result.data.expect("expected data");
@@ -688,7 +690,7 @@ mod tests {
         let validation_result = outcome
             .abci_app
             .platform
-            .query_epoch_infos(request, platform_version)
+            .query_epoch_infos(request, &platform_state, platform_version)
             .expect("expected query to succeed");
 
         let response = validation_result.data.expect("expected data");

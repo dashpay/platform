@@ -242,8 +242,8 @@ mod test {
 
         let mut nonce_counter = BTreeMap::new();
 
-        let platform_state = platform.state.load_full();
-        let mut platform_state = (*platform_state).clone();
+        let platform_state = platform.state.load();
+        let mut platform_state = (**platform_state).clone();
 
         platform_state.set_last_committed_block_info(Some(
             ExtendedBlockInfoV0 {
@@ -360,8 +360,8 @@ mod test {
 
         let mut nonce_counter = BTreeMap::new();
 
-        let platform_state = platform.state.load_full();
-        let mut platform_state = (*platform_state).clone();
+        let platform_state = platform.state.load();
+        let mut platform_state = (**platform_state).clone();
 
         platform_state.set_last_committed_block_info(Some(
             ExtendedBlockInfoV0 {

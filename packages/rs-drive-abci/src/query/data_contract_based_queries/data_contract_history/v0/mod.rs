@@ -10,6 +10,7 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::{check_validation_result_with_data, ProtocolError};
 use dapi_grpc::platform::v0::get_data_contract_history_response::get_data_contract_history_response_v0::DataContractHistoryEntry;
+use crate::platform_types::platform_state::PlatformState;
 
 impl<C> Platform<C> {
     pub(super) fn query_data_contract_history_v0(
@@ -21,6 +22,7 @@ impl<C> Platform<C> {
             start_at_ms,
             prove,
         }: GetDataContractHistoryRequestV0,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetDataContractHistoryResponseV0>, Error> {
         let contract_id: Identifier =
@@ -54,11 +56,11 @@ impl<C> Platform<C> {
                 platform_version,
             )?;
 
-            let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
-
             GetDataContractHistoryResponseV0 {
-                result: Some(get_data_contract_history_response_v0::Result::Proof(proof)),
-                metadata: Some(metadata),
+                result: Some(get_data_contract_history_response_v0::Result::Proof(
+                    self.response_proof_v0(platform_state, proof),
+                )),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
             let contracts = self.drive.fetch_contract_with_history(
@@ -95,7 +97,7 @@ impl<C> Platform<C> {
                         },
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0()),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         };
 
@@ -110,10 +112,6 @@ mod tests {
     use crate::query::tests::{assert_invalid_identifier, setup_platform};
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
-    use dapi_grpc::platform::v0::{
-        get_data_contract_history_response, GetDataContractHistoryRequest,
-        GetDataContractHistoryResponse,
-    };
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::config::v0::DataContractConfigSettersV0;
@@ -124,6 +122,7 @@ mod tests {
     use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use drive::drive::Drive;
+    use std::sync::Arc;
 
     fn default_request_v0() -> GetDataContractHistoryRequestV0 {
         GetDataContractHistoryRequestV0 {
@@ -214,27 +213,33 @@ mod tests {
         data_contract
     }
 
-    struct TestData {
+    struct TestData<'a> {
         platform: TempPlatform<MockCoreRPCLike>,
         original_data_contract: DataContract,
+        version: &'a PlatformVersion,
+        state: Arc<PlatformState>,
     }
 
-    fn set_up_test() -> TestData {
+    fn set_up_test<'a>() -> TestData<'a> {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
         let original_data_contract = set_up_history(&platform);
 
+        let platform_state = platform.platform.state.load_full();
+
         TestData {
             platform,
             original_data_contract,
+            version: PlatformVersion::latest(),
+            state: platform_state,
         }
     }
 
     #[test]
     fn test_invalid_data_contract_id() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetDataContractHistoryRequestV0 {
             id: vec![0; 8],
@@ -245,7 +250,7 @@ mod tests {
         };
 
         let result = platform
-            .query_data_contract_history_v0(request, version)
+            .query_data_contract_history_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert_invalid_identifier(result);
@@ -253,7 +258,7 @@ mod tests {
 
     #[test]
     fn test_invalid_limit_overflow() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetDataContractHistoryRequestV0 {
             id: vec![0; 32],
@@ -264,7 +269,7 @@ mod tests {
         };
 
         let result = platform
-            .query_data_contract_history_v0(request, version)
+            .query_data_contract_history_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -275,7 +280,7 @@ mod tests {
 
     #[test]
     fn test_invalid_offset_overflow() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetDataContractHistoryRequestV0 {
             id: vec![0; 32],
@@ -286,7 +291,7 @@ mod tests {
         };
 
         let result = platform
-            .query_data_contract_history_v0(request, version)
+            .query_data_contract_history_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(
@@ -296,7 +301,7 @@ mod tests {
 
     #[test]
     fn test_data_contract_not_found() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let id = vec![0; 32];
 
@@ -309,7 +314,7 @@ mod tests {
         };
 
         let result = platform
-            .query_data_contract_history_v0(request, version)
+            .query_data_contract_history_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -320,11 +325,11 @@ mod tests {
 
     #[test]
     pub fn should_return_contract_history_with_no_errors_if_parameters_are_valid() {
-        let platform_version = PlatformVersion::latest();
-
         let TestData {
             platform,
             original_data_contract,
+            version,
+            state,
         } = set_up_test();
 
         let request = GetDataContractHistoryRequestV0 {
@@ -333,7 +338,7 @@ mod tests {
         };
 
         let result = platform
-            .query_data_contract_history_v0(request, platform_version)
+            .query_data_contract_history_v0(request, &state, version)
             .expect("To return result");
 
         let ValidationResult { errors, data } = result;
@@ -365,7 +370,7 @@ mod tests {
         assert_eq!(first_entry.date, 1000);
         let first_entry_data_contract = first_entry.value;
         let first_data_contract_update =
-            DataContract::versioned_deserialize(&first_entry_data_contract, true, platform_version)
+            DataContract::versioned_deserialize(&first_entry_data_contract, true, version)
                 .expect("To decode data contract");
         assert_eq!(first_data_contract_update, original_data_contract);
 
@@ -373,12 +378,9 @@ mod tests {
 
         let second_entry_data_contract = second_entry.value;
 
-        let second_data_contract_update = DataContract::versioned_deserialize(
-            &second_entry_data_contract,
-            true,
-            platform_version,
-        )
-        .expect("To decode data contract");
+        let second_data_contract_update =
+            DataContract::versioned_deserialize(&second_entry_data_contract, true, version)
+                .expect("To decode data contract");
 
         let updated_doc = second_data_contract_update
             .document_type_for_name("niceDocument")
@@ -392,10 +394,11 @@ mod tests {
 
     #[test]
     pub fn should_return_contract_history_proofs_with_no_errors_if_parameters_are_valid() {
-        let platform_version = PlatformVersion::latest();
         let TestData {
             platform,
             original_data_contract,
+            version,
+            state,
         } = set_up_test();
 
         let request_v0 = GetDataContractHistoryRequestV0 {
@@ -407,7 +410,7 @@ mod tests {
         let start_at_ms = request_v0.start_at_ms;
 
         let result = platform
-            .query_data_contract_history_v0(request_v0, platform_version)
+            .query_data_contract_history_v0(request_v0, &state, version)
             .expect("To return result");
 
         let ValidationResult { errors, data } = result;
@@ -434,7 +437,7 @@ mod tests {
             start_at_ms,
             Some(10),
             Some(0),
-            platform_version,
+            version,
         )
         .expect("To verify contract history");
 
@@ -463,7 +466,7 @@ mod tests {
 
     #[test]
     fn test_data_contract_history_absence_proof() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetDataContractHistoryRequestV0 {
             id: vec![0; 32],
@@ -474,7 +477,7 @@ mod tests {
         };
 
         let result = platform
-            .query_data_contract_history_v0(request, version)
+            .query_data_contract_history_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
