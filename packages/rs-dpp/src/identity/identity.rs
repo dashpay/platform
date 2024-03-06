@@ -2,17 +2,22 @@ use crate::identity::v0::IdentityV0;
 use crate::identity::{IdentityPublicKey, KeyID};
 use crate::prelude::Revision;
 
+#[cfg(feature = "identity-hashing")]
 use crate::serialization::PlatformSerializable;
+#[cfg(feature = "identity-hashing")]
 use crate::util::hash;
 use crate::version::PlatformVersion;
 
 use crate::ProtocolError;
+#[cfg(feature = "identity-serialization")]
 use bincode::{Decode, Encode};
 use derive_more::From;
+#[cfg(feature = "identity-serialization")]
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 
 use crate::fee::Credits;
+#[cfg(feature = "identity-serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 

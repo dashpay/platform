@@ -9,6 +9,7 @@ mod value_conversion;
 mod version;
 
 use platform_value::BinaryData;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use bincode::{Decode, Encode};
