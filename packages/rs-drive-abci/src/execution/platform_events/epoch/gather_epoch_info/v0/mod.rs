@@ -18,7 +18,6 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<EpochInfoV0, Error> {
-        // TODO: Where are we calling this
         // Start by getting information from the state
         let last_block_time_ms = platform_state.last_committed_block_time_ms();
 
