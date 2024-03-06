@@ -1347,7 +1347,6 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "mockall",
- "parking_lot",
  "platform-version",
  "prost 0.12.3",
  "rand",
