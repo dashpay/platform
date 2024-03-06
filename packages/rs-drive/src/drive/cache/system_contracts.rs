@@ -2,7 +2,6 @@ use crate::error::Error;
 use dpp::data_contract::DataContract;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use platform_version::version::PlatformVersion;
-use std::sync::{RwLock, RwLockReadGuard};
 
 /// System contracts
 pub struct SystemDataContracts {
