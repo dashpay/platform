@@ -8,7 +8,7 @@ use derive_more::From;
 use dpp::document::Document;
 
 use dpp::platform_value::Identifier;
-use dpp::prelude::{IdentityNonce, Revision};
+use dpp::prelude::IdentityNonce;
 
 /// action
 #[derive(Debug, Clone, From)]
