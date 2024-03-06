@@ -30,6 +30,10 @@ pub struct Platform<C> {
     /// Drive
     pub drive: Drive,
     /// State
+    // We use ArcSwap that provide very fast and consistent reads
+    // and atomic write (swap). This is important as we want read state
+    // for query and check tx and we don't want to block affect the
+    // state update on finalize block, and vise versa.
     pub state: ArcSwap<PlatformState>,
     /// Configuration
     pub config: PlatformConfig,
