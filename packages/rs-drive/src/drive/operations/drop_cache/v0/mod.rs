@@ -1,4 +1,4 @@
-use crate::drive::cache::{ProtocolVersionsCache};
+use crate::drive::cache::ProtocolVersionsCache;
 use crate::drive::Drive;
 
 impl Drive {
