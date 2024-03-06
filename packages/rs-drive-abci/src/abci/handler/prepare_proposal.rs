@@ -195,7 +195,7 @@ where
     };
 
     let mut block_execution_context_ref = app.block_execution_context().borrow_mut();
-    let mut block_execution_context = block_execution_context_ref
+    let block_execution_context = block_execution_context_ref
         .as_mut()
         .expect("expected that a block execution context was set");
 
