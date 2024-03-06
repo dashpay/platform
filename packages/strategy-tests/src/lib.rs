@@ -1118,7 +1118,7 @@ impl Strategy {
                             operations.push(state_transition);
                         }
                     }
-                    OperationType::ContractCreate(params, doc_type_count)
+                    OperationType::ContractCreate(params, doc_type_range)
                         if !current_identities.is_empty() =>
                     {
                         let contract_factory = match DataContractFactory::new(
@@ -1147,8 +1147,7 @@ impl Strategy {
                             );
 
                             // Create `doc_type_count` doc types
-                            let mut doc_types = Value::Map(Vec::new());
-                            for _ in doc_type_count.clone() {
+                            let doc_types = Value::Map(doc_type_range.clone().filter_map(|_| {
                                 match DocumentTypeV0::random_document_type(
                                     params.clone(),
                                     contract_id,
@@ -1160,20 +1159,14 @@ impl Strategy {
                                         let name = doc_type_clone.remove("title").expect(
                                             "Expected to get a doc type title in ContractCreate",
                                         );
-                                        if let Value::Map(ref mut map) = doc_types {
-                                            map.push((
-                                                Value::Text(name.to_string()),
-                                                doc_type_clone,
-                                            ));
-                                        } else {
-                                            error!("doc_types is not a Value::Map as expected");
-                                        }
+                                        Some((Value::Text(name.to_string()), doc_type_clone))
                                     }
                                     Err(e) => {
-                                        error!("Error generating random document type: {:?}", e)
+                                        error!("Error generating random document type: {:?}", e);
+                                        None
                                     }
                                 }
-                            }
+                            }).collect());
 
                             let created_data_contract = match contract_factory.create(
                                 owner_id,
