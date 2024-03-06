@@ -107,7 +107,7 @@ impl Drive {
     where
         I: IntoIterator<Item = [u8; 32]>,
     {
-        let version_counter = &mut self.cache.protocol_versions_counter.write().unwrap();
+        let version_counter = &mut self.cache.protocol_versions_counter.write();
 
         version_counter.load_if_needed(self, transaction, drive_version)?;
 

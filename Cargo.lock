@@ -989,7 +989,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "dapi-grpc-macros",
  "futures-core",
@@ -1005,7 +1005,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc-macros"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "dapi-grpc",
  "heck",
@@ -1111,7 +1111,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1121,7 +1121,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1214,7 +1214,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "dpns-contract"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1224,7 +1224,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1276,7 +1276,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -1299,6 +1299,7 @@ dependencies = [
  "itertools 0.11.0",
  "moka",
  "nohash-hasher",
+ "parking_lot",
  "platform-version",
  "rand",
  "serde",
@@ -1311,7 +1312,7 @@ dependencies = [
 
 [[package]]
 name = "drive-abci"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "async-trait",
  "atty",
@@ -1338,6 +1339,7 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "mockall",
+ "parking_lot",
  "platform-version",
  "prost 0.12.3",
  "rand",
@@ -1365,7 +1367,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "dapi-grpc",
  "dpp",
@@ -1565,7 +1567,7 @@ checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 
 [[package]]
 name = "feature-flags-contract"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2429,7 +2431,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2906,7 +2908,7 @@ checksum = "2900ede94e305130c13ddd391e0ab7cbaeb783945ae07a279c268cb05109c6cb"
 
 [[package]]
 name = "platform-serialization"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "platform-version",
@@ -2914,7 +2916,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2924,7 +2926,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "base64 0.13.1",
  "bincode 2.0.0-rc.3",
@@ -2945,7 +2947,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value-convertible"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "quote",
  "syn 2.0.48",
@@ -2953,14 +2955,14 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "platform-versioning"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3502,7 +3504,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "backon",
  "chrono",
@@ -3519,7 +3521,7 @@ dependencies = [
 
 [[package]]
 name = "rs-sdk"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -4006,7 +4008,7 @@ checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 
 [[package]]
 name = "simple-signer"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -4097,7 +4099,7 @@ dependencies = [
 
 [[package]]
 name = "strategy-tests"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dpp",
@@ -5019,7 +5021,7 @@ checksum = "ed9d5b4305409d1fc9482fee2d7f9bcbf24b3972bf59817ef757e23982242a93"
 
 [[package]]
 name = "wasm-dpp"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5261,7 +5263,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 dependencies = [
  "num_enum",
  "platform-value",

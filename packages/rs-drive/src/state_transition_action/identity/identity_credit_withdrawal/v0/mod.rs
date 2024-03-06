@@ -2,7 +2,7 @@ mod transformer;
 
 use dpp::document::Document;
 use dpp::identifier::Identifier;
-use dpp::prelude::{IdentityNonce, Revision};
+use dpp::prelude::IdentityNonce;
 
 use serde::{Deserialize, Serialize};
 

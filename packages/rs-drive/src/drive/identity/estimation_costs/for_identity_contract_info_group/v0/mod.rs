@@ -3,7 +3,7 @@ use crate::drive::Drive;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::ApproximateElements;
 use grovedb::EstimatedLayerInformation;
-use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
+use grovedb::EstimatedLayerSizes::Mix;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 

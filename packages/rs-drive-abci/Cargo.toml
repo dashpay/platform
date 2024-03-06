@@ -1,6 +1,6 @@
 [package]
 name = "drive-abci"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -29,6 +29,7 @@ drive = { path = "../rs-drive", default-features = false, features = [
 thiserror = "1.0.30"
 rand = "0.8.5"
 tempfile = "3.3.0"
+parking_lot = "0.12.1"
 hex = "0.4.3"
 indexmap = { version = "1.9.3", features = ["serde"] }
 sha2 = "0.10.6"

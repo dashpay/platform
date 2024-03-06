@@ -187,7 +187,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let platform_read_guard = platform.state.read().unwrap();
+            let platform_read_guard = platform.state.read();
             let platform_version = platform_read_guard
                 .current_platform_version()
                 .expect("platform_version");

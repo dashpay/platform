@@ -1,4 +1,4 @@
-use crate::drive::identity::{identity_path, identity_path_vec, IdentityRootStructure};
+use crate::drive::identity::identity_path;
 use crate::drive::Drive;
 
 use crate::error::Error;
@@ -13,7 +13,6 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use crate::drive::identity::IdentityRootStructure::IdentityTreeNonce;
 use crate::drive::object_size_info::PathKeyElementInfo;
-use crate::error::identity::IdentityError;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::identity_nonce::MergeIdentityNonceResult::{
     MergeIdentityNonceSuccess, NonceAlreadyPresentAtTip, NonceAlreadyPresentInPast,
@@ -21,8 +20,7 @@ use dpp::identity::identity_nonce::MergeIdentityNonceResult::{
 };
 use dpp::identity::identity_nonce::{
     MergeIdentityNonceResult, IDENTITY_NONCE_VALUE_FILTER, IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES,
-    MAX_MISSING_IDENTITY_REVISIONS, MISSING_IDENTITY_REVISIONS_FILTER,
-    MISSING_IDENTITY_REVISIONS_MAX_BYTES,
+    MISSING_IDENTITY_REVISIONS_FILTER, MISSING_IDENTITY_REVISIONS_MAX_BYTES,
 };
 use std::collections::HashMap;
 
