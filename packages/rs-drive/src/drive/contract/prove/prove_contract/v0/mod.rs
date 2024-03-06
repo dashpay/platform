@@ -1,7 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 
-use crate::drive::contract::paths::{contract_root_path, contract_root_path_vec};
+use crate::drive::contract::paths::contract_root_path;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 

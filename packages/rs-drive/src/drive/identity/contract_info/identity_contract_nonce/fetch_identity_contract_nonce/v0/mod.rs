@@ -7,7 +7,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
-use dpp::prelude::{IdentityNonce, Revision};
+use dpp::prelude::{IdentityNonce};
 
 use crate::drive::identity::contract_info::ContractInfoStructure::IdentityContractNonceKey;
 use dpp::version::PlatformVersion;

@@ -6,7 +6,7 @@ use crate::drive::object_size_info::{PathKeyElementInfo, PathKeyInfo};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
@@ -17,7 +17,7 @@ use dpp::identity::identity_nonce::{IDENTITY_NONCE_VALUE_FILTER, IDENTITY_NONCE_
 use dpp::prelude::IdentityNonce;
 use crate::drive::identity::contract_info::identity_contract_nonce::merge_identity_contract_nonce::MergeIdentityNonceResult;
 use crate::drive::identity::contract_info::identity_contract_nonce::merge_identity_contract_nonce::MergeIdentityNonceResult::{MergeIdentityNonceSuccess, NonceAlreadyPresentAtTip, NonceAlreadyPresentInPast, NonceTooFarInFuture, NonceTooFarInPast};
-use crate::error::identity::IdentityError;
+
 
 impl Drive {
     pub(in crate::drive::identity::contract_info) fn merge_identity_contract_nonce_v0(
@@ -157,7 +157,7 @@ impl Drive {
             )?;
         }
 
-        let (existing_nonce, fees) = if previous_nonce_is_sure_to_not_exist {
+        let (existing_nonce, _fees) = if previous_nonce_is_sure_to_not_exist {
             (None, FeeResult::default())
         } else {
             self.fetch_identity_contract_nonce_with_fees(
