@@ -693,7 +693,6 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
         },
         query: DriveAbciQueryVersions {
             response_metadata: 0,
-            base_query_structure: 0,
             proofs_query: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,

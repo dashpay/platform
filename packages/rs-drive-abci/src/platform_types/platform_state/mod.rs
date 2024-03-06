@@ -35,7 +35,7 @@ pub enum PlatformState {
 
 /// Platform state
 #[derive(Clone, Debug, Encode, Decode, From)]
-enum PlatformStateForSaving {
+pub(crate) enum PlatformStateForSaving {
     /// Version 0
     V0(PlatformStateForSavingV0),
 }
@@ -337,9 +337,9 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn any_block_info(&self) -> &BlockInfo {
+    fn last_block_info(&self) -> &BlockInfo {
         match self {
-            PlatformState::V0(v0) => v0.any_block_info(),
+            PlatformState::V0(v0) => v0.last_block_info(),
         }
     }
 

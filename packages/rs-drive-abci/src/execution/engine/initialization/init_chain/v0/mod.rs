@@ -44,7 +44,7 @@ where
             platform_version,
         )?;
 
-        let mut state_guard = self.state.write().unwrap();
+        let mut state_guard = self.state.write();
 
         let genesis_block_info = BlockInfo {
             height: request.initial_height,

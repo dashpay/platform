@@ -281,12 +281,10 @@ impl Strategy {
     pub fn used_contract_ids(&self) -> BTreeSet<Identifier> {
         self.operations
             .iter()
-            .filter_map(|operation| {
-                match &operation.op_type {
-                    OperationType::Document(document) => Some(document.contract.id()),
-                    OperationType::ContractUpdate(op) => Some(op.contract.id()),
-                    _ => None,
-                }
+            .filter_map(|operation| match &operation.op_type {
+                OperationType::Document(document) => Some(document.contract.id()),
+                OperationType::ContractUpdate(op) => Some(op.contract.id()),
+                _ => None,
             })
             .collect()
     }

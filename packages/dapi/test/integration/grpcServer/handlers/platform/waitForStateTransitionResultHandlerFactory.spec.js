@@ -194,7 +194,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     );
 
     driveClientMock = {
-      fetchProofs: this.sinon.stub().resolves(response.serializeBinary()),
+      getProofs: this.sinon.stub().resolves(response),
     };
 
     blockchainListener = new BlockchainListener(tenderDashWsClientMock);
@@ -298,7 +298,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
         .setIdentitiesList(identitiesList),
     );
 
-    expect(driveClientMock.fetchProofs).to.be.calledOnceWithExactly(getProofsRequest);
+    expect(driveClientMock.getProofs).to.be.calledOnceWithExactly(getProofsRequest);
   });
 
   it('should wait for state transition and return result with error', (done) => {

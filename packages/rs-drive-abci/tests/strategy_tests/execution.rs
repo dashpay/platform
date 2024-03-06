@@ -24,7 +24,7 @@ use dpp::bls_signatures::PrivateKey;
 use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};
-use drive_abci::abci::AbciApplication;
+use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
@@ -676,7 +676,8 @@ pub(crate) fn create_chain_for_strategy(
     config: PlatformConfig,
     rng: StdRng,
 ) -> ChainExecutionOutcome {
-    let abci_application = AbciApplication::new(platform).expect("expected new abci application");
+    let abci_application = FullAbciApplication::new(platform);
+
     let seed = strategy
         .failure_testing
         .as_ref()
@@ -695,7 +696,7 @@ pub(crate) fn create_chain_for_strategy(
 }
 
 pub(crate) fn start_chain_for_strategy(
-    abci_application: AbciApplication<MockCoreRPCLike>,
+    abci_application: FullAbciApplication<MockCoreRPCLike>,
     block_count: u64,
     proposers_with_updates: Vec<MasternodeListItemWithUpdates>,
     quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
@@ -757,7 +758,6 @@ pub(crate) fn start_chain_for_strategy(
         .platform
         .state
         .read()
-        .unwrap()
         .current_validator_set_quorum_hash();
 
     continue_chain_for_strategy(
@@ -782,7 +782,7 @@ pub(crate) fn start_chain_for_strategy(
 }
 
 pub(crate) fn continue_chain_for_strategy(
-    abci_app: AbciApplication<MockCoreRPCLike>,
+    abci_app: FullAbciApplication<MockCoreRPCLike>,
     chain_execution_parameters: ChainExecutionParameters,
     mut strategy: NetworkStrategy,
     config: PlatformConfig,
@@ -840,7 +840,7 @@ pub(crate) fn continue_chain_for_strategy(
     let mut state_transition_results_per_block = BTreeMap::new();
 
     for block_height in block_start..(block_start + block_count) {
-        let state = platform.state.read().expect("lock is poisoned");
+        let state = platform.state.read();
         let epoch_info = EpochInfoV0::calculate(
             first_block_time,
             current_time_ms,
@@ -976,7 +976,7 @@ pub(crate) fn continue_chain_for_strategy(
             continue;
         }
 
-        let platform_state = platform.state.read().expect("lock is poisoned");
+        let platform_state = platform.state.read();
 
         let platform_version = platform_state.current_platform_version().unwrap();
 
@@ -1005,7 +1005,6 @@ pub(crate) fn continue_chain_for_strategy(
                 &abci_app,
                 &root_app_hash,
                 &state_transaction_results,
-                &block_info,
                 &expected_validation_errors,
                 platform_version,
             );
@@ -1067,7 +1066,6 @@ pub(crate) fn continue_chain_for_strategy(
         platform
             .state
             .read()
-            .expect("lock is poisoned")
             .last_committed_block_info()
             .as_ref()
             .unwrap()

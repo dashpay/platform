@@ -296,7 +296,7 @@ mod tests {
             .unwrap()
             .expect("expected root hash");
 
-        let state = abci_app.platform.state.read().unwrap();
+        let state = abci_app.platform.state.read();
 
         let protocol_version = state.current_protocol_version_in_consensus();
         drop(state);
@@ -330,7 +330,6 @@ mod tests {
             .platform
             .state
             .read()
-            .unwrap()
             .last_committed_block_info()
             .as_ref()
             .unwrap()
@@ -432,7 +431,7 @@ mod tests {
             .unwrap()
             .expect("expected root hash");
 
-        let state = abci_app.platform.state.read().unwrap();
+        let state = abci_app.platform.state.read();
 
         let protocol_version = state.current_protocol_version_in_consensus();
         drop(state);
@@ -466,7 +465,6 @@ mod tests {
             .platform
             .state
             .read()
-            .unwrap()
             .last_committed_block_info()
             .as_ref()
             .unwrap()
@@ -783,8 +781,7 @@ mod tests {
         // will be able to propose a block (and then get paid later on).
 
         let platform = abci_app.platform;
-        let drive_cache = platform.drive.cache.read().unwrap();
-        let counter = &drive_cache.protocol_versions_counter;
+        let counter = &platform.drive.cache.protocol_versions_counter.read();
         platform
             .drive
             .fetch_versions_with_counter(None, &platform_version.drive)
@@ -794,7 +791,6 @@ mod tests {
             platform
                 .state
                 .read()
-                .unwrap()
                 .last_committed_block_info()
                 .as_ref()
                 .unwrap()
@@ -866,7 +862,7 @@ mod tests {
         // can expect it to be much higher.
 
         let platform = abci_app.platform;
-        let platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.read();
 
         assert!(platform_state.hpmn_masternode_list().len() > 100);
     }
@@ -934,7 +930,7 @@ mod tests {
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
         let platform = abci_app.platform;
-        let platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.read();
 
         assert_ne!(platform_state.hpmn_masternode_list().len(), 100);
     }
@@ -1002,7 +998,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         let platform = abci_app.platform;
-        let _platform_state = platform.state.read().unwrap();
+        let _platform_state = platform.state.read();
 
         // We need to find if any masternode has ever had their keys disabled.
 
@@ -1712,6 +1708,7 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+
         assert_eq!(
             hex::encode(
                 outcome
@@ -2429,7 +2426,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
-        let state = outcome.abci_app.platform.state.read().unwrap();
+        let state = outcome.abci_app.platform.state.read();
         let protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
@@ -3591,7 +3588,7 @@ mod tests {
             ..
         } = run_chain_for_strategy(&mut platform, 100, strategy.clone(), config.clone(), 89);
 
-        let state = abci_app.platform.state.read().unwrap();
+        let state = abci_app.platform.state.read();
         let protocol_version = state.current_protocol_version_in_consensus();
         drop(state);
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
@@ -3631,7 +3628,6 @@ mod tests {
             .platform
             .state
             .read()
-            .unwrap()
             .last_committed_block_info()
             .as_ref()
             .unwrap()

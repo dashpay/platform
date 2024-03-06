@@ -8,7 +8,6 @@ mod document;
 mod identity;
 mod system;
 
-use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;
 use crate::state_transition_action::StateTransitionAction;

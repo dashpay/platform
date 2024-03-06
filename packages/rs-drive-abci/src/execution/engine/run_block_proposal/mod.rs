@@ -45,10 +45,10 @@ where
         transaction: &Transaction,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
-        let state = self.state.read().expect("expected to get state");
-        let current_protocol_version = state.current_protocol_version_in_consensus();
+        let state = self.state.read();
+        let platform_version = state.current_platform_version()?;
         drop(state);
-        let platform_version = PlatformVersion::get(current_protocol_version)?;
+
         let epoch_info = self.gather_epoch_info(&block_proposal, transaction, platform_version)?;
 
         match platform_version

@@ -1,5 +1,4 @@
 use derive_more::From;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::platform_value::Identifier;
 
 use dpp::prelude::IdentityNonce;
