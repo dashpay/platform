@@ -27,7 +27,7 @@ impl Index {
                 .drain(..)
                 .map(|field_name| IndexProperty {
                     name: field_name,
-                    ascending: rng.gen(),
+                    ascending: true,
                 })
                 .collect::<Vec<_>>();
 

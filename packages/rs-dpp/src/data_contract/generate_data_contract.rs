@@ -6,7 +6,7 @@ use std::io::Write;
 use crate::util::hash::hash_double;
 
 impl DataContract {
-    /// Generate data contract id based on owner id and entropy
+    /// Generate data contract id based on owner id and identity nonce
     pub fn generate_data_contract_id_v0(
         owner_id: impl AsRef<[u8]>,
         identity_nonce: IdentityNonce,
