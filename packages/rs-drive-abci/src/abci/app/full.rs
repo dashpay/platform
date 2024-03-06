@@ -11,9 +11,8 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
-use std::cell::{Ref, RefCell, RefMut};
+use std::cell::RefCell;
 use std::fmt::Debug;
-use std::sync::RwLock;
 use tenderdash_abci::proto::abci as proto;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.

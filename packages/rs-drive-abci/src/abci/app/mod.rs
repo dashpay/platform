@@ -1,8 +1,7 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use drive::grovedb::Transaction;
-use std::cell::{Ref, RefCell, RefMut};
-use std::sync::RwLock;
+use std::cell::RefCell;
 
 mod check_tx;
 mod consensus;
