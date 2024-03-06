@@ -203,7 +203,9 @@ impl DocumentTypeV0 {
         let index_values =
             Value::inner_optional_array_slice_value(schema_map, property_names::INDICES)?;
 
+        #[cfg(feature = "validation")]
         let mut index_names: HashSet<String> = HashSet::new();
+        #[cfg(feature = "validation")]
         let mut unique_indices_count = 0;
 
         let indices: Vec<Index> = index_values
