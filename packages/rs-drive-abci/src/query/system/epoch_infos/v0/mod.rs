@@ -8,7 +8,6 @@ use dapi_grpc::platform::v0::get_epochs_info_response::get_epochs_info_response_
 use dapi_grpc::platform::v0::get_epochs_info_response::{
     get_epochs_info_response_v0, GetEpochsInfoResponseV0,
 };
-use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::check_validation_result_with_data;
 
@@ -28,14 +27,11 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetEpochsInfoResponseV0>, Error> {
-        // TODO: Make sure we aren't reading state twice
-        let state = self.state.load();
-
         let start_epoch = start_epoch.unwrap_or_else(|| {
             if ascending {
                 0
             } else {
-                state.last_committed_block_epoch_ref().index as u32
+                platform_state.last_committed_block_epoch_ref().index as u32
             }
         });
 
@@ -54,36 +50,19 @@ impl<C> Platform<C> {
             ));
         }
 
-        let metadata = ResponseMetadata {
-            height: state.last_committed_height(),
-            core_chain_locked_height: state.last_committed_core_height(),
-            epoch: state.last_committed_block_epoch().index as u32,
-            time_ms: state.last_committed_block_time_ms().unwrap_or_default(),
-            chain_id: self.config.abci.chain_id.clone(),
-            protocol_version: state.current_protocol_version_in_consensus(),
-        };
-
         let response = if prove {
-            let mut proof_response = Proof {
-                grovedb_proof: Vec::new(),
-                quorum_hash: state.last_committed_quorum_hash().to_vec(),
-                quorum_type: self.config.validator_set_quorum_type() as u32,
-                block_id_hash: state.last_committed_block_id_hash().to_vec(),
-                signature: state.last_committed_block_signature().to_vec(),
-                round: state.last_committed_block_round(),
-            };
-
-            proof_response.grovedb_proof =
-                check_validation_result_with_data!(self.drive.prove_epochs_infos(
-                    start_epoch as u16,
-                    count as u16,
-                    ascending,
-                    None,
-                    platform_version
-                ));
+            let proof = check_validation_result_with_data!(self.drive.prove_epochs_infos(
+                start_epoch as u16,
+                count as u16,
+                ascending,
+                None,
+                platform_version
+            ));
 
             GetEpochsInfoResponseV0 {
-                result: Some(get_epochs_info_response_v0::Result::Proof(proof_response)),
+                result: Some(get_epochs_info_response_v0::Result::Proof(
+                    self.response_proof_v0(platform_state, proof),
+                )),
                 metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
