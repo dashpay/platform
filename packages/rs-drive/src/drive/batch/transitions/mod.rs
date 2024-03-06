@@ -24,7 +24,7 @@ pub trait DriveHighLevelOperationConverter {
     ) -> Result<Vec<DriveOperation<'a>>, Error>;
 }
 
-impl<'s> DriveHighLevelOperationConverter for StateTransitionAction {
+impl DriveHighLevelOperationConverter for StateTransitionAction {
     fn into_high_level_drive_operations<'a>(
         self,
         epoch: &Epoch,
