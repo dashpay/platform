@@ -79,7 +79,7 @@ impl Value {
         map.remove_key(key)
     }
 
-    pub fn remove_many(&mut self, keys: &[&str]) -> Result<(), Error> {
+    pub fn remove_many(&mut self, keys: &Vec<&str>) -> Result<(), Error> {
         let map = self.as_map_mut_ref()?;
         keys.iter()
             .try_for_each(|key| map.remove_key(key).map(|_| ()))

@@ -514,7 +514,7 @@ impl<'a, 'de> de::MapAccess<'de> for ValueMapDeserializer<'a> {
     }
 }
 
-impl<'de> de::VariantAccess<'de> for Deserializer<Value> {
+impl<'a, 'de> de::VariantAccess<'de> for Deserializer<Value> {
     type Error = Error;
 
     fn unit_variant(self) -> Result<(), Self::Error> {

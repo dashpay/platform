@@ -333,22 +333,18 @@ impl Value {
                     ));
                 };
                 // We are setting the value of just member of the array
-                match number_part.cmp(&array.len()) {
-                    std::cmp::Ordering::Less => {
-                        //this already exists
-                        current_value = array.get_mut(number_part).unwrap();
-                    },
-                    std::cmp::Ordering::Equal => {
-                        //we should create a new map
-                        array.push(Value::Map(ValueMap::new()));
-                        current_value = array.get_mut(number_part).unwrap();
-                    },
-                    std::cmp::Ordering::Greater => {
-                        return Err(Error::StructureError(
-                            "trying to insert into an array path higher than current array length"
-                                .to_string(),
-                        ));
-                    }
+                if number_part < array.len() {
+                    //this already exists
+                    current_value = array.get_mut(number_part).unwrap()
+                } else if array.len() == number_part {
+                    //we should create a new map
+                    array.push(Value::Map(ValueMap::new()));
+                    current_value = array.get_mut(number_part).unwrap();
+                } else {
+                    return Err(Error::StructureError(
+                        "trying to insert into an array path higher than current array length"
+                            .to_string(),
+                    ));
                 }
             } else {
                 let map = current_value.to_map_mut()?;
