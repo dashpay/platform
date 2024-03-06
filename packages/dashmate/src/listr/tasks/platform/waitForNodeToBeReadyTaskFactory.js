@@ -33,7 +33,7 @@ export default function waitForNodeToBeReadyTaskFactory() {
             },
           });
 
-          const withdrawalsContractId = Buffer.from(bs58.decode(WithdrawalsContract.contractId));
+          const withdrawalsContractId = bs58.decode(WithdrawalsContract.contractId);
 
           let success = false;
           do {
