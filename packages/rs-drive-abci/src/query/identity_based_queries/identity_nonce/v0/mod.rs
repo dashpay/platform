@@ -145,7 +145,7 @@ mod tests {
         let identity = create_test_identity_with_rng(&platform.drive, id, &mut rng, None, version)
             .expect("expected to create a test identity");
 
-        let dashpay = platform.drive.cache.system_data_contracts.read_dashpay();
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
 
         platform
             .drive

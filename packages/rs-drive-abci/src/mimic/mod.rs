@@ -97,17 +97,10 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
         options: MimicExecuteBlockOptions,
     ) -> Result<MimicExecuteBlockOutcome, Error> {
         // This will be NONE, except on init chain
-        let original_block_execution_context = self
-            .platform
-            .block_execution_context
-            .read()
-            .unwrap()
-            .as_ref()
-            .cloned();
+        let original_block_execution_context =
+            self.block_execution_context.borrow().as_ref().cloned();
 
-        let transaction_guard = self.transaction.read().unwrap();
-
-        let init_chain_root_hash = transaction_guard.as_ref().map(|transaction| {
+        let init_chain_root_hash = self.transaction.borrow().as_ref().map(|transaction| {
             self.platform
                 .drive
                 .grove
@@ -115,8 +108,6 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                 .unwrap()
                 .unwrap()
         });
-
-        drop(transaction_guard);
 
         const APP_VERSION: u64 = 0;
 
@@ -298,26 +289,24 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                     )
                 });
 
-            let mut block_execution_context =
-                self.platform.block_execution_context.write().unwrap();
-
-            let application_hash = block_execution_context
+            let application_hash = self
+                .block_execution_context
+                .borrow()
                 .as_ref()
                 .expect("expected a block execution context")
                 .block_state_info()
                 .app_hash()
                 .expect("expected an application hash after process proposal");
 
-            *block_execution_context = original_block_execution_context.clone();
-            drop(block_execution_context);
+            self.block_execution_context
+                .replace(original_block_execution_context.clone());
 
             if let Some(init_chain_root_hash) = init_chain_root_hash
             //we are in init chain
             {
                 // special logic on init chain
-                let transaction = self.transaction.write().unwrap();
-
-                let transaction = transaction.as_ref().ok_or(Error::Execution(
+                let transaction_ref = self.transaction.borrow();
+                let transaction = transaction_ref.as_ref().ok_or(Error::Execution(
                     ExecutionError::NotInTransaction(
                         "trying to finalize block without a current transaction",
                     ),
@@ -347,9 +336,9 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                     )
                 });
 
-            let block_execution_context = self.platform.block_execution_context.read().unwrap();
-
-            let process_proposal_application_hash = block_execution_context
+            let process_proposal_application_hash = self
+                .block_execution_context
+                .borrow()
                 .as_ref()
                 .expect("expected a block execution context")
                 .block_state_info()
@@ -362,9 +351,8 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                 block_info.height
             );
 
-            let transaction_guard = self.transaction.read().unwrap();
-
-            let transaction = transaction_guard.as_ref().ok_or(Error::Execution(
+            let transaction_ref = self.transaction.borrow();
+            let transaction = transaction_ref.as_ref().ok_or(Error::Execution(
                 ExecutionError::NotInTransaction(
                     "trying to finalize block without a current transaction",
                 ),
@@ -427,10 +415,9 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
         //FixMe: This is not correct for the threshold vote extension (we need to sign and do
         // things differently
 
-        let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
+        let block_execution_context_ref = self.block_execution_context.borrow();
         let block_execution_context =
-            guarded_block_execution_context
-                .as_ref()
+            block_execution_context_ref.as_ref()
                 .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "block execution context must be set in block begin handler for mimic block execution",
                 )))?.v0()?;
@@ -454,7 +441,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             .unsigned_withdrawal_transactions
             .clone();
 
-        drop(guarded_block_execution_context);
+        drop(block_execution_context_ref);
 
         // We need to sign the block
 
@@ -558,13 +545,13 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             block_id: Some(block_id),
         };
 
-        let transaction_guard = self.transaction.read().unwrap();
-
-        let transaction = transaction_guard.as_ref().ok_or(Error::Execution(
-            ExecutionError::NotInTransaction(
-                "trying to finalize block without a current transaction",
-            ),
-        ))?;
+        let transaction_ref = self.transaction.borrow();
+        let transaction =
+            transaction_ref
+                .as_ref()
+                .ok_or(Error::Execution(ExecutionError::NotInTransaction(
+                    "trying to finalize block without a current transaction",
+                )))?;
 
         let root_hash_before_finalization = self
             .platform
@@ -574,7 +561,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             .unwrap()
             .unwrap();
         assert_eq!(app_hash, root_hash_before_finalization);
-        drop(transaction_guard);
+        drop(transaction_ref);
 
         if !options.dont_finalize_block
             && options.rounds_before_finalization.unwrap_or_default() <= round

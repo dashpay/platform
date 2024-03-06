@@ -1,4 +1,4 @@
-use crate::abci::app::{PlatformApplication, TransactionalApplication};
+use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::error::Error;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
@@ -10,32 +10,24 @@ pub fn init_chain<'a, A, C>(
     request: proto::RequestInitChain,
 ) -> Result<proto::ResponseInitChain, Error>
 where
-    A: PlatformApplication<C> + TransactionalApplication<'a>,
+    A: PlatformApplication<C> + TransactionalApplication<'a> + BlockExecutionApplication,
     C: CoreRPCLike,
 {
     app.start_transaction();
 
-    let chain_id = request.chain_id.to_string();
+    let transaction_ref = app.transaction().borrow();
+    let transaction = transaction_ref
+        .as_ref()
+        .expect("transaction must be started");
 
     // We need to drop the block execution context just in case init chain had already been called
-    let mut block_execution_context = app.platform().block_execution_context.write().unwrap();
-    let block_context = block_execution_context.take(); //drop the block execution context
+    let block_context = app.block_execution_context().take(); //drop the block execution context
     if block_context.is_some() {
-        tracing::warn!("block context was present during init chain, restarting");
-        let protocol_version_in_consensus = app.platform().config.initial_protocol_version;
-        let initial_platform_state = PlatformState::default_with_protocol_versions(
-            protocol_version_in_consensus,
-            protocol_version_in_consensus,
-        );
-
-        // TODO: We set it twice for init chain
-
-        app.platform().state.store(Arc::new(initial_platform_state));
+        tracing::warn!("block context was present during init chain, dropping it");
     }
-    drop(block_execution_context);
 
-    let transaction_guard = app.transaction().read().unwrap();
-    let transaction = transaction_guard.as_ref().unwrap();
+    let chain_id = request.chain_id.to_string();
+
     let response = app.platform().init_chain(request, transaction)?;
 
     transaction.set_savepoint();

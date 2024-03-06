@@ -1,4 +1,4 @@
-use crate::abci::app::{PlatformApplication, TransactionalApplication};
+use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -14,7 +14,7 @@ pub fn extend_vote<'a, A, C>(
     request: proto::RequestExtendVote,
 ) -> Result<proto::ResponseExtendVote, Error>
 where
-    A: PlatformApplication<C> + TransactionalApplication<'a>,
+    A: PlatformApplication<C> + TransactionalApplication<'a> + BlockExecutionApplication,
     C: CoreRPCLike,
 {
     let _timer = crate::metrics::abci_request_duration("extend_vote");
@@ -24,24 +24,22 @@ where
         height,
         round,
     } = request;
-    let guarded_block_execution_context = app.platform().block_execution_context.read().unwrap();
-    let block_execution_context =
-        guarded_block_execution_context
-            .as_ref()
-            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "block execution context must be set in block begin handler for extend vote",
-            )))?;
+    let block_execution_context_ref = app.block_execution_context().borrow();
+    let block_execution_context = block_execution_context_ref
+        .as_ref()
+        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "block execution context must be set in block begin handler for extend vote",
+        )))?;
 
     // Verify Tenderdash that it called this handler correctly
     let block_state_info = &block_execution_context.block_state_info();
 
     if !block_state_info.matches_current_block(height as u64, round as u32, block_hash.clone())? {
-        return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
+        return Err(AbciError::RequestForWrongBlockReceived(format!(
             "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
             height, round, hex::encode(block_hash),
             block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(hex::encode).unwrap_or("None".to_string())
-        )))
-            .into());
+        )).into());
     }
 
     // Extend vote with unsigned withdrawal transactions

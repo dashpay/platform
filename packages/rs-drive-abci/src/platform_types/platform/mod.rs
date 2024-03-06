@@ -11,7 +11,7 @@ use arc_swap::ArcSwap;
 use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use dashcore_rpc::dashcore::BlockHash;
 
@@ -33,8 +33,6 @@ pub struct Platform<C> {
     pub state: ArcSwap<PlatformState>,
     /// Configuration
     pub config: PlatformConfig,
-    /// Block execution context
-    pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
     /// Core RPC Client
     pub core_rpc: C,
 }
@@ -222,7 +220,6 @@ impl<C> Platform<C> {
             drive,
             state: ArcSwap::new(Arc::new(platform_state)),
             config,
-            block_execution_context: RwLock::new(None),
             core_rpc,
         };
 
@@ -251,7 +248,6 @@ impl<C> Platform<C> {
             drive,
             state: ArcSwap::new(Arc::new(platform_state)),
             config,
-            block_execution_context: RwLock::new(None),
             core_rpc,
         })
     }

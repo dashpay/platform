@@ -1,11 +1,17 @@
-use crate::abci::app::{PlatformApplication, TransactionalApplication};
+use crate::abci::app::{
+    BlockExecutionApplication, ConsensusAbciApplication, PlatformApplication,
+    TransactionalApplication,
+};
 use crate::abci::handler;
 use crate::abci::handler::error::error_into_exception;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
+use std::cell::{Ref, RefCell, RefMut};
 use std::fmt::Debug;
 use std::sync::RwLock;
 use tenderdash_abci::proto::abci as proto;
@@ -17,8 +23,11 @@ use tenderdash_abci::proto::abci as proto;
 pub struct FullAbciApplication<'a, C> {
     /// Platform
     pub platform: &'a Platform<C>,
+    // TODO: Consider to use RefCell for transaction and block_execution_context since the app is single threaded (atm)
     /// The current transaction
-    pub transaction: RwLock<Option<Transaction<'a>>>,
+    pub transaction: RefCell<Option<Transaction<'a>>>,
+    /// Block execution context
+    pub block_execution_context: RefCell<Option<BlockExecutionContext>>,
 }
 
 impl<'a, C> FullAbciApplication<'a, C> {
@@ -26,7 +35,8 @@ impl<'a, C> FullAbciApplication<'a, C> {
     pub fn new(platform: &'a Platform<C>) -> Self {
         Self {
             platform,
-            transaction: RwLock::new(None),
+            transaction: Default::default(),
+            block_execution_context: Default::default(),
         }
     }
 }
@@ -37,30 +47,32 @@ impl<'a, C> PlatformApplication<C> for FullAbciApplication<'a, C> {
     }
 }
 
+impl<'a, C> BlockExecutionApplication for FullAbciApplication<'a, C> {
+    fn block_execution_context(&self) -> &RefCell<Option<BlockExecutionContext>> {
+        &self.block_execution_context
+    }
+}
+
 impl<'a, C> TransactionalApplication<'a> for FullAbciApplication<'a, C> {
     /// create and store a new transaction
     fn start_transaction(&self) {
         let transaction = self.platform.drive.grove.start_transaction();
-        self.transaction.write().unwrap().replace(transaction);
+        self.transaction.borrow_mut().replace(transaction);
     }
 
-    fn transaction(&self) -> &RwLock<Option<Transaction<'a>>> {
+    fn transaction(&self) -> &RefCell<Option<Transaction<'a>>> {
         &self.transaction
     }
 
     /// Commit a transaction
-    fn commit_transaction(&self) -> Result<(), Error> {
-        let transaction = self
-            .transaction
-            .write()
-            .unwrap()
-            .take()
-            .ok_or(Error::Execution(ExecutionError::NotInTransaction(
-                "trying to commit a transaction, but we are not in one",
-            )))?;
-        // TODO: Accept platform version here
-        let platform_state = self.platform.state.load();
-        let platform_version = platform_state.current_platform_version()?;
+    fn commit_transaction(&self, platform_version: &PlatformVersion) -> Result<(), Error> {
+        let transaction =
+            self.transaction
+                .take()
+                .ok_or(Error::Execution(ExecutionError::NotInTransaction(
+                    "trying to commit a transaction, but we are not in one",
+                )))?;
+
         self.platform
             .drive
             .commit_transaction(transaction, &platform_version.drive)

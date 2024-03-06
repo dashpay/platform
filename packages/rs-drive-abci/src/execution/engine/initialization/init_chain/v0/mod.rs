@@ -49,7 +49,7 @@ where
         )?;
 
         // Create platform execution state
-        let mut execution_state = PlatformState::default_with_protocol_versions(
+        let mut initial_platform_state = PlatformState::default_with_protocol_versions(
             request.initial_protocol_version,
             request.initial_protocol_version,
         );
@@ -63,7 +63,7 @@ where
 
         self.update_core_info(
             None,
-            &mut execution_state,
+            &mut initial_platform_state,
             core_height,
             true,
             &genesis_block_info,
@@ -72,7 +72,7 @@ where
         )?;
 
         let (quorum_hash, validator_set) = {
-            let validator_set_inner = execution_state.validator_sets().first().ok_or(
+            let validator_set_inner = initial_platform_state.validator_sets().first().ok_or(
                 ExecutionError::InitializationError("we should have at least one quorum"),
             )?;
 
@@ -82,11 +82,12 @@ where
             )
         };
 
-        execution_state.set_current_validator_set_quorum_hash(quorum_hash);
+        initial_platform_state.set_current_validator_set_quorum_hash(quorum_hash);
 
-        execution_state.set_genesis_block_info(Some(genesis_block_info));
+        initial_platform_state.set_genesis_block_info(Some(genesis_block_info));
 
-        execution_state.set_current_protocol_version_in_consensus(request.initial_protocol_version);
+        initial_platform_state
+            .set_current_protocol_version_in_consensus(request.initial_protocol_version);
 
         self.drive.store_current_protocol_version(
             request.initial_protocol_version,
@@ -96,12 +97,12 @@ where
 
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(
-                platform_state_fingerprint = hex::encode(execution_state.fingerprint()),
+                platform_state_fingerprint = hex::encode(initial_platform_state.fingerprint()),
                 "platform runtime state",
             );
         }
 
-        self.state.store(Arc::new(execution_state));
+        self.state.store(Arc::new(initial_platform_state));
 
         let app_hash = self
             .drive

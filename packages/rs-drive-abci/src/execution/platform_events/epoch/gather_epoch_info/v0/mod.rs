@@ -6,6 +6,7 @@ use crate::platform_types::block_proposal;
 use crate::platform_types::epoch_info::v0::EpochInfoV0;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C> {
@@ -14,12 +15,12 @@ impl<C> Platform<C> {
         &self,
         block_proposal: &block_proposal::v0::BlockProposal,
         transaction: &Transaction,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<EpochInfoV0, Error> {
         // TODO: Where are we calling this
         // Start by getting information from the state
-        let state = self.state.load();
-        let last_block_time_ms = state.last_committed_block_time_ms();
+        let last_block_time_ms = platform_state.last_committed_block_time_ms();
 
         // Init block execution context
         let block_state_info = block_state_info::v0::BlockStateInfoV0::from_block_proposal(
@@ -33,6 +34,7 @@ impl<C> Platform<C> {
             block_time_ms,
             ..
         } = &block_proposal;
+
         let genesis_time_ms =
             self.get_genesis_time(*height, *block_time_ms, transaction, platform_version)?;
 

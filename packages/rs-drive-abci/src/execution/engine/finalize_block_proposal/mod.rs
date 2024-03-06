@@ -1,9 +1,12 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
@@ -34,14 +37,10 @@ where
     pub(crate) fn finalize_block_proposal(
         &self,
         request_finalize_block: FinalizeBlockCleanedRequest,
+        block_execution_context: BlockExecutionContext,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<block_execution_outcome::v0::BlockFinalizationOutcome, Error> {
-        // TODO: We don't want to call it twice
-
-        let state = self.state.load();
-        let current_protocol_version = state.current_protocol_version_in_consensus();
-
-        let platform_version = PlatformVersion::get(current_protocol_version)?;
         match platform_version
             .drive_abci
             .methods
@@ -50,6 +49,7 @@ where
         {
             0 => self.finalize_block_proposal_v0(
                 request_finalize_block,
+                block_execution_context,
                 transaction,
                 platform_version,
             ),

@@ -2,6 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::{block_execution_outcome, block_proposal};
 use crate::rpc::core::CoreRPCLike;
 use dpp::validation::ValidationResult;
@@ -42,14 +43,18 @@ where
         &self,
         block_proposal: block_proposal::v0::BlockProposal,
         known_from_us: bool,
+        platform_state: &PlatformState,
         transaction: &Transaction,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
-        // TODO: Do not load multiple time
-        let state = self.state.load();
-        let platform_version = state.current_platform_version()?;
+        let platform_version = platform_state.current_platform_version()?;
 
-        let epoch_info = self.gather_epoch_info(&block_proposal, transaction, platform_version)?;
+        let epoch_info = self.gather_epoch_info(
+            &block_proposal,
+            transaction,
+            platform_state,
+            platform_version,
+        )?;
 
         match platform_version
             .drive_abci
@@ -62,6 +67,7 @@ where
                 known_from_us,
                 epoch_info.into(),
                 transaction,
+                platform_state,
                 platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
