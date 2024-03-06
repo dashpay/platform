@@ -23,10 +23,9 @@ use tenderdash_abci::proto::abci as proto;
 pub struct FullAbciApplication<'a, C> {
     /// Platform
     pub platform: &'a Platform<C>,
-    // TODO: Consider to use RefCell for transaction and block_execution_context since the app is single threaded (atm)
-    /// The current transaction
+    /// The current GroveDB transaction
     pub transaction: RefCell<Option<Transaction<'a>>>,
-    /// Block execution context
+    /// The current block execution context
     pub block_execution_context: RefCell<Option<BlockExecutionContext>>,
 }
 

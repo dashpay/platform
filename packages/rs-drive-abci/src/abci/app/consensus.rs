@@ -19,9 +19,9 @@ use tenderdash_abci::proto::abci as proto;
 pub struct ConsensusAbciApplication<'a, C> {
     /// Platform
     platform: &'a Platform<C>,
-    /// The current transaction
+    /// The current GroveDb transaction
     transaction: RefCell<Option<Transaction<'a>>>,
-    /// Block execution context
+    /// The current block execution context
     block_execution_context: RefCell<Option<BlockExecutionContext>>,
 }
 
