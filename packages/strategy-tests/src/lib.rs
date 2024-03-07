@@ -1147,26 +1147,37 @@ impl Strategy {
                             );
 
                             // Create `doc_type_count` doc types
-                            let doc_types = Value::Map(doc_type_range.clone().filter_map(|_| {
-                                match DocumentTypeV0::random_document_type(
-                                    params.clone(),
-                                    contract_id,
-                                    rng,
-                                    platform_version,
-                                ) {
-                                    Ok(new_document_type) => {
-                                        let mut doc_type_clone = new_document_type.schema().clone();
-                                        let name = doc_type_clone.remove("title").expect(
+                            let doc_types =
+                                Value::Map(
+                                    doc_type_range
+                                        .clone()
+                                        .filter_map(|_| match DocumentTypeV0::random_document_type(
+                                            params.clone(),
+                                            contract_id,
+                                            rng,
+                                            platform_version,
+                                        ) {
+                                            Ok(new_document_type) => {
+                                                let mut doc_type_clone =
+                                                    new_document_type.schema().clone();
+                                                let name = doc_type_clone.remove("title").expect(
                                             "Expected to get a doc type title in ContractCreate",
                                         );
-                                        Some((Value::Text(name.to_string()), doc_type_clone))
-                                    }
-                                    Err(e) => {
-                                        error!("Error generating random document type: {:?}", e);
-                                        None
-                                    }
-                                }
-                            }).collect());
+                                                Some((
+                                                    Value::Text(name.to_string()),
+                                                    doc_type_clone,
+                                                ))
+                                            }
+                                            Err(e) => {
+                                                error!(
+                                                    "Error generating random document type: {:?}",
+                                                    e
+                                                );
+                                                None
+                                            }
+                                        })
+                                        .collect(),
+                                );
 
                             let created_data_contract = match contract_factory.create(
                                 owner_id,
@@ -1193,7 +1204,8 @@ impl Strategy {
                             };
 
                             // Sign transition
-                            let public_key = identity.get_first_public_key_matching(
+                            let public_key = identity
+                                .get_first_public_key_matching(
                                     Purpose::AUTHENTICATION,
                                     HashSet::from([SecurityLevel::CRITICAL]),
                                     HashSet::from([KeyType::ECDSA_SECP256K1]),

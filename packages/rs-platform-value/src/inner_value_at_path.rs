@@ -337,12 +337,12 @@ impl Value {
                     std::cmp::Ordering::Less => {
                         //this already exists
                         current_value = array.get_mut(number_part).unwrap();
-                    },
+                    }
                     std::cmp::Ordering::Equal => {
                         //we should create a new map
                         array.push(Value::Map(ValueMap::new()));
                         current_value = array.get_mut(number_part).unwrap();
-                    },
+                    }
                     std::cmp::Ordering::Greater => {
                         return Err(Error::StructureError(
                             "trying to insert into an array path higher than current array length"

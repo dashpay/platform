@@ -103,30 +103,35 @@ pub fn validate_identity_nonce_update(
             ));
         }
         std::cmp::Ordering::Less => {
-            if new_revision_nonce - actual_existing_revision > MISSING_IDENTITY_REVISIONS_MAX_BYTES {
+            if new_revision_nonce - actual_existing_revision > MISSING_IDENTITY_REVISIONS_MAX_BYTES
+            {
                 // we are too far away from the actual revision
-                return SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(
-                    StateError::InvalidIdentityNonceError(InvalidIdentityNonceError {
-                        identity_id,
-                        current_identity_nonce: Some(existing_nonce),
-                        setting_identity_nonce: new_revision_nonce,
-                        error: MergeIdentityNonceResult::NonceTooFarInFuture,
-                    }),
-                ));
+                return SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(StateError::InvalidIdentityNonceError(
+                        InvalidIdentityNonceError {
+                            identity_id,
+                            current_identity_nonce: Some(existing_nonce),
+                            setting_identity_nonce: new_revision_nonce,
+                            error: MergeIdentityNonceResult::NonceTooFarInFuture,
+                        },
+                    )),
+                );
             }
         }
         std::cmp::Ordering::Greater => {
             let previous_revision_position_from_top = actual_existing_revision - new_revision_nonce;
             if previous_revision_position_from_top > MISSING_IDENTITY_REVISIONS_MAX_BYTES {
                 // we are too far away from the actual revision
-                return SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(
-                    StateError::InvalidIdentityNonceError(InvalidIdentityNonceError {
-                        identity_id,
-                        current_identity_nonce: Some(existing_nonce),
-                        setting_identity_nonce: new_revision_nonce,
-                        error: MergeIdentityNonceResult::NonceTooFarInPast,
-                    }),
-                ));
+                return SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(StateError::InvalidIdentityNonceError(
+                        InvalidIdentityNonceError {
+                            identity_id,
+                            current_identity_nonce: Some(existing_nonce),
+                            setting_identity_nonce: new_revision_nonce,
+                            error: MergeIdentityNonceResult::NonceTooFarInPast,
+                        },
+                    )),
+                );
             } else {
                 let old_missing_revisions = existing_nonce & MISSING_IDENTITY_REVISIONS_FILTER;
                 let old_revision_already_set = if old_missing_revisions == 0 {
@@ -134,7 +139,7 @@ pub fn validate_identity_nonce_update(
                 } else {
                     let byte_to_unset = 1
                         << (previous_revision_position_from_top - 1
-                        + IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES);
+                            + IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES);
                     old_missing_revisions | byte_to_unset != old_missing_revisions
                 };
 
