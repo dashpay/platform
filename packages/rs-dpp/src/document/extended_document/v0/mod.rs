@@ -6,6 +6,7 @@ mod serialize;
 
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
+#[cfg(any(feature = "document-value-conversion", feature = "document-json-conversion"))]
 use crate::document::extended_document::fields::property_names;
 use crate::document::{Document, DocumentV0Getters, ExtendedDocument};
 use crate::identity::TimestampMillis;
@@ -16,8 +17,11 @@ use crate::util::hash::hash_double_to_vec;
 use crate::ProtocolError;
 
 use platform_value::btreemap_extensions::{
-    BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
-    BTreeValueRemoveFromMapHelper,
+    BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper,
+};
+#[cfg(feature = "document-value-conversion")]
+use platform_value::btreemap_extensions::{
+    BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper,
 };
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -34,10 +38,11 @@ use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
-use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "document-json-conversion")]
 use serde_json::Value as JsonValue;
+#[cfg(feature = "document-json-conversion")]
+use platform_value::converter::serde_json::BTreeValueJsonConverter;
 
 /// The `ExtendedDocumentV0` struct represents the data provided by the platform in response to a query.
 #[derive(Debug, Clone)]

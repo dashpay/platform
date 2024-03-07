@@ -4,7 +4,6 @@ use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 
 use crate::prelude::IdentityNonce;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use platform_value::Bytes32;
 pub use v0::*;
 
 impl DataContractCreateTransitionAccessorsV0 for DataContractCreateTransition {

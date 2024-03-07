@@ -1,5 +1,4 @@
 use dpp::identity::TimestampMillis;
-use std::sync::RwLock;
 
 mod data_contract;
 mod protocol_version;

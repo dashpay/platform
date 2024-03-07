@@ -1,11 +1,16 @@
+#[cfg(feature = "random-public-keys")]
 use crate::util::hash::ripemd160_sha256;
 use anyhow::bail;
 use bincode::{Decode, Encode};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
+#[cfg(feature = "random-public-keys")]
 use dashcore::secp256k1::rand::rngs::StdRng as EcdsaRng;
+#[cfg(feature = "random-public-keys")]
 use dashcore::secp256k1::rand::SeedableRng;
+#[cfg(feature = "random-public-keys")]
 use dashcore::secp256k1::Secp256k1;
+#[cfg(feature = "random-public-keys")]
 use dashcore::Network;
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -19,7 +24,9 @@ use crate::fee::default_costs::KnownCostItem::{
 use crate::fee::Credits;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
+#[cfg(feature = "random-public-keys")]
 use rand::rngs::StdRng;
+#[cfg(feature = "random-public-keys")]
 use rand::Rng;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::collections::HashMap;
