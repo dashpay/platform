@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::drive::contract::paths::{contract_keeping_history_root_path, contract_root_path};
-use crate::drive::verify::RootHash;
+use crate::drive::verify::{RootHash, Bytes32};
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
@@ -168,9 +168,9 @@ impl Drive {
     pub fn verify_contracts(
         proof: &[u8],
         _is_proof_subset: bool, //this will be used later
-        contract_ids: &[[u8; 32]],
+        contract_ids: &[Bytes32],
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, BTreeMap<[u8; 32], Option<DataContract>>), Error> {
+    ) -> Result<(RootHash, BTreeMap<Bytes32, Option<DataContract>>), Error> {
         let request_len = contract_ids.len();
 
         if request_len == 0 {
