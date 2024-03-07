@@ -22,7 +22,9 @@ hex = "0.4.3"
 serde_json = "1.0"
 dpp = { path = "../rs-dpp", features = [
   "abci",
+  "client",
   "random-documents",
+  "state-transitions",
   "state-transition-signing",
   "random-identities",
   "random-public-keys",
