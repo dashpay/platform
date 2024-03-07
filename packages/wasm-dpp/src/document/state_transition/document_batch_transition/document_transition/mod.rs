@@ -276,7 +276,9 @@ impl Inner for DocumentTransitionWasm {
 //     }
 // }
 
-#[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+#[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 pub(crate) fn to_object<'a>(
     value: Value,
     options: &JsValue,

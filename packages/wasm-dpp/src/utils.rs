@@ -66,7 +66,9 @@ where
     iter.into_iter().map(|v| v.into()).collect()
 }
 
-#[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+#[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 pub fn to_vec_of_serde_values(
     values: impl IntoIterator<Item = impl AsRef<JsValue>>,
 ) -> Result<Vec<JsonValue>, JsValue> {
@@ -230,7 +232,9 @@ pub fn get_bool_from_options(
     }
 }
 
-#[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+#[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 pub fn get_class_name(value: &JsValue) -> String {
     js_sys::Object::get_prototype_of(value)
         .constructor()
@@ -238,7 +242,9 @@ pub fn get_class_name(value: &JsValue) -> String {
         .into()
 }
 
-#[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+#[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 pub fn try_to_u64(value: JsValue) -> Result<u64, anyhow::Error> {
     if value.is_bigint() {
         js_sys::BigInt::new(&value)

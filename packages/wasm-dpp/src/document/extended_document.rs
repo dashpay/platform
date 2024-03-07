@@ -362,7 +362,9 @@ impl ExtendedDocumentWasm {
 }
 
 impl ExtendedDocumentWasm {
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     fn get_binary_type_of_path(&self, path: &String) -> Result<BinaryType, JsValue> {
         let document_type = self.0.document_type().with_js_error()?;
 

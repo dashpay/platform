@@ -50,7 +50,9 @@ pub(crate) struct ConversionOptions {
     pub skip_identifiers_conversion: bool,
 }
 
-#[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+#[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 pub(super) enum BinaryType {
     Identifier,
     Buffer,
@@ -315,7 +317,9 @@ impl DocumentWasm {
 }
 
 impl DocumentWasm {
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     fn get_binary_type_of_path(
         &self,
         path: &String,
