@@ -10,7 +10,8 @@ mod version;
 
 use platform_serialization_derive::PlatformSignable;
 
-use platform_value::{BinaryData, Bytes32};
+use platform_value::BinaryData;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};

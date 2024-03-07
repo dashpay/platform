@@ -5,7 +5,7 @@ mod structure;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
-use dpp::version::PlatformVersion;
+use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
@@ -34,8 +34,8 @@ impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        let platform_version = platform.state.current_platform_version()?;
+
         match platform_version
             .drive_abci
             .validation_and_processing
@@ -83,8 +83,8 @@ impl StateTransitionStateValidationV0 for DataContractCreateTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        let platform_version = platform.state.current_platform_version()?;
+
         match platform_version
             .drive_abci
             .validation_and_processing

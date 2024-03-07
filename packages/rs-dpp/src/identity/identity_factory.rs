@@ -1,5 +1,8 @@
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
+#[cfg(all(feature = "state-transitions", feature = "client"))]
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::state_transition::AssetLockProved;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::{IdentityV0, TimestampMillis};
@@ -23,8 +26,10 @@ use crate::identity::accessors::IdentityGettersV0;
 
 #[cfg(all(feature = "validation", feature = "identity-value-conversion"))]
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::core_script::CoreScript;
-use crate::prelude::{IdentityNonce, Revision};
+#[cfg(all(feature = "state-transitions", feature = "client"))]
+use crate::prelude::{IdentityNonce};
 #[cfg(all(feature = "identity-serialization", feature = "client"))]
 use crate::serialization::PlatformDeserializable;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
@@ -54,6 +59,7 @@ use crate::state_transition::identity_update_transition::IdentityUpdateTransitio
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::version::PlatformVersion;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::withdrawal::Pooling;
 #[cfg(any(
     all(feature = "identity-serialization", feature = "client"),

@@ -32,15 +32,17 @@ impl<C> Platform<C> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
-        let cache = self.drive.cache.read().unwrap();
-
-        let masternode_rewards_contract = &cache.system_data_contracts.masternode_reward_shares;
+        let masternode_rewards_contract = self
+            .drive
+            .cache
+            .system_data_contracts
+            .read_masternode_reward_shares();
 
         let document_type =
             masternode_rewards_contract.document_type_for_name(MN_REWARD_SHARES_DOCUMENT_TYPE)?;
 
         let drive_query = DriveQuery {
-            contract: masternode_rewards_contract,
+            contract: &masternode_rewards_contract,
             document_type,
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,

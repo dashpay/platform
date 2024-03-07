@@ -17,7 +17,6 @@ use dashcore_rpc::dashcore::BlockHash;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
-use dpp::block::block_info::BlockInfo;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use serde_json::json;
 
@@ -30,7 +29,11 @@ pub struct Platform<C> {
     /// Drive
     pub drive: Drive,
     /// State
-    pub state: RwLock<PlatformState>,
+    // We use a parking_lot::RwLock because of it's writer priority which is essential so our
+    // readers in check_tx don't starve block finalization
+    // Todo: Block finalization can still be delayed until we acquire the write lock. We might want
+    //  to think of a custom approach where the writer is always placed at the front of the queue.
+    pub state: parking_lot::RwLock<PlatformState>,
     /// Configuration
     pub config: PlatformConfig,
     /// Block execution context
@@ -50,8 +53,6 @@ pub struct PlatformRef<'a, C> {
     pub config: &'a PlatformConfig,
     /// Core RPC Client
     pub core_rpc: &'a C,
-    /// Block info
-    pub block_info: &'a BlockInfo,
 }
 
 // @append_only
@@ -157,7 +158,7 @@ impl Platform<MockCoreRPCLike> {
             persisted_state.current_protocol_version_in_consensus(),
         )?);
 
-        let mut state_cache = self.state.write().unwrap();
+        let mut state_cache = self.state.write();
         *state_cache = persisted_state;
 
         Ok(true)
@@ -223,7 +224,7 @@ impl<C> Platform<C> {
 
         let platform: Platform<C> = Platform {
             drive,
-            state: RwLock::new(platform_state),
+            state: parking_lot::RwLock::new(platform_state),
             config,
             block_execution_context: RwLock::new(None),
             core_rpc,
@@ -252,7 +253,7 @@ impl<C> Platform<C> {
 
         Ok(Platform {
             drive,
-            state: RwLock::new(platform_state),
+            state: parking_lot::RwLock::new(platform_state),
             config,
             block_execution_context: RwLock::new(None),
             core_rpc,

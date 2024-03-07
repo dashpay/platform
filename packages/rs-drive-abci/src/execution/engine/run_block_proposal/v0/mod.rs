@@ -67,9 +67,6 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
-        // Start by getting information from the state
-        let state = self.state.read().unwrap();
-
         tracing::trace!(
             method = "run_block_proposal_v0",
             ?block_proposal,
@@ -79,12 +76,15 @@ where
             block_proposal.round,
         );
 
+        // Start by getting information from the state
+        let state = self.state.read();
+
         let last_block_time_ms = state.last_committed_block_time_ms();
         let last_block_height =
             state.last_committed_known_height_or(self.config.abci.genesis_height.saturating_sub(1));
         let last_block_core_height =
             state.last_committed_known_core_height_or(self.config.abci.genesis_core_height);
-        let hpmn_list_len = state.hpmn_list_len();
+        let hpmn_list_len = state.hpmn_list_len() as u32;
 
         let mut block_platform_state = state.clone();
 
@@ -230,99 +230,58 @@ where
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
             })?; // This is a system error
 
-        let mut block_execution_context = block_execution_context::v0::BlockExecutionContextV0 {
-            block_state_info: block_state_info.into(),
-            epoch_info: epoch_info.clone(),
-            hpmn_count: hpmn_list_len as u32,
-            unsigned_withdrawal_transactions: Default::default(),
-            block_platform_state,
-            proposer_results: None,
-        };
-
         // Determine a new protocol version if enough proposers voted
-        if block_execution_context
-            .epoch_info
-            .is_epoch_change_but_not_genesis()
-        {
+        if epoch_info.is_epoch_change_but_not_genesis() {
             tracing::info!(
-                epoch_index = block_execution_context.epoch_info.current_epoch_index(),
+                epoch_index = epoch_info.current_epoch_index(),
                 "epoch change occurring from epoch {} to epoch {}",
-                block_execution_context
-                    .epoch_info
+                epoch_info
                     .previous_epoch_index()
                     .expect("must be set since we aren't on genesis"),
-                block_execution_context.epoch_info.current_epoch_index(),
+                epoch_info.current_epoch_index(),
             );
 
-            if block_execution_context
-                .block_platform_state
-                .current_protocol_version_in_consensus()
-                == block_execution_context
-                    .block_platform_state
-                    .next_epoch_protocol_version()
+            if block_platform_state.current_protocol_version_in_consensus()
+                == block_platform_state.next_epoch_protocol_version()
             {
                 tracing::trace!(
-                    epoch_index = block_execution_context.epoch_info.current_epoch_index(),
+                    epoch_index = epoch_info.current_epoch_index(),
                     "protocol version remains the same {}",
-                    block_execution_context
-                        .block_platform_state
-                        .current_protocol_version_in_consensus(),
+                    block_platform_state.current_protocol_version_in_consensus(),
                 );
             } else {
                 tracing::info!(
-                    epoch_index = block_execution_context.epoch_info.current_epoch_index(),
+                    epoch_index = epoch_info.current_epoch_index(),
                     "protocol version changed from {} to {}",
-                    block_execution_context
-                        .block_platform_state
-                        .current_protocol_version_in_consensus(),
-                    block_execution_context
-                        .block_platform_state
-                        .next_epoch_protocol_version(),
+                    block_platform_state.current_protocol_version_in_consensus(),
+                    block_platform_state.next_epoch_protocol_version(),
                 );
             }
 
             // Set current protocol version to the version from upcoming epoch
-            block_execution_context
-                .block_platform_state
-                .set_current_protocol_version_in_consensus(
-                    block_execution_context
-                        .block_platform_state
-                        .next_epoch_protocol_version(),
-                );
+            block_platform_state.set_current_protocol_version_in_consensus(
+                block_platform_state.next_epoch_protocol_version(),
+            );
 
             // Determine new protocol version based on votes for the next epoch
             let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
-                block_execution_context.hpmn_count,
-                block_execution_context
-                    .block_platform_state
-                    .current_protocol_version_in_consensus(),
+                hpmn_list_len,
+                block_platform_state.current_protocol_version_in_consensus(),
                 transaction,
             )?;
 
             if let Some(new_protocol_version) = maybe_new_protocol_version {
-                block_execution_context
-                    .block_platform_state
-                    .set_next_epoch_protocol_version(new_protocol_version);
+                block_platform_state.set_next_epoch_protocol_version(new_protocol_version);
             } else {
-                block_execution_context
-                    .block_platform_state
-                    .set_next_epoch_protocol_version(
-                        block_execution_context
-                            .block_platform_state
-                            .current_protocol_version_in_consensus(),
-                    );
+                block_platform_state.set_next_epoch_protocol_version(
+                    block_platform_state.current_protocol_version_in_consensus(),
+                );
             }
         }
 
-        let mut block_execution_context: BlockExecutionContext = block_execution_context.into();
-
         // Mark all previously broadcasted and chainlocked withdrawals as complete
         // only when we are on a new core height
-        if block_execution_context
-            .block_state_info()
-            .core_chain_locked_height()
-            != last_block_core_height
-        {
+        if block_state_info.core_chain_locked_height() != last_block_core_height {
             self.update_broadcasted_withdrawal_statuses(
                 &block_info,
                 transaction,
@@ -331,33 +290,27 @@ where
         }
 
         // Preparing withdrawal transactions for signing and broadcasting
-        {
-            // To process withdrawals we need to dequeue untiled transactions from the withdrawal transactions queue
-            // Untiled transactions then converted to unsigned transactions, appending current block information
-            // required for signature verification (core height and quorum hash)
-            let unsigned_withdrawal_transaction_bytes = self
-                .dequeue_and_build_unsigned_withdrawal_transactions(
-                    validator_set_quorum_hash,
-                    &block_info,
-                    Some(transaction),
-                    platform_version,
-                )?;
+        // To process withdrawals we need to dequeue untiled transactions from the withdrawal transactions queue
+        // Untiled transactions then converted to unsigned transactions, appending current block information
+        // required for signature verification (core height and quorum hash)
+        // Then we save unsigned transaction bytes to block execution context
+        // to be signed (on extend_vote), verified (on verify_vote) and broadcasted (on finalize_block)
+        let unsigned_withdrawal_transaction_bytes = self
+            .dequeue_and_build_unsigned_withdrawal_transactions(
+                validator_set_quorum_hash,
+                &block_info,
+                Some(transaction),
+                platform_version,
+            )?;
 
-            // Save unsigned transaction bytes to block execution context
-            // to be signed (on extend_vote), verified (on verify_vote) and broadcasted (on finalize_block)
-            block_execution_context
-                .set_unsigned_withdrawal_transactions(unsigned_withdrawal_transaction_bytes);
-        }
-
+        // Process transactions
         let state_transitions_result = self.process_raw_state_transitions(
             raw_state_transitions,
-            block_execution_context.block_platform_state(),
+            &block_platform_state,
             &block_info,
             transaction,
             platform_version,
         )?;
-
-        let mut block_execution_context: BlockExecutionContext = block_execution_context;
 
         // Pool withdrawals into transactions queue
 
@@ -368,6 +321,19 @@ where
             Some(transaction),
             platform_version,
         )?;
+
+        // Create a new block execution context
+
+        let mut block_execution_context: BlockExecutionContext =
+            block_execution_context::v0::BlockExecutionContextV0 {
+                block_state_info: block_state_info.into(),
+                epoch_info: epoch_info.clone(),
+                hpmn_count: hpmn_list_len,
+                unsigned_withdrawal_transactions: unsigned_withdrawal_transaction_bytes,
+                block_platform_state,
+                proposer_results: None,
+            }
+            .into();
 
         // while we have the state transitions executed, we now need to process the block fees
         let block_fees_v0: BlockFeesV0 = state_transitions_result.aggregated_fees().clone().into();
@@ -394,7 +360,7 @@ where
             .block_state_info_mut()
             .set_app_hash(Some(root_hash));
 
-        let state = self.state.read().unwrap();
+        let state = self.state.read();
         let validator_set_update =
             self.validator_set_update(&state, &mut block_execution_context, platform_version)?;
 

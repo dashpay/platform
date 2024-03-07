@@ -2,9 +2,9 @@
 name = "platform-version"
 authors = ["Samuel Westrich <sam@dash.org>"]
 description = "Bincode based serialization and deserialization"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.6"
 edition = "2021"
-rust-version = "1.73"
+rust-version = "1.76"
 license = "MIT"
 private = true
 

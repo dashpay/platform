@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use bincode::{Decode, Encode};
 use derive_more::From;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::{Identifier, IdentityNonce};
