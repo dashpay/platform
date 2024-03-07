@@ -17,7 +17,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -117,7 +117,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -203,7 +203,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,

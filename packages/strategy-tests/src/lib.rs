@@ -92,7 +92,7 @@ pub struct Strategy {
         Option<BTreeMap<u64, CreatedDataContract>>,
     )>,
     pub operations: Vec<Operation>,
-    pub start_identities: Vec<(Identity, StateTransition)>,
+    pub start_identities: (u8, u8),
     pub identities_inserts: Frequency,
     pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
@@ -120,7 +120,7 @@ pub enum LocalDocumentQuery<'a> {
 struct StrategyInSerializationFormat {
     pub contracts_with_updates: Vec<(Vec<u8>, Option<BTreeMap<u64, Vec<u8>>>)>,
     pub operations: Vec<Vec<u8>>,
-    pub start_identities: Vec<(Identity, StateTransition)>,
+    pub start_identities: (u8, u8),
     pub identities_inserts: Frequency,
     pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
@@ -325,8 +325,16 @@ impl Strategy {
         let mut state_transitions = vec![];
 
         // Add start_identities
-        if block_info.height == config.start_block_height && !self.start_identities.is_empty() {
-            state_transitions.append(&mut self.start_identities.clone());
+        if block_info.height == config.start_block_height && self.start_identities.0 > 0 {
+            let mut new_transitions = crate::transitions::create_identities_state_transitions(
+                self.start_identities.0.into(), // number of identities
+                self.start_identities.1.into(), // number of keys per identity
+                signer,
+                rng,
+                create_asset_lock,
+                platform_version,
+            )?;
+            state_transitions.append(&mut new_transitions);
         }
 
         // Add identities_inserts
@@ -1147,26 +1155,37 @@ impl Strategy {
                             );
 
                             // Create `doc_type_count` doc types
-                            let doc_types = Value::Map(doc_type_range.clone().filter_map(|_| {
-                                match DocumentTypeV0::random_document_type(
-                                    params.clone(),
-                                    contract_id,
-                                    rng,
-                                    platform_version,
-                                ) {
-                                    Ok(new_document_type) => {
-                                        let mut doc_type_clone = new_document_type.schema().clone();
-                                        let name = doc_type_clone.remove("title").expect(
+                            let doc_types =
+                                Value::Map(
+                                    doc_type_range
+                                        .clone()
+                                        .filter_map(|_| match DocumentTypeV0::random_document_type(
+                                            params.clone(),
+                                            contract_id,
+                                            rng,
+                                            platform_version,
+                                        ) {
+                                            Ok(new_document_type) => {
+                                                let mut doc_type_clone =
+                                                    new_document_type.schema().clone();
+                                                let name = doc_type_clone.remove("title").expect(
                                             "Expected to get a doc type title in ContractCreate",
                                         );
-                                        Some((Value::Text(name.to_string()), doc_type_clone))
-                                    }
-                                    Err(e) => {
-                                        error!("Error generating random document type: {:?}", e);
-                                        None
-                                    }
-                                }
-                            }).collect());
+                                                Some((
+                                                    Value::Text(name.to_string()),
+                                                    doc_type_clone,
+                                                ))
+                                            }
+                                            Err(e) => {
+                                                error!(
+                                                    "Error generating random document type: {:?}",
+                                                    e
+                                                );
+                                                None
+                                            }
+                                        })
+                                        .collect(),
+                                );
 
                             let created_data_contract = match contract_factory.create(
                                 owner_id,
@@ -1193,7 +1212,8 @@ impl Strategy {
                             };
 
                             // Sign transition
-                            let public_key = identity.get_first_public_key_matching(
+                            let public_key = identity
+                                .get_first_public_key_matching(
                                     Purpose::AUTHENTICATION,
                                     HashSet::from([SecurityLevel::CRITICAL]),
                                     HashSet::from([KeyType::ECDSA_SECP256K1]),
@@ -1541,7 +1561,7 @@ mod tests {
                     },
                 },
             ],
-            start_identities,
+            start_identities: (2, 3),
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,

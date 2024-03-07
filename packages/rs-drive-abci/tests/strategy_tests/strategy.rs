@@ -347,8 +347,15 @@ impl NetworkStrategy {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
         let mut state_transitions = vec![];
-        if block_info.height == 1 && !self.strategy.start_identities.is_empty() {
-            state_transitions.append(&mut self.strategy.start_identities.clone());
+        if block_info.height == 1 && self.strategy.start_identities.0 > 0 {
+            let mut new_transitions = NetworkStrategy::create_identities_state_transitions(
+                self.strategy.start_identities.0.into(),
+                5,
+                signer,
+                rng,
+                platform_version,
+            );
+            state_transitions.append(&mut new_transitions);
         }
         let frequency = &self.strategy.identities_inserts;
         if frequency.check_hit(rng) {

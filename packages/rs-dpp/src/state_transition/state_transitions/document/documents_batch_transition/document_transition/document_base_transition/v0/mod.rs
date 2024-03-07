@@ -17,12 +17,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::identifier::Identifier;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::documents_batch_transition::document_base_transition::property_names;
-#[cfg(any(feature = "state-transition-json-conversion", feature = "state-transition-value-conversion"))]
+#[cfg(any(
+    feature = "state-transition-json-conversion",
+    feature = "state-transition-value-conversion"
+))]
 use crate::{data_contract::DataContract, errors::ProtocolError};
-use crate::identifier::Identifier;
 
 #[derive(Debug, Clone, Encode, Decode, Default, PartialEq, Display)]
 #[cfg_attr(
