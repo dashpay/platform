@@ -58,9 +58,7 @@ mod tests {
         assert_eq!(public_keys.len(), 5);
 
         for (_, key) in public_keys {
-            let hash = key
-                .hash()
-                .expect("expected to get hash");
+            let hash = key.hash().expect("expected to get hash");
             if key.key_type().is_unique_key_type() {
                 let identity_id = drive
                     .fetch_identity_id_by_unique_public_key_hash(

@@ -12,7 +12,9 @@ use grovedb_costs::OperationCost;
 use std::collections::HashMap;
 
 impl Drive {
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     /// Applies a partial batch of groveDB operations if apply is True, otherwise gets the cost of the operations.
     pub(super) fn apply_partial_batch_grovedb_operations_v0(
         &self,

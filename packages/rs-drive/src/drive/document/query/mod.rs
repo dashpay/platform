@@ -47,6 +47,8 @@ use grovedb::TransactionArg;
 use crate::drive::Drive;
 
 #[cfg(feature = "fixtures-and-mocks")]
+use crate::drive::verify::RootHash;
+#[cfg(feature = "fixtures-and-mocks")]
 use crate::error::query::QuerySyntaxError;
 #[cfg(feature = "fixtures-and-mocks")]
 use crate::error::Error;
@@ -63,8 +65,6 @@ use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::data_contract::DataContract;
-#[cfg(feature = "fixtures-and-mocks")]
-use crate::drive::verify::RootHash;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::version::PlatformVersion;
 use dpp::version::PlatformVersionCurrentVersion;

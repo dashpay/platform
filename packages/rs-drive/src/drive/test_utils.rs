@@ -10,7 +10,9 @@ pub(crate) struct TestEntropyGenerator {
 
 impl TestEntropyGenerator {
     /// new test entropy generator
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub(crate) fn new() -> Self {
         Self {
             rng: RefCell::new(SmallRng::seed_from_u64(1337)),

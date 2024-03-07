@@ -73,7 +73,9 @@ impl Drive {
     /// # Returns
     ///
     /// Returns a `Result` containing an `Option` for the Identity's revision, otherwise an `Error` if the operation fails or the version is not supported.
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub(crate) fn fetch_identity_contract_nonce_operations(
         &self,
         identity_id: [u8; 32],

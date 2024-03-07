@@ -95,7 +95,9 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
 
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     fn setup_deep_nested_50_contract() -> (Drive, DataContract) {
         let drive: Drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
@@ -118,7 +120,9 @@ mod tests {
         (drive, contract)
     }
 
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     fn setup_deep_nested_10_contract() -> (Drive, DataContract) {
         let drive: Drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();

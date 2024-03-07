@@ -12,7 +12,9 @@ use std::collections::HashMap;
 impl Drive {
     //this will be used later
     /// Applies a batch of Drive operations to groveDB.
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub(super) fn apply_partial_batch_low_level_drive_operations_v0(
         &self,
         estimated_costs_only_with_layer_info: Option<

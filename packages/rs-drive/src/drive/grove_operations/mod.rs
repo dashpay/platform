@@ -370,7 +370,9 @@ impl DirectQueryType {
     /// let ref_sizes = vec![100, 200, 300];
     /// let query_type = direct_query.add_reference_sizes(ref_sizes);
     /// ```
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub(crate) fn add_reference_sizes(self, reference_sizes: Vec<u32>) -> QueryType {
         match self {
             DirectQueryType::StatelessDirectQuery {

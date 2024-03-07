@@ -53,7 +53,9 @@ pub trait DriveLowLevelOperationConverter {
 /// The drive operation context keeps track of changes that might affect other operations
 /// Notably Identity balance changes are kept track of
 pub struct DriveOperationContext {
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     identity_balance_changes: BTreeMap<[u8; 32], i64>,
 }
 
@@ -940,19 +942,17 @@ mod tests {
                     owner_id: Some(random_owner_id1),
                 },
                 override_document: false,
-            }
+            },
         ];
-        let drive_operations = vec![
-            DocumentOperation(
-                MultipleDocumentOperationsForSameContractDocumentType {
-                    document_operations: DocumentOperationsForContractDocumentType {
-                        operations,
-                        contract: &contract,
-                        document_type,
-                    },
+        let drive_operations = vec![DocumentOperation(
+            MultipleDocumentOperationsForSameContractDocumentType {
+                document_operations: DocumentOperationsForContractDocumentType {
+                    operations,
+                    contract: &contract,
+                    document_type,
                 },
-            )
-        ];
+            },
+        )];
 
         drive
             .apply_drive_operations(
@@ -997,17 +997,15 @@ mod tests {
             }),
         ];
 
-        let drive_operations = vec![
-            DocumentOperation(
-                MultipleDocumentOperationsForSameContractDocumentType {
-                    document_operations: DocumentOperationsForContractDocumentType {
-                        operations,
-                        contract: &contract,
-                        document_type,
-                    },
+        let drive_operations = vec![DocumentOperation(
+            MultipleDocumentOperationsForSameContractDocumentType {
+                document_operations: DocumentOperationsForContractDocumentType {
+                    operations,
+                    contract: &contract,
+                    document_type,
                 },
-            )
-        ];
+            },
+        )];
 
         drive
             .apply_drive_operations(

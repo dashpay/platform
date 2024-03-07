@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::drive::contract::paths::{contract_keeping_history_root_path, contract_root_path};
-use crate::drive::verify::{RootHash, Bytes32};
+use crate::drive::verify::{Bytes32, RootHash};
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;

@@ -127,10 +127,10 @@ mod test_index;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use single_document_drive_query::SingleDocumentDriveQuery;
 
+use crate::drive::verify::RootHash;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::DocumentV0Getters;
-use crate::drive::verify::RootHash;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 /// Internal clauses struct
