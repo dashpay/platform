@@ -29,7 +29,7 @@ use crate::identity::conversion::platform_value::IdentityPlatformValueConversion
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::core_script::CoreScript;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::prelude::{IdentityNonce};
+use crate::prelude::IdentityNonce;
 #[cfg(all(feature = "identity-serialization", feature = "client"))]
 use crate::serialization::PlatformDeserializable;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
