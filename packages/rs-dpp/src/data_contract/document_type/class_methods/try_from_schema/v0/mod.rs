@@ -1,16 +1,19 @@
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
+#[cfg(feature = "validation")]
+use crate::consensus::ConsensusError;
 use indexmap::IndexMap;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
+#[cfg(feature = "validation")]
+use std::collections::HashSet;
 use std::convert::TryInto;
-
+#[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::{
     DuplicateIndexNameError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
     SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError,
 };
-use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::array::ArrayItemType;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
@@ -21,7 +24,9 @@ use crate::data_contract::document_type::schema::{
     traversal_validator, validate_max_depth,
 };
 
+#[cfg(feature = "validation")]
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
+#[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;
 use crate::data_contract::document_type::schema::enrich_with_base_schema;
 use crate::data_contract::document_type::{property_names, DocumentType};
@@ -203,7 +208,9 @@ impl DocumentTypeV0 {
         let index_values =
             Value::inner_optional_array_slice_value(schema_map, property_names::INDICES)?;
 
+        #[cfg(feature = "validation")]
         let mut index_names: HashSet<String> = HashSet::new();
+        #[cfg(feature = "validation")]
         let mut unique_indices_count = 0;
 
         let indices: Vec<Index> = index_values
