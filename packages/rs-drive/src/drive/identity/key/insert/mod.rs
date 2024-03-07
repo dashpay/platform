@@ -9,6 +9,7 @@ mod replace_key_in_storage;
 use dpp::identity::IdentityPublicKey;
 
 /// The contract apply info
+#[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
 pub enum DataContractApplyInfo {
     /// Keys of the contract apply info
     Keys(Vec<IdentityPublicKey>),

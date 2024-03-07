@@ -79,7 +79,7 @@ mod tests {
     use crate::drive::document::tests::setup_dashpay;
     use crate::query::DriveQuery;
     use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
-    use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
+    use crate::{common::setup_contract};
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
