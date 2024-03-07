@@ -689,7 +689,9 @@ where
     }
 }
 
-#[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+#[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 const UTF8_CHAR_WIDTH: [u8; 256] = [
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     1, // 0x1F
@@ -710,7 +712,9 @@ const UTF8_CHAR_WIDTH: [u8; 256] = [
 ];
 
 // This function is a copy of core::str::utf8_char_width
-#[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+#[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 const fn utf8_char_width(b: u8) -> usize {
     UTF8_CHAR_WIDTH[b as usize] as usize
 }
