@@ -3,17 +3,26 @@ mod from_document;
 pub mod v0;
 mod v0_methods;
 
-#[cfg(any(feature = "state-transition-value-conversion", feature = "state-transition-json-conversion"))]
+#[cfg(any(
+    feature = "state-transition-value-conversion",
+    feature = "state-transition-json-conversion"
+))]
 use crate::data_contract::DataContract;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::{
     DocumentBaseTransitionV0, DocumentTransitionObjectLike,
 };
-#[cfg(any(feature = "state-transition-value-conversion", feature = "state-transition-json-conversion"))]
+#[cfg(any(
+    feature = "state-transition-value-conversion",
+    feature = "state-transition-json-conversion"
+))]
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::{Display, From};
 pub use fields::*;
-#[cfg(any(feature = "state-transition-value-conversion", feature = "state-transition-json-conversion"))]
+#[cfg(any(
+    feature = "state-transition-value-conversion",
+    feature = "state-transition-json-conversion"
+))]
 use platform_value::Value;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
