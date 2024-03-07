@@ -6,7 +6,6 @@ mod document_create_transition;
 // pub use document_delete_transition::*;
 // pub use document_replace_transition::*;
 
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::platform_value::Value;
 use dpp::prelude::TimestampMillis;
 use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
@@ -277,6 +276,7 @@ impl Inner for DocumentTransitionWasm {
 //     }
 // }
 
+#[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
 pub(crate) fn to_object<'a>(
     value: Value,
     options: &JsValue,

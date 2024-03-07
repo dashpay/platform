@@ -7,7 +7,6 @@ use crate::errors::from_dpp_err;
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::identity::KeyType;
 use dpp::platform_value::BinaryData;
-use dpp::serialization::ValueConvertible;
 
 use dpp::version::PlatformVersion;
 
@@ -67,7 +66,7 @@ impl IdentityTopUpTransitionWasm {
     pub fn set_asset_lock_proof(&mut self, asset_lock_proof: JsValue) -> Result<(), JsValue> {
         let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&asset_lock_proof)?;
 
-        self.0.set_asset_lock_proof(asset_lock_proof);
+        self.0.set_asset_lock_proof(asset_lock_proof).unwrap();
 
         Ok(())
     }

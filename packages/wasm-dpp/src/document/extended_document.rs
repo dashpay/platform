@@ -11,7 +11,6 @@ use dpp::util::json_value::JsonValueExt;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
@@ -363,6 +362,7 @@ impl ExtendedDocumentWasm {
 }
 
 impl ExtendedDocumentWasm {
+    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
     fn get_binary_type_of_path(&self, path: &String) -> Result<BinaryType, JsValue> {
         let document_type = self.0.document_type().with_js_error()?;
 

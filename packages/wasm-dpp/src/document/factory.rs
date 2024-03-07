@@ -118,15 +118,15 @@ impl DocumentFactoryWASM {
             js_sys::Object::entries(nonce_counter_value)
                 .iter()
                 .for_each(|entry| {
-                    let key_value = js_sys::Array::try_from(entry.clone()).unwrap();
+                    let key_value = js_sys::Array::from(&entry);
                     let identity_id = identifier_from_js_value(&key_value.get(0)).unwrap();
                     let contract_ids = key_value.get(1);
                     let contract_ids = js_sys::Object::try_from(&contract_ids).unwrap();
 
-                    js_sys::Object::entries(&contract_ids)
+                    js_sys::Object::entries(contract_ids)
                         .iter()
                         .for_each(|entry| {
-                            let key_value = js_sys::Array::try_from(entry.clone()).unwrap();
+                            let key_value = js_sys::Array::from(&entry);
                             let contract_id = identifier_from_js_value(&key_value.get(0)).unwrap();
                             let nonce = key_value.get(1).as_f64().unwrap() as u64;
                             nonce_counter.insert((identity_id, contract_id), nonce);
