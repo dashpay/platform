@@ -12,7 +12,7 @@ use dpp::data_contract::DataContract;
 
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
-use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
+use dpp::identity::{Identity, KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
@@ -29,7 +29,7 @@ use dpp::state_transition::data_contract_update_transition::methods::DataContrac
 use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
-use rand::Rng;
+use rand::{thread_rng, Rng};
 use tracing::{error, info};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use bincode::{Decode, Encode};
@@ -37,7 +37,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::platform_value::{BinaryData, Bytes32};
+use dpp::platform_value::BinaryData;
 use dpp::ProtocolError;
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
@@ -1039,29 +1039,50 @@ impl Strategy {
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
                         match update_op {
                             IdentityUpdateOp::IdentityUpdateAddKeys(keys_count) => {
-                                (0..count).for_each(|n| {
-                                    current_identities.iter_mut().enumerate().for_each(|(i, random_identity)| {
-                                        if i >= count.into() { return; }
+                                // Map the count of keys already added this block to each identity
+                                // This prevents adding duplicate KeyIDs in the same block
+                                let mut keys_already_added_count_map = HashMap::new();
+                                for id in &*current_identities {
+                                    keys_already_added_count_map.insert(id.id(), 0);
+                                }
 
-                                        let keys_already_added = n * keys_count;
+                                // Create `count` state transitions
+                                for _ in 0..count {
+                                    let identities_count = current_identities.len();
+                                    if identities_count == 0 {
+                                        break;
+                                    }
+                                
+                                    // Select a random identity from the current_identities
+                                    let random_index = thread_rng().gen_range(0..identities_count);
+                                    let random_identity = &mut current_identities[random_index];
+                                
+                                    // Get keys already added
+                                    let keys_already_added = keys_already_added_count_map.get(&random_identity.id())
+                                        .expect("Expected to get keys_already_added in IdentityAddKeys ST creation");
+                                
+                                    // Create transition
+                                    let (state_transition, keys_to_add_at_end_block) = 
+                                        crate::transitions::create_identity_update_transition_add_keys(
+                                            random_identity,
+                                            *keys_count,
+                                            *keys_already_added,
+                                            identity_nonce_counter,
+                                            signer,
+                                            rng,
+                                            platform_version,
+                                        );
 
-                                        let (state_transition, keys_to_add_at_end_block) =
-                                            crate::transitions::create_identity_update_transition_add_keys(
-                                                random_identity,
-                                                *keys_count,
-                                                keys_already_added.into(),
-                                                identity_nonce_counter,
-                                                signer,
-                                                rng,
-                                                platform_version,
-                                            );
-                                        operations.push(state_transition);
-                                        finalize_block_operations.push(IdentityAddKeys(
-                                            keys_to_add_at_end_block.0,
-                                            keys_to_add_at_end_block.1,
-                                        ));
-                                    });
-                                });
+                                    // Push to operations vectors
+                                    operations.push(state_transition);
+                                    finalize_block_operations.push(IdentityAddKeys(
+                                        keys_to_add_at_end_block.0,
+                                        keys_to_add_at_end_block.1,
+                                    ));
+
+                                    // Increment keys_already_added count
+                                    keys_already_added_count_map.insert(random_identity.id(), keys_already_added + *keys_count as u32);
+                                }
                             }
                             IdentityUpdateOp::IdentityUpdateDisableKey(keys_count) => {
                                 (0..count).for_each(|_| {

@@ -285,7 +285,7 @@ pub fn create_identity_top_up_transition(
 pub fn create_identity_update_transition_add_keys(
     identity: &mut Identity,
     count: u16,
-    keys_already_added: u32,
+    keys_already_added_this_block_count: u32,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
@@ -293,7 +293,7 @@ pub fn create_identity_update_transition_add_keys(
 ) -> (StateTransition, (Identifier, Vec<IdentityPublicKey>)) {
     identity.bump_revision();
 
-    let start_id = (identity.public_keys().len() as u32 + keys_already_added) as KeyID;
+    let start_id = (identity.public_keys().len() as u32 + keys_already_added_this_block_count) as KeyID;
 
     let keys = IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(
         start_id,
