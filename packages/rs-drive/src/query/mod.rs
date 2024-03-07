@@ -127,6 +127,7 @@ mod test_index;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use single_document_drive_query::SingleDocumentDriveQuery;
 
+#[cfg(all(feature = "full", feature = "verify"))]
 use crate::drive::verify::RootHash;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
