@@ -4,11 +4,13 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
-use dapi_grpc::platform::v0::{ResponseMetadata};
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C> {
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub(in crate::query) fn response_metadata(
         &self,
         platform_version: &PlatformVersion,

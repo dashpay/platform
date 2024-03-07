@@ -7,7 +7,9 @@ use dpp::version::PlatformVersion;
 
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 
-#[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+#[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 pub(super) fn execute_data_triggers(
     document_transition_actions: &Vec<DocumentTransitionAction>,
     context: &DataTriggerExecutionContext,

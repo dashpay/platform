@@ -113,7 +113,9 @@ mod tests {
     use dpp::state_transition::StateTransition;
     use tenderdash_abci::Application;
 
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
         let mut quorums = QuorumListExtendedInfo::new();
 

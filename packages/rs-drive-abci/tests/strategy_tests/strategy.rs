@@ -126,21 +126,29 @@ impl MasternodeListChangesStrategy {
             || self.changed_ip_masternodes.is_set()
     }
 
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn removed_any_masternode_types(&self) -> bool {
         self.removed_masternodes.is_set() || self.removed_hpmns.is_set()
     }
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn updated_any_masternode_types(&self) -> bool {
         self.updated_masternodes.is_set() || self.updated_hpmns.is_set()
     }
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn added_any_masternode_types(&self) -> bool {
         self.new_masternodes.is_set() || self.new_hpmns.is_set()
     }
 }
 
-#[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+#[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 pub enum StrategyMode {
     ProposerOnly,
     ProposerAndValidatorHashValidationOnly,
@@ -186,7 +194,9 @@ impl CoreHeightIncrease {
             }
         }
     }
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn average_core_height(&self, block_count: u64, initial_core_height: u32) -> u32 {
         match self {
             NoCoreHeightIncrease => initial_core_height,
@@ -200,7 +210,9 @@ impl CoreHeightIncrease {
         }
     }
 
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn add_events_if_hit(&mut self, core_height: u32, rng: &mut StdRng) -> u32 {
         match self {
             NoCoreHeightIncrease => 0,
@@ -316,7 +328,9 @@ impl NetworkStrategy {
     }
 
     // TODO: This belongs to `DocumentOp`
-    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn add_strategy_contracts_into_drive(
         &mut self,
         drive: &Drive,

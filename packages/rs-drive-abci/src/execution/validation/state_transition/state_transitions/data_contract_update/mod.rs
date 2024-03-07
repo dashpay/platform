@@ -3,7 +3,7 @@ mod state;
 mod structure;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::validation::{ConsensusValidationResult};
+use dpp::validation::ConsensusValidationResult;
 
 use drive::grovedb::TransactionArg;
 
@@ -16,7 +16,7 @@ use drive::state_transition_action::StateTransitionAction;
 
 use crate::execution::validation::state_transition::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use crate::platform_types::platform::{PlatformRef};
+use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {

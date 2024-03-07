@@ -24,7 +24,9 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
-#[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
+#[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 pub(crate) fn fetch_documents_for_transitions(
     platform: &PlatformStateRef,
     document_transitions: &[&DocumentTransition],

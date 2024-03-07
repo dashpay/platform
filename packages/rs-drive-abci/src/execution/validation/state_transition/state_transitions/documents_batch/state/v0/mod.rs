@@ -122,18 +122,17 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                         .map(|e| ConsensusError::StateError(StateError::DataTriggerError(e)))
                         .collect();
                     validation_result.add_errors(consensus_errors);
-                    validated_transitions.push(
-                        DocumentTransitionAction::BumpIdentityDataContractNonce(
-                            BumpIdentityDataContractNonceAction::from_document_base_transition_action(
-                                transition.base_owned().ok_or(Error::Execution(
-                                    ExecutionError::CorruptedCodeExecution(
-                                        "base should always exist on transition",
-                                    ),
-                                ))?,
-                                owner_id,
-                            )?,
-                        ),
-                    );
+                    validated_transitions
+                        .push(DocumentTransitionAction::BumpIdentityDataContractNonce(
+                        BumpIdentityDataContractNonceAction::from_document_base_transition_action(
+                            transition.base_owned().ok_or(Error::Execution(
+                                ExecutionError::CorruptedCodeExecution(
+                                    "base should always exist on transition",
+                                ),
+                            ))?,
+                            owner_id,
+                        )?,
+                    ));
                 } else {
                     validated_transitions.push(transition);
                 }

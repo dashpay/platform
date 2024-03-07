@@ -1,8 +1,6 @@
 use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
-use dpp::identity::identity_nonce::{
-    validate_identity_nonce_update, validate_new_identity_nonce,
-};
+use dpp::identity::identity_nonce::{validate_identity_nonce_update, validate_new_identity_nonce};
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
 
@@ -38,14 +36,15 @@ impl DocumentsBatchStateTransitionIdentityContractNonceV0 for DocumentsBatchTran
         for transition in self.transitions() {
             let revision_nonce = transition.identity_contract_nonce();
             let identity_id = self.owner_id();
-            let (existing_nonce, _unused_fees) = platform.drive.fetch_identity_contract_nonce_with_fees(
-                identity_id.to_buffer(),
-                transition.data_contract_id().to_buffer(),
-                block_info,
-                true,
-                tx,
-                platform_version,
-            )?;
+            let (existing_nonce, _unused_fees) =
+                platform.drive.fetch_identity_contract_nonce_with_fees(
+                    identity_id.to_buffer(),
+                    transition.data_contract_id().to_buffer(),
+                    block_info,
+                    true,
+                    tx,
+                    platform_version,
+                )?;
 
             let result = if let Some(existing_nonce) = existing_nonce {
                 validate_identity_nonce_update(existing_nonce, revision_nonce, identity_id)

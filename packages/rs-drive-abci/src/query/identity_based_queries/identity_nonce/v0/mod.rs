@@ -114,8 +114,9 @@ mod tests {
         let (platform, version) = setup_platform();
         let mut rng = StdRng::seed_from_u64(10);
         let id = rng.gen::<[u8; 32]>();
-        let _unused_identity = create_test_identity_with_rng(&platform.drive, id, &mut rng, None, version)
-            .expect("expected to create a test identity");
+        let _unused_identity =
+            create_test_identity_with_rng(&platform.drive, id, &mut rng, None, version)
+                .expect("expected to create a test identity");
 
         let request = GetIdentityNonceRequestV0 {
             identity_id: id.to_vec(),
