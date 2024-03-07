@@ -10,6 +10,7 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use std::cell::{Ref, RefCell, RefMut};
 use std::fmt::Debug;
+use std::sync::RwLock;
 use tenderdash_abci::proto::abci as proto;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
@@ -20,9 +21,9 @@ pub struct ConsensusAbciApplication<'a, C> {
     /// Platform
     platform: &'a Platform<C>,
     /// The current GroveDb transaction
-    transaction: RefCell<Option<Transaction<'a>>>,
+    transaction: RwLock<Option<Transaction<'a>>>,
     /// The current block execution context
-    block_execution_context: RefCell<Option<BlockExecutionContext>>,
+    block_execution_context: RwLock<Option<BlockExecutionContext>>,
 }
 
 impl<'a, C> ConsensusAbciApplication<'a, C> {
@@ -43,7 +44,7 @@ impl<'a, C> PlatformApplication<C> for ConsensusAbciApplication<'a, C> {
 }
 
 impl<'a, C> BlockExecutionApplication for ConsensusAbciApplication<'a, C> {
-    fn block_execution_context(&self) -> &RefCell<Option<BlockExecutionContext>> {
+    fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>> {
         &self.block_execution_context
     }
 }
@@ -52,21 +53,23 @@ impl<'a, C> TransactionalApplication<'a> for ConsensusAbciApplication<'a, C> {
     /// create and store a new transaction
     fn start_transaction(&self) {
         let transaction = self.platform.drive.grove.start_transaction();
-        self.transaction.borrow_mut().replace(transaction);
+        self.transaction.write().unwrap().replace(transaction);
     }
 
-    fn transaction(&self) -> &RefCell<Option<Transaction<'a>>> {
+    fn transaction(&self) -> &RwLock<Option<Transaction<'a>>> {
         &self.transaction
     }
 
     /// Commit a transaction
     fn commit_transaction(&self, platform_version: &PlatformVersion) -> Result<(), Error> {
-        let transaction =
-            self.transaction
-                .take()
-                .ok_or(Error::Execution(ExecutionError::NotInTransaction(
-                    "trying to commit a transaction, but we are not in one",
-                )))?;
+        let transaction = self
+            .transaction
+            .write()
+            .unwrap()
+            .take()
+            .ok_or(Error::Execution(ExecutionError::NotInTransaction(
+                "trying to commit a transaction, but we are not in one",
+            )))?;
 
         self.platform
             .drive

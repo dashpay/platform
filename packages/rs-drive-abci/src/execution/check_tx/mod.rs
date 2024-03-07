@@ -7,8 +7,6 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::ConsensusError;
 use dpp::fee::fee_result::FeeResult;
-use dpp::identifier::Identifier;
-use dpp::prelude::IdentityNonce;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 

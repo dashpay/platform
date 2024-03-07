@@ -24,12 +24,13 @@ where
         height,
         round,
     } = request;
-    let block_execution_context_ref = app.block_execution_context().borrow();
-    let block_execution_context = block_execution_context_ref
-        .as_ref()
-        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-            "block execution context must be set in block begin handler for extend vote",
-        )))?;
+    let block_execution_context_guard = app.block_execution_context().read().unwrap();
+    let block_execution_context =
+        block_execution_context_guard
+            .as_ref()
+            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "block execution context must be set in block begin handler for extend vote",
+            )))?;
 
     // Verify Tenderdash that it called this handler correctly
     let block_state_info = &block_execution_context.block_state_info();

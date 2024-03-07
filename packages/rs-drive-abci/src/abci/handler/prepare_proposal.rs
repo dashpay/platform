@@ -82,23 +82,24 @@ where
     }
 
     // Prepare transaction
-    if request.height == app.platform().config.abci.genesis_height as i64 {
+    let transaction_guard = if request.height == app.platform().config.abci.genesis_height as i64 {
         // special logic on init chain
-        let transaction_ref = app.transaction().borrow();
-        if transaction_ref.is_none() {
+        let transaction_guard = app.transaction().read().unwrap();
+        if transaction_guard.is_none() {
             return Err(Error::Abci(AbciError::BadRequest("received a prepare proposal request for the genesis height before an init chain request".to_string())))?;
         };
         if request.round > 0 {
-            transaction_ref
+            transaction_guard
                 .as_ref()
                 .map(|tx| tx.rollback_to_savepoint());
         };
+        transaction_guard
     } else {
         app.start_transaction();
-    }
+        app.transaction().read().unwrap()
+    };
 
-    let transaction_ref = app.transaction().borrow();
-    let transaction = transaction_ref
+    let transaction = transaction_guard
         .as_ref()
         .expect("transaction must be started");
 
@@ -117,12 +118,8 @@ where
         state_transitions_result,
         validator_set_update,
         protocol_version,
-        block_execution_context,
+        mut block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
-
-    app.block_execution_context()
-        .borrow_mut()
-        .replace(block_execution_context);
 
     let platform_version = PlatformVersion::get(protocol_version)
         .expect("must be set in run block proposal from existing protocol version");
@@ -194,12 +191,12 @@ where
         consensus_param_updates: None,
     };
 
-    let mut block_execution_context_ref = app.block_execution_context().borrow_mut();
-    let block_execution_context = block_execution_context_ref
-        .as_mut()
-        .expect("expected that a block execution context was set");
-
     block_execution_context.set_proposer_results(Some(response.clone()));
+
+    app.block_execution_context()
+        .write()
+        .unwrap()
+        .replace(block_execution_context);
 
     let elapsed_time_ms = timer.elapsed().as_millis();
 

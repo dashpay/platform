@@ -30,7 +30,7 @@ where
     let round: u32 = round as u32;
 
     // Make sure we are in a block execution phase
-    let block_execution_context_ref = app.block_execution_context().borrow();
+    let block_execution_context_ref = app.block_execution_context().read().unwrap();
     let Some(block_execution_context) = block_execution_context_ref.as_ref() else {
         tracing::warn!(
                 "vote extensions for height: {}, round: {} are rejected because we are not in a block execution phase",

@@ -15,13 +15,13 @@ where
 {
     app.start_transaction();
 
-    let transaction_ref = app.transaction().borrow();
-    let transaction = transaction_ref
+    let transaction_guard = app.transaction().read().unwrap();
+    let transaction = transaction_guard
         .as_ref()
         .expect("transaction must be started");
 
     // We need to drop the block execution context just in case init chain had already been called
-    let block_context = app.block_execution_context().take(); //drop the block execution context
+    let block_context = app.block_execution_context().write().unwrap().take(); //drop the block execution context
     if block_context.is_some() {
         tracing::warn!("block context was present during init chain, dropping it");
     }

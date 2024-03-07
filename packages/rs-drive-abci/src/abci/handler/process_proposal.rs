@@ -26,7 +26,8 @@ where
     let timer = crate::metrics::abci_request_duration("process_proposal");
 
     let mut drop_block_execution_context = false;
-    if let Some(block_execution_context) = app.block_execution_context().borrow_mut().as_mut() {
+    let mut block_execution_context_guard = app.block_execution_context().write().unwrap();
+    if let Some(block_execution_context) = block_execution_context_guard.as_mut() {
         // We are already in a block, or in init chain.
         // This only makes sense if we were the proposer unless we are at a future round
         if block_execution_context.block_state_info().round() != (request.round as u32) {
@@ -144,25 +145,29 @@ where
     }
 
     if drop_block_execution_context {
-        app.block_execution_context().take();
+        block_execution_context_guard.take();
     }
+    drop(block_execution_context_guard);
 
     // Get transaction
-    if request.height == app.platform().config.abci.genesis_height as i64 {
+    let transaction_guard = if request.height == app.platform().config.abci.genesis_height as i64 {
         // special logic on init chain
-        let transaction = app.transaction().borrow();
-        if transaction.is_none() {
+        let transaction_guard = app.transaction().read().unwrap();
+        if transaction_guard.is_none() {
             return Err(Error::Abci(AbciError::BadRequest("received a process proposal request for the genesis height before an init chain request".to_string())));
         }
         if request.round > 0 {
-            transaction.as_ref().map(|tx| tx.rollback_to_savepoint());
+            transaction_guard
+                .as_ref()
+                .map(|tx| tx.rollback_to_savepoint());
         }
+        transaction_guard
     } else {
         app.start_transaction();
+        app.transaction().read().unwrap()
     };
 
-    let transaction_ref = app.transaction().borrow();
-    let transaction = transaction_ref
+    let transaction = transaction_guard
         .as_ref()
         .expect("transaction must be started");
 
@@ -205,7 +210,8 @@ where
             .expect("must be set in run block proposer from existing platform version");
 
         app.block_execution_context()
-            .borrow_mut()
+            .write()
+            .unwrap()
             .replace(block_execution_context);
 
         let invalid_tx_count = state_transition_results.invalid_paid_count();

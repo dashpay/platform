@@ -1,7 +1,4 @@
-use crate::abci::app::{
-    BlockExecutionApplication, ConsensusAbciApplication, PlatformApplication,
-    TransactionalApplication,
-};
+use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::handler;
 use crate::abci::handler::error::error_into_exception;
 use crate::error::execution::ExecutionError;
@@ -11,8 +8,8 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
-use std::cell::RefCell;
 use std::fmt::Debug;
+use std::sync::RwLock;
 use tenderdash_abci::proto::abci as proto;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
@@ -23,9 +20,9 @@ pub struct FullAbciApplication<'a, C> {
     /// Platform
     pub platform: &'a Platform<C>,
     /// The current GroveDB transaction
-    pub transaction: RefCell<Option<Transaction<'a>>>,
+    pub transaction: RwLock<Option<Transaction<'a>>>,
     /// The current block execution context
-    pub block_execution_context: RefCell<Option<BlockExecutionContext>>,
+    pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
 }
 
 impl<'a, C> FullAbciApplication<'a, C> {
@@ -46,7 +43,7 @@ impl<'a, C> PlatformApplication<C> for FullAbciApplication<'a, C> {
 }
 
 impl<'a, C> BlockExecutionApplication for FullAbciApplication<'a, C> {
-    fn block_execution_context(&self) -> &RefCell<Option<BlockExecutionContext>> {
+    fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>> {
         &self.block_execution_context
     }
 }
@@ -55,21 +52,23 @@ impl<'a, C> TransactionalApplication<'a> for FullAbciApplication<'a, C> {
     /// create and store a new transaction
     fn start_transaction(&self) {
         let transaction = self.platform.drive.grove.start_transaction();
-        self.transaction.borrow_mut().replace(transaction);
+        self.transaction.write().unwrap().replace(transaction);
     }
 
-    fn transaction(&self) -> &RefCell<Option<Transaction<'a>>> {
+    fn transaction(&self) -> &RwLock<Option<Transaction<'a>>> {
         &self.transaction
     }
 
     /// Commit a transaction
     fn commit_transaction(&self, platform_version: &PlatformVersion) -> Result<(), Error> {
-        let transaction =
-            self.transaction
-                .take()
-                .ok_or(Error::Execution(ExecutionError::NotInTransaction(
-                    "trying to commit a transaction, but we are not in one",
-                )))?;
+        let transaction = self
+            .transaction
+            .write()
+            .unwrap()
+            .take()
+            .ok_or(Error::Execution(ExecutionError::NotInTransaction(
+                "trying to commit a transaction, but we are not in one",
+            )))?;
 
         self.platform
             .drive
