@@ -1,16 +1,23 @@
+#[cfg(feature = "state-transition-signing")]
 use crate::data_contract::document_type::DocumentTypeRef;
+#[cfg(feature = "state-transition-signing")]
 use crate::document::Document;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
-use crate::identity::{IdentityPublicKey, SecurityLevel};
+#[cfg(feature = "state-transition-signing")]
+use crate::identity::{IdentityPublicKey};
+use crate::identity::{SecurityLevel};
 use crate::prelude::IdentityNonce;
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 use platform_value::Identifier;
+#[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 use std::convert::TryFrom;
 

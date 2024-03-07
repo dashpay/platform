@@ -1,17 +1,25 @@
 mod v0;
 pub use v0::*;
 
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::{Identity, IdentityPublicKey, KeyID};
 
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
 
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
+#[cfg(feature = "state-transition-signing")]
 use crate::version::FeatureVersion;
+#[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 
+#[cfg(feature = "state-transition-signing")]
 use crate::prelude::IdentityNonce;
+#[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
 impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransition {

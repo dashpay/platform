@@ -6,6 +6,7 @@ use crate::state_transition::documents_batch_transition::document_base_transitio
 use bincode::{Decode, Encode};
 use derive_more::Display;
 
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;

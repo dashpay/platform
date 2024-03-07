@@ -2,7 +2,6 @@ use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMe
 use crate::identity::IdentityPublicKey;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::ProtocolError;
-use std::convert::TryInto;
 
 impl IdentityPublicKeyInCreation {
     /// Get the original public key hash

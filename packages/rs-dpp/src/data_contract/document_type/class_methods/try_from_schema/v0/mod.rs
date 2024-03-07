@@ -71,9 +71,9 @@ impl DocumentTypeV0 {
 
         #[cfg(not(feature = "validation"))]
         if validate {
-            ProtocolError::CorruptedCodeExecution(
+            return Err(ProtocolError::CorruptedCodeExecution(
                 "validation is not enabled but is being called on try_from_schema_v0".to_string(),
-            );
+            ));
         }
 
         #[cfg(feature = "validation")]

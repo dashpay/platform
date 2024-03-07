@@ -9,9 +9,11 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::prelude::DataContract;
 #[cfg(feature = "state-transition-json-conversion")]
 use crate::state_transition::data_contract_update_transition::IDENTIFIER_FIELDS;
+#[cfg(any(feature = "state-transition-json-conversion", feature = "state-transition-value-conversion"))]
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
 #[cfg(feature = "state-transition-json-conversion")]
 use crate::state_transition::documents_batch_transition::document_create_transition::v0::BINARY_FIELDS;
+#[cfg(any(feature = "state-transition-json-conversion", feature = "state-transition-value-conversion"))]
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransitionV0;

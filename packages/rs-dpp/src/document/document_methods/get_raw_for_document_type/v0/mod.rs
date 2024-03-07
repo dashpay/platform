@@ -18,31 +18,33 @@ pub trait DocumentGetRawForDocumentTypeV0: DocumentV0Getters {
         // todo: maybe merge with document_type.serialize_value_for_key() because we use different
         //   code paths for query and index creation
         // returns the owner id if the key path is $ownerId and an owner id is given
-        if key_path == "$ownerId" && owner_id.is_some() {
-            Ok(Some(Vec::from(owner_id.unwrap())))
-        } else {
-            match key_path {
-                // returns self.id or self.owner_id if key path is $id or $ownerId
-                "$id" => return Ok(Some(self.id().to_vec())),
-                "$ownerId" => return Ok(Some(self.owner_id().to_vec())),
-                "$createdAt" => {
-                    return Ok(self
-                        .created_at()
-                        .map(|time| DocumentPropertyType::encode_date_timestamp(time).unwrap()))
-                }
-                "$updatedAt" => {
-                    return Ok(self
-                        .updated_at()
-                        .map(|time| DocumentPropertyType::encode_date_timestamp(time).unwrap()))
-                }
-                _ => {}
+        if key_path == "$ownerId" {
+            if let Some(owner_id) = owner_id {
+                return Ok(Some(Vec::from(owner_id)));
             }
-            self.properties()
-                .get_optional_at_path(key_path)?
-                .map(|value| {
-                    document_type.serialize_value_for_key(key_path, value, platform_version)
-                })
-                .transpose()
         }
+
+        match key_path {
+            // returns self.id or self.owner_id if key path is $id or $ownerId
+            "$id" => return Ok(Some(self.id().to_vec())),
+            "$ownerId" => return Ok(Some(self.owner_id().to_vec())),
+            "$createdAt" => {
+                return Ok(self
+                    .created_at()
+                    .map(|time| DocumentPropertyType::encode_date_timestamp(time).unwrap()))
+            }
+            "$updatedAt" => {
+                return Ok(self
+                    .updated_at()
+                    .map(|time| DocumentPropertyType::encode_date_timestamp(time).unwrap()))
+            }
+            _ => {}
+        }
+        self.properties()
+            .get_optional_at_path(key_path)?
+            .map(|value| {
+                document_type.serialize_value_for_key(key_path, value, platform_version)
+            })
+            .transpose()
     }
 }
