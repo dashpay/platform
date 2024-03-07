@@ -75,7 +75,8 @@ impl TryFrom<IdentityCreateTransitionV0Inner> for IdentityCreateTransitionV0 {
         let IdentityCreateTransitionV0Inner {
             public_keys,
             asset_lock_proof,
-            fee_multiplier, signature,
+            fee_multiplier,
+            signature,
         } = value;
         let identity_id = asset_lock_proof.create_identifier()?;
         Ok(Self {

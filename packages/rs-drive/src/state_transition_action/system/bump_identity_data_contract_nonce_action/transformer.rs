@@ -17,8 +17,12 @@ impl BumpIdentityDataContractNonceAction {
     ) -> Result<Self, ProtocolError> {
         match value {
             DocumentBaseTransition::V0(v0) => Ok(
-                BumpIdentityDataContractNonceActionV0::try_from_base_transition(v0, identity_id, fee_multiplier)?
-                    .into(),
+                BumpIdentityDataContractNonceActionV0::try_from_base_transition(
+                    v0,
+                    identity_id,
+                    fee_multiplier,
+                )?
+                .into(),
             ),
         }
     }

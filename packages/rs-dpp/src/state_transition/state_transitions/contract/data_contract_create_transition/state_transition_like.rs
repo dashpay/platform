@@ -1,8 +1,8 @@
+use crate::prelude::FeeMultiplier;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
-use crate::prelude::FeeMultiplier;
 
 impl StateTransitionLike for DataContractCreateTransition {
     /// Returns ID of the created contract
@@ -45,7 +45,9 @@ impl StateTransitionLike for DataContractCreateTransition {
     /// set a fee multiplier
     fn set_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier) {
         match self {
-            DataContractCreateTransition::V0(transition) => transition.set_fee_multiplier(fee_multiplier),
+            DataContractCreateTransition::V0(transition) => {
+                transition.set_fee_multiplier(fee_multiplier)
+            }
         }
     }
 

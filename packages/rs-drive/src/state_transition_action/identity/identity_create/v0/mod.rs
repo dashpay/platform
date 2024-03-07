@@ -7,10 +7,10 @@ use dpp::identity::{IdentityPublicKey, IdentityV0, PartialIdentity};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
 use dpp::platform_value::Bytes36;
+use dpp::prelude::FeeMultiplier;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
-use dpp::prelude::FeeMultiplier;
 
 /// action v0
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]

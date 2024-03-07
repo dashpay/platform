@@ -7,7 +7,10 @@ pub(crate) mod v0;
 
 pub use fields::{property_names, IDENTIFIER_FIELDS};
 
-#[cfg(any(feature = "document-json-conversion", feature = "document-value-conversion"))]
+#[cfg(any(
+    feature = "document-json-conversion",
+    feature = "document-value-conversion"
+))]
 use crate::data_contract::DataContract;
 use crate::ProtocolError;
 

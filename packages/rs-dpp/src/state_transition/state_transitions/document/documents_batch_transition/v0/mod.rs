@@ -15,9 +15,9 @@ use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 
+use crate::prelude::FeeMultiplier;
 use platform_value::{BinaryData, Identifier};
 use serde::{Deserialize, Serialize};
-use crate::prelude::FeeMultiplier;
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(

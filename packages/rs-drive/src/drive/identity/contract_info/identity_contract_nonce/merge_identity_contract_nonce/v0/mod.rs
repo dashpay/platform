@@ -1,7 +1,9 @@
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::identity::contract_info::ContractInfoStructure::IdentityContractNonceKey;
 use crate::drive::identity::IdentityRootStructure::IdentityContractInfo;
-use crate::drive::identity::{identity_contract_info_group_path, identity_contract_info_root_path_vec, identity_path_vec};
+use crate::drive::identity::{
+    identity_contract_info_group_path, identity_contract_info_root_path_vec, identity_path_vec,
+};
 use crate::drive::object_size_info::{PathKeyElementInfo, PathKeyInfo};
 use crate::drive::Drive;
 use crate::error::Error;
@@ -17,7 +19,6 @@ use dpp::identity::identity_nonce::{IDENTITY_NONCE_VALUE_FILTER, IDENTITY_NONCE_
 use dpp::prelude::IdentityNonce;
 use crate::drive::identity::contract_info::identity_contract_nonce::merge_identity_contract_nonce::MergeIdentityNonceResult;
 use crate::drive::identity::contract_info::identity_contract_nonce::merge_identity_contract_nonce::MergeIdentityNonceResult::{MergeIdentityNonceSuccess, NonceAlreadyPresentAtTip, NonceAlreadyPresentInPast, NonceTooFarInFuture, NonceTooFarInPast};
-
 
 impl Drive {
     pub(in crate::drive::identity::contract_info) fn merge_identity_contract_nonce_v0(

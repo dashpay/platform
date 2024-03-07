@@ -429,7 +429,7 @@ mod tests {
             Some(1),
             platform_version,
         )
-            .expect("expected to get key pair");
+        .expect("expected to get key pair");
 
         platform
             .drive
@@ -444,7 +444,7 @@ mod tests {
             balance: 1000000000,
             revision: 0,
         }
-            .into();
+        .into();
 
         let dashpay = get_dashpay_contract_fixture(Some(identity.id()), 1, protocol_version);
         let mut create_contract_state_transition: StateTransition = dashpay
@@ -502,7 +502,10 @@ mod tests {
 
         // The processing fees should be twice as much as a fee multiplier of 0,
         // since a fee multiplier of 100 means 100% more of 1 (gives 2)
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2604790 * 2);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            2604790 * 2
+        );
 
         let check_result = platform
             .check_tx(serialized.as_slice(), Recheck, platform_version)

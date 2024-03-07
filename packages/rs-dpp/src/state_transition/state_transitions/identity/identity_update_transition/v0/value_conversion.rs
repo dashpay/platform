@@ -9,7 +9,9 @@ use crate::state_transition::identity_update_transition::v0::{
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionValueConvert;
 
-use crate::state_transition::state_transitions::common_fields::property_names::{FEE_MULTIPLIER, NONCE};
+use crate::state_transition::state_transitions::common_fields::property_names::{
+    FEE_MULTIPLIER, NONCE,
+};
 use platform_version::version::PlatformVersion;
 
 impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
@@ -35,7 +37,8 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
             .map_err(ProtocolError::ValueError)?;
         let fee_multiplier = raw_object
             .get_optional_integer(FEE_MULTIPLIER)
-            .map_err(ProtocolError::ValueError)?.unwrap_or_default();
+            .map_err(ProtocolError::ValueError)?
+            .unwrap_or_default();
         let add_public_keys = raw_object
             .remove_optional_array(property_names::ADD_PUBLIC_KEYS)
             .map_err(ProtocolError::ValueError)?

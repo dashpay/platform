@@ -1,8 +1,8 @@
+use crate::prelude::FeeMultiplier;
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
-use crate::prelude::FeeMultiplier;
 
 impl StateTransitionLike for IdentityCreditWithdrawalTransition {
     /// Returns ID of the credit_withdrawalred contract
@@ -49,7 +49,9 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
     /// set a fee multiplier
     fn set_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier) {
         match self {
-            IdentityCreditWithdrawalTransition::V0(transition) => transition.set_fee_multiplier(fee_multiplier),
+            IdentityCreditWithdrawalTransition::V0(transition) => {
+                transition.set_fee_multiplier(fee_multiplier)
+            }
         }
     }
 

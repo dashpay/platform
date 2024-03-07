@@ -3,8 +3,8 @@ mod transformer;
 use dpp::identifier::Identifier;
 
 use dpp::platform_value::Bytes36;
-use serde::{Deserialize, Serialize};
 use dpp::prelude::FeeMultiplier;
+use serde::{Deserialize, Serialize};
 
 /// action v0
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]

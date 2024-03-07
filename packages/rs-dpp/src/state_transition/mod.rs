@@ -8,12 +8,18 @@ use platform_value::{BinaryData, Identifier};
 pub use state_transition_types::*;
 
 use bincode::{Decode, Encode};
-#[cfg(any(feature = "state-transition-signing", feature="state-transition-validation"))]
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
 use dashcore::signer;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
 mod abstract_state_transition;
-#[cfg(any(feature = "state-transition-signing", feature="state-transition-validation"))]
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
 use crate::BlsModule;
 use crate::ProtocolError;
 

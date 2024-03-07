@@ -146,7 +146,7 @@ impl<'a> ExecutionEvent<'a> {
                         removed_balance: None,
                         operations,
                         execution_operations: execution_context.operations_consume(),
-                        fee_multiplier
+                        fee_multiplier,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(

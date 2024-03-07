@@ -1,10 +1,10 @@
 use platform_value::BinaryData;
 
+use crate::prelude::FeeMultiplier;
 use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
 };
-use crate::prelude::FeeMultiplier;
 
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;

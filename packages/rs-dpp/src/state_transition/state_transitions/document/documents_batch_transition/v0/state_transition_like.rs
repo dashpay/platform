@@ -1,3 +1,4 @@
+use crate::prelude::FeeMultiplier;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::{
@@ -7,7 +8,6 @@ use crate::state_transition::StateTransitionType::DocumentsBatch;
 use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
-use crate::prelude::FeeMultiplier;
 
 impl From<DocumentsBatchTransitionV0> for StateTransition {
     fn from(value: DocumentsBatchTransitionV0) -> Self {
