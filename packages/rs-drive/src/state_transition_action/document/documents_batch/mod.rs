@@ -5,6 +5,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identity::SecurityLevel;
 use dpp::platform_value::Identifier;
+use dpp::prelude::FeeMultiplier;
 use dpp::ProtocolError;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 
@@ -60,6 +61,13 @@ impl DocumentsBatchTransitionAction {
     pub fn set_transitions(&mut self, transitions: Vec<DocumentTransitionAction>) {
         match self {
             DocumentsBatchTransitionAction::V0(v0) => v0.transitions = transitions,
+        }
+    }
+
+    /// fee multiplier
+    pub fn fee_multiplier(&self) -> FeeMultiplier {
+        match self {
+            DocumentsBatchTransitionAction::V0(transition) => transition.fee_multiplier,
         }
     }
 }

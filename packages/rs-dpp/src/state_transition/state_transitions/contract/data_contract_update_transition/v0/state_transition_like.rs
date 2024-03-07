@@ -4,6 +4,7 @@ use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
 };
+use crate::prelude::FeeMultiplier;
 
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
 
@@ -48,5 +49,13 @@ impl StateTransitionLike for DataContractUpdateTransitionV0 {
             base64::encode(self.data_contract.id()),
             self.identity_contract_nonce
         )]
+    }
+
+    fn fee_multiplier(&self) -> FeeMultiplier {
+        self.fee_multiplier
+    }
+
+    fn set_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier) {
+        self.fee_multiplier = fee_multiplier
     }
 }

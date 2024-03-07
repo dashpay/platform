@@ -9,6 +9,7 @@ use crate::state_transition_action::identity::identity_create::v0::{
 use derive_more::From;
 use dpp::identity::{Identity, IdentityPublicKey, PartialIdentity};
 use dpp::platform_value::{Bytes36, Identifier};
+use dpp::prelude::FeeMultiplier;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 
@@ -46,6 +47,13 @@ impl IdentityCreateTransitionAction {
     pub fn asset_lock_outpoint(&self) -> Bytes36 {
         match self {
             IdentityCreateTransitionAction::V0(action) => action.asset_lock_outpoint,
+        }
+    }
+
+    /// fee multiplier
+    pub fn fee_multiplier(&self) -> FeeMultiplier {
+        match self {
+            IdentityCreateTransitionAction::V0(transition) => transition.fee_multiplier,
         }
     }
 }

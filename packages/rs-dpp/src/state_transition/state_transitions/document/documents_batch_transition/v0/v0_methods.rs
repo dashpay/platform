@@ -2,7 +2,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0Getters};
 use crate::identity::signer::Signer;
 use crate::identity::SecurityLevel;
-use crate::prelude::{IdentityNonce, IdentityPublicKey};
+use crate::prelude::{FeeMultiplier, IdentityNonce, IdentityPublicKey};
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
 use crate::state_transition::documents_batch_transition::document_transition::{
@@ -34,6 +34,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         entropy: [u8; 32],
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
+        fee_multiplier: FeeMultiplier,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
@@ -53,6 +54,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
             owner_id,
             transitions: vec![create_transition.into()],
+            fee_multiplier,
             signature_public_key_id: 0,
             signature: Default::default(),
         }
@@ -72,6 +74,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         document_type: DocumentTypeRef,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
+        fee_multiplier: FeeMultiplier,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
@@ -90,6 +93,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
             owner_id,
             transitions: vec![replace_transition.into()],
+            fee_multiplier,
             signature_public_key_id: 0,
             signature: Default::default(),
         }

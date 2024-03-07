@@ -2,6 +2,7 @@ use crate::state_transition::identity_credit_transfer_transition::IdentityCredit
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
+use crate::prelude::FeeMultiplier;
 
 impl StateTransitionLike for IdentityCreditTransferTransition {
     /// Returns ID of the credit_transferred contract
@@ -40,6 +41,19 @@ impl StateTransitionLike for IdentityCreditTransferTransition {
             IdentityCreditTransferTransition::V0(transition) => {
                 transition.set_signature_bytes(signature)
             }
+        }
+    }
+
+    /// returns the fee multiplier
+    fn fee_multiplier(&self) -> FeeMultiplier {
+        match self {
+            IdentityCreditTransferTransition::V0(transition) => transition.fee_multiplier(),
+        }
+    }
+    /// set a fee multiplier
+    fn set_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier) {
+        match self {
+            IdentityCreditTransferTransition::V0(transition) => transition.set_fee_multiplier(fee_multiplier),
         }
     }
 

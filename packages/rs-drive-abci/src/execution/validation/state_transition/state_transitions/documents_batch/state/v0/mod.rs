@@ -94,6 +94,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                                 ),
                             ))?,
                             owner_id,
+                            state_transition_action.fee_multiplier(),
                         )?,
                     ),
                 );
@@ -135,6 +136,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                                         ),
                                     ))?,
                                     owner_id,
+                                    state_transition_action.fee_multiplier(),
                                 )?,
                             ),
                         );

@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use platform_value::BinaryData;
 
-use crate::prelude::Identifier;
+use crate::prelude::{FeeMultiplier, Identifier};
 use crate::version::FeatureVersion;
 
 use crate::state_transition::StateTransitionType;
@@ -37,6 +37,10 @@ pub trait StateTransitionLike:
     fn signature(&self) -> &BinaryData;
     /// set a new signature
     fn set_signature(&mut self, signature: BinaryData);
+    /// returns the fee multiplier
+    fn fee_multiplier(&self) -> FeeMultiplier;
+    /// set a fee multiplier
+    fn set_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier);
     /// get modified ids list
     fn modified_data_ids(&self) -> Vec<Identifier>;
 

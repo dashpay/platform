@@ -2,7 +2,7 @@ use platform_version::version::PlatformVersion;
 
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
-use crate::prelude::IdentityNonce;
+use crate::prelude::{FeeMultiplier, IdentityNonce};
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::{identity::KeyID, state_transition::StateTransitionType, ProtocolError};
@@ -16,6 +16,7 @@ pub trait IdentityUpdateTransitionMethodsV0 {
         disable_public_keys: Vec<KeyID>,
         public_keys_disabled_at: Option<u64>,
         nonce: IdentityNonce,
+        fee_multiplier: FeeMultiplier,
         signer: &S,
         platform_version: &PlatformVersion,
         version: Option<FeatureVersion>,

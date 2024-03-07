@@ -9,6 +9,7 @@ use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
 
 use dpp::identity::PartialIdentity;
+use dpp::prelude::FeeMultiplier;
 
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
@@ -33,6 +34,8 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         operations: Vec<DriveOperation<'a>>,
         /// the execution operations that we must also pay for
         execution_operations: Vec<ValidationOperation>,
+        /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
+        fee_multiplier: FeeMultiplier,
     },
     /// A drive event that is paid from an asset lock
     PaidFromAssetLockDriveEvent {
@@ -44,6 +47,8 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         operations: Vec<DriveOperation<'a>>,
         /// the execution operations that we must also pay for
         execution_operations: Vec<ValidationOperation>,
+        /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
+        fee_multiplier: FeeMultiplier,
     },
     /// A drive event that is free
     FreeDriveEvent {
@@ -62,6 +67,7 @@ impl<'a> ExecutionEvent<'a> {
     ) -> Result<Self, Error> {
         match &action {
             StateTransitionAction::IdentityCreateAction(identity_create_action) => {
+                let fee_multiplier = identity_create_action.fee_multiplier();
                 let identity = identity_create_action.into();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
@@ -70,9 +76,11 @@ impl<'a> ExecutionEvent<'a> {
                     added_balance: 0,
                     operations,
                     execution_operations: execution_context.operations_consume(),
+                    fee_multiplier,
                 })
             }
             StateTransitionAction::IdentityTopUpAction(identity_top_up_action) => {
+                let fee_multiplier = identity_top_up_action.fee_multiplier();
                 let added_balance = identity_top_up_action.top_up_balance_amount();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
@@ -82,6 +90,7 @@ impl<'a> ExecutionEvent<'a> {
                         added_balance,
                         operations,
                         execution_operations: execution_context.operations_consume(),
+                        fee_multiplier,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -90,6 +99,7 @@ impl<'a> ExecutionEvent<'a> {
                 }
             }
             StateTransitionAction::IdentityCreditWithdrawalAction(identity_credit_withdrawal) => {
+                let fee_multiplier = identity_credit_withdrawal.fee_multiplier();
                 let removed_balance = identity_credit_withdrawal.amount();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
@@ -99,6 +109,7 @@ impl<'a> ExecutionEvent<'a> {
                         removed_balance: Some(removed_balance),
                         operations,
                         execution_operations: execution_context.operations_consume(),
+                        fee_multiplier,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -107,6 +118,7 @@ impl<'a> ExecutionEvent<'a> {
                 }
             }
             StateTransitionAction::IdentityCreditTransferAction(identity_credit_transfer) => {
+                let fee_multiplier = identity_credit_transfer.fee_multiplier();
                 let removed_balance = identity_credit_transfer.transfer_amount();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
@@ -116,6 +128,7 @@ impl<'a> ExecutionEvent<'a> {
                         removed_balance: Some(removed_balance),
                         operations,
                         execution_operations: execution_context.operations_consume(),
+                        fee_multiplier,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -124,6 +137,7 @@ impl<'a> ExecutionEvent<'a> {
                 }
             }
             _ => {
+                let fee_multiplier = action.fee_multiplier();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
@@ -132,6 +146,7 @@ impl<'a> ExecutionEvent<'a> {
                         removed_balance: None,
                         operations,
                         execution_operations: execution_context.operations_consume(),
+                        fee_multiplier
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(

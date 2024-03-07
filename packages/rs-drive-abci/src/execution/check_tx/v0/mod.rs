@@ -113,6 +113,8 @@ where
 
         let unique_identifiers = state_transition.unique_identifiers();
 
+        let priority = state_transition.fee_multiplier();
+
         let validation_result = state_transition_to_execution_event_for_check_tx(
             &platform_ref,
             state_transition,
@@ -133,6 +135,7 @@ where
                         level: check_tx_level,
                         fee_result: Some(fee_result),
                         unique_identifiers,
+                        priority,
                     })
                 })
             } else {
@@ -140,6 +143,7 @@ where
                     level: check_tx_level,
                     fee_result: None,
                     unique_identifiers,
+                    priority,
                 }))
             }
         })
@@ -372,7 +376,7 @@ mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        platform
+        let processing_result = platform
             .platform
             .process_raw_state_transitions(
                 &vec![serialized.clone()],
@@ -382,6 +386,8 @@ mod tests {
                 platform_version,
             )
             .expect("expected to process state transition");
+
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2604790);
 
         let check_result = platform
             .check_tx(serialized.as_slice(), Recheck, platform_version)
@@ -401,6 +407,125 @@ mod tests {
             .expect("expected to check tx");
 
         assert!(check_result.is_valid()); // it should still be valid, because we don't validate state
+    }
+
+    #[test]
+    fn data_contract_create_check_tx_priority() {
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig::default())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
+        let state = platform.state.read();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            1,
+            Some(1),
+            platform_version,
+        )
+            .expect("expected to get key pair");
+
+        platform
+            .drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create state structure");
+        let identity: Identity = IdentityV0 {
+            id: Identifier::new([
+                158, 113, 180, 126, 91, 83, 62, 44, 83, 54, 97, 88, 240, 215, 84, 139, 167, 156,
+                166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
+            ]),
+            public_keys: BTreeMap::from([(1, key.clone())]),
+            balance: 1000000000,
+            revision: 0,
+        }
+            .into();
+
+        let dashpay = get_dashpay_contract_fixture(Some(identity.id()), 1, protocol_version);
+        let mut create_contract_state_transition: StateTransition = dashpay
+            .try_into_platform_versioned(platform_version)
+            .expect("expected a state transition");
+
+        create_contract_state_transition.set_fee_multiplier(100); // This means that things will be twice as expensive
+
+        create_contract_state_transition
+            .sign(&key, private_key.as_slice(), &NativeBlsModule)
+            .expect("expected to sign transition");
+        let serialized = create_contract_state_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+        platform
+            .drive
+            .add_new_identity(
+                identity,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        let validation_result = platform
+            .check_tx(serialized.as_slice(), FirstTimeCheck, platform_version)
+            .expect("expected to check tx");
+
+        assert!(validation_result.errors.is_empty());
+
+        assert_eq!(validation_result.data.unwrap().priority, 100);
+
+        let check_result = platform
+            .check_tx(serialized.as_slice(), Recheck, platform_version)
+            .expect("expected to check tx");
+
+        assert!(check_result.is_valid());
+
+        assert_eq!(check_result.data.unwrap().priority, 100);
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![serialized.clone()],
+                &state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        // The processing fees should be twice as much as a fee multiplier of 0,
+        // since a fee multiplier of 100 means 100% more of 1 (gives 2)
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2604790 * 2);
+
+        let check_result = platform
+            .check_tx(serialized.as_slice(), Recheck, platform_version)
+            .expect("expected to check tx");
+
+        assert!(check_result.is_valid()); // it should still be valid, because we didn't commit the transaction
+
+        assert_eq!(check_result.data.unwrap().priority, 100);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let check_result = platform
+            .check_tx(serialized.as_slice(), Recheck, platform_version)
+            .expect("expected to check tx");
+
+        assert!(check_result.is_valid()); // it should still be valid, because we don't validate state
+
+        assert_eq!(check_result.data.unwrap().priority, 100);
     }
 
     #[test]
@@ -615,6 +740,7 @@ mod tests {
                 entropy.0,
                 &key,
                 1,
+                0,
                 &signer,
                 platform_version,
                 None,
@@ -633,6 +759,7 @@ mod tests {
                 profile,
                 &key,
                 2,
+                0,
                 &signer,
                 platform_version,
                 None,
@@ -778,6 +905,7 @@ mod tests {
                 &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
+                0,
                 platform_version,
                 None,
             )
@@ -906,6 +1034,7 @@ mod tests {
                 &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
+                0,
                 platform_version,
                 None,
             )
@@ -1035,6 +1164,7 @@ mod tests {
                 &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
+                0,
                 platform_version,
                 None,
             )
@@ -1154,6 +1284,7 @@ mod tests {
                 &identity,
                 asset_lock_proof_top_up.clone(),
                 pk.as_slice(),
+                0,
                 platform_version,
                 None,
             )
@@ -1337,6 +1468,7 @@ mod tests {
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
+            fee_multiplier: 0,
             signature_public_key_id: 1,
             signature: Default::default(),
         }
@@ -1448,6 +1580,7 @@ mod tests {
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key.clone())],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
+            fee_multiplier: 0,
             signature_public_key_id: 0,
             signature: Default::default(),
         }
@@ -1472,6 +1605,7 @@ mod tests {
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
+            fee_multiplier: 0,
             signature_public_key_id: 0,
             signature: Default::default(),
         }

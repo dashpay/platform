@@ -7,6 +7,7 @@ use crate::state_transition::StateTransitionType::DocumentsBatch;
 use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
+use crate::prelude::FeeMultiplier;
 
 impl From<DocumentsBatchTransitionV0> for StateTransition {
     fn from(value: DocumentsBatchTransitionV0) -> Self {
@@ -59,5 +60,13 @@ impl StateTransitionLike for DocumentsBatchTransitionV0 {
                 )
             })
             .collect()
+    }
+
+    fn fee_multiplier(&self) -> FeeMultiplier {
+        self.fee_multiplier
+    }
+
+    fn set_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier) {
+        self.fee_multiplier = fee_multiplier
     }
 }

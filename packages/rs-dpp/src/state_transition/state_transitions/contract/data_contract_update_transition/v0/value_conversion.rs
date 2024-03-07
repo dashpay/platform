@@ -4,7 +4,7 @@ use crate::state_transition::data_contract_update_transition::fields::*;
 use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransitionV0, BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS,
 };
-use crate::state_transition::state_transitions::common_fields::property_names::IDENTITY_CONTRACT_NONCE;
+use crate::state_transition::state_transitions::common_fields::property_names::{FEE_MULTIPLIER, IDENTITY_CONTRACT_NONCE};
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::state_transition::StateTransitionValueConvert;
 use crate::ProtocolError;
@@ -76,6 +76,10 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractUpdateTransitionV0 {
                 platform_version,
             )?
             .try_into_platform_versioned(platform_version)?,
+            fee_multiplier: raw_object
+                .get_optional_integer(FEE_MULTIPLIER)
+                .map_err(ProtocolError::ValueError)?
+                .unwrap_or_default(),
         })
     }
 
@@ -110,6 +114,10 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractUpdateTransitionV0 {
                 platform_version,
             )?
             .try_into_platform_versioned(platform_version)?,
+            fee_multiplier: raw_value_map
+                .remove_optional_integer(FEE_MULTIPLIER)
+                .map_err(ProtocolError::ValueError)?
+                .unwrap_or_default(),
         })
     }
 

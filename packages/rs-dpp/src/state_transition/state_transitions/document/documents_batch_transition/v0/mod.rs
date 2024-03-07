@@ -17,6 +17,7 @@ use platform_serialization_derive::PlatformSignable;
 
 use platform_value::{BinaryData, Identifier};
 use serde::{Deserialize, Serialize};
+use crate::prelude::FeeMultiplier;
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(
@@ -27,6 +28,7 @@ use serde::{Deserialize, Serialize};
 pub struct DocumentsBatchTransitionV0 {
     pub owner_id: Identifier,
     pub transitions: Vec<DocumentTransition>,
+    pub fee_multiplier: FeeMultiplier,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]

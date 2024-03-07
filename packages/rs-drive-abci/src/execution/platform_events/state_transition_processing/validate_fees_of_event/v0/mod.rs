@@ -48,6 +48,7 @@ where
                 added_balance,
                 operations,
                 execution_operations,
+                fee_multiplier,
             } => {
                 let previous_balance = identity.balance.ok_or(Error::Execution(
                     ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
@@ -70,6 +71,8 @@ where
                     &block_info.epoch,
                     platform_version,
                 )?;
+
+                estimated_fee_result.apply_fee_multiplier(*fee_multiplier);
 
                 // TODO: Should take into account refunds as well
                 let total_fee = estimated_fee_result.total_base_fee();
@@ -96,6 +99,7 @@ where
                 removed_balance,
                 operations,
                 execution_operations,
+                fee_multiplier,
             } => {
                 let balance = identity.balance.ok_or(Error::Execution(
                     ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
@@ -119,6 +123,8 @@ where
                     &block_info.epoch,
                     platform_version,
                 )?;
+
+                estimated_fee_result.apply_fee_multiplier(*fee_multiplier);
 
                 // TODO: Should take into account refunds as well
                 let required_balance = estimated_fee_result.total_base_fee();

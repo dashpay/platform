@@ -21,6 +21,7 @@ impl TryFromPlatformVersioned<DataContractCreateTransitionV0>
                 platform_version,
             )?,
             identity_nonce: value.identity_nonce,
+            fee_multiplier: value.fee_multiplier,
         })
     }
 }
@@ -41,6 +42,7 @@ impl TryFromPlatformVersioned<&DataContractCreateTransitionV0>
                 platform_version,
             )?,
             identity_nonce: value.identity_nonce,
+            fee_multiplier: value.fee_multiplier,
         })
     }
 }

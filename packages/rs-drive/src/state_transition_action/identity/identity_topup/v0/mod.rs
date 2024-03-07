@@ -4,6 +4,7 @@ use dpp::identifier::Identifier;
 
 use dpp::platform_value::Bytes36;
 use serde::{Deserialize, Serialize};
+use dpp::prelude::FeeMultiplier;
 
 /// action v0
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -15,4 +16,6 @@ pub struct IdentityTopUpTransitionActionV0 {
     pub identity_id: Identifier,
     /// asset lock outpoint
     pub asset_lock_outpoint: Bytes36,
+    /// fee multiplier
+    pub fee_multiplier: FeeMultiplier,
 }

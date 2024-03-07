@@ -5,6 +5,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::signer::Signer;
 use dpp::identity::Identity;
+use dpp::prelude::FeeMultiplier;
 
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
@@ -26,6 +27,7 @@ pub trait WithdrawFromIdentity {
         address: Address,
         amount: u64,
         core_fee_per_byte: Option<u32>,
+        fee_multiplier: Option<FeeMultiplier>,
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error>;
@@ -39,6 +41,7 @@ impl WithdrawFromIdentity for Identity {
         address: Address,
         amount: u64,
         core_fee_per_byte: Option<u32>,
+        fee_multiplier: Option<FeeMultiplier>,
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
@@ -49,6 +52,7 @@ impl WithdrawFromIdentity for Identity {
             amount,
             Pooling::Never,
             core_fee_per_byte.unwrap_or(1),
+            fee_multiplier.unwrap_or_default(),
             signer,
             new_identity_nonce,
             sdk.version(),

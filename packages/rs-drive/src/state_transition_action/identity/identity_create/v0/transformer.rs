@@ -36,6 +36,7 @@ impl IdentityCreateTransitionActionV0 {
             initial_balance_amount,
             identity_id,
             asset_lock_outpoint: Bytes36::new(outpoint_bytes),
+            fee_multiplier: value.fee_multiplier,
         })
     }
 
@@ -66,6 +67,7 @@ impl IdentityCreateTransitionActionV0 {
             initial_balance_amount,
             identity_id: *identity_id,
             asset_lock_outpoint: Bytes36::new(outpoint_bytes),
+            fee_multiplier: value.fee_multiplier,
         })
     }
 }

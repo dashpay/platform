@@ -6,6 +6,7 @@ use crate::{
     state_transition::{StateTransitionLike, StateTransitionType},
     ProtocolError,
 };
+use crate::prelude::FeeMultiplier;
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 
@@ -65,5 +66,13 @@ impl StateTransitionLike for IdentityTopUpTransitionV0 {
                 vec![String::default()]
             }
         }
+    }
+
+    fn fee_multiplier(&self) -> FeeMultiplier {
+        self.fee_multiplier
+    }
+
+    fn set_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier) {
+        self.fee_multiplier = fee_multiplier
     }
 }

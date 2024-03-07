@@ -103,6 +103,7 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
         execution_context: &mut StateTransitionExecutionContext,
     ) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction>, Error> {
         let owner_id = self.owner_id();
+        let fee_multiplier = self.fee_multiplier();
         let platform_version = platform.state.current_platform_version()?;
         let mut transitions_by_contracts_and_types: BTreeMap<
             &Identifier,
@@ -155,6 +156,7 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
             let batch_transition_action = DocumentsBatchTransitionActionV0 {
                 owner_id,
                 transitions: validation_result.into_data()?,
+                fee_multiplier,
             }
             .into();
             Ok(ConsensusValidationResult::new_with_data(

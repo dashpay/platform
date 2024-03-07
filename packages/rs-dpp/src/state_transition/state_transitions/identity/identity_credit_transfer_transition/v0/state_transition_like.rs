@@ -4,6 +4,7 @@ use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
 };
+use crate::prelude::FeeMultiplier;
 
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
@@ -57,5 +58,13 @@ impl StateTransitionLike for IdentityCreditTransferTransitionV0 {
             base64::encode(self.identity_id),
             self.nonce
         )]
+    }
+
+    fn fee_multiplier(&self) -> FeeMultiplier {
+        self.fee_multiplier
+    }
+
+    fn set_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier) {
+        self.fee_multiplier = fee_multiplier
     }
 }

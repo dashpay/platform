@@ -2,7 +2,7 @@ mod transformer;
 
 use dpp::document::Document;
 use dpp::identifier::Identifier;
-use dpp::prelude::IdentityNonce;
+use dpp::prelude::{FeeMultiplier, IdentityNonce};
 
 use serde::{Deserialize, Serialize};
 
@@ -18,4 +18,6 @@ pub struct IdentityCreditWithdrawalTransitionActionV0 {
     pub prepared_withdrawal_document: Document,
     /// amount
     pub amount: u64,
+    /// fee multiplier
+    pub fee_multiplier: FeeMultiplier,
 }

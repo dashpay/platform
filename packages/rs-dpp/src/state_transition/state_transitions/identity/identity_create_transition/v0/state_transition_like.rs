@@ -5,6 +5,7 @@ use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
 };
+use crate::prelude::FeeMultiplier;
 
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::StateTransition;
@@ -53,5 +54,13 @@ impl StateTransitionLike for IdentityCreateTransitionV0 {
     /// this is based on the asset lock
     fn unique_identifiers(&self) -> Vec<String> {
         vec![base64::encode(self.identity_id)]
+    }
+
+    fn fee_multiplier(&self) -> FeeMultiplier {
+        self.fee_multiplier
+    }
+
+    fn set_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier) {
+        self.fee_multiplier = fee_multiplier
     }
 }

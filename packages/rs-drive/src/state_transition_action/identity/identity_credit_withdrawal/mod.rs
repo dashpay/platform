@@ -8,7 +8,7 @@ use derive_more::From;
 use dpp::document::Document;
 
 use dpp::platform_value::Identifier;
-use dpp::prelude::IdentityNonce;
+use dpp::prelude::{FeeMultiplier, IdentityNonce};
 
 /// action
 #[derive(Debug, Clone, From)]
@@ -54,6 +54,13 @@ impl IdentityCreditWithdrawalTransitionAction {
             IdentityCreditWithdrawalTransitionAction::V0(transition) => {
                 transition.prepared_withdrawal_document
             }
+        }
+    }
+
+    /// fee multiplier
+    pub fn fee_multiplier(&self) -> FeeMultiplier {
+        match self {
+            IdentityCreditWithdrawalTransitionAction::V0(transition) => transition.fee_multiplier,
         }
     }
 }

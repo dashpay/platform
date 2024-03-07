@@ -46,6 +46,7 @@ use platform_value::Identifier;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
+use crate::prelude::FeeMultiplier;
 
 pub mod refunds;
 
@@ -192,6 +193,17 @@ impl FeeResult {
             removed_bytes_from_system: 0,
         }
     }
+
+    /// Apply a fee multiplier to a fee result
+    pub fn apply_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier) {
+        let additional_processing_fee = (self.processing_fee as u128).saturating_mul(fee_multiplier as u128).saturating_div(100);
+        if additional_processing_fee > u64::MAX as u128 {
+            self.processing_fee = u64::MAX;
+        } else {
+            self.processing_fee += additional_processing_fee as u64;
+        }
+    }
+
     /// Convenience method to get total fee
     pub fn total_base_fee(&self) -> Credits {
         self.storage_fee + self.processing_fee

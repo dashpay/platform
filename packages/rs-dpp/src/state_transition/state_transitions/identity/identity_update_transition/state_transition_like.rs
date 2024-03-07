@@ -2,6 +2,7 @@ use crate::state_transition::identity_update_transition::IdentityUpdateTransitio
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
+use crate::prelude::FeeMultiplier;
 
 impl StateTransitionLike for IdentityUpdateTransition {
     /// Returns ID of the updated contract
@@ -38,6 +39,19 @@ impl StateTransitionLike for IdentityUpdateTransition {
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         match self {
             IdentityUpdateTransition::V0(transition) => transition.set_signature_bytes(signature),
+        }
+    }
+
+    /// returns the fee multiplier
+    fn fee_multiplier(&self) -> FeeMultiplier {
+        match self {
+            IdentityUpdateTransition::V0(transition) => transition.fee_multiplier(),
+        }
+    }
+    /// set a fee multiplier
+    fn set_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier) {
+        match self {
+            IdentityUpdateTransition::V0(transition) => transition.set_fee_multiplier(fee_multiplier),
         }
     }
 

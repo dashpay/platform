@@ -2,7 +2,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::identity::signer::Signer;
 use crate::identity::IdentityPublicKey;
-use crate::prelude::IdentityNonce;
+use crate::prelude::{FeeMultiplier, IdentityNonce};
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 use crate::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::documents_batch_transition::{
@@ -36,6 +36,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
         entropy: [u8; 32],
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
+        fee_multiplier: FeeMultiplier,
         signer: &S,
         platform_version: &PlatformVersion,
         batch_feature_version: Option<FeatureVersion>,
@@ -56,6 +57,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
                     entropy,
                     identity_public_key,
                     identity_contract_nonce,
+                    fee_multiplier,
                     signer,
                     platform_version,
                     batch_feature_version,
@@ -77,6 +79,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
         document_type: DocumentTypeRef,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
+        fee_multiplier: FeeMultiplier,
         signer: &S,
         platform_version: &PlatformVersion,
         batch_feature_version: Option<FeatureVersion>,
@@ -96,6 +99,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
                     document_type,
                     identity_public_key,
                     identity_contract_nonce,
+                    fee_multiplier,
                     signer,
                     platform_version,
                     batch_feature_version,

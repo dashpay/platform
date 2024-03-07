@@ -1,5 +1,6 @@
 use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::identifier::Identifier;
+use dpp::prelude::FeeMultiplier;
 
 /// action v0
 #[derive(Default, Debug, Clone)]
@@ -8,4 +9,6 @@ pub struct DocumentsBatchTransitionActionV0 {
     pub owner_id: Identifier,
     /// The inner transitions
     pub transitions: Vec<DocumentTransitionAction>,
+    /// fee multiplier
+    pub fee_multiplier: FeeMultiplier,
 }

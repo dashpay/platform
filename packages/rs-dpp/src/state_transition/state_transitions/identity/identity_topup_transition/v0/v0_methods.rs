@@ -3,7 +3,7 @@ use dashcore::signer;
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::Identity;
-use crate::prelude::AssetLockProof;
+use crate::prelude::{AssetLockProof, FeeMultiplier};
 
 use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use crate::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
@@ -21,12 +21,14 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
         identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
+        fee_multiplier: FeeMultiplier,
         _platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
         let identity_top_up_transition = IdentityTopUpTransitionV0 {
             asset_lock_proof,
             identity_id: identity.id(),
+            fee_multiplier,
             signature: Default::default(),
         };
 

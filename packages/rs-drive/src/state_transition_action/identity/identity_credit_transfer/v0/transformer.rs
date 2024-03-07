@@ -8,6 +8,7 @@ impl From<IdentityCreditTransferTransitionV0> for IdentityCreditTransferTransiti
             recipient_id,
             amount,
             nonce,
+            fee_multiplier,
             ..
         } = value;
         IdentityCreditTransferTransitionActionV0 {
@@ -15,6 +16,7 @@ impl From<IdentityCreditTransferTransitionV0> for IdentityCreditTransferTransiti
             recipient_id,
             transfer_amount: amount,
             nonce,
+            fee_multiplier,
         }
     }
 }
@@ -26,6 +28,7 @@ impl From<&IdentityCreditTransferTransitionV0> for IdentityCreditTransferTransit
             recipient_id,
             amount,
             nonce,
+            fee_multiplier,
             ..
         } = value;
         IdentityCreditTransferTransitionActionV0 {
@@ -33,6 +36,7 @@ impl From<&IdentityCreditTransferTransitionV0> for IdentityCreditTransferTransit
             recipient_id: *recipient_id,
             transfer_amount: *amount,
             nonce: *nonce,
+            fee_multiplier: *fee_multiplier,
         }
     }
 }

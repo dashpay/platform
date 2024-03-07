@@ -38,6 +38,7 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
         let transition = DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
             data_contract: data_contract.try_into_platform_versioned(platform_version)?,
             identity_nonce,
+            fee_multiplier: 0,
             signature_public_key_id: key_id,
             signature: Default::default(),
         });

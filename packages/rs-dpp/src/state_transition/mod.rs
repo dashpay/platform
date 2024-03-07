@@ -45,7 +45,7 @@ use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGetter
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use crate::prelude::AssetLockProof;
+use crate::prelude::{AssetLockProof, FeeMultiplier};
 pub use state_transitions::*;
 
 use crate::serialization::Signable;
@@ -295,6 +295,11 @@ impl StateTransition {
         call_method!(self, signature)
     }
 
+    /// returns the fee_multiplier
+    pub fn fee_multiplier(&self) -> FeeMultiplier {
+        call_method!(self, fee_multiplier)
+    }
+
     /// The transaction id is a single hash of the data with the signature
     pub fn transaction_id(&self) -> Result<[u8; 32], ProtocolError> {
         Ok(hash_single(
@@ -325,6 +330,11 @@ impl StateTransition {
     /// set a new signature
     pub fn set_signature(&mut self, signature: BinaryData) {
         call_method!(self, set_signature, signature)
+    }
+
+    /// set fee multiplier
+    pub fn set_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier) {
+        call_method!(self, set_fee_multiplier, fee_multiplier)
     }
 
     /// set a new signature

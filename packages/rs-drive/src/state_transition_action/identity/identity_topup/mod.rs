@@ -7,6 +7,7 @@ use crate::state_transition_action::identity::identity_topup::v0::IdentityTopUpT
 use derive_more::From;
 
 use dpp::platform_value::{Bytes36, Identifier};
+use dpp::prelude::FeeMultiplier;
 
 /// action
 #[derive(Debug, Clone, From)]
@@ -34,6 +35,13 @@ impl IdentityTopUpTransitionAction {
     pub fn asset_lock_outpoint(&self) -> Bytes36 {
         match self {
             IdentityTopUpTransitionAction::V0(action) => action.asset_lock_outpoint,
+        }
+    }
+
+    /// fee multiplier
+    pub fn fee_multiplier(&self) -> FeeMultiplier {
+        match self {
+            IdentityTopUpTransitionAction::V0(transition) => transition.fee_multiplier,
         }
     }
 }
