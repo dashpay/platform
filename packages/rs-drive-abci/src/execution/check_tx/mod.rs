@@ -67,7 +67,7 @@ pub struct CheckTxResult {
     pub unique_identifiers: Vec<String>,
     /// Priority to return to tenderdash. State Transitions with higher priority take precedence
     /// over state transitions with lower priority
-    pub priority: u64,
+    pub priority: u16,
 }
 
 impl<C> Platform<C>
