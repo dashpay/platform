@@ -12,7 +12,7 @@ use dpp::data_contract::{DataContract, DataContractFactory};
 
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
-use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
+use dpp::identity::{Identity, KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
@@ -30,7 +30,7 @@ use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
 use rand::Rng;
-use tracing::{error, info};
+use tracing::error;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -421,7 +421,7 @@ impl Strategy {
                     }
                 }
 
-                let state_transition = DataContractCreateTransition::new_from_data_contract(
+                DataContractCreateTransition::new_from_data_contract(
                     contract.clone(),
                     *identity_nonce,
                     &identity,
@@ -430,8 +430,7 @@ impl Strategy {
                     platform_version,
                     None,
                 )
-                .expect("expected to create a create state transition from a data contract");
-                state_transition
+                .expect("expected to create a create state transition from a data contract")
             })
             .collect()
     }
@@ -1110,7 +1109,7 @@ impl Strategy {
                             let state_transition =
                                 crate::transitions::create_identity_credit_transfer_transition(
                                     owner,
-                                    &recipient,
+                                    recipient,
                                     identity_nonce_counter,
                                     signer,
                                     1000,

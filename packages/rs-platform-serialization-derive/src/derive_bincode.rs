@@ -59,6 +59,7 @@ pub(crate) fn derive_decode_inner(input: TokenStream) -> Result<TokenStream> {
     generator.finish()
 }
 
+#[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
 pub(crate) fn derive_borrow_decode_inner(input: TokenStream) -> Result<TokenStream> {
     let parse = Parse::new(input)?;
     let (mut generator, attributes, body) = parse.into_generator();

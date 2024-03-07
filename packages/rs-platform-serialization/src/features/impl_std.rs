@@ -26,6 +26,7 @@ use std::{
 ///
 /// [config]: config/index.html
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+#[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
 pub fn platform_versioned_decode_from_std_read<D: Decode, C: Config, R: std::io::Read>(
     src: &mut R,
     config: C,
@@ -40,6 +41,7 @@ pub(crate) struct IoReader<R> {
 }
 
 impl<R> IoReader<R> {
+    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
     pub fn new(reader: R) -> Self {
         Self { reader }
     }
@@ -66,6 +68,7 @@ where
 ///
 /// [config]: config/index.html
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+#[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
 pub fn encode_into_std_write<E: Encode, C: Config, W: std::io::Write>(
     val: E,
     dst: &mut W,
@@ -83,13 +86,14 @@ pub(crate) struct IoWriter<'a, W: std::io::Write> {
 }
 
 impl<'a, W: std::io::Write> IoWriter<'a, W> {
+    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
     pub fn new(writer: &'a mut W) -> Self {
         Self {
             writer,
             bytes_written: 0,
         }
     }
-
+    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
     pub fn bytes_written(&self) -> usize {
         self.bytes_written
     }

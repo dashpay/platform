@@ -12,13 +12,14 @@ pub(crate) struct VecWriter {
 
 impl VecWriter {
     /// Create a new vec writer with the given capacity
+    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             inner: Vec::with_capacity(cap),
         }
     }
     // May not be used in all feature combinations
-    #[allow(dead_code)]
+    #[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
     pub(crate) fn collect(self) -> Vec<u8> {
         self.inner
     }
