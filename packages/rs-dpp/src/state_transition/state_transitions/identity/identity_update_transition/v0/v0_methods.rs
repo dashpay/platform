@@ -35,10 +35,7 @@ use crate::{
     prelude::{Identifier, Revision, TimestampMillis},
 };
 #[cfg(feature = "state-transition-signing")]
-use crate::{
-    ProtocolError,
-    identity::SecurityLevel,
-};
+use crate::{identity::SecurityLevel, ProtocolError};
 impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity_with_signer<'a, S: Signer>(

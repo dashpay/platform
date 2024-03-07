@@ -39,25 +39,30 @@ mod traits;
 
 // pub mod state_transition_fee;
 
-pub use traits::*;
 #[cfg(feature = "state-transition-signing")]
 use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
 #[cfg(feature = "state-transition-validation")]
 use crate::consensus::signature::{
-    InvalidStateTransitionSignatureError,
-    PublicKeyIsDisabledError, SignatureError,
+    InvalidStateTransitionSignatureError, PublicKeyIsDisabledError, SignatureError,
 };
 #[cfg(feature = "state-transition-validation")]
 use crate::consensus::ConsensusError;
+pub use traits::*;
 
-#[cfg(any(feature = "state-transition-signing", feature="state-transition-validation"))]
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
-use crate::identity::{KeyID, SecurityLevel};
-#[cfg(any(feature = "state-transition-signing", feature="state-transition-validation"))]
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
 use crate::identity::{IdentityPublicKey, KeyType, Purpose};
+use crate::identity::{KeyID, SecurityLevel};
 use crate::prelude::AssetLockProof;
 pub use state_transitions::*;
 

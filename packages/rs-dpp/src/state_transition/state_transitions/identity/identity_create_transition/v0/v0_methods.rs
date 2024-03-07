@@ -1,6 +1,6 @@
+use crate::{prelude::Identifier, state_transition::StateTransitionType};
 #[cfg(feature = "state-transition-signing")]
 use crate::{BlsModule, ProtocolError};
-use crate::{prelude::Identifier, state_transition::StateTransitionType};
 
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::accessors::IdentityGettersV0;

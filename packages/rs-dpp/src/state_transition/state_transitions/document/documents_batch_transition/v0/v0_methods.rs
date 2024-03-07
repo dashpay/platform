@@ -13,15 +13,15 @@ use crate::prelude::IdentityPublicKey;
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::documents_batch_transition::document_transition::DocumentReplaceTransition;
 use crate::state_transition::documents_batch_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
-#[cfg(feature = "state-transition-signing")]
-use crate::state_transition::documents_batch_transition::document_transition::DocumentReplaceTransition;
 use crate::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use crate::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use crate::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]

@@ -42,9 +42,7 @@ pub trait DocumentGetRawForDocumentTypeV0: DocumentV0Getters {
         }
         self.properties()
             .get_optional_at_path(key_path)?
-            .map(|value| {
-                document_type.serialize_value_for_key(key_path, value, platform_version)
-            })
+            .map(|value| document_type.serialize_value_for_key(key_path, value, platform_version))
             .transpose()
     }
 }

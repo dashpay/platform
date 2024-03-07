@@ -1,4 +1,7 @@
-#[cfg(any(feature = "message-signature-verification", feature = "message-signing"))]
+#[cfg(any(
+    feature = "message-signature-verification",
+    feature = "message-signing"
+))]
 use crate::identity::KeyType;
 
 use serde::{Deserialize, Serialize};

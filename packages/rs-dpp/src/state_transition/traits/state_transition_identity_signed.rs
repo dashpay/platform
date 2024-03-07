@@ -1,24 +1,31 @@
-use anyhow::anyhow;
-use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
-#[cfg(any(feature = "state-transition-signing", feature = "state-transition-validation"))]
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
 use crate::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
 };
+use anyhow::anyhow;
+use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::WrongPublicKeyPurposeError;
 
-#[cfg(any(feature = "state-transition-signing", feature = "state-transition-validation"))]
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::state_transition::StateTransitionLike;
 
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
+use crate::identity::{IdentityPublicKey, Purpose};
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::*,
-};
-#[cfg(any(feature = "state-transition-signing", feature = "state-transition-validation"))]
-use crate::identity::{
-    IdentityPublicKey, Purpose
 };
 
 pub trait StateTransitionIdentitySigned: StateTransitionLike {

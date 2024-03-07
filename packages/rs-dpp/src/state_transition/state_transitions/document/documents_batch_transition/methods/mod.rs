@@ -9,9 +9,9 @@ use crate::identity::IdentityPublicKey;
 use crate::prelude::IdentityNonce;
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 use crate::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
-use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
