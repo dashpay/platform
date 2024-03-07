@@ -30,7 +30,7 @@ impl IdentityCreditTransferTransitionBalanceValidationV0 for IdentityCreditTrans
         &self,
         identity: Option<&mut PartialIdentity>,
         platform: &PlatformStateRef,
-        block_info: &BlockInfo,
+        _unused_block_info: &BlockInfo,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {

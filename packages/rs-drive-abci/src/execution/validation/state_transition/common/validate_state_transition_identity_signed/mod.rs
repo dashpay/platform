@@ -17,6 +17,7 @@ use crate::execution::validation::state_transition::common::validate_state_trans
 
 pub mod v0;
 
+#[allow(dead_code)] #[deprecated(note = "This function is marked as unused.")] #[allow(deprecated)]
 pub type GetDataContractFn = fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>;
 
 pub trait ValidateStateTransitionIdentitySignature {

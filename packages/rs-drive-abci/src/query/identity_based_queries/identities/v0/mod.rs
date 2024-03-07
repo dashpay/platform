@@ -6,7 +6,7 @@ use dapi_grpc::platform::v0::get_identities_request::GetIdentitiesRequestV0;
 use dapi_grpc::platform::v0::get_identities_response::{
     get_identities_response_v0, GetIdentitiesResponseV0, IdentityEntry,
 };
-use dapi_grpc::platform::v0::{get_identities_response, GetIdentitiesResponse};
+use dapi_grpc::platform::v0::get_identities_response;
 use dpp::platform_value::Bytes32;
 use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;

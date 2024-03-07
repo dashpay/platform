@@ -827,8 +827,6 @@ pub(crate) fn continue_chain_for_strategy(
         }),
     );
 
-    let mut current_core_height = core_height_start;
-
     let mut total_withdrawals = UnsignedWithdrawalTxs::default();
 
     let mut current_quorum_with_test_info =
@@ -852,7 +850,7 @@ pub(crate) fn continue_chain_for_strategy(
         )
         .expect("should calculate epoch info");
 
-        current_core_height = state.last_committed_core_height();
+        let current_core_height = state.last_committed_core_height();
 
         drop(state);
 

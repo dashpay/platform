@@ -110,10 +110,6 @@ mod tests {
     use crate::query::tests::{assert_invalid_identifier, setup_platform};
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
-    use dapi_grpc::platform::v0::{
-        get_data_contract_history_response, GetDataContractHistoryRequest,
-        GetDataContractHistoryResponse,
-    };
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::config::v0::DataContractConfigSettersV0;
