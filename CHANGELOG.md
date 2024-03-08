@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **platform:** state transition fee increase and priorities (#1750)
+* **platform:** addded fee increase field to state transitions (#1750)
 
 ### Features
 
