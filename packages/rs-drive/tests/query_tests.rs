@@ -32,21 +32,6 @@
 
 use ciborium::cbor;
 #[cfg(feature = "full")]
-use grovedb::TransactionArg;
-#[cfg(feature = "full")]
-use std::borrow::Cow;
-#[cfg(feature = "full")]
-use std::collections::HashMap;
-#[cfg(feature = "full")]
-use std::fs::File;
-#[cfg(feature = "full")]
-use std::io::{self, BufRead};
-#[cfg(feature = "full")]
-use std::option::Option::None;
-#[cfg(feature = "full")]
-use std::sync::Arc;
-
-#[cfg(feature = "full")]
 use dpp::data_contract::DataContractFactory;
 #[cfg(feature = "full")]
 use drive::common;
@@ -69,6 +54,8 @@ use drive::query::DriveQuery;
 #[cfg(feature = "full")]
 #[cfg(test)]
 use drive::tests::helpers::setup::setup_drive;
+#[cfg(feature = "full")]
+use grovedb::TransactionArg;
 use rand::random;
 #[cfg(feature = "full")]
 use rand::seq::SliceRandom;
@@ -78,6 +65,18 @@ use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "full")]
 use serde_json::json;
+#[cfg(feature = "full")]
+use std::borrow::Cow;
+#[cfg(feature = "full")]
+use std::collections::HashMap;
+#[cfg(feature = "full")]
+use std::fs::File;
+#[cfg(feature = "full")]
+use std::io::{self, BufRead};
+#[cfg(feature = "full")]
+use std::option::Option::None;
+#[cfg(feature = "full")]
+use std::sync::Arc;
 
 #[cfg(feature = "full")]
 use dpp::document::Document;
@@ -85,6 +84,8 @@ use dpp::document::Document;
 use dpp::platform_value::Value;
 use dpp::platform_value::{platform_value, Bytes32, Identifier};
 
+#[cfg(feature = "full")]
+use base64::Engine;
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -2970,14 +2971,15 @@ fn test_family_with_nulls_query() {
             let document =
                 Document::from_bytes(result.as_slice(), person_document_type, platform_version)
                     .expect("we should be able to deserialize the document");
-            base64::encode(document.id().as_slice())
+            base64::engine::general_purpose::STANDARD.encode(document.id().as_slice())
         })
         .collect();
 
     for i in 0..10 {
         drive
             .delete_document_for_contract(
-                base64::decode(ids.get(i).unwrap())
+                base64::engine::general_purpose::STANDARD
+                    .decode(ids.get(i).unwrap())
                     .expect("expected to decode from base64")
                     .try_into()
                     .expect("expected to get 32 bytes"),

@@ -69,7 +69,7 @@ where
 
     let expected_withdrawals = block_execution_context.unsigned_withdrawal_transactions();
 
-    if expected_withdrawals != &vote_extensions {
+    if expected_withdrawals != vote_extensions.as_slice() {
         let expected_extensions: Vec<ExtendVoteExtension> = expected_withdrawals.into();
 
         tracing::error!(

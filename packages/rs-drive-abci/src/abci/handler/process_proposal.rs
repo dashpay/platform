@@ -67,15 +67,15 @@ where
             } else {
                 // We are getting a different block hash for a block of the same round
                 // This is a terrible issue
-                return Err(Error::Abci(AbciError::BadRequest(
+                Err(Error::Abci(AbciError::BadRequest(
                     "received a process proposal request twice with different hash".to_string(),
-                )));
+                )))?;
             }
         } else {
             let Some(proposal_info) = block_execution_context.proposer_results() else {
-                return Err(Error::Abci(AbciError::BadRequest(
+                Err(Error::Abci(AbciError::BadRequest(
                     "received a process proposal request twice".to_string(),
-                )));
+                )))?
             };
 
             let expected_transactions = proposal_info
@@ -154,7 +154,7 @@ where
         // special logic on init chain
         let transaction_guard = app.transaction().read().unwrap();
         if transaction_guard.is_none() {
-            return Err(Error::Abci(AbciError::BadRequest("received a process proposal request for the genesis height before an init chain request".to_string())));
+            Err(Error::Abci(AbciError::BadRequest("received a process proposal request for the genesis height before an init chain request".to_string())))?;
         }
         if request.round > 0 {
             transaction_guard

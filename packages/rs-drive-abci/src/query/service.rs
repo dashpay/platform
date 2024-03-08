@@ -64,7 +64,7 @@ impl QueryService {
 
             let platform_version = platform_state
                 .current_platform_version()
-                .map_err(|e| Status::unavailable("platform is not initialized"))?;
+                .map_err(|_| Status::unavailable("platform is not initialized"))?;
 
             let mut result = query_method(
                 &platform,

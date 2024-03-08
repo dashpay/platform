@@ -46,7 +46,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
         let platform_version =
             &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        IdentityCreditWithdrawalTransition::default_versioned(&platform_version)
+        IdentityCreditWithdrawalTransition::default_versioned(platform_version)
             .map(Into::into)
             .map_err(from_dpp_err)
     }
