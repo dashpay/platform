@@ -9,7 +9,6 @@
 //!   traits. The associated [Fetch::Request]` type needs to implement [TransportRequest].
 
 use crate::mock::MockResponse;
-use crate::platform::query;
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto, ResponseMetadata};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;

@@ -8,6 +8,7 @@ use bincode::{Decode, Encode};
 use derive_more::{Display, From};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 pub use v0::*;
 

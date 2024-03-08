@@ -1,19 +1,31 @@
+#[cfg(feature = "state-transition-signing")]
 use crate::data_contract::document_type::DocumentTypeRef;
+#[cfg(feature = "state-transition-signing")]
 use crate::document::{Document, DocumentV0Getters};
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::SecurityLevel;
-use crate::prelude::{UserFeeIncrease, IdentityNonce, IdentityPublicKey};
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
+#[cfg(feature = "state-transition-signing")]
+use crate::prelude::IdentityPublicKey;
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::documents_batch_transition::document_transition::DocumentReplaceTransition;
 use crate::state_transition::documents_batch_transition::document_transition::{
-    DocumentReplaceTransition, DocumentTransition, DocumentTransitionV0Methods,
+    DocumentTransition, DocumentTransitionV0Methods,
 };
 use crate::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use crate::state_transition::documents_batch_transition::{
-    DocumentsBatchTransition, DocumentsBatchTransitionV0,
-};
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use crate::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
+#[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
+#[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
 impl DocumentsBatchTransitionAccessorsV0 for DocumentsBatchTransitionV0 {

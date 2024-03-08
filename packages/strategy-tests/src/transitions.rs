@@ -41,8 +41,6 @@ use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayloa
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
-use tracing::error;
-use tracing::info;
 
 /// Constructs an `AssetLockProof` representing an instant asset lock proof.
 ///

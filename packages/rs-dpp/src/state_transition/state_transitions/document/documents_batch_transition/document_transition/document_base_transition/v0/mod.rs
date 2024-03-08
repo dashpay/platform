@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "state-transition-json-conversion")]
 use serde_json::Value as JsonValue;
 
+#[cfg(feature = "state-transition-value-conversion")]
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::identifier::Identifier;
 use crate::prelude::IdentityNonce;

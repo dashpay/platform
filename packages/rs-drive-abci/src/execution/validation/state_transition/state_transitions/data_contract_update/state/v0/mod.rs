@@ -27,7 +27,6 @@ use dpp::state_transition::data_contract_update_transition::accessors::DataContr
 use dpp::ProtocolError;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition::StateTransitionLike;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 
 use drive::grovedb::TransactionArg;

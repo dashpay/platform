@@ -1,14 +1,11 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_data_contract_request::GetDataContractRequestV0;
 use dapi_grpc::platform::v0::get_data_contract_response::{
     get_data_contract_response_v0, GetDataContractResponseV0,
 };
-use dapi_grpc::platform::v0::{get_data_contract_response, GetDataContractResponse};
-use dapi_grpc::Message;
 use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;

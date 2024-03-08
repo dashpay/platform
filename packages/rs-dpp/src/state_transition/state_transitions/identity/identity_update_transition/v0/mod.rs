@@ -11,6 +11,7 @@ mod version;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 use platform_value::{BinaryData, Value};
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use std::convert::{TryFrom, TryInto};

@@ -5,7 +5,6 @@ use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
-    ProtocolError,
 };
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;

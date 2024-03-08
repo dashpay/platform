@@ -17,6 +17,7 @@ use platform_serialization_derive::PlatformSignable;
 
 use crate::prelude::UserFeeIncrease;
 use platform_value::{BinaryData, Identifier};
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]

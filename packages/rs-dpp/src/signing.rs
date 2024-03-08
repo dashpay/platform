@@ -122,7 +122,7 @@ impl PlatformMessageSignable for &[u8] {
             KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
                 Err(ProtocolError::InvalidSigningKeyTypeError(format!(
                     "key type {} can not sign",
-                    key_type.to_string()
+                    key_type
                 )))
             }
         }

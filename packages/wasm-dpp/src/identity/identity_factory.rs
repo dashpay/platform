@@ -18,7 +18,7 @@ use crate::{
 };
 use dpp::dashcore::{consensus, InstantLock, Transaction};
 
-use dpp::prelude::{Identity, IdentityNonce, Revision};
+use dpp::prelude::{Identity, IdentityNonce};
 
 use serde::Deserialize;
 use std::convert::TryInto;
