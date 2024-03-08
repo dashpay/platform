@@ -3,7 +3,6 @@ pub mod transformer;
 /// v0
 pub mod v0;
 
-use crate::state_transition_action::identity::identity_credit_withdrawal::IdentityCreditWithdrawalTransitionAction;
 use crate::state_transition_action::identity::identity_update::v0::IdentityUpdateTransitionActionV0;
 use derive_more::From;
 use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};

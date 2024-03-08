@@ -6,7 +6,9 @@ use crate::identity::KeyType;
 use crate::serialization::PlatformMessageSignable;
 #[cfg(feature = "message-signature-verification")]
 use crate::validation::SimpleConsensusValidationResult;
-use crate::{BlsModule, ProtocolError};
+#[cfg(feature = "message-signing")]
+use crate::BlsModule;
+use crate::ProtocolError;
 use dashcore::signer;
 
 impl PlatformMessageSignable for &[u8] {

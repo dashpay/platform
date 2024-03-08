@@ -15,7 +15,6 @@ use std::sync::Arc;
 
 use dashcore_rpc::dashcore::BlockHash;
 
-use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
