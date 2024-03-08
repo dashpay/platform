@@ -486,7 +486,12 @@ mod tests {
             .expect("expected to insert identity");
 
         let validation_result = platform
-            .check_tx(serialized.as_slice(), FirstTimeCheck, &platform_state, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                FirstTimeCheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
@@ -494,7 +499,12 @@ mod tests {
         assert_eq!(validation_result.data.unwrap().priority, 10000);
 
         let check_result = platform
-            .check_tx(serialized.as_slice(), Recheck, &platform_state, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(check_result.is_valid());
@@ -522,7 +532,12 @@ mod tests {
         );
 
         let check_result = platform
-            .check_tx(serialized.as_slice(), Recheck, &platform_state, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(check_result.is_valid()); // it should still be valid, because we didn't commit the transaction
@@ -537,7 +552,12 @@ mod tests {
             .expect("expected to commit");
 
         let check_result = platform
-            .check_tx(serialized.as_slice(), Recheck, &platform_state, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(check_result.is_valid()); // it should still be valid, because we don't validate state
