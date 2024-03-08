@@ -6,7 +6,6 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use dpp::version::PlatformVersion;
-use drive::error::drive::DriveError;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBinding;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBindingV0Getters;
 use crate::error::Error;

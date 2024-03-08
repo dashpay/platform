@@ -1,20 +1,31 @@
 pub mod from_document;
 pub mod v0_methods;
 
+#[cfg(feature = "state-transition-value-conversion")]
 use std::collections::BTreeMap;
 
 use bincode::{Decode, Encode};
 use derive_more::Display;
 
+#[cfg(feature = "state-transition-value-conversion")]
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
+#[cfg(feature = "state-transition-value-conversion")]
 use platform_value::Value;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "state-transition-json-conversion")]
 use serde_json::Value as JsonValue;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::identifier::Identifier;
 use crate::prelude::IdentityNonce;
+#[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::documents_batch_transition::document_base_transition::property_names;
-use crate::{data_contract::DataContract, errors::ProtocolError, identifier::Identifier};
+#[cfg(any(
+    feature = "state-transition-json-conversion",
+    feature = "state-transition-value-conversion"
+))]
+use crate::{data_contract::DataContract, errors::ProtocolError};
 
 #[derive(Debug, Clone, Encode, Decode, Default, PartialEq, Display)]
 #[cfg_attr(

@@ -113,6 +113,9 @@ mod tests {
     use dpp::state_transition::StateTransition;
     use tenderdash_abci::Application;
 
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
         let mut quorums = QuorumListExtendedInfo::new();
 
@@ -2053,7 +2056,7 @@ mod tests {
 
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
-            for (state_transition, result) in tx_results_per_block {
+            for (state_transition, _unused_result) in tx_results_per_block {
                 // We can't ever get a documents batch transition, because the proposer will remove it from a block
                 assert!(!matches!(
                     state_transition,

@@ -10,7 +10,6 @@ use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_response::Versio
 use dapi_grpc::platform::v0::{
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
 };
-use dapi_grpc::Message;
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C> {

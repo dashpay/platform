@@ -8,11 +8,13 @@ pub use bincode::{Decode, Encode};
 
 pub use instant::*;
 use platform_value::Value;
+#[cfg(feature = "validation")]
 use platform_version::version::PlatformVersion;
 use serde::de::Error;
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::prelude::Identifier;
+#[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{ProtocolError, SerdeParsingError};
 

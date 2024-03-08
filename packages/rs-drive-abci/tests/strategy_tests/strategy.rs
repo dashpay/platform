@@ -1,11 +1,11 @@
 use crate::masternodes::MasternodeListItemWithUpdates;
 use crate::query::QueryStrategy;
 use crate::BlockHeight;
-use dashcore_rpc::dashcore::{self, Network, PrivateKey};
+use dashcore_rpc::dashcore::{Network, PrivateKey};
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
-use dpp::{NativeBlsModule, ProtocolError};
+use dpp::ProtocolError;
 
 use dpp::dashcore::secp256k1::SecretKey;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -43,7 +43,6 @@ use strategy_tests::Strategy;
 use strategy_tests::transitions::{create_state_transitions_for_identities, instant_asset_lock_proof_fixture};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::ops::AddAssign;
 use std::str::FromStr;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -114,18 +113,6 @@ impl MasternodeListChangesStrategy {
             || self.changed_ip_masternodes.is_set()
     }
 
-    pub fn removed_any_masternode_types(&self) -> bool {
-        self.removed_masternodes.is_set() || self.removed_hpmns.is_set()
-    }
-
-    pub fn updated_any_masternode_types(&self) -> bool {
-        self.updated_masternodes.is_set() || self.updated_hpmns.is_set()
-    }
-
-    pub fn added_any_masternode_types(&self) -> bool {
-        self.new_masternodes.is_set() || self.new_hpmns.is_set()
-    }
-
     pub fn any_kind_of_update_is_set(&self) -> bool {
         self.updated_hpmns.is_set()
             || self.banned_hpmns.is_set()
@@ -138,8 +125,30 @@ impl MasternodeListChangesStrategy {
             || self.unbanned_masternodes.is_set()
             || self.changed_ip_masternodes.is_set()
     }
+
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
+    pub fn removed_any_masternode_types(&self) -> bool {
+        self.removed_masternodes.is_set() || self.removed_hpmns.is_set()
+    }
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
+    pub fn updated_any_masternode_types(&self) -> bool {
+        self.updated_masternodes.is_set() || self.updated_hpmns.is_set()
+    }
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
+    pub fn added_any_masternode_types(&self) -> bool {
+        self.new_masternodes.is_set() || self.new_hpmns.is_set()
+    }
 }
 
+#[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 pub enum StrategyMode {
     ProposerOnly,
     ProposerAndValidatorHashValidationOnly,
@@ -185,6 +194,9 @@ impl CoreHeightIncrease {
             }
         }
     }
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn average_core_height(&self, block_count: u64, initial_core_height: u32) -> u32 {
         match self {
             NoCoreHeightIncrease => initial_core_height,
@@ -198,6 +210,9 @@ impl CoreHeightIncrease {
         }
     }
 
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn add_events_if_hit(&mut self, core_height: u32, rng: &mut StdRng) -> u32 {
         match self {
             NoCoreHeightIncrease => 0,
@@ -313,6 +328,9 @@ impl NetworkStrategy {
     }
 
     // TODO: This belongs to `DocumentOp`
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn add_strategy_contracts_into_drive(
         &mut self,
         drive: &Drive,

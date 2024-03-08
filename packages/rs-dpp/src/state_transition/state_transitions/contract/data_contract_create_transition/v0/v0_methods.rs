@@ -1,8 +1,5 @@
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 
-use platform_value::Bytes32;
-use tracing::info;
-
 use crate::{data_contract::DataContract, identity::KeyID, NonConsensusError, ProtocolError};
 
 use crate::serialization::Signable;

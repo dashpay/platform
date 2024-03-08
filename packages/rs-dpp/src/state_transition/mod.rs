@@ -1,4 +1,5 @@
 use derive_more::From;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 pub use abstract_state_transition::state_transition_helpers;
@@ -7,18 +8,29 @@ use platform_value::{BinaryData, Identifier};
 pub use state_transition_types::*;
 
 use bincode::{Decode, Encode};
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
 use dashcore::signer;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
 mod abstract_state_transition;
-use crate::{BlsModule, ProtocolError};
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
+use crate::BlsModule;
+use crate::ProtocolError;
 
 mod state_transition_types;
 
 pub mod state_transition_factory;
 
 pub mod errors;
-use crate::util::hash::{hash_double_to_vec, hash_single, ripemd160_sha256};
+#[cfg(feature = "state-transition-signing")]
+use crate::util::hash::ripemd160_sha256;
+use crate::util::hash::{hash_double_to_vec, hash_single};
 
 pub mod proof_result;
 mod serialization;
@@ -502,7 +514,7 @@ impl StateTransition {
         Ok(())
     }
 
-    #[cfg(all(feature = "state-transition-validation"))]
+    #[cfg(feature = "state-transition-validation")]
     fn verify_by_raw_public_key<T: BlsModule>(
         &self,
         public_key: &[u8],
@@ -564,7 +576,7 @@ impl StateTransition {
         }
     }
 
-    #[cfg(all(feature = "state-transition-validation"))]
+    #[cfg(feature = "state-transition-validation")]
     fn verify_ecdsa_hash_160_signature_by_public_key_hash(
         &self,
         public_key_hash: &[u8],
@@ -586,7 +598,7 @@ impl StateTransition {
         )
     }
 
-    #[cfg(all(feature = "state-transition-validation"))]
+    #[cfg(feature = "state-transition-validation")]
     /// Verifies an ECDSA signature with the public key
     fn verify_ecdsa_signature_by_public_key(&self, public_key: &[u8]) -> Result<(), ProtocolError> {
         if self.signature().is_empty() {
@@ -608,7 +620,7 @@ impl StateTransition {
         )
     }
 
-    #[cfg(all(feature = "state-transition-validation"))]
+    #[cfg(feature = "state-transition-validation")]
     /// Verifies a BLS signature with the public key
     fn verify_bls_signature_by_public_key<T: BlsModule>(
         &self,

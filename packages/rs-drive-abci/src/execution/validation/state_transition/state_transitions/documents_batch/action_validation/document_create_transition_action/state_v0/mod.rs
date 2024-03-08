@@ -3,7 +3,6 @@ use dpp::consensus::ConsensusError;
 use dpp::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::document::{DocumentV0Getters};
 use dpp::prelude::{ConsensusValidationResult, Identifier};
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;

@@ -3,7 +3,6 @@ mod v0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::DataContract;
 
-use crate::util::entropy_generator::EntropyGenerator;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use derive_more::From;

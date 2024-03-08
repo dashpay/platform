@@ -13,7 +13,7 @@ use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
+use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::identity_credit_withdrawal::state::v0::IdentityCreditWithdrawalStateTransitionStateValidationV0;
@@ -21,10 +21,8 @@ use crate::execution::validation::state_transition::identity_credit_withdrawal::
 
 use crate::execution::validation::state_transition::processor::v0::{
     StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0,
-    StateTransitionStructureKnownInStateValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 impl StateTransitionActionTransformerV0 for IdentityCreditWithdrawalTransition {
     fn transform_into_action<C: CoreRPCLike>(

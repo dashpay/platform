@@ -116,8 +116,9 @@ mod tests {
         let (platform, state, version) = setup_platform();
         let mut rng = StdRng::seed_from_u64(10);
         let id = rng.gen::<[u8; 32]>();
-        let identity = create_test_identity_with_rng(&platform.drive, id, &mut rng, None, version)
-            .expect("expected to create a test identity");
+        let _unused_identity =
+            create_test_identity_with_rng(&platform.drive, id, &mut rng, None, version)
+                .expect("expected to create a test identity");
 
         let request = GetIdentityNonceRequestV0 {
             identity_id: id.to_vec(),
@@ -146,8 +147,6 @@ mod tests {
         let id = rng.gen::<[u8; 32]>();
         let identity = create_test_identity_with_rng(&platform.drive, id, &mut rng, None, version)
             .expect("expected to create a test identity");
-
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
 
         platform
             .drive
@@ -261,8 +260,6 @@ mod tests {
     #[test]
     fn test_identity_contract_nonce_absence_proof() {
         let (platform, state, version) = setup_platform();
-
-        let id = vec![0; 32];
 
         let request = GetIdentityNonceRequestV0 {
             identity_id: vec![0; 32],

@@ -483,7 +483,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
         if self.platform.config.testing_configs.block_signing {
             let quorum_hash: [u8; 32] = quorum_hash.try_into().expect("wrong quorum hash len");
             let digest = commit
-                .sign_digest(
+                .calculate_sign_hash(
                     CHAIN_ID,
                     quorum_type as u8,
                     &quorum_hash,
