@@ -474,7 +474,7 @@ mod tests {
 
         assert!(validation_result.errors.is_empty());
 
-        assert_eq!(validation_result.data.unwrap().priority, 100);
+        assert_eq!(validation_result.data.unwrap().priority, 10000);
 
         let check_result = platform
             .check_tx(serialized.as_slice(), Recheck, platform_version)
@@ -482,7 +482,7 @@ mod tests {
 
         assert!(check_result.is_valid());
 
-        assert_eq!(check_result.data.unwrap().priority, 100);
+        assert_eq!(check_result.data.unwrap().priority, 10000);
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -510,7 +510,7 @@ mod tests {
 
         assert!(check_result.is_valid()); // it should still be valid, because we didn't commit the transaction
 
-        assert_eq!(check_result.data.unwrap().priority, 100);
+        assert_eq!(check_result.data.unwrap().priority, 10000);
 
         platform
             .drive
@@ -525,7 +525,7 @@ mod tests {
 
         assert!(check_result.is_valid()); // it should still be valid, because we don't validate state
 
-        assert_eq!(check_result.data.unwrap().priority, 100);
+        assert_eq!(check_result.data.unwrap().priority, 10000);
     }
 
     #[test]
