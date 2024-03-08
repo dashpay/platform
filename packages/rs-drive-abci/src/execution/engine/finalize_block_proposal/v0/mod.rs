@@ -16,7 +16,6 @@ use tenderdash_abci::{
 };
 
 use crate::abci::AbciError;
-use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::{
@@ -65,7 +64,7 @@ where
         request_finalize_block: FinalizeBlockCleanedRequest,
         mut block_execution_context: BlockExecutionContext,
         transaction: &Transaction,
-        _platform_version: &PlatformVersion,
+        _last_committed_platform_version: &PlatformVersion,
     ) -> Result<block_execution_outcome::v0::BlockFinalizationOutcome, Error> {
         let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
 
@@ -73,6 +72,10 @@ where
         let epoch_info = block_execution_context.epoch_info();
         let block_platform_state = block_execution_context.block_platform_state();
 
+        // TODO: The block was processed with last committed platform version, it's wrong to call all functions
+        //  here with new version. Except probably state storage version.
+        //  Another problem that block was processed wit last committed version but we storing state with new version.
+        //  It means when we load the state we would expect this block to be processed with the new version.
         let current_protocol_version = block_platform_state.current_protocol_version_in_consensus();
 
         let platform_version = PlatformVersion::get(current_protocol_version)?;

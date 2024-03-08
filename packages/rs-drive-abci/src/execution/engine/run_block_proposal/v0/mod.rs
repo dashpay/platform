@@ -379,6 +379,7 @@ where
                 app_hash: root_hash,
                 state_transitions_result,
                 validator_set_update,
+                // TODO: We already know the version outside sine we have state and platform version what pass here
                 protocol_version: platform_version.protocol_version,
                 block_execution_context,
             },

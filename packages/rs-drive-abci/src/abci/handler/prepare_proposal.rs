@@ -121,6 +121,7 @@ where
         mut block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
 
+    // TODO: This is current protocol version and can be read from the state
     let platform_version = PlatformVersion::get(protocol_version)
         .expect("must be set in run block proposal from existing protocol version");
 

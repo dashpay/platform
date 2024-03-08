@@ -33,9 +33,7 @@ where
             "block execution context must be set in block begin handler for finalize block",
         )))?;
 
-    let platform_version = block_execution_context
-        .block_platform_state()
-        .current_platform_version()?;
+    let platform_version = app.platform().state.load().current_platform_version()?;
 
     let block_finalization_outcome = app.platform().finalize_block_proposal(
         request.try_into()?,

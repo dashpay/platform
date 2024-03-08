@@ -6,6 +6,7 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::error::execution::ExecutionError;
+use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain};
 
