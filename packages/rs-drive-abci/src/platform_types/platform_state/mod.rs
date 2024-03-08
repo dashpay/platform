@@ -41,6 +41,12 @@ pub enum PlatformStateForSaving {
 }
 
 impl PlatformStateForSaving {
+    /// Retrieves the current protocol version used in consensus.
+    ///
+    /// Matches against `PlatformStateForSaving` variants to extract the protocol version.
+    ///
+    /// # Returns
+    /// A `ProtocolVersion` indicating the current consensus protocol version.
     #[allow(dead_code)]
     #[deprecated(note = "This function is marked as unused.")]
     #[allow(deprecated)]
