@@ -11,7 +11,7 @@ use crate::data_contract::conversion::value::v0::DataContractValueConversionMeth
 use crate::state_transition::{StateTransitionFieldTypes, StateTransitionValueConvert};
 use crate::state_transition::data_contract_create_transition::{DataContractCreateTransitionV0};
 use crate::state_transition::data_contract_create_transition::fields::*;
-use crate::state_transition::state_transitions::common_fields::property_names::USER_FEE_MULTIPLIER;
+use crate::state_transition::state_transitions::common_fields::property_names::USER_FEE_INCREASE;
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::{BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS};
 
 impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
@@ -43,7 +43,7 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
             )?
             .try_into_platform_versioned(platform_version)?,
             user_fee_increase: raw_object
-                .get_optional_integer(USER_FEE_MULTIPLIER)
+                .get_optional_integer(USER_FEE_INCREASE)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
         })
@@ -77,7 +77,7 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
             )?
             .try_into_platform_versioned(platform_version)?,
             user_fee_increase: raw_value_map
-                .remove_optional_integer(USER_FEE_MULTIPLIER)
+                .remove_optional_integer(USER_FEE_INCREASE)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
         })

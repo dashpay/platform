@@ -11,7 +11,7 @@ use crate::state_transition::identity_topup_transition::fields::*;
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::StateTransitionValueConvert;
 
-use crate::state_transition::state_transitions::common_fields::property_names::USER_FEE_MULTIPLIER;
+use crate::state_transition::state_transitions::common_fields::property_names::USER_FEE_INCREASE;
 use platform_version::version::PlatformVersion;
 
 impl<'a> StateTransitionValueConvert<'a> for IdentityTopUpTransitionV0 {
@@ -35,7 +35,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityTopUpTransitionV0 {
         let asset_lock_proof = AssetLockProof::try_from(raw_asset_lock_proof)?;
 
         let user_fee_increase = raw_object
-            .get_optional_integer(USER_FEE_MULTIPLIER)
+            .get_optional_integer(USER_FEE_INCREASE)
             .map_err(ProtocolError::ValueError)?
             .unwrap_or_default();
 
