@@ -81,7 +81,7 @@ impl<S: Signer> PutDocument<S> for Document {
             document_state_transition_entropy,
             &identity_public_key,
             new_identity_contract_nonce,
-            settings.fee_multiplier.unwrap_or_default(),
+            settings.user_fee_increase.unwrap_or_default(),
             signer,
             sdk.version(),
             None,
