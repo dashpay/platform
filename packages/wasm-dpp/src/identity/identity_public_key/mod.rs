@@ -1,4 +1,4 @@
-pub use serde::{Deserialize, Serialize};
+pub use serde::Serialize;
 
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;

@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 const MAX_TRANSITIONS_IN_BATCH: usize = 1;
 
 impl DocumentsBatchTransition {
-    pub(super) fn validate_base_structure_v0<'d>(
+    pub(super) fn validate_base_structure_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {

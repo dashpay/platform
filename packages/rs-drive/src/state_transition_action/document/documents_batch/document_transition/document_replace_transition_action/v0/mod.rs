@@ -6,8 +6,6 @@ use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::Revision;
 use dpp::ProtocolError;
 
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-
 use std::collections::BTreeMap;
 
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};

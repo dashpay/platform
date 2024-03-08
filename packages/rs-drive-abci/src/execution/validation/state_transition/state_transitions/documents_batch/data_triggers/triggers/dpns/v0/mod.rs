@@ -444,15 +444,15 @@ mod test {
 
         let mut nonce_counter = BTreeMap::new();
 
-        let state_read_guard = platform.state.read().unwrap();
+        let state = platform.state.load();
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_read_guard,
+            state: &state,
             config: &platform.config,
         };
 
-        let platform_version = state_read_guard
+        let platform_version = state
             .current_platform_version()
             .expect("should return a platform version");
 
@@ -465,12 +465,12 @@ mod test {
                 owner_id,
                 ..Default::default()
             },
-            state_read_guard.current_protocol_version_in_consensus(),
+            state.current_protocol_version_in_consensus(),
         );
         let data_contract = get_dpns_data_contract_fixture(
             Some(owner_id),
             0,
-            state_read_guard.current_protocol_version_in_consensus(),
+            state.current_protocol_version_in_consensus(),
         )
         .data_contract_owned();
         let document_type = data_contract

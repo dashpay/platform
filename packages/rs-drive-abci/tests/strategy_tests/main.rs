@@ -113,6 +113,9 @@ mod tests {
     use dpp::state_transition::StateTransition;
     use tenderdash_abci::Application;
 
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
         let mut quorums = QuorumListExtendedInfo::new();
 
@@ -296,10 +299,10 @@ mod tests {
             .unwrap()
             .expect("expected root hash");
 
-        let state = abci_app.platform.state.read().unwrap();
+        let state = abci_app.platform.state.load();
 
         let protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
+
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
 
@@ -326,11 +329,9 @@ mod tests {
         assert_eq!(last_block_height, 15);
         assert_eq!(last_block_app_hash, known_root_hash);
 
-        let block_start = abci_app
-            .platform
-            .state
-            .read()
-            .unwrap()
+        let state = abci_app.platform.state.load();
+
+        let block_start = state
             .last_committed_block_info()
             .as_ref()
             .unwrap()
@@ -432,10 +433,10 @@ mod tests {
             .unwrap()
             .expect("expected root hash");
 
-        let state = abci_app.platform.state.read().unwrap();
+        let state = abci_app.platform.state.load();
 
         let protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
+
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
 
@@ -462,11 +463,9 @@ mod tests {
         assert_eq!(last_block_height, 15);
         assert_eq!(last_block_app_hash, known_root_hash);
 
-        let block_start = abci_app
-            .platform
-            .state
-            .read()
-            .unwrap()
+        let state = abci_app.platform.state.load();
+
+        let block_start = state
             .last_committed_block_info()
             .as_ref()
             .unwrap()
@@ -783,18 +782,16 @@ mod tests {
         // will be able to propose a block (and then get paid later on).
 
         let platform = abci_app.platform;
-        let drive_cache = platform.drive.cache.read().unwrap();
-        let counter = &drive_cache.protocol_versions_counter;
+        let counter = &platform.drive.cache.protocol_versions_counter.read();
         platform
             .drive
             .fetch_versions_with_counter(None, &platform_version.drive)
             .expect("expected to get versions");
 
+        let state = abci_app.platform.state.load();
+
         assert_eq!(
-            platform
-                .state
-                .read()
-                .unwrap()
+            state
                 .last_committed_block_info()
                 .as_ref()
                 .unwrap()
@@ -866,7 +863,7 @@ mod tests {
         // can expect it to be much higher.
 
         let platform = abci_app.platform;
-        let platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.load();
 
         assert!(platform_state.hpmn_masternode_list().len() > 100);
     }
@@ -934,7 +931,7 @@ mod tests {
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
         let platform = abci_app.platform;
-        let platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.load();
 
         assert_ne!(platform_state.hpmn_masternode_list().len(), 100);
     }
@@ -1002,7 +999,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         let platform = abci_app.platform;
-        let _platform_state = platform.state.read().unwrap();
+        let _platform_state = platform.state.load();
 
         // We need to find if any masternode has ever had their keys disabled.
 
@@ -1712,6 +1709,7 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+
         assert_eq!(
             hex::encode(
                 outcome
@@ -2058,7 +2056,7 @@ mod tests {
 
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
-            for (state_transition, result) in tx_results_per_block {
+            for (state_transition, _unused_result) in tx_results_per_block {
                 // We can't ever get a documents batch transition, because the proposer will remove it from a block
                 assert!(!matches!(
                     state_transition,
@@ -2429,7 +2427,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
-        let state = outcome.abci_app.platform.state.read().unwrap();
+        let state = outcome.abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
@@ -3591,9 +3589,9 @@ mod tests {
             ..
         } = run_chain_for_strategy(&mut platform, 100, strategy.clone(), config.clone(), 89);
 
-        let state = abci_app.platform.state.read().unwrap();
+        let state = abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
+
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
         let known_root_hash = abci_app
@@ -3627,11 +3625,9 @@ mod tests {
         assert_eq!(last_block_height, 100);
         assert_eq!(last_block_app_hash, known_root_hash);
 
-        let block_start = abci_app
-            .platform
-            .state
-            .read()
-            .unwrap()
+        let state = abci_app.platform.state.load();
+
+        let block_start = state
             .last_committed_block_info()
             .as_ref()
             .unwrap()

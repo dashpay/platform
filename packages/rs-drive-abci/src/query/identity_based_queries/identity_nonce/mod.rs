@@ -3,29 +3,21 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_identity_nonce_request::Version;
-use dapi_grpc::platform::v0::GetIdentityNonceRequest;
-use dapi_grpc::Message;
-use dpp::check_validation_result_with_data;
-use dpp::validation::ValidationResult;
+use dapi_grpc::platform::v0::get_identity_nonce_request::Version as RequestVersion;
+use dapi_grpc::platform::v0::get_identity_nonce_response::Version as ResponseVersion;
+use dapi_grpc::platform::v0::{GetIdentityNonceRequest, GetIdentityNonceResponse};
 use dpp::version::PlatformVersion;
 
 mod v0;
 
 impl<C> Platform<C> {
     /// Querying of an identity by the nonce
-    pub(in crate::query) fn query_identity_nonce(
+    pub fn query_identity_nonce(
         &self,
-        state: &PlatformState,
-        query_data: &[u8],
+        GetIdentityNonceRequest { version }: GetIdentityNonceRequest,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let GetIdentityNonceRequest { version } =
-            check_validation_result_with_data!(GetIdentityNonceRequest::decode(query_data)
-                .map_err(|e| {
-                    QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
-                }));
-
+    ) -> Result<QueryValidationResult<GetIdentityNonceResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::DecodingError("could not decode identity nonce query".to_string()),
@@ -39,7 +31,7 @@ impl<C> Platform<C> {
             .identity_nonce;
 
         let feature_version = match &version {
-            Version::V0(_) => 0,
+            RequestVersion::V0(_) => 0,
         };
         if !feature_version_bounds.check_version(feature_version) {
             return Ok(QueryValidationResult::new_with_error(
@@ -53,8 +45,13 @@ impl<C> Platform<C> {
             ));
         }
         match version {
-            Version::V0(get_identity_nonce_request) => {
-                self.query_identity_nonce_v0(state, get_identity_nonce_request, platform_version)
+            RequestVersion::V0(request_v0) => {
+                let result =
+                    self.query_identity_nonce_v0(request_v0, platform_state, platform_version)?;
+
+                Ok(result.map(|response_v0| GetIdentityNonceResponse {
+                    version: Some(ResponseVersion::V0(response_v0)),
+                }))
             }
         }
     }

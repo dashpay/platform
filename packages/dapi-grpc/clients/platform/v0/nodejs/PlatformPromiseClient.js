@@ -48,6 +48,8 @@ const {
               PBJSGetProtocolVersionUpgradeVoteStatusResponse,
             GetProtocolVersionUpgradeStateRequest: PBJSGetProtocolVersionUpgradeStateRequest,
             GetProtocolVersionUpgradeStateResponse: PBJSGetProtocolVersionUpgradeStateResponse,
+            GetProofsRequest: PBJSGetProofsRequest,
+            GetProofsResponse: PBJSGetProofsResponse,
             GetIdentityContractNonceRequest: PBJSGetIdentityContractNonceRequest,
             GetIdentityContractNonceResponse: PBJSGetIdentityContractNonceResponse,
             GetIdentityNonceRequest: PBJSGetIdentityNonceRequest,
@@ -73,6 +75,7 @@ const {
   GetEpochsInfoResponse: ProtocGetEpochsInfoResponse,
   GetProtocolVersionUpgradeVoteStatusResponse: ProtocGetProtocolVersionUpgradeVoteStatusResponse,
   GetProtocolVersionUpgradeStateResponse: ProtocGetProtocolVersionUpgradeStateResponse,
+  GetProofsResponse: ProtocGetProofsResponse,
   GetIdentityContractNonceResponse: ProtocGetIdentityContractNonceResponse,
   GetIdentityNonceResponse: ProtocGetIdentityNonceResponse,
   GetIdentityKeysResponse: ProtocGetIdentityKeysResponse,
@@ -144,6 +147,10 @@ class PlatformPromiseClient {
 
     this.client.getProtocolVersionUpgradeState = promisify(
       this.client.getProtocolVersionUpgradeState.bind(this.client),
+    );
+
+    this.client.getProofs = promisify(
+      this.client.getProofs.bind(this.client),
     );
 
     this.client.getIdentityContractNonce = promisify(
@@ -509,6 +516,38 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetProtocolVersionUpgradeStateRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   *
+   * @param {!GetProofsRequest} request
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @returns {Promise<!GetProofsResponse>}
+   */
+  getProofs(request, metadata = {}, options = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getProofs(
+      request,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetProofsResponse,
+              PBJSGetProofsResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetProofsRequest,
             ),
           ),
         ],

@@ -113,7 +113,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let result = state_transition.validate_balance(
         maybe_identity.as_mut(),
         &platform.into(),
-        platform.block_info,
+        platform.state.last_block_info(),
         transaction,
         platform_version,
     )?;
@@ -125,7 +125,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     // Validating identity contract nonce, this must happen after validating the signature
     let result = state_transition.validate_nonces(
         &platform.into(),
-        platform.block_info,
+        platform.state.last_block_info(),
         transaction,
         platform_version,
     )?;

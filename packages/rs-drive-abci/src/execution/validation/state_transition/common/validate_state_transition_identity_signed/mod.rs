@@ -17,8 +17,6 @@ use crate::execution::validation::state_transition::common::validate_state_trans
 
 pub mod v0;
 
-pub type GetDataContractFn = fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>;
-
 pub trait ValidateStateTransitionIdentitySignature {
     fn validate_state_transition_identity_signed(
         &self,

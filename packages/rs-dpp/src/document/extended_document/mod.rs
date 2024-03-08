@@ -7,6 +7,10 @@ pub(crate) mod v0;
 
 pub use fields::{property_names, IDENTIFIER_FIELDS};
 
+#[cfg(any(
+    feature = "document-json-conversion",
+    feature = "document-value-conversion"
+))]
 use crate::data_contract::DataContract;
 use crate::ProtocolError;
 
@@ -14,11 +18,14 @@ use crate::document::extended_document::v0::ExtendedDocumentV0;
 
 #[cfg(feature = "document-json-conversion")]
 use crate::document::serialization_traits::DocumentJsonMethodsV0;
+#[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
+#[cfg(feature = "document-json-conversion")]
 use serde_json::Value as JsonValue;
+#[cfg(feature = "document-value-conversion")]
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PlatformVersioned)]

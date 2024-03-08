@@ -23,6 +23,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, Plat
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use platform_versioning::PlatformVersioned;
 
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;

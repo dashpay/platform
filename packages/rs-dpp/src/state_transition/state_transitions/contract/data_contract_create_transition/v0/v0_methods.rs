@@ -1,8 +1,5 @@
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 
-use platform_value::Bytes32;
-use tracing::info;
-
 use crate::{data_contract::DataContract, identity::KeyID, NonConsensusError, ProtocolError};
 
 use crate::serialization::Signable;
@@ -41,6 +38,7 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
         let transition = DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
             data_contract: data_contract.try_into_platform_versioned(platform_version)?,
             identity_nonce,
+            user_fee_increase: 0,
             signature_public_key_id: key_id,
             signature: Default::default(),
         });

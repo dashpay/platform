@@ -41,8 +41,6 @@ use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayloa
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
-use tracing::error;
-use tracing::info;
 
 /// Constructs an `AssetLockProof` representing an instant asset lock proof.
 ///
@@ -238,6 +236,7 @@ pub fn create_identity_top_up_transition(
         identity,
         asset_lock_proof,
         pk_bytes.as_ref(),
+        0,
         platform_version,
         None,
     )
@@ -317,6 +316,7 @@ pub fn create_identity_update_transition_add_keys(
         vec![],
         None,
         *identity_nonce,
+        0,
         signer,
         platform_version,
         None,
@@ -425,6 +425,7 @@ pub fn create_identity_update_transition_disable_keys(
         key_ids_to_disable,
         Some(block_time),
         *identity_nonce,
+        0,
         signer,
         platform_version,
         None,
@@ -478,6 +479,7 @@ pub fn create_identity_withdrawal_transition(
         pooling: Pooling::Never,
         output_script: CoreScript::random_p2sh(rng),
         nonce: *nonce,
+        user_fee_increase: 0,
         signature_public_key_id: 0,
         signature: Default::default(),
     }
@@ -548,6 +550,7 @@ pub fn create_identity_credit_transfer_transition(
         recipient_id: recipient.id(),
         amount,
         nonce: *nonce,
+        user_fee_increase: 0,
         signature_public_key_id: 0,
         signature: Default::default(),
     }

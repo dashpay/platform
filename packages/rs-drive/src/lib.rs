@@ -32,6 +32,15 @@ pub use dpp;
 /// GroveDB module
 #[cfg(feature = "full")]
 pub use grovedb;
+
+#[cfg(feature = "full")]
+pub use grovedb_path;
+
+#[cfg(feature = "full")]
+pub use grovedb_costs;
+
+#[cfg(feature = "full")]
+pub use grovedb_storage;
 #[cfg(feature = "full")]
 mod fee;
 /// State transition action module
