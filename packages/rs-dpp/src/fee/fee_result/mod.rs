@@ -202,7 +202,7 @@ impl FeeResult {
         if additional_processing_fee > u64::MAX as u128 {
             self.processing_fee = u64::MAX;
         } else {
-            self.processing_fee += additional_processing_fee as u64;
+            self.processing_fee = self.processing_fee.saturating_add(additional_processing_fee as u64);
         }
     }
 
