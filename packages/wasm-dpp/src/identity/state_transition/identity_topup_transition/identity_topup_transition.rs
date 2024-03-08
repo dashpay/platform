@@ -66,9 +66,7 @@ impl IdentityTopUpTransitionWasm {
     pub fn set_asset_lock_proof(&mut self, asset_lock_proof: JsValue) -> Result<(), JsValue> {
         let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&asset_lock_proof)?;
 
-        self.0.set_asset_lock_proof(asset_lock_proof).unwrap();
-
-        Ok(())
+        self.0.set_asset_lock_proof(asset_lock_proof).map_err(from_dpp_err)
     }
 
     #[wasm_bindgen(getter, js_name=assetLockProof)]
