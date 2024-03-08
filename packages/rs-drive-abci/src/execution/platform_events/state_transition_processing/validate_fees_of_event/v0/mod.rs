@@ -43,7 +43,7 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
         match event {
-            ExecutionEvent::PaidFromAssetLockDriveEvent {
+            ExecutionEvent::PaidFromAssetLock {
                 identity,
                 added_balance,
                 operations,
@@ -94,7 +94,7 @@ where
                     ))
                 }
             }
-            ExecutionEvent::PaidDriveEvent {
+            ExecutionEvent::Paid {
                 identity,
                 removed_balance,
                 operations,
@@ -146,7 +146,7 @@ where
                     ))
                 }
             }
-            ExecutionEvent::FreeDriveEvent { .. } => Ok(ConsensusValidationResult::new_with_data(
+            ExecutionEvent::Free { .. } => Ok(ConsensusValidationResult::new_with_data(
                 FeeResult::default(),
             )),
         }
