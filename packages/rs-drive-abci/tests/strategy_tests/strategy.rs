@@ -1034,7 +1034,7 @@ impl NetworkStrategy {
         rng: &mut StdRng,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
         let mut finalize_block_operations = vec![];
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
         let platform_version = platform_state
             .current_platform_version()
             .expect("expected platform version");

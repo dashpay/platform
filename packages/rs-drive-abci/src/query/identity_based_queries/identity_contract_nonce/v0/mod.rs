@@ -1,6 +1,7 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0;
 use dapi_grpc::platform::v0::get_identity_contract_nonce_response::{
@@ -19,6 +20,7 @@ impl<C> Platform<C> {
             contract_id,
             prove,
         }: GetIdentityContractNonceRequestV0,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetIdentityContractNonceResponseV0>, Error> {
         let identity_id = check_validation_result_with_data!(Identifier::from_vec(identity_id)
@@ -41,13 +43,11 @@ impl<C> Platform<C> {
                 &platform_version.drive,
             )?;
 
-            let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
-
             GetIdentityContractNonceResponseV0 {
                 result: Some(get_identity_contract_nonce_response_v0::Result::Proof(
-                    proof,
+                    self.response_proof_v0(platform_state, proof),
                 )),
-                metadata: Some(metadata),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
             let maybe_identity = self.drive.fetch_identity_contract_nonce(
@@ -62,7 +62,7 @@ impl<C> Platform<C> {
             let identity_contract_nonce = maybe_identity.unwrap_or_default();
 
             GetIdentityContractNonceResponseV0 {
-                metadata: Some(self.response_metadata_v0()),
+                metadata: Some(self.response_metadata_v0(platform_state)),
                 result: Some(
                     get_identity_contract_nonce_response_v0::Result::IdentityContractNonce(
                         identity_contract_nonce,
@@ -91,7 +91,7 @@ mod tests {
 
     #[test]
     fn test_invalid_identity_id() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentityContractNonceRequestV0 {
             identity_id: vec![0; 8],
@@ -100,7 +100,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_contract_nonce_v0(request, version)
+            .query_identity_contract_nonce_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn test_invalid_contract_id() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentityContractNonceRequestV0 {
             identity_id: vec![0; 32],
@@ -119,7 +119,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_contract_nonce_v0(request, version)
+            .query_identity_contract_nonce_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn test_identity_not_found_when_querying_identity_nonce() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentityContractNonceRequestV0 {
             identity_id: vec![0; 32],
@@ -138,7 +138,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_contract_nonce_v0(request, version)
+            .query_identity_contract_nonce_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(result.is_valid());
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn test_contract_info_not_found_when_querying_identity_nonce_with_known_identity() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
         let mut rng = StdRng::seed_from_u64(45);
         let id = rng.gen::<[u8; 32]>();
         let _unused_identity =
@@ -170,7 +170,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_contract_nonce_v0(request, version)
+            .query_identity_contract_nonce_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(result.is_valid());
@@ -188,13 +188,13 @@ mod tests {
 
     #[test]
     fn test_identity_is_found_when_querying_identity_nonce() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
         let mut rng = StdRng::seed_from_u64(10);
         let id = rng.gen::<[u8; 32]>();
         let identity = create_test_identity_with_rng(&platform.drive, id, &mut rng, None, version)
             .expect("expected to create a test identity");
 
-        let dashpay = platform.drive.cache.system_data_contracts.read_dashpay();
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
 
         platform
             .drive
@@ -217,7 +217,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_contract_nonce_v0(request, version)
+            .query_identity_contract_nonce_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(result.is_valid());
@@ -235,13 +235,13 @@ mod tests {
 
     #[test]
     fn test_identity_is_found_when_querying_identity_nonce_after_update() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
         let mut rng = StdRng::seed_from_u64(10);
         let id = rng.gen::<[u8; 32]>();
         let identity = create_test_identity_with_rng(&platform.drive, id, &mut rng, None, version)
             .expect("expected to create a test identity");
 
-        let dashpay = platform.drive.cache.system_data_contracts.read_dashpay();
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
 
         platform
             .drive
@@ -278,7 +278,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_contract_nonce_v0(request, version)
+            .query_identity_contract_nonce_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(result.is_valid());
@@ -296,13 +296,13 @@ mod tests {
 
     #[test]
     fn test_identity_is_found_when_querying_identity_nonce_after_update_for_past() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
         let mut rng = StdRng::seed_from_u64(10);
         let id = rng.gen::<[u8; 32]>();
         let identity = create_test_identity_with_rng(&platform.drive, id, &mut rng, None, version)
             .expect("expected to create a test identity");
 
-        let dashpay = platform.drive.cache.system_data_contracts.read_dashpay();
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
 
         platform
             .drive
@@ -354,7 +354,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_contract_nonce_v0(request, version)
+            .query_identity_contract_nonce_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(result.is_valid());
@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_identity_contract_nonce_absence_proof() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentityContractNonceRequestV0 {
             identity_id: vec![0; 32],
@@ -381,7 +381,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_contract_nonce_v0(request, version)
+            .query_identity_contract_nonce_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(result.is_valid());

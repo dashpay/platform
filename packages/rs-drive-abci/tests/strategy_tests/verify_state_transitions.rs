@@ -34,7 +34,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     expected_validation_errors: &[u32],
     platform_version: &PlatformVersion,
 ) -> bool {
-    let state = abci_app.platform.state.read();
+    let state = abci_app.platform.state.load();
     let platform = PlatformRef {
         drive: &abci_app.platform.drive,
         state: &state,
@@ -111,7 +111,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
                     let result = abci_app
                         .platform
-                        .query_proofs(versioned_request, platform_version)
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
 
                     let response = result.into_data().expect("expected queries to be valid");
@@ -159,7 +159,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query_proofs(versioned_request, platform_version)
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
                     let response = result.into_data().expect("expected queries to be valid");
 
@@ -241,7 +241,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query_proofs(versioned_request, platform_version)
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
                     let response = result.into_data().expect("expected queries to be valid");
 
@@ -391,7 +391,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query_proofs(versioned_request, platform_version)
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
                     let response = result.into_data().expect("expected queries to be valid");
 
@@ -437,7 +437,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query_proofs(versioned_request, platform_version)
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
                     let response = result.into_data().expect("expected queries to be valid");
 
@@ -491,7 +491,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query_proofs(versioned_request, platform_version)
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
 
                     let response = result.into_data().expect("expected queries to be valid");
@@ -531,7 +531,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query_proofs(versioned_request, platform_version)
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
                     let response = result.into_data().expect("expected queries to be valid");
 
@@ -594,7 +594,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
                     let result = abci_app
                         .platform
-                        .query_proofs(versioned_request, platform_version)
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
                     let response = result.into_data().expect("expected queries to be valid");
 

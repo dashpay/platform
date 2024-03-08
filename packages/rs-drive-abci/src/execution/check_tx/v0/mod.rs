@@ -16,6 +16,7 @@ use dpp::consensus::ConsensusError;
 
 #[cfg(test)]
 use crate::execution::validation::state_transition::processor::process_state_transition;
+use crate::platform_types::platform_state::PlatformState;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
 #[cfg(test)]
@@ -38,7 +39,7 @@ where
         let state_transition =
             StateTransition::deserialize_from_bytes(raw_tx.as_slice()).map_err(Error::Protocol)?;
 
-        let state_read_guard = self.state.read();
+        let state_read_guard = self.state.load();
 
         let platform_ref = PlatformRef {
             drive: &self.drive,
@@ -85,6 +86,7 @@ where
         &self,
         raw_tx: &[u8],
         check_tx_level: CheckTxLevel,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
         let state_transition = match StateTransition::deserialize_from_bytes(raw_tx) {
@@ -98,14 +100,9 @@ where
             }
         };
 
-        // TODO: We lock state for entire check tx execution that could lead to performance issues
-        //  and writer starvation.
-
-        let state_read_guard = self.state.read();
-
         let platform_ref = PlatformRef {
             drive: &self.drive,
-            state: &state_read_guard,
+            state: platform_state,
             config: &self.config,
             core_rpc: &self.core_rpc,
         };
@@ -123,7 +120,7 @@ where
             if let Some(execution_event) = execution_event {
                 self.validate_fees_of_event(
                     execution_event,
-                    state_read_guard.last_block_info(),
+                    platform_state.last_block_info(),
                     None,
                     platform_version,
                 )
@@ -213,8 +210,8 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let state = platform.state.read();
-        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_state = platform.state.load();
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
         let tx: Vec<u8> = vec![
@@ -267,13 +264,13 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let check_result = platform
-            .check_tx(&tx, FirstTimeCheck, platform_version)
+            .check_tx(&tx, FirstTimeCheck, &platform_state, platform_version)
             .expect("expected to check tx");
 
         assert!(check_result.is_valid());
 
         let check_result = platform
-            .check_tx(&tx, Recheck, platform_version)
+            .check_tx(&tx, Recheck, &platform_state, platform_version)
             .expect("expected to check tx");
 
         assert!(check_result.is_valid());
@@ -282,7 +279,7 @@ mod tests {
             .platform
             .process_raw_state_transitions(
                 &vec![tx.clone()],
-                &state,
+                &platform_state,
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
@@ -290,7 +287,7 @@ mod tests {
             .expect("expected to process state transition");
 
         let check_result = platform
-            .check_tx(&tx, Recheck, platform_version)
+            .check_tx(&tx, Recheck, &platform_state, platform_version)
             .expect("expected to check tx");
 
         assert!(!check_result.is_valid());
@@ -307,8 +304,8 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let state = platform.state.read();
-        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_state = platform.state.load();
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
@@ -356,13 +353,23 @@ mod tests {
             .expect("expected to insert identity");
 
         let validation_result = platform
-            .check_tx(serialized.as_slice(), FirstTimeCheck, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                FirstTimeCheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
 
         let check_result = platform
-            .check_tx(serialized.as_slice(), Recheck, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(check_result.is_valid());
@@ -373,7 +380,7 @@ mod tests {
             .platform
             .process_raw_state_transitions(
                 &vec![serialized.clone()],
-                &state,
+                &platform_state,
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
@@ -381,7 +388,12 @@ mod tests {
             .expect("expected to process state transition");
 
         let check_result = platform
-            .check_tx(serialized.as_slice(), Recheck, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(check_result.is_valid()); // it should still be valid, because we didn't commit the transaction
@@ -394,7 +406,12 @@ mod tests {
             .expect("expected to commit");
 
         let check_result = platform
-            .check_tx(serialized.as_slice(), Recheck, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(check_result.is_valid()); // it should still be valid, because we don't validate state
@@ -411,8 +428,8 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let state = platform.state.read();
-        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_state = platform.state.load();
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
@@ -460,13 +477,23 @@ mod tests {
             .expect("expected to insert identity");
 
         let validation_result = platform
-            .check_tx(serialized.as_slice(), FirstTimeCheck, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                FirstTimeCheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
 
         let check_result = platform
-            .check_tx(serialized.as_slice(), Recheck, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(check_result.is_valid());
@@ -477,7 +504,7 @@ mod tests {
             .platform
             .process_raw_state_transitions(
                 &vec![serialized.clone()],
-                &state,
+                &platform_state,
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
@@ -485,7 +512,12 @@ mod tests {
             .expect("expected to process state transition");
 
         let check_result = platform
-            .check_tx(serialized.as_slice(), Recheck, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(check_result.is_valid()); // it should still be valid, because we didn't commit the transaction
@@ -498,7 +530,12 @@ mod tests {
             .expect("expected to commit");
 
         let check_result = platform
-            .check_tx(serialized.as_slice(), Recheck, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(!check_result.is_valid()); // the identity shouldn't have enough balance anymore
@@ -516,7 +553,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -674,6 +711,7 @@ mod tests {
             .check_tx(
                 documents_batch_update_serialized_transition.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -692,7 +730,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -788,6 +826,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -820,7 +859,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -916,6 +955,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -940,6 +980,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -955,6 +996,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 Recheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -978,7 +1020,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -1045,6 +1087,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1068,7 +1111,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -1164,6 +1207,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1228,6 +1272,7 @@ mod tests {
             .check_tx(
                 identity_create_serialized_transition.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1243,6 +1288,7 @@ mod tests {
             .check_tx(
                 identity_create_serialized_transition.as_slice(),
                 Recheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1288,7 +1334,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let genesis_time = 0;
@@ -1359,6 +1405,7 @@ mod tests {
             .check_tx(
                 update_transition_bytes.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to execute identity top up tx");
@@ -1401,7 +1448,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let genesis_time = 0;
@@ -1489,6 +1536,7 @@ mod tests {
             .check_tx(
                 update_transition_bytes.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to execute identity top up tx");

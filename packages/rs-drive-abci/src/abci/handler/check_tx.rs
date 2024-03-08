@@ -16,12 +16,16 @@ where
 {
     let _timer = crate::metrics::abci_request_duration("check_tx");
 
-    let platform_state = platform.state.read();
+    let platform_state = platform.state.load();
     let platform_version = platform_state.current_platform_version()?;
-    drop(platform_state);
 
     let proto::RequestCheckTx { tx, r#type } = request;
-    match platform.check_tx(tx.as_slice(), r#type.try_into()?, platform_version) {
+    match platform.check_tx(
+        tx.as_slice(),
+        r#type.try_into()?,
+        &platform_state,
+        platform_version,
+    ) {
         Ok(validation_result) => {
             let first_consensus_error = validation_result.errors.first();
 

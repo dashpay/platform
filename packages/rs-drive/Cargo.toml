@@ -15,6 +15,7 @@ private = true
 
 [dependencies]
 parking_lot = "0.12.1"
+arc-swap = "1.7.0"
 serde = { version = "1.0.152", features = ["derive"] }
 platform-version = { path = "../rs-platform-version" }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }

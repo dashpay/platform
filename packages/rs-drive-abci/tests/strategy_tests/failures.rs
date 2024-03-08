@@ -264,7 +264,7 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .read_dpns()
+            .load_dpns()
             .clone();
 
         let dpns_contract_for_type = dpns_contract.clone();
@@ -274,7 +274,7 @@ mod tests {
             .expect("expected a profile document type");
 
         let document_op_1 = DocumentOp {
-            contract: dpns_contract.clone(),
+            contract: dpns_contract.as_ref().clone(),
             action: DocumentAction::DocumentActionInsertSpecific(
                 BTreeMap::from([
                     ("label".into(), "simon1".into()),
@@ -297,7 +297,7 @@ mod tests {
         };
 
         let document_op_2 = DocumentOp {
-            contract: dpns_contract,
+            contract: dpns_contract.as_ref().clone(),
             action: DocumentAction::DocumentActionInsertSpecific(
                 BTreeMap::from([
                     ("label".into(), "simon1".into()),
