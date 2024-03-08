@@ -11,7 +11,6 @@ use grovedb::batch::{BatchApplyOptions, GroveDbOp};
 use grovedb::TransactionArg;
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes::BasicStorageRemoval;
 use grovedb_costs::storage_cost::transition::OperationStorageTransitionType;
-use tracing::Level;
 
 impl Drive {
     /// Applies the given groveDB operations batch and gets and passes the costs to `push_drive_operation_result`.
@@ -45,7 +44,7 @@ impl Drive {
 
         // Clone ops only if we log them
         #[cfg(feature = "grovedb_operations_logging")]
-        let maybe_params_for_logs = if tracing::event_enabled!(target: "drive_grovedb_operations", Level::TRACE)
+        let maybe_params_for_logs = if tracing::event_enabled!(target: "drive_grovedb_operations", tracing::Level::TRACE)
         {
             let root_hash = self
                 .grove
@@ -158,7 +157,7 @@ impl Drive {
         );
 
         #[cfg(feature = "grovedb_operations_logging")]
-        if tracing::event_enabled!(target: "drive_grovedb_operations", Level::TRACE)
+        if tracing::event_enabled!(target: "drive_grovedb_operations", tracing::Level::TRACE)
             && cost_context.value.is_ok()
         {
             let root_hash = self
