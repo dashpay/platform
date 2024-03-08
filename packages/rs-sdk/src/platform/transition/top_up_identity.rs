@@ -17,7 +17,7 @@ pub trait TopUpIdentity {
         sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
-        fee_multiplier: Option<UserFeeIncrease>,
+        user_fee_increase: Option<UserFeeIncrease>,
     ) -> Result<u64, Error>;
 }
 
@@ -28,13 +28,13 @@ impl TopUpIdentity for Identity {
         sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
-        fee_multiplier: Option<UserFeeIncrease>,
+        user_fee_increase: Option<UserFeeIncrease>,
     ) -> Result<u64, Error> {
         let state_transition = IdentityTopUpTransition::try_from_identity(
             self,
             asset_lock_proof,
             asset_lock_proof_private_key.inner.as_ref(),
-            fee_multiplier.unwrap_or_default(),
+            user_fee_increase.unwrap_or_default(),
             sdk.version(),
             None,
         )?;

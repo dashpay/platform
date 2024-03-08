@@ -41,7 +41,7 @@ impl WithdrawFromIdentity for Identity {
         address: Address,
         amount: u64,
         core_fee_per_byte: Option<u32>,
-        fee_multiplier: Option<UserFeeIncrease>,
+        user_fee_increase: Option<UserFeeIncrease>,
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
@@ -52,7 +52,7 @@ impl WithdrawFromIdentity for Identity {
             amount,
             Pooling::Never,
             core_fee_per_byte.unwrap_or(1),
-            fee_multiplier.unwrap_or_default(),
+            user_fee_increase.unwrap_or_default(),
             signer,
             new_identity_nonce,
             sdk.version(),
