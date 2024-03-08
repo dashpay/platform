@@ -65,6 +65,9 @@ pub mod prelude {
     pub type TimestampMillis = u64;
     pub type Revision = u64;
     pub type IdentityNonce = u64;
+
+    /// UserFeeIncrease is the additional percentage of the processing fee.
+    /// A 1 here means we pay 1% more in processing fees. A 100 means we pay 100% more.
     pub type UserFeeIncrease = u16;
 }
 
