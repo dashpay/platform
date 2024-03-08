@@ -73,9 +73,9 @@ impl DocumentTypeV0 {
         if validate {
             // TODO we are silently dropping this error when we shouldn't be
             // but returning this error causes tests to fail; investigate more.
-            Err(ProtocolError::CorruptedCodeExecution(
+            ProtocolError::CorruptedCodeExecution(
                 "validation is not enabled but is being called on try_from_schema_v0".to_string(),
-            ));
+            );
         }
 
         #[cfg(feature = "validation")]
