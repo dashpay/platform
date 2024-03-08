@@ -153,8 +153,6 @@ impl DataContractWasm {
             .document_type_for_name(doc_type)
             .with_js_error()?;
 
-        let _unused_binary_paths_o = document_type.binary_paths();
-
         let mut binary_paths = BTreeMap::new();
 
         document_type.binary_paths().iter().for_each(|path| {

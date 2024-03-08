@@ -31,7 +31,7 @@ impl From<DataContractFacade> for DataContractFacadeWasm {
 pub struct DataContractFacadeWasm(pub(crate) Arc<DataContractFacade>);
 
 impl DataContractFacadeWasm {
-    pub fn new(protocol_version: u32, _unused_entropy_generator: ExternalEntropyGenerator) -> Self {
+    pub fn new(protocol_version: u32) -> Self {
         let inner = DataContractFacade::new(protocol_version).expect("should create facade");
 
         Self(Arc::new(inner))
