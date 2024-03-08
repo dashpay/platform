@@ -51,10 +51,10 @@ impl StateTransitionLike for IdentityCreditTransferTransition {
         }
     }
     /// set a fee multiplier
-    fn set_fee_multiplier(&mut self, fee_multiplier: UserFeeIncrease) {
+    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
         match self {
             IdentityCreditTransferTransition::V0(transition) => {
-                transition.set_fee_multiplier(fee_multiplier)
+                transition.set_user_fee_increase(fee_multiplier)
             }
         }
     }

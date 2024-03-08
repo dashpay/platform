@@ -195,9 +195,9 @@ impl FeeResult {
     }
 
     /// Apply a fee multiplier to a fee result
-    pub fn apply_fee_multiplier(&mut self, fee_multiplier: UserFeeIncrease) {
+    pub fn apply_user_fee_increase(&mut self, add_fee_percentage_multiplier: UserFeeIncrease) {
         let additional_processing_fee = (self.processing_fee as u128)
-            .saturating_mul(fee_multiplier as u128)
+            .saturating_mul(add_fee_percentage_multiplier as u128)
             .saturating_div(100);
         if additional_processing_fee > u64::MAX as u128 {
             self.processing_fee = u64::MAX;

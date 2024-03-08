@@ -64,7 +64,7 @@ impl StateTransitionLike for IdentityUpdateTransitionV0 {
         self.user_fee_increase
     }
 
-    fn set_fee_multiplier(&mut self, fee_multiplier: UserFeeIncrease) {
+    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
         self.user_fee_increase = fee_multiplier
     }
 }

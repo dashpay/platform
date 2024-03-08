@@ -86,7 +86,7 @@ where
                         platform_version,
                     )?;
 
-                    individual_fee_result.apply_fee_multiplier(fee_multiplier);
+                    individual_fee_result.apply_user_fee_increase(fee_multiplier);
 
                     let balance_change = individual_fee_result.into_balance_change(identity.id);
 

@@ -451,7 +451,7 @@ mod tests {
             .try_into_platform_versioned(platform_version)
             .expect("expected a state transition");
 
-        create_contract_state_transition.set_fee_multiplier(100); // This means that things will be twice as expensive
+        create_contract_state_transition.set_user_fee_increase(100); // This means that things will be twice as expensive
 
         create_contract_state_transition
             .sign(&key, private_key.as_slice(), &NativeBlsModule)

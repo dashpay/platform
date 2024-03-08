@@ -72,7 +72,7 @@ where
                     platform_version,
                 )?;
 
-                estimated_fee_result.apply_fee_multiplier(*fee_multiplier);
+                estimated_fee_result.apply_user_fee_increase(*fee_multiplier);
 
                 // TODO: Should take into account refunds as well
                 let total_fee = estimated_fee_result.total_base_fee();
@@ -124,7 +124,7 @@ where
                     platform_version,
                 )?;
 
-                estimated_fee_result.apply_fee_multiplier(*fee_multiplier);
+                estimated_fee_result.apply_user_fee_increase(*fee_multiplier);
 
                 // TODO: Should take into account refunds as well
                 let required_balance = estimated_fee_result.total_base_fee();

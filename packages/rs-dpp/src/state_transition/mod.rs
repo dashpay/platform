@@ -301,8 +301,8 @@ impl StateTransition {
         call_method!(self, signature)
     }
 
-    /// returns the fee_multiplier
-    pub fn fee_multiplier(&self) -> UserFeeIncrease {
+    /// returns the fee_increase additional percentage multiplier, it affects only processing costs
+    pub fn user_fee_increase(&self) -> UserFeeIncrease {
         call_method!(self, user_fee_increase)
     }
 
@@ -339,8 +339,8 @@ impl StateTransition {
     }
 
     /// set fee multiplier
-    pub fn set_fee_multiplier(&mut self, fee_multiplier: UserFeeIncrease) {
-        call_method!(self, set_fee_multiplier, fee_multiplier)
+    pub fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
+        call_method!(self, set_user_fee_increase, fee_multiplier)
     }
 
     /// set a new signature
