@@ -2,7 +2,7 @@
 pub mod transformer;
 
 use dpp::identifier::Identifier;
-use dpp::prelude::{UserFeeIncrease, IdentityNonce};
+use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 
 #[derive(Debug, Clone)]
 /// Version 0 of the bump identity nonce action

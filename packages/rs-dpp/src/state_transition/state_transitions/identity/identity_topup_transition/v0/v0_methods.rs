@@ -2,9 +2,9 @@
 use crate::identity::accessors::IdentityGettersV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
+use crate::prelude::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::{AssetLockProof, UserFeeIncrease};
-use crate::prelude::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]

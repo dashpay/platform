@@ -16,7 +16,7 @@ use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
 
 use crate::balances::credits::CREDITS_PER_DUFF;
-use crate::prelude::{UserFeeIncrease, IdentityNonce};
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::Identifier,

@@ -10,7 +10,7 @@ use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation
 use crate::state_transition::StateTransitionValueConvert;
 
 use crate::state_transition::state_transitions::common_fields::property_names::{
-    USER_FEE_MULTIPLIER, NONCE,
+    NONCE, USER_FEE_MULTIPLIER,
 };
 use platform_version::version::PlatformVersion;
 

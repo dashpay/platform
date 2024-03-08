@@ -19,7 +19,7 @@ use std::convert::{TryFrom, TryInto};
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 
-use crate::prelude::{UserFeeIncrease, IdentityNonce};
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::{
     identity::KeyID,
     prelude::{Identifier, Revision, TimestampMillis},

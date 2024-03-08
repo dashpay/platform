@@ -2,7 +2,7 @@ use crate::data_contract::DataContract;
 use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
 
-use crate::prelude::{UserFeeIncrease, IdentityNonce};
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;

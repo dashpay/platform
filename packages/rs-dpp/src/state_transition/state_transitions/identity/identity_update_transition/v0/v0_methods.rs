@@ -19,7 +19,7 @@ use crate::identity::{Identity, IdentityPublicKey};
 use crate::identity::accessors::IdentityGettersV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use crate::prelude::{UserFeeIncrease, IdentityNonce};
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use crate::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;

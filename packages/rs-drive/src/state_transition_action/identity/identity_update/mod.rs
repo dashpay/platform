@@ -8,7 +8,7 @@ use crate::state_transition_action::identity::identity_update::v0::IdentityUpdat
 use derive_more::From;
 use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::platform_value::Identifier;
-use dpp::prelude::{UserFeeIncrease, Revision};
+use dpp::prelude::{Revision, UserFeeIncrease};
 
 /// action
 #[derive(Debug, Clone, From)]

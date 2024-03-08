@@ -3,7 +3,7 @@ use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::{Identity, IdentityPublicKey};
 #[cfg(feature = "state-transition-signing")]
-use crate::prelude::{UserFeeIncrease, IdentityNonce};
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionType;

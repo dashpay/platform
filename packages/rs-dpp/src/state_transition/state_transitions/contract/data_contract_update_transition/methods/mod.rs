@@ -12,7 +12,7 @@ use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
 
-use crate::prelude::{UserFeeIncrease, IdentityNonce};
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use platform_version::version::PlatformVersion;
 
 impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransition {

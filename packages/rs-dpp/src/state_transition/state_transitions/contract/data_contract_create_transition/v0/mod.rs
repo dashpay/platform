@@ -18,7 +18,7 @@ use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-use crate::prelude::{UserFeeIncrease, IdentityNonce};
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use bincode::{Decode, Encode};
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};

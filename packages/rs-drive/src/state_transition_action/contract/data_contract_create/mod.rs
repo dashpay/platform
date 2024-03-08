@@ -6,7 +6,7 @@ pub mod v0;
 use crate::state_transition_action::contract::data_contract_create::v0::DataContractCreateTransitionActionV0;
 use derive_more::From;
 use dpp::data_contract::DataContract;
-use dpp::prelude::{UserFeeIncrease, IdentityNonce};
+use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 
 /// data contract create transition action
 #[derive(Debug, Clone, From)]

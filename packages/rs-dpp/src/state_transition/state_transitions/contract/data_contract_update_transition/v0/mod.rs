@@ -18,7 +18,7 @@ use platform_version::version::PlatformVersion;
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-use crate::prelude::{UserFeeIncrease, IdentityNonce};
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::state_transition::StateTransition;
 use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};

@@ -18,7 +18,7 @@ use crate::version::FeatureVersion;
 use crate::ProtocolError;
 
 #[cfg(feature = "state-transition-signing")]
-use crate::prelude::{UserFeeIncrease, IdentityNonce};
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 

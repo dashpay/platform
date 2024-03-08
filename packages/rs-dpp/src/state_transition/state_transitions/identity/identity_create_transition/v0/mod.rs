@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::Identity;
-use crate::prelude::{UserFeeIncrease, Identifier};
+use crate::prelude::{Identifier, UserFeeIncrease};
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::state_transition::AssetLockProved;

@@ -67,7 +67,9 @@ impl StateTransitionAction {
                 action.user_fee_increase()
             }
             StateTransitionAction::IdentityUpdateAction(action) => action.user_fee_increase(),
-            StateTransitionAction::IdentityCreditTransferAction(action) => action.user_fee_increase(),
+            StateTransitionAction::IdentityCreditTransferAction(action) => {
+                action.user_fee_increase()
+            }
             StateTransitionAction::BumpIdentityNonceAction(action) => action.user_fee_increase(),
             StateTransitionAction::BumpIdentityDataContractNonceAction(action) => {
                 action.user_fee_increase()

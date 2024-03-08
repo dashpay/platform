@@ -10,7 +10,7 @@ mod version;
 
 use crate::identity::KeyID;
 
-use crate::prelude::{UserFeeIncrease, Identifier, IdentityNonce};
+use crate::prelude::{Identifier, IdentityNonce, UserFeeIncrease};
 
 use crate::ProtocolError;
 use bincode::{Decode, Encode};

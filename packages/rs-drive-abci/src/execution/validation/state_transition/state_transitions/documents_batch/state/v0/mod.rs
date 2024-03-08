@@ -108,7 +108,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                     &data_trigger_execution_context,
                     platform_version,
                 )?;
-                
+
                 if !data_trigger_execution_result.is_valid() {
                     tracing::debug!(
                         "{:?} state transition data trigger was not valid, errors are {:?}",

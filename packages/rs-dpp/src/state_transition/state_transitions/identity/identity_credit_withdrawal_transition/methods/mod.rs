@@ -13,7 +13,7 @@ use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::core_script::CoreScript;
 #[cfg(feature = "state-transition-signing")]
-use crate::prelude::{UserFeeIncrease, IdentityNonce};
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 #[cfg(feature = "state-transition-signing")]

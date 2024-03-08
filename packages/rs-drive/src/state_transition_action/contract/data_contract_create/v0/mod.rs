@@ -2,7 +2,7 @@
 pub mod transformer;
 
 use dpp::data_contract::DataContract;
-use dpp::prelude::{UserFeeIncrease, IdentityNonce};
+use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 
 /// data contract create transition action v0
 #[derive(Debug, Clone)]

@@ -28,9 +28,7 @@ impl From<DataContractFactoryWasm> for DataContractFactory {
 #[wasm_bindgen(js_class=DataContractFactory)]
 impl DataContractFactoryWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        protocol_version: u32,
-    ) -> DataContractFactoryWasm {
+    pub fn new(protocol_version: u32) -> DataContractFactoryWasm {
         DataContractFactory::new(protocol_version)
             .with_js_error()
             .expect("should create a factory")

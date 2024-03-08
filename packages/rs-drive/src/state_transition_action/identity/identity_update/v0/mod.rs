@@ -2,7 +2,7 @@ mod transformer;
 
 use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
-use dpp::prelude::{UserFeeIncrease, IdentityNonce, Revision};
+use dpp::prelude::{IdentityNonce, Revision, UserFeeIncrease};
 use serde::{Deserialize, Serialize};
 
 /// action v0

@@ -2,7 +2,7 @@ mod transformer;
 
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
-use dpp::prelude::{UserFeeIncrease, IdentityNonce};
+use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 use serde::{Deserialize, Serialize};
 
 /// action v0

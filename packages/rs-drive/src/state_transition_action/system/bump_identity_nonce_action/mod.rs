@@ -1,7 +1,7 @@
 use derive_more::From;
 use dpp::platform_value::Identifier;
 
-use dpp::prelude::{UserFeeIncrease, IdentityNonce};
+use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 
 /// transformer module
 pub mod transformer;
