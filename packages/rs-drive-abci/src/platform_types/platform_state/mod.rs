@@ -41,6 +41,9 @@ pub(crate) enum PlatformStateForSaving {
 }
 
 impl PlatformStateForSaving {
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
         match self {
             PlatformStateForSaving::V0(v0) => v0.current_protocol_version_in_consensus,

@@ -6,7 +6,6 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::validation::DataContractValidationMethodsV0;
-use dpp::document::{DocumentV0Getters};
 use dpp::document::extended_document::property_names;
 use dpp::identity::TimestampMillis;
 use dpp::ProtocolError;
