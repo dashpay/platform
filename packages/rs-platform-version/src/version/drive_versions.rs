@@ -20,6 +20,7 @@ pub struct DriveMethodVersions {
     pub protocol_upgrade: DriveProtocolUpgradeVersions,
     pub balances: DriveBalancesMethodVersions,
     pub document: DriveDocumentMethodVersions,
+    pub vote: DriveVoteMethodVersions,
     pub contract: DriveContractMethodVersions,
     pub fees: DriveFeesMethodVersions,
     pub estimated_costs: DriveEstimatedCostsMethodVersions,
@@ -233,6 +234,35 @@ pub struct DriveSystemProtocolVersionMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveSystemEstimationCostsMethodVersions {
     pub for_total_system_credits_update: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVoteMethodVersions {
+    pub insert: DriveVoteInsertMethodVersions,
+    pub contested_resource_insert: DriveVoteContestedResourceInsertMethodVersions,
+    pub cleanup: DriveVoteCleanupMethodVersions,
+    pub setup: DriveVoteSetupMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVoteSetupMethodVersions {
+    pub add_initial_vote_tree_main_structure_operations: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVoteCleanupMethodVersions {
+    pub remove_votes_for_identity: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVoteInsertMethodVersions {
+    pub register_identity_vote: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVoteContestedResourceInsertMethodVersions {
+    pub register_contested_resource_identity_vote: FeatureVersion,
+    pub register_identity_vote_for_identity_queries: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

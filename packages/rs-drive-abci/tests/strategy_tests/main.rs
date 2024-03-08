@@ -59,6 +59,7 @@ mod query;
 mod strategy;
 mod upgrade_fork_tests;
 mod verify_state_transitions;
+mod voting_tests;
 
 pub type BlockHeight = u64;
 

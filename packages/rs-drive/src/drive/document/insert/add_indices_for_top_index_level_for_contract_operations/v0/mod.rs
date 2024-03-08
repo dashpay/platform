@@ -119,6 +119,7 @@ impl Drive {
             // here we are inserting an empty tree that will have a subtree of all other index properties
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
+                false,
                 storage_flags,
                 apply_type,
                 transaction,

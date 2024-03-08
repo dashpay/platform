@@ -64,6 +64,8 @@ use crate::version::drive_versions::{
     DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
     DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions,
     DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions, DriveVersion,
+    DriveVoteCleanupMethodVersions, DriveVoteContestedResourceInsertMethodVersions, DriveVoteInsertMethodVersions,
+    DriveVoteMethodVersions, DriveVoteSetupMethodVersions,
 };
 use crate::version::mocks::TEST_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
@@ -203,6 +205,21 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     validate_document_create_transition_action_uniqueness: 0,
                     validate_document_replace_transition_action_uniqueness: 0,
                     validate_uniqueness_of_data: 0,
+                },
+            },
+            vote: DriveVoteMethodVersions {
+                insert: DriveVoteInsertMethodVersions {
+                    register_identity_vote: 0,
+                },
+                contested_resource_insert: DriveVoteContestedResourceInsertMethodVersions {
+                    register_contested_resource_identity_vote: 0,
+                    register_identity_vote_for_identity_queries: 0,
+                },
+                cleanup: DriveVoteCleanupMethodVersions {
+                    remove_votes_for_identity: 0,
+                },
+                setup: DriveVoteSetupMethodVersions {
+                    add_initial_vote_tree_main_structure_operations: 0,
                 },
             },
             contract: DriveContractMethodVersions {
@@ -643,6 +660,15 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                         state: 0,
                         transform_into_action: 0,
                     },
+                masternode_vote_state_transition: DriveAbciStateTransitionValidationVersion {
+                    base_structure: 0,
+                    identity_signatures: None,
+                    balance: None,
+                    nonce: Some(0),
+                    state: 0,
+                    transform_into_action: 0,
+                    advanced_structure: None
+                },
                 contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     base_structure: 0,
                     advanced_structure: None,
@@ -833,6 +859,11 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 default_current_version: 0,
             },
             identity_credit_transfer_state_transition: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            masternode_vote_state_transition: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,
                 default_current_version: 0,

@@ -28,6 +28,7 @@ pub enum StateTransitionType {
     IdentityUpdate = 5,
     IdentityCreditWithdrawal = 6,
     IdentityCreditTransfer = 7,
+    MasternodeVote = 8,
 }
 
 impl std::fmt::Display for StateTransitionType {

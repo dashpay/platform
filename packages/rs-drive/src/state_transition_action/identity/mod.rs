@@ -8,3 +8,5 @@ pub mod identity_credit_withdrawal;
 pub mod identity_topup;
 /// identity update
 pub mod identity_update;
+/// masternode vote
+pub mod masternode_vote;

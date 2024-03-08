@@ -135,6 +135,7 @@ impl Drive {
             // we first insert an empty tree if the document is new
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
+                false,
                 storage_flags,
                 apply_type,
                 transaction,

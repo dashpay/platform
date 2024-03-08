@@ -223,6 +223,7 @@ impl Drive {
                             index_path.clone(),
                             document_top_field.as_slice(),
                         )),
+                        false,
                         storage_flags,
                         BatchInsertTreeApplyType::StatefulBatchInsertTree,
                         transaction,
@@ -295,6 +296,7 @@ impl Drive {
                                 index_path.clone(),
                                 index_property.name.as_bytes(),
                             )),
+                            false,
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsertTree,
                             transaction,
@@ -326,6 +328,7 @@ impl Drive {
                                 index_path.clone(),
                                 document_index_field.as_slice(),
                             )),
+                            false,
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsertTree,
                             transaction,
@@ -402,6 +405,7 @@ impl Drive {
                     // here we are inserting an empty tree that will have a subtree of all other index properties
                     self.batch_insert_empty_tree_if_not_exists(
                         PathKeyInfo::PathKeyRef::<0>((index_path.clone(), &[0])),
+                        false,
                         storage_flags,
                         BatchInsertTreeApplyType::StatefulBatchInsertTree,
                         transaction,

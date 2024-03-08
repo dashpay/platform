@@ -53,6 +53,7 @@ use dpp::fee::Credits;
 use grovedb::batch::GroveDbOp;
 #[cfg(feature = "full")]
 use grovedb::Element;
+use crate::drive::Drive;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 /// Epochs module
@@ -62,30 +63,34 @@ pub mod epochs;
 /// Epochs root tree key constants module
 pub mod epochs_root_tree_key_constants;
 
-#[cfg(feature = "full")]
-/// Adds the operations to groveDB op batch to create the fee pool trees
-pub fn add_create_fee_pool_trees_operations(
-    batch: &mut GroveDbOpBatch,
-    epochs_per_era: u16,
-) -> Result<(), Error> {
-    // Init storage credit pool
-    batch.push(update_storage_fee_distribution_pool_operation(0)?);
+impl Drive {
+    #[cfg(feature = "full")]
+    /// Adds the operations to groveDB op batch to create the fee pool trees
+    pub fn add_create_fee_pool_trees_operations(
+        batch: &mut GroveDbOpBatch,
+        epochs_per_era: u16,
+    ) -> Result<(), Error> {
+        // Init storage credit pool
+        batch.push(update_storage_fee_distribution_pool_operation(0)?);
 
-    // Init next epoch to pay
-    batch.push(update_unpaid_epoch_index_operation(GENESIS_EPOCH_INDEX));
+        // Init next epoch to pay
+        batch.push(update_unpaid_epoch_index_operation(GENESIS_EPOCH_INDEX));
 
-    add_create_pending_epoch_refunds_tree_operations(batch);
+        add_create_pending_epoch_refunds_tree_operations(batch);
 
-    // We need to insert 50 era worth of epochs,
-    // with 40 epochs per era that's 2000 epochs
-    // however this is configurable
-    for i in GENESIS_EPOCH_INDEX..perpetual_storage_epochs(epochs_per_era) {
-        let epoch = Epoch::new(i)?;
-        epoch.add_init_empty_operations(batch)?;
+        // We need to insert 50 era worth of epochs,
+        // with 40 epochs per era that's 2000 epochs
+        // however this is configurable
+        for i in GENESIS_EPOCH_INDEX..perpetual_storage_epochs(epochs_per_era) {
+            let epoch = Epoch::new(i)?;
+            epoch.add_init_empty_operations(batch)?;
+        }
+
+        Ok(())
     }
-
-    Ok(())
 }
+
+
 
 #[cfg(feature = "full")]
 /// Adds operations to batch to create pending pool updates tree

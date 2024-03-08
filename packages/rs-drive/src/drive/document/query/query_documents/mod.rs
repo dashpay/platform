@@ -1,4 +1,3 @@
-use crate::drive::document::query::query_documents::v0::QueryDocumentsOutcomeV0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;

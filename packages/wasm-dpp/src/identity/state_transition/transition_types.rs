@@ -12,6 +12,7 @@ pub enum StateTransitionTypeWasm {
     IdentityUpdate = 5,
     IdentityCreditWithdrawal = 6,
     IdentityCreditTransfer = 7,
+    MasternodeVote = 8,
 }
 
 impl From<StateTransitionType> for StateTransitionTypeWasm {
@@ -29,6 +30,7 @@ impl From<StateTransitionType> for StateTransitionTypeWasm {
             StateTransitionType::IdentityCreditTransfer => {
                 StateTransitionTypeWasm::IdentityCreditTransfer
             }
+            StateTransitionType::MasternodeVote => StateTransitionTypeWasm::MasternodeVote,
         }
     }
 }

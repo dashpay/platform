@@ -7,6 +7,7 @@ pub mod methods;
 pub use index::*;
 mod index_level;
 pub use index_level::IndexLevel;
+pub use index_level::IndexType;
 
 #[cfg(feature = "random-documents")]
 pub mod random_document;

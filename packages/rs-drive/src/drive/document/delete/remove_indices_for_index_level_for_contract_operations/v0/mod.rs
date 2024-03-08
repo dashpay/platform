@@ -60,11 +60,11 @@ impl Drive {
             );
         }
 
-        if let Some(unique) = index_level.has_index_with_uniqueness() {
+        if let Some(index_type) = index_level.has_index_with_type() {
             self.remove_reference_for_index_level_for_contract_operations(
                 document_and_contract_info,
                 index_path_info.clone(),
-                unique,
+                index_type,
                 any_fields_null,
                 storage_flags,
                 previous_batch_operations,

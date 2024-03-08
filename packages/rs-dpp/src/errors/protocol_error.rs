@@ -92,6 +92,9 @@ pub enum ProtocolError {
     #[error("unknown storage key requirements {0}")]
     UnknownStorageKeyRequirements(String),
 
+    #[error("unknown contested index resolution {0}")]
+    UnknownContestedIndexResolution(String),
+
     #[error(transparent)]
     DataContractError(#[from] DataContractError),
 
@@ -204,6 +207,9 @@ pub enum ProtocolError {
         errors: Vec<ConsensusError>,
         raw_identity: Value,
     },
+
+    #[error("vote error {0}")]
+    VoteError(String),
 
     #[error("Public key generation error {0}")]
     PublicKeyGenerationError(String),

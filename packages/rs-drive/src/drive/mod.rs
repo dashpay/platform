@@ -96,6 +96,7 @@ mod prove;
 /// Contains a set of useful grovedb proof verification functions
 #[cfg(feature = "verify")]
 pub mod verify;
+mod votes;
 
 #[cfg(feature = "full")]
 use crate::drive::cache::DriveCache;
@@ -121,9 +122,9 @@ pub struct Drive {
 //                  /                               \
 //             Identities 32                           Balances 96
 //             /        \                         /                   \
-//   Token_Balances 16    Pools 48      WithdrawalTransactions 80    Misc  112
-//       /      \                                /                       \
-//     NUPKH->I 8 UPKH->I 24        SpentAssetLockTransactions 72        Versions 120
+//   Token_Balances 16    Pools 48      WithdrawalTransactions 80    Votes  112
+//       /      \                                /                    /       \
+//     NUPKH->I 8 UPKH->I 24        SpentAssetLockTransactions 72   Misc 104   Versions 120
 
 /// Keys for the root tree.
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -143,7 +144,7 @@ pub enum RootTree {
     /// Spent Asset Lock Transactions
     SpentAssetLockTransactions = 72,
     /// Misc
-    Misc = 112,
+    Misc = 104,
     /// Asset Unlock Transactions
     WithdrawalTransactions = 80,
     /// Balances
@@ -152,6 +153,8 @@ pub enum RootTree {
     TokenBalances = 16,
     /// Versions desired by proposers
     Versions = 120,
+    /// Registered votes
+    Votes = 112,
 }
 
 /// Storage cost
@@ -181,12 +184,13 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::UniquePublicKeyHashesToIdentities => &[24],
             RootTree::SpentAssetLockTransactions => &[72],
             RootTree::Pools => &[48],
-            RootTree::Misc => &[112],
+            RootTree::Misc => &[104],
             RootTree::WithdrawalTransactions => &[80],
             RootTree::Balances => &[96],
             RootTree::TokenBalances => &[16],
             RootTree::NonUniquePublicKeyKeyHashesToIdentities => &[8],
             RootTree::Versions => &[120],
+            RootTree::Votes => &[112],
         }
     }
 }
