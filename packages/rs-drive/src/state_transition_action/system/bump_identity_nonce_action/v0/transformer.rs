@@ -38,7 +38,7 @@ impl BumpIdentityNonceActionV0 {
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
-            user_fee_increase: *fee_multiplier,
+            user_fee_increase: *user_fee_increase,
         })
     }
 
@@ -72,7 +72,7 @@ impl BumpIdentityNonceActionV0 {
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
-            user_fee_increase: *fee_multiplier,
+            user_fee_increase: *user_fee_increase,
         })
     }
 
@@ -106,7 +106,7 @@ impl BumpIdentityNonceActionV0 {
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
-            user_fee_increase: *fee_multiplier,
+            user_fee_increase: *user_fee_increase,
         })
     }
 
@@ -140,7 +140,7 @@ impl BumpIdentityNonceActionV0 {
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
-            user_fee_increase: *fee_multiplier,
+            user_fee_increase: *user_fee_increase,
         })
     }
 
@@ -174,7 +174,7 @@ impl BumpIdentityNonceActionV0 {
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
-            user_fee_increase: *fee_multiplier,
+            user_fee_increase: *user_fee_increase,
         })
     }
 
@@ -208,7 +208,7 @@ impl BumpIdentityNonceActionV0 {
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
-            user_fee_increase: *fee_multiplier,
+            user_fee_increase: *user_fee_increase,
         })
     }
 }

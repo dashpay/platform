@@ -47,7 +47,7 @@ impl From<&IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
             identity_id: *identity_id,
             revision: *revision,
             nonce: *nonce,
-            user_fee_increase: *fee_multiplier,
+            user_fee_increase: *user_fee_increase,
         }
     }
 }

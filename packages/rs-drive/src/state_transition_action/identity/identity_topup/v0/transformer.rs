@@ -65,7 +65,7 @@ impl IdentityTopUpTransitionActionV0 {
             top_up_balance_amount,
             identity_id: *identity_id,
             asset_lock_outpoint: Bytes36::new(outpoint_bytes),
-            user_fee_increase: *fee_multiplier,
+            user_fee_increase: *user_fee_increase,
         })
     }
 }

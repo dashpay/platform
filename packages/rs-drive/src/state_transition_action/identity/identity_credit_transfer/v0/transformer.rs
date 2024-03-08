@@ -36,7 +36,7 @@ impl From<&IdentityCreditTransferTransitionV0> for IdentityCreditTransferTransit
             recipient_id: *recipient_id,
             transfer_amount: *amount,
             nonce: *nonce,
-            user_fee_increase: *fee_multiplier,
+            user_fee_increase: *user_fee_increase,
         }
     }
 }
