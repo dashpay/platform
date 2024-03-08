@@ -74,7 +74,7 @@ mod tests {
 
     #[test]
     fn test_invalid_identity_id() {
-        let (platform, state, version) = setup_platform();
+        let (platform, state, _unused_version) = setup_platform();
 
         let version = PlatformVersion::latest();
 
