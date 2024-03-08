@@ -1,6 +1,6 @@
 mod from_document;
 pub mod v0;
-mod v0_methods;
+pub mod v0_methods;
 
 use bincode::{Decode, Encode};
 use derive_more::{Display, From};
