@@ -2,7 +2,7 @@ use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::core_script::CoreScript;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, KeyType, Purpose, SecurityLevel};
-use crate::prelude::{UserFeeMultiplier, IdentityNonce};
+use crate::prelude::{UserFeeIncrease, IdentityNonce};
 use crate::ProtocolError;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
@@ -19,7 +19,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
         amount: u64,
         pooling: Pooling,
         core_fee_per_byte: u32,
-        fee_multiplier: UserFeeMultiplier,
+        fee_multiplier: UserFeeIncrease,
         signer: S,
         nonce: IdentityNonce,
         _platform_version: &PlatformVersion,

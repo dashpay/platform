@@ -18,7 +18,7 @@ use std::convert::{TryFrom, TryInto};
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 
-use crate::prelude::{UserFeeMultiplier, IdentityNonce};
+use crate::prelude::{UserFeeIncrease, IdentityNonce};
 use crate::{
     identity::KeyID,
     prelude::{Identifier, Revision, TimestampMillis},
@@ -60,7 +60,7 @@ pub struct IdentityUpdateTransitionV0 {
     pub public_keys_disabled_at: Option<TimestampMillis>,
 
     /// The fee multiplier
-    pub fee_multiplier: UserFeeMultiplier,
+    pub fee_multiplier: UserFeeIncrease,
 
     /// The ID of the public key used to sing the State Transition
     #[platform_signable(exclude_from_sig_hash)]

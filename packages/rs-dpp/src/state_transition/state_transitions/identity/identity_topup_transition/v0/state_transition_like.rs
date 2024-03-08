@@ -1,6 +1,6 @@
 use platform_value::BinaryData;
 
-use crate::prelude::UserFeeMultiplier;
+use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::{
     prelude::Identifier,
@@ -68,11 +68,11 @@ impl StateTransitionLike for IdentityTopUpTransitionV0 {
         }
     }
 
-    fn fee_multiplier(&self) -> UserFeeMultiplier {
+    fn fee_multiplier(&self) -> UserFeeIncrease {
         self.fee_multiplier
     }
 
-    fn set_fee_multiplier(&mut self, fee_multiplier: UserFeeMultiplier) {
+    fn set_fee_multiplier(&mut self, fee_multiplier: UserFeeIncrease) {
         self.fee_multiplier = fee_multiplier
     }
 }

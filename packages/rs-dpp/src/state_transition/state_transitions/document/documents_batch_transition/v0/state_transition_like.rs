@@ -1,4 +1,4 @@
-use crate::prelude::UserFeeMultiplier;
+use crate::prelude::UserFeeIncrease;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::{
@@ -62,11 +62,11 @@ impl StateTransitionLike for DocumentsBatchTransitionV0 {
             .collect()
     }
 
-    fn fee_multiplier(&self) -> UserFeeMultiplier {
+    fn fee_multiplier(&self) -> UserFeeIncrease {
         self.fee_multiplier
     }
 
-    fn set_fee_multiplier(&mut self, fee_multiplier: UserFeeMultiplier) {
+    fn set_fee_multiplier(&mut self, fee_multiplier: UserFeeIncrease) {
         self.fee_multiplier = fee_multiplier
     }
 }

@@ -3,7 +3,7 @@ use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
 use crate::serialization::Signable;
 
-use crate::prelude::{UserFeeMultiplier, IdentityNonce};
+use crate::prelude::{UserFeeIncrease, IdentityNonce};
 use crate::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionV0,
@@ -20,7 +20,7 @@ impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransitionV0 {
         identity: &PartialIdentity,
         key_id: KeyID,
         identity_contract_nonce: IdentityNonce,
-        fee_multiplier: UserFeeMultiplier,
+        fee_multiplier: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
         _feature_version: Option<FeatureVersion>,

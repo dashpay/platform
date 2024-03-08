@@ -1,5 +1,5 @@
 use crate::identity::Identity;
-use crate::prelude::{AssetLockProof, UserFeeMultiplier};
+use crate::prelude::{AssetLockProof, UserFeeIncrease};
 use crate::state_transition::{StateTransition, StateTransitionType};
 use crate::ProtocolError;
 use platform_version::version::{FeatureVersion, PlatformVersion};
@@ -10,7 +10,7 @@ pub trait IdentityTopUpTransitionMethodsV0 {
         identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
-        fee_multiplier: UserFeeMultiplier,
+        fee_multiplier: UserFeeIncrease,
         platform_version: &PlatformVersion,
         version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError>;

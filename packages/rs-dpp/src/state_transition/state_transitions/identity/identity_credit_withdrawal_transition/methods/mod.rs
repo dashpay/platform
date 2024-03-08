@@ -8,7 +8,7 @@ use crate::identity::signer::Signer;
 use crate::identity::Identity;
 
 use crate::identity::core_script::CoreScript;
-use crate::prelude::{UserFeeMultiplier, IdentityNonce};
+use crate::prelude::{UserFeeIncrease, IdentityNonce};
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 use crate::state_transition::StateTransition;
 use crate::version::PlatformVersion;
@@ -23,7 +23,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
         amount: u64,
         pooling: Pooling,
         core_fee_per_byte: u32,
-        fee_multiplier: UserFeeMultiplier,
+        fee_multiplier: UserFeeIncrease,
         signer: S,
         nonce: IdentityNonce,
         platform_version: &PlatformVersion,

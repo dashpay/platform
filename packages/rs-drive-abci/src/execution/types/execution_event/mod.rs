@@ -9,7 +9,7 @@ use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
 
 use dpp::identity::PartialIdentity;
-use dpp::prelude::UserFeeMultiplier;
+use dpp::prelude::UserFeeIncrease;
 
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
@@ -35,7 +35,7 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         /// the execution operations that we must also pay for
         execution_operations: Vec<ValidationOperation>,
         /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
-        fee_multiplier: UserFeeMultiplier,
+        fee_multiplier: UserFeeIncrease,
     },
     /// A drive event that is paid from an asset lock
     PaidFromAssetLockDriveEvent {
@@ -48,7 +48,7 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         /// the execution operations that we must also pay for
         execution_operations: Vec<ValidationOperation>,
         /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
-        fee_multiplier: UserFeeMultiplier,
+        fee_multiplier: UserFeeIncrease,
     },
     /// A drive event that is free
     FreeDriveEvent {

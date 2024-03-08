@@ -1,4 +1,4 @@
-use crate::prelude::UserFeeMultiplier;
+use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
@@ -43,13 +43,13 @@ impl StateTransitionLike for IdentityTopUpTransition {
     }
 
     /// returns the fee multiplier
-    fn fee_multiplier(&self) -> UserFeeMultiplier {
+    fn fee_multiplier(&self) -> UserFeeIncrease {
         match self {
             IdentityTopUpTransition::V0(transition) => transition.fee_multiplier(),
         }
     }
     /// set a fee multiplier
-    fn set_fee_multiplier(&mut self, fee_multiplier: UserFeeMultiplier) {
+    fn set_fee_multiplier(&mut self, fee_multiplier: UserFeeIncrease) {
         match self {
             IdentityTopUpTransition::V0(transition) => {
                 transition.set_fee_multiplier(fee_multiplier)

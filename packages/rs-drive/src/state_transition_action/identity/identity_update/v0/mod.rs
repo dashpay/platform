@@ -2,7 +2,7 @@ mod transformer;
 
 use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
-use dpp::prelude::{UserFeeMultiplier, IdentityNonce, Revision};
+use dpp::prelude::{UserFeeIncrease, IdentityNonce, Revision};
 use serde::{Deserialize, Serialize};
 
 /// action v0
@@ -22,5 +22,5 @@ pub struct IdentityUpdateTransitionActionV0 {
     /// nonce used to prevent replay attacks
     pub nonce: IdentityNonce,
     /// fee multiplier
-    pub fee_multiplier: UserFeeMultiplier,
+    pub fee_multiplier: UserFeeIncrease,
 }

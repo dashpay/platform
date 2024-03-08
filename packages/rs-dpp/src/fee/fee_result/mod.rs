@@ -41,7 +41,7 @@ use crate::consensus::fee::fee_error::FeeError;
 use crate::fee::fee_result::refunds::FeeRefunds;
 use crate::fee::fee_result::BalanceChange::{AddToBalance, NoBalanceChange, RemoveFromBalance};
 use crate::fee::Credits;
-use crate::prelude::UserFeeMultiplier;
+use crate::prelude::UserFeeIncrease;
 use crate::ProtocolError;
 use platform_value::Identifier;
 use std::cmp::Ordering;
@@ -195,7 +195,7 @@ impl FeeResult {
     }
 
     /// Apply a fee multiplier to a fee result
-    pub fn apply_fee_multiplier(&mut self, fee_multiplier: UserFeeMultiplier) {
+    pub fn apply_fee_multiplier(&mut self, fee_multiplier: UserFeeIncrease) {
         let additional_processing_fee = (self.processing_fee as u128)
             .saturating_mul(fee_multiplier as u128)
             .saturating_div(100);

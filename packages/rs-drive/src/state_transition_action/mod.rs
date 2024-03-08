@@ -23,7 +23,7 @@ use crate::state_transition_action::system::bump_identity_nonce_action::{
     BumpIdentityNonceAction, BumpIdentityNonceActionAccessorsV0,
 };
 use derive_more::From;
-use dpp::prelude::UserFeeMultiplier;
+use dpp::prelude::UserFeeIncrease;
 
 /// ST action
 #[derive(Debug, Clone, From)]
@@ -56,7 +56,7 @@ pub enum StateTransitionAction {
 
 impl StateTransitionAction {
     /// The fee multiplier for the action
-    pub fn fee_multiplier(&self) -> UserFeeMultiplier {
+    pub fn fee_multiplier(&self) -> UserFeeIncrease {
         match self {
             StateTransitionAction::DataContractCreateAction(action) => action.fee_multiplier(),
             StateTransitionAction::DataContractUpdateAction(action) => action.fee_multiplier(),

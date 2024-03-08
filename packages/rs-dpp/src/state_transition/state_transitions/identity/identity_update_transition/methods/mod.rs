@@ -11,7 +11,7 @@ use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
 
-use crate::prelude::{UserFeeMultiplier, IdentityNonce};
+use crate::prelude::{UserFeeIncrease, IdentityNonce};
 use platform_version::version::PlatformVersion;
 
 impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransition {
@@ -23,7 +23,7 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransition {
         disable_public_keys: Vec<KeyID>,
         public_keys_disabled_at: Option<u64>,
         nonce: IdentityNonce,
-        fee_multiplier: UserFeeMultiplier,
+        fee_multiplier: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
         version: Option<FeatureVersion>,

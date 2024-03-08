@@ -11,7 +11,7 @@ use crate::identity::{Identity, IdentityPublicKey};
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use crate::prelude::{UserFeeMultiplier, IdentityNonce};
+use crate::prelude::{UserFeeIncrease, IdentityNonce};
 use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use crate::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
@@ -34,7 +34,7 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
         disable_public_keys: Vec<KeyID>,
         public_keys_disabled_at: Option<u64>,
         nonce: IdentityNonce,
-        fee_multiplier: UserFeeMultiplier,
+        fee_multiplier: UserFeeIncrease,
         signer: &S,
         _platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
