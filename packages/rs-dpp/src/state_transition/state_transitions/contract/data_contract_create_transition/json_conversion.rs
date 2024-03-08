@@ -35,7 +35,6 @@ mod test {
 
     use crate::prelude::IdentityNonce;
     use dpp::util::json_value::JsonValueExt;
-    use platform_value::Bytes32;
 
     #[test]
     fn should_return_state_transition_in_json_format() {

@@ -2,11 +2,12 @@ mod from_document;
 pub mod v0_methods;
 
 use crate::identity::TimestampMillis;
-use crate::prelude::{IdentityNonce, Revision};
+use crate::prelude::Revision;
 use bincode::{Decode, Encode};
 use derive_more::Display;
 
 use platform_value::{Identifier, Value};
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::document::{Document, DocumentV0};

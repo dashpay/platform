@@ -1,10 +1,19 @@
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::core_script::CoreScript;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
+#[cfg(feature = "state-transition-signing")]
 use crate::prelude::IdentityNonce;
-use crate::state_transition::{StateTransition, StateTransitionType};
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::StateTransition;
+use crate::state_transition::StateTransitionType;
+#[cfg(feature = "state-transition-signing")]
 use crate::withdrawal::Pooling;
+#[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
+#[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
 pub trait IdentityCreditWithdrawalTransitionMethodsV0 {

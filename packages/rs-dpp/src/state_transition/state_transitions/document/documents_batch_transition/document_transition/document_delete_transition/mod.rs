@@ -4,6 +4,7 @@ mod v0_methods;
 
 use bincode::{Decode, Encode};
 use derive_more::{Display, From};
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 pub use v0::*;
 
