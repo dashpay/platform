@@ -31,6 +31,7 @@ impl DataContractCreateTransitionIdentityNonceV0 for DataContractCreateTransitio
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let revision_nonce = self.identity_nonce();
         let identity_id = self.data_contract().owner_id();
+        //todo: use fees
         let (existing_nonce, _unused_fees) = platform.drive.fetch_identity_nonce_with_fees(
             identity_id.to_buffer(),
             block_info,

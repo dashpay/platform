@@ -31,6 +31,7 @@ impl IdentityUpdateTransitionIdentityContractNonceV0 for IdentityUpdateTransitio
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let revision_nonce = self.nonce();
         let identity_id = self.identity_id();
+        //todo: use fees
         let (existing_nonce, _unused_fees) = platform.drive.fetch_identity_nonce_with_fees(
             identity_id.to_buffer(),
             block_info,
