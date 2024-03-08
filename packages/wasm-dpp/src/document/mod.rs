@@ -32,7 +32,6 @@ use dpp::document::{Document, DocumentV0Setters, EXTENDED_DOCUMENT_IDENTIFIER_FI
 pub use extended_document::ExtendedDocumentWasm;
 
 use dpp::identity::TimestampMillis;
-use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::platform_value::Value;
@@ -51,6 +50,9 @@ pub(crate) struct ConversionOptions {
     pub skip_identifiers_conversion: bool,
 }
 
+#[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 pub(super) enum BinaryType {
     Identifier,
     Buffer,
@@ -315,6 +317,9 @@ impl DocumentWasm {
 }
 
 impl DocumentWasm {
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     fn get_binary_type_of_path(
         &self,
         path: &String,
