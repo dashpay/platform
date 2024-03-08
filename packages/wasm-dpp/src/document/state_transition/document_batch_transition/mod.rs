@@ -3,7 +3,6 @@ use dpp::identity::KeyID;
 use dpp::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
-    util::json_value::JsonValueExt,
     ProtocolError,
 };
 use js_sys::Array;
@@ -14,9 +13,7 @@ use dpp::consensus::ConsensusError;
 use dpp::platform_value::BinaryData;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::documents_batch_transition::document_transition::{
-    DocumentTransition, DocumentTransitionV0Methods,
-};
+use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::StateTransition;
 use wasm_bindgen::prelude::*;
@@ -25,7 +22,7 @@ use crate::{
     bls_adapter::{BlsAdapter, JsBlsAdapter},
     buffer::Buffer,
     identifier::IdentifierWrapper,
-    utils::{Inner, IntoWasm, WithJsError},
+    utils::{IntoWasm, WithJsError},
     IdentityPublicKeyWasm,
 };
 

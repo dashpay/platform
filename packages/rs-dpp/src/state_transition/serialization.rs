@@ -287,7 +287,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
-        let mut created_data_contract =
+        let created_data_contract =
             get_data_contract_fixture(Some(identity.id()), 0, platform_version.protocol_version);
         let data_contract_update_transition =
             DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {

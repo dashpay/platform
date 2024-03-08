@@ -53,7 +53,9 @@ pub trait DriveLowLevelOperationConverter {
 /// The drive operation context keeps track of changes that might affect other operations
 /// Notably Identity balance changes are kept track of
 pub struct DriveOperationContext {
-    //todo: why is this not being used?
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     identity_balance_changes: BTreeMap<[u8; 32], i64>,
 }
 
@@ -887,7 +889,6 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
 
-        let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
 
         let contract = setup_contract(
@@ -921,31 +922,29 @@ mod tests {
         )
         .expect("expected to get document");
 
-        let mut operations = vec![];
-
-        operations.push(AddOperation {
-            owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefInfo((
-                    &person_document0,
-                    StorageFlags::optional_default_as_cow(),
-                )),
-                owner_id: Some(random_owner_id0),
+        let operations = vec![
+            AddOperation {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &person_document0,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(random_owner_id0),
+                },
+                override_document: false,
             },
-            override_document: false,
-        });
-
-        operations.push(AddOperation {
-            owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefInfo((
-                    &person_document1,
-                    StorageFlags::optional_default_as_cow(),
-                )),
-                owner_id: Some(random_owner_id1),
+            AddOperation {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &person_document1,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(random_owner_id1),
+                },
+                override_document: false,
             },
-            override_document: false,
-        });
-
-        drive_operations.push(DocumentOperation(
+        ];
+        let drive_operations = vec![DocumentOperation(
             MultipleDocumentOperationsForSameContractDocumentType {
                 document_operations: DocumentOperationsForContractDocumentType {
                     operations,
@@ -953,7 +952,7 @@ mod tests {
                     document_type,
                 },
             },
-        ));
+        )];
 
         drive
             .apply_drive_operations(
@@ -966,8 +965,6 @@ mod tests {
             .expect("expected to be able to insert documents");
 
         // This was the setup now let's do the update
-
-        drive_operations = vec![];
 
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0-older.json",
@@ -985,23 +982,22 @@ mod tests {
         )
         .expect("expected to get document");
 
-        let mut operations = vec![];
+        let operations = vec![
+            UpdateOperation(UpdateOperationInfo {
+                document: &person_document0,
+                serialized_document: None,
+                owner_id: Some(random_owner_id0),
+                storage_flags: None,
+            }),
+            UpdateOperation(UpdateOperationInfo {
+                document: &person_document1,
+                serialized_document: None,
+                owner_id: Some(random_owner_id1),
+                storage_flags: None,
+            }),
+        ];
 
-        operations.push(UpdateOperation(UpdateOperationInfo {
-            document: &person_document0,
-            serialized_document: None,
-            owner_id: Some(random_owner_id0),
-            storage_flags: None,
-        }));
-
-        operations.push(UpdateOperation(UpdateOperationInfo {
-            document: &person_document1,
-            serialized_document: None,
-            owner_id: Some(random_owner_id1),
-            storage_flags: None,
-        }));
-
-        drive_operations.push(DocumentOperation(
+        let drive_operations = vec![DocumentOperation(
             MultipleDocumentOperationsForSameContractDocumentType {
                 document_operations: DocumentOperationsForContractDocumentType {
                     operations,
@@ -1009,7 +1005,7 @@ mod tests {
                     document_type,
                 },
             },
-        ));
+        )];
 
         drive
             .apply_drive_operations(

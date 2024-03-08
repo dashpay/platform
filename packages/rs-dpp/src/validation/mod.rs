@@ -6,6 +6,7 @@ pub use validation_result::{
     ValidationResult,
 };
 
+#[cfg(feature = "validation")]
 use crate::version::PlatformVersion;
 #[cfg(feature = "validation")]
 use crate::ProtocolError;
