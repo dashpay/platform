@@ -1,3 +1,47 @@
+## [1.0.0-dev.7](https://github.com/dashpay/platform/compare/v1.0.0-dev.6...v1.0.0-dev.7) (2024-03-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** state transition fee increase and priorities (#1750)
+
+### Features
+
+* enable random contract creation in strategies ([#1729](https://github.com/dashpay/platform/issues/1729))
+* **platform:** state transition fee increase and priorities ([#1750](https://github.com/dashpay/platform/issues/1750))
+
+
+### Bug Fixes
+
+* **drive:** inconsistent platform state and version during ABCI calls ([#1733](https://github.com/dashpay/platform/issues/1733))
+* **drive:** internal error on querying specific identity keys ([#1728](https://github.com/dashpay/platform/issues/1728))
+* resolve strategy-tests test failures ([#1743](https://github.com/dashpay/platform/issues/1743))
+
+
+### Documentation
+
+* update and expand mkdocs redirects ([#1740](https://github.com/dashpay/platform/issues/1740))
+
+
+### Code Refactoring
+
+* **drive:** expose more groveDB internals ([#1739](https://github.com/dashpay/platform/issues/1739))
+* reduce cargo clippy warnings ([#1738](https://github.com/dashpay/platform/issues/1738))
+* reduce cargo clippy warnings ([#1741](https://github.com/dashpay/platform/issues/1741))
+* reduce cargo clippy warnings in rs-dpp ([#1742](https://github.com/dashpay/platform/issues/1742))
+* resolve a few clippy warnings in dapi-grpc, rs-drive-proof-verifier, rs-platform-serialization, rs-platform-serialization-derive, rs-platform-value, rs-sdk, strategy-tests ([#1756](https://github.com/dashpay/platform/issues/1756))
+* resolve a few clippy warnings in rs-platform-serializaation and rs-platform-value ([#1744](https://github.com/dashpay/platform/issues/1744))
+* resolve clippy warnings in rs-dpp ([#1754](https://github.com/dashpay/platform/issues/1754))
+* resolve clippy warnings in rs-drive ([#1752](https://github.com/dashpay/platform/issues/1752))
+* resolve clippy warnings in rs-drive-abci ([#1755](https://github.com/dashpay/platform/issues/1755))
+* resolve clippy warnings in wasm-dpp ([#1753](https://github.com/dashpay/platform/issues/1753))
+
+
+### Miscellaneous Chores
+
+* fmt ([#1751](https://github.com/dashpay/platform/issues/1751))
+* update testnet genesis and core nightly ([#1758](https://github.com/dashpay/platform/issues/1758))
+
 ## [1.0.0-dev.6](https://github.com/dashpay/platform/compare/v1.0.0-dev.5...v1.0.0-dev.6) (2024-03-05)
 
 
