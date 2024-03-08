@@ -15,5 +15,3 @@ pub mod state_transition;
 
 /// Represents the root hash of the grovedb tree
 pub type RootHash = [u8; 32];
-/// Simply a collection of 32 Bytes. It's just that simple
-pub type Bytes32 = [u8; 32];
