@@ -16,7 +16,6 @@ use dpp::consensus::ConsensusError;
 
 #[cfg(test)]
 use crate::execution::validation::state_transition::processor::process_state_transition;
-use dpp::fee::fee_result::FeeResult;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
 #[cfg(test)]
@@ -200,8 +199,6 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
-    use std::time;
-    use std::time::SystemTime;
 
     // This test needs to be redone with new contract bytes, but is still useful for debugging
     #[test]

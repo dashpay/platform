@@ -1,8 +1,6 @@
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::StateTransitionLike;
 use drive::state_transition_action::StateTransitionAction;
@@ -18,7 +16,6 @@ use crate::execution::validation::state_transition::documents_batch::action_vali
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
-use crate::execution::validation::state_transition::documents_batch::state::v0::data_triggers::execute_data_triggers;
 use crate::platform_types::platform::{PlatformStateRef};
 use crate::execution::validation::state_transition::state_transitions::documents_batch::transformer::v0::DocumentsBatchTransitionTransformerV0;
 
@@ -97,53 +94,50 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                         )?,
                     ),
                 );
-            } else {
-                if platform.config.execution.use_document_triggers {
-                    // we should also validate document triggers
-                    let data_trigger_execution_context = DataTriggerExecutionContext {
-                        platform,
-                        transaction,
-                        owner_id: &self.owner_id(),
-                        state_transition_execution_context: &state_transition_execution_context,
-                    };
-                    let data_trigger_execution_result = transition.validate_with_data_triggers(
-                        &data_trigger_bindings,
-                        &data_trigger_execution_context,
-                        platform_version,
-                    )?;
+            } else if platform.config.execution.use_document_triggers {
+                // we should also validate document triggers
+                let data_trigger_execution_context = DataTriggerExecutionContext {
+                    platform,
+                    transaction,
+                    owner_id: &self.owner_id(),
+                    state_transition_execution_context: &state_transition_execution_context,
+                };
+                let data_trigger_execution_result = transition.validate_with_data_triggers(
+                    &data_trigger_bindings,
+                    &data_trigger_execution_context,
+                    platform_version,
+                )?;
 
-                    if !data_trigger_execution_result.is_valid() {
-                        tracing::debug!(
-                            "{:?} state transition data trigger was not valid, errors are {:?}",
-                            transition,
-                            data_trigger_execution_result.errors,
-                        );
-                        // If a state transition isn't valid because of data triggers we still need
-                        // to bump the identity data contract nonce
-                        let consensus_errors: Vec<ConsensusError> = data_trigger_execution_result
-                            .errors
-                            .into_iter()
-                            .map(|e| ConsensusError::StateError(StateError::DataTriggerError(e)))
-                            .collect();
-                        validation_result.add_errors(consensus_errors);
-                        validated_transitions.push(
-                            DocumentTransitionAction::BumpIdentityDataContractNonce(
-                                BumpIdentityDataContractNonceAction::from_document_base_transition_action(
-                                    transition.base_owned().ok_or(Error::Execution(
-                                        ExecutionError::CorruptedCodeExecution(
-                                            "base should always exist on transition",
-                                        ),
-                                    ))?,
-                                    owner_id,
-                                )?,
-                            ),
-                        );
-                    } else {
-                        validated_transitions.push(transition);
-                    }
+                if !data_trigger_execution_result.is_valid() {
+                    tracing::debug!(
+                        "{:?} state transition data trigger was not valid, errors are {:?}",
+                        transition,
+                        data_trigger_execution_result.errors,
+                    );
+                    // If a state transition isn't valid because of data triggers we still need
+                    // to bump the identity data contract nonce
+                    let consensus_errors: Vec<ConsensusError> = data_trigger_execution_result
+                        .errors
+                        .into_iter()
+                        .map(|e| ConsensusError::StateError(StateError::DataTriggerError(e)))
+                        .collect();
+                    validation_result.add_errors(consensus_errors);
+                    validated_transitions
+                        .push(DocumentTransitionAction::BumpIdentityDataContractNonce(
+                        BumpIdentityDataContractNonceAction::from_document_base_transition_action(
+                            transition.base_owned().ok_or(Error::Execution(
+                                ExecutionError::CorruptedCodeExecution(
+                                    "base should always exist on transition",
+                                ),
+                            ))?,
+                            owner_id,
+                        )?,
+                    ));
                 } else {
                     validated_transitions.push(transition);
                 }
+            } else {
+                validated_transitions.push(transition);
             }
         }
 
