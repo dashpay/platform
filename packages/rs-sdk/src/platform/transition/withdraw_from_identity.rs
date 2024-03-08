@@ -27,7 +27,7 @@ pub trait WithdrawFromIdentity {
         address: Address,
         amount: u64,
         core_fee_per_byte: Option<u32>,
-        fee_multiplier: Option<UserFeeIncrease>,
+        user_fee_increase: Option<UserFeeIncrease>,
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error>;
