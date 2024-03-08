@@ -113,7 +113,7 @@ where
 
         let unique_identifiers = state_transition.unique_identifiers();
 
-        let priority = state_transition.fee_multiplier();
+        let priority = state_transition.user_fee_increase() as u32 * 100;
 
         let validation_result = state_transition_to_execution_event_for_check_tx(
             &platform_ref,
@@ -1471,7 +1471,7 @@ mod tests {
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
-            fee_multiplier: 0,
+            user_fee_increase: 0,
             signature_public_key_id: 1,
             signature: Default::default(),
         }
@@ -1583,7 +1583,7 @@ mod tests {
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key.clone())],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
-            fee_multiplier: 0,
+            user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: Default::default(),
         }
@@ -1608,7 +1608,7 @@ mod tests {
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
-            fee_multiplier: 0,
+            user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: Default::default(),
         }

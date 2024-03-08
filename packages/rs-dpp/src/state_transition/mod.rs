@@ -303,7 +303,7 @@ impl StateTransition {
 
     /// returns the fee_multiplier
     pub fn fee_multiplier(&self) -> UserFeeIncrease {
-        call_method!(self, fee_multiplier)
+        call_method!(self, user_fee_increase)
     }
 
     /// The transaction id is a single hash of the data with the signature

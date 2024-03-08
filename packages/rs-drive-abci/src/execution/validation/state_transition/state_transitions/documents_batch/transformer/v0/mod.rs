@@ -103,7 +103,7 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
         execution_context: &mut StateTransitionExecutionContext,
     ) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction>, Error> {
         let owner_id = self.owner_id();
-        let fee_multiplier = self.fee_multiplier();
+        let fee_multiplier = self.user_fee_increase();
         let platform_version = platform.state.current_platform_version()?;
         let mut transitions_by_contracts_and_types: BTreeMap<
             &Identifier,

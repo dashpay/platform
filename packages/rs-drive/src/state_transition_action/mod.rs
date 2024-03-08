@@ -56,21 +56,21 @@ pub enum StateTransitionAction {
 
 impl StateTransitionAction {
     /// The fee multiplier for the action
-    pub fn fee_multiplier(&self) -> UserFeeIncrease {
+    pub fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
-            StateTransitionAction::DataContractCreateAction(action) => action.fee_multiplier(),
-            StateTransitionAction::DataContractUpdateAction(action) => action.fee_multiplier(),
-            StateTransitionAction::DocumentsBatchAction(action) => action.fee_multiplier(),
-            StateTransitionAction::IdentityCreateAction(action) => action.fee_multiplier(),
-            StateTransitionAction::IdentityTopUpAction(action) => action.fee_multiplier(),
+            StateTransitionAction::DataContractCreateAction(action) => action.user_fee_increase(),
+            StateTransitionAction::DataContractUpdateAction(action) => action.user_fee_increase(),
+            StateTransitionAction::DocumentsBatchAction(action) => action.user_fee_increase(),
+            StateTransitionAction::IdentityCreateAction(action) => action.user_fee_increase(),
+            StateTransitionAction::IdentityTopUpAction(action) => action.user_fee_increase(),
             StateTransitionAction::IdentityCreditWithdrawalAction(action) => {
-                action.fee_multiplier()
+                action.user_fee_increase()
             }
-            StateTransitionAction::IdentityUpdateAction(action) => action.fee_multiplier(),
-            StateTransitionAction::IdentityCreditTransferAction(action) => action.fee_multiplier(),
-            StateTransitionAction::BumpIdentityNonceAction(action) => action.fee_multiplier(),
+            StateTransitionAction::IdentityUpdateAction(action) => action.user_fee_increase(),
+            StateTransitionAction::IdentityCreditTransferAction(action) => action.user_fee_increase(),
+            StateTransitionAction::BumpIdentityNonceAction(action) => action.user_fee_increase(),
             StateTransitionAction::BumpIdentityDataContractNonceAction(action) => {
-                action.fee_multiplier()
+                action.user_fee_increase()
             }
         }
     }

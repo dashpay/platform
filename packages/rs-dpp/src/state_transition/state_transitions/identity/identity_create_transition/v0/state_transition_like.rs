@@ -56,7 +56,7 @@ impl StateTransitionLike for IdentityCreateTransitionV0 {
         vec![base64::encode(self.identity_id)]
     }
 
-    fn fee_multiplier(&self) -> UserFeeIncrease {
+    fn user_fee_increase(&self) -> UserFeeIncrease {
         self.fee_multiplier
     }
 

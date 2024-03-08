@@ -54,7 +54,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
             owner_id,
             transitions: vec![create_transition.into()],
-            fee_multiplier,
+            user_fee_increase: fee_multiplier,
             signature_public_key_id: 0,
             signature: Default::default(),
         }
@@ -93,7 +93,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
             owner_id,
             transitions: vec![replace_transition.into()],
-            fee_multiplier,
+            user_fee_increase: fee_multiplier,
             signature_public_key_id: 0,
             signature: Default::default(),
         }

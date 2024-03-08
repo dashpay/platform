@@ -93,7 +93,7 @@ impl BumpIdentityDataContractNonceActionV0 {
         let DataContractUpdateTransitionV0 {
             data_contract,
             identity_contract_nonce,
-            fee_multiplier,
+            user_fee_increase: fee_multiplier,
             ..
         } = value;
         Ok(BumpIdentityDataContractNonceActionV0 {
@@ -111,7 +111,7 @@ impl BumpIdentityDataContractNonceActionV0 {
         let DataContractUpdateTransitionV0 {
             data_contract,
             identity_contract_nonce,
-            fee_multiplier,
+            user_fee_increase: fee_multiplier,
             ..
         } = value;
         Ok(BumpIdentityDataContractNonceActionV0 {

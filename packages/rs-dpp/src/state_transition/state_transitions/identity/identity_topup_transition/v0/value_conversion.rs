@@ -43,7 +43,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityTopUpTransitionV0 {
             signature,
             identity_id,
             asset_lock_proof,
-            fee_multiplier,
+            user_fee_increase: fee_multiplier,
         })
     }
 

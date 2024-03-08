@@ -32,7 +32,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
             pooling,
             output_script,
             nonce,
-            fee_multiplier,
+            user_fee_increase: fee_multiplier,
             signature_public_key_id: 0,
             signature: Default::default(),
         }

@@ -46,7 +46,7 @@ impl IdentityCreditTransferTransitionAction {
     }
 
     /// fee multiplier
-    pub fn fee_multiplier(&self) -> UserFeeIncrease {
+    pub fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
             IdentityCreditTransferTransitionAction::V0(transition) => transition.fee_multiplier,
         }

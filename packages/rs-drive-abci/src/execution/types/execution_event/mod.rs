@@ -67,7 +67,7 @@ impl<'a> ExecutionEvent<'a> {
     ) -> Result<Self, Error> {
         match &action {
             StateTransitionAction::IdentityCreateAction(identity_create_action) => {
-                let fee_multiplier = identity_create_action.fee_multiplier();
+                let fee_multiplier = identity_create_action.user_fee_increase();
                 let identity = identity_create_action.into();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
@@ -80,7 +80,7 @@ impl<'a> ExecutionEvent<'a> {
                 })
             }
             StateTransitionAction::IdentityTopUpAction(identity_top_up_action) => {
-                let fee_multiplier = identity_top_up_action.fee_multiplier();
+                let fee_multiplier = identity_top_up_action.user_fee_increase();
                 let added_balance = identity_top_up_action.top_up_balance_amount();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
@@ -99,7 +99,7 @@ impl<'a> ExecutionEvent<'a> {
                 }
             }
             StateTransitionAction::IdentityCreditWithdrawalAction(identity_credit_withdrawal) => {
-                let fee_multiplier = identity_credit_withdrawal.fee_multiplier();
+                let fee_multiplier = identity_credit_withdrawal.user_fee_increase();
                 let removed_balance = identity_credit_withdrawal.amount();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
@@ -118,7 +118,7 @@ impl<'a> ExecutionEvent<'a> {
                 }
             }
             StateTransitionAction::IdentityCreditTransferAction(identity_credit_transfer) => {
-                let fee_multiplier = identity_credit_transfer.fee_multiplier();
+                let fee_multiplier = identity_credit_transfer.user_fee_increase();
                 let removed_balance = identity_credit_transfer.transfer_amount();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
@@ -137,7 +137,7 @@ impl<'a> ExecutionEvent<'a> {
                 }
             }
             _ => {
-                let fee_multiplier = action.fee_multiplier();
+                let fee_multiplier = action.user_fee_increase();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {

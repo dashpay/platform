@@ -185,7 +185,7 @@ mod tests {
                     platform_version,
                 )
                 .expect("to be able to convert data contract to serialization format"),
-                fee_multiplier: 0,
+                user_fee_increase: 0,
                 signature: BinaryData::new(vec![0; 65]),
                 signature_public_key_id: 0,
             };
@@ -266,7 +266,7 @@ mod tests {
                     platform_version,
                 )
                 .expect("to be able to convert data contract to serialization format"),
-                fee_multiplier: 0,
+                user_fee_increase: 0,
                 signature: BinaryData::new(vec![0; 65]),
                 signature_public_key_id: 0,
             };

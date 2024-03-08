@@ -88,7 +88,7 @@ mod tests {
         let identity_topup_transition = IdentityTopUpTransitionV0 {
             asset_lock_proof: AssetLockProof::Instant(asset_lock_proof),
             identity_id: identity.id(),
-            fee_multiplier: 0,
+            user_fee_increase: 0,
             signature: [1u8; 65].to_vec().into(),
         };
         let state_transition: StateTransition = identity_topup_transition.into();
@@ -126,7 +126,7 @@ mod tests {
             add_public_keys: add_public_keys_in_creation,
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
-            fee_multiplier: 0,
+            user_fee_increase: 0,
         };
 
         let key_signable_bytes = identity_update_transition
@@ -194,7 +194,7 @@ mod tests {
             add_public_keys: add_public_keys_in_creation,
             disable_public_keys: vec![3, 4, 5],
             public_keys_disabled_at: Some(15),
-            fee_multiplier: 0,
+            user_fee_increase: 0,
         };
 
         let key_signable_bytes = identity_update_transition
@@ -249,7 +249,7 @@ mod tests {
             pooling: Pooling::Standard,
             output_script: CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
             nonce: 1,
-            fee_multiplier: 0,
+            user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: [1u8; 65].to_vec().into(),
         };
@@ -300,7 +300,7 @@ mod tests {
                     .data_contract_owned()
                     .try_into_platform_versioned(platform_version)
                     .expect("expected a data contract"),
-                fee_multiplier: 0,
+                user_fee_increase: 0,
                 signature_public_key_id: 0,
                 signature: [1u8; 65].to_vec().into(),
             });

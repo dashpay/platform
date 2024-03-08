@@ -41,7 +41,7 @@ pub struct IdentityCreditTransferTransitionV0 {
     pub recipient_id: Identifier,
     pub amount: u64,
     pub nonce: IdentityNonce,
-    pub fee_multiplier: UserFeeIncrease,
+    pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]
@@ -79,7 +79,7 @@ mod test {
             recipient_id: Identifier::random(),
             amount: rng.gen(),
             nonce: 1,
-            fee_multiplier: 0,
+            user_fee_increase: 0,
             signature_public_key_id: rng.gen(),
             signature: [0; 65].to_vec().into(),
         };

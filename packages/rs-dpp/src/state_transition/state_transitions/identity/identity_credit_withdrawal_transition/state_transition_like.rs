@@ -41,9 +41,9 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
     }
 
     /// returns the fee multiplier
-    fn fee_multiplier(&self) -> UserFeeIncrease {
+    fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
-            IdentityCreditWithdrawalTransition::V0(transition) => transition.fee_multiplier(),
+            IdentityCreditWithdrawalTransition::V0(transition) => transition.user_fee_increase(),
         }
     }
     /// set a fee multiplier

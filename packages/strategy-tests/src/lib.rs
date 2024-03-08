@@ -668,7 +668,7 @@ impl Strategy {
                                     DocumentsBatchTransitionV0 {
                                         owner_id: identity.id(),
                                         transitions: vec![document_create_transition.into()],
-                                        fee_multiplier: 0,
+                                        user_fee_increase: 0,
                                         signature_public_key_id: 2,
                                         signature: BinaryData::default(),
                                     }
@@ -782,7 +782,7 @@ impl Strategy {
                                     DocumentsBatchTransitionV0 {
                                         owner_id: identity.id(),
                                         transitions: vec![document_create_transition.into()],
-                                        fee_multiplier: 0,
+                                        user_fee_increase: 0,
                                         signature_public_key_id: 1,
                                         signature: BinaryData::default(),
                                     }
@@ -885,7 +885,7 @@ impl Strategy {
                                 DocumentsBatchTransitionV0 {
                                     owner_id: identity.id,
                                     transitions: vec![document_delete_transition.into()],
-                                    fee_multiplier: 0,
+                                    user_fee_increase: 0,
                                     signature_public_key_id: 1,
                                     signature: BinaryData::default(),
                                 }
@@ -991,7 +991,7 @@ impl Strategy {
                                 DocumentsBatchTransitionV0 {
                                     owner_id: identity.id,
                                     transitions: vec![document_replace_transition.into()],
-                                    fee_multiplier: 0,
+                                    user_fee_increase: 0,
                                     signature_public_key_id: 1,
                                     signature: BinaryData::default(),
                                 }

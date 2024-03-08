@@ -28,7 +28,7 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
         let identity_top_up_transition = IdentityTopUpTransitionV0 {
             asset_lock_proof,
             identity_id: identity.id(),
-            fee_multiplier,
+            user_fee_increase: fee_multiplier,
             signature: Default::default(),
         };
 

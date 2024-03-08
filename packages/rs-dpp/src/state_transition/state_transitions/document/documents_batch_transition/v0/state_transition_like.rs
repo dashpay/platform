@@ -62,11 +62,11 @@ impl StateTransitionLike for DocumentsBatchTransitionV0 {
             .collect()
     }
 
-    fn fee_multiplier(&self) -> UserFeeIncrease {
-        self.fee_multiplier
+    fn user_fee_increase(&self) -> UserFeeIncrease {
+        self.user_fee_increase
     }
 
     fn set_fee_multiplier(&mut self, fee_multiplier: UserFeeIncrease) {
-        self.fee_multiplier = fee_multiplier
+        self.user_fee_increase = fee_multiplier
     }
 }

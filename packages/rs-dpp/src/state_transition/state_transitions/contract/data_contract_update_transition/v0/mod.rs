@@ -37,7 +37,7 @@ pub struct DataContractUpdateTransitionV0 {
     )]
     pub identity_contract_nonce: IdentityNonce,
     pub data_contract: DataContractInSerializationFormat,
-    pub fee_multiplier: UserFeeIncrease,
+    pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]
@@ -54,7 +54,7 @@ impl TryFromPlatformVersioned<(DataContract, IdentityNonce)> for DataContractUpd
         Ok(DataContractUpdateTransitionV0 {
             identity_contract_nonce: value.1,
             data_contract: value.0.try_into_platform_versioned(platform_version)?,
-            fee_multiplier: 0,
+            user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: Default::default(),
         })

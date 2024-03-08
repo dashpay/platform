@@ -27,5 +27,5 @@ pub trait BumpIdentityDataContractNonceActionAccessorsV0 {
     /// Identity contract nonce
     fn identity_contract_nonce(&self) -> IdentityNonce;
     /// Fee multiplier
-    fn fee_multiplier(&self) -> UserFeeIncrease;
+    fn user_fee_increase(&self) -> UserFeeIncrease;
 }

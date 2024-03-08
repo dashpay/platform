@@ -37,7 +37,7 @@ use crate::version::PlatformVersion;
 pub struct DataContractCreateTransitionV0 {
     pub data_contract: DataContractInSerializationFormat,
     pub identity_nonce: IdentityNonce,
-    pub fee_multiplier: UserFeeIncrease,
+    pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]
@@ -68,7 +68,7 @@ impl TryFromPlatformVersioned<DataContract> for DataContractCreateTransitionV0 {
         Ok(DataContractCreateTransitionV0 {
             data_contract: value.try_into_platform_versioned(platform_version)?,
             identity_nonce: Default::default(),
-            fee_multiplier: 0,
+            user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: Default::default(),
         })
@@ -86,7 +86,7 @@ impl TryFromPlatformVersioned<CreatedDataContract> for DataContractCreateTransit
         Ok(DataContractCreateTransitionV0 {
             data_contract: data_contract.try_into_platform_versioned(platform_version)?,
             identity_nonce,
-            fee_multiplier: 0,
+            user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: Default::default(),
         })

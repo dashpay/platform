@@ -37,9 +37,9 @@ impl StateTransitionLike for DataContractCreateTransition {
     }
 
     /// returns the fee multiplier
-    fn fee_multiplier(&self) -> UserFeeIncrease {
+    fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
-            DataContractCreateTransition::V0(transition) => transition.fee_multiplier(),
+            DataContractCreateTransition::V0(transition) => transition.user_fee_increase(),
         }
     }
     /// set a fee multiplier

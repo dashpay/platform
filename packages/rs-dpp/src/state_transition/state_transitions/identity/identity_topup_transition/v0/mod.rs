@@ -40,7 +40,7 @@ pub struct IdentityTopUpTransitionV0 {
     // Own ST fields
     pub asset_lock_proof: AssetLockProof,
     pub identity_id: Identifier,
-    pub fee_multiplier: UserFeeIncrease,
+    pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
 }

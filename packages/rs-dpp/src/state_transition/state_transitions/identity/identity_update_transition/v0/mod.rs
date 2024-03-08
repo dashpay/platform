@@ -60,7 +60,7 @@ pub struct IdentityUpdateTransitionV0 {
     pub public_keys_disabled_at: Option<TimestampMillis>,
 
     /// The fee multiplier
-    pub fee_multiplier: UserFeeIncrease,
+    pub user_fee_increase: UserFeeIncrease,
 
     /// The ID of the public key used to sing the State Transition
     #[platform_signable(exclude_from_sig_hash)]

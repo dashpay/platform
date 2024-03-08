@@ -45,7 +45,7 @@ pub struct IdentityCreditWithdrawalTransitionV0 {
     pub pooling: Pooling,
     pub output_script: CoreScript,
     pub nonce: IdentityNonce,
-    pub fee_multiplier: UserFeeIncrease,
+    pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]

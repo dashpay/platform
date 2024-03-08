@@ -17,7 +17,7 @@ impl IdentityTopUpTransitionActionV0 {
         let IdentityTopUpTransitionV0 {
             identity_id,
             asset_lock_proof,
-            fee_multiplier,
+            user_fee_increase: fee_multiplier,
             ..
         } = value;
 
@@ -47,7 +47,7 @@ impl IdentityTopUpTransitionActionV0 {
         let IdentityTopUpTransitionV0 {
             identity_id,
             asset_lock_proof,
-            fee_multiplier,
+            user_fee_increase: fee_multiplier,
             ..
         } = value;
 

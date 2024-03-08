@@ -29,7 +29,7 @@ impl BumpIdentityNonceActionAccessorsV0 for BumpIdentityNonceAction {
         }
     }
 
-    fn fee_multiplier(&self) -> UserFeeIncrease {
+    fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
             BumpIdentityNonceAction::V0(transition) => transition.fee_multiplier,
         }

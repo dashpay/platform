@@ -42,7 +42,7 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
                 platform_version,
             )?
             .try_into_platform_versioned(platform_version)?,
-            fee_multiplier: raw_object
+            user_fee_increase: raw_object
                 .get_optional_integer(FEE_MULTIPLIER)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
@@ -76,7 +76,7 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
                 platform_version,
             )?
             .try_into_platform_versioned(platform_version)?,
-            fee_multiplier: raw_value_map
+            user_fee_increase: raw_value_map
                 .remove_optional_integer(FEE_MULTIPLIER)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),

@@ -53,7 +53,7 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
             add_public_keys: add_public_keys_in_creation,
             disable_public_keys,
             public_keys_disabled_at,
-            fee_multiplier,
+            user_fee_increase: fee_multiplier,
         };
 
         let state_transition: StateTransition = identity_update_transition.clone().into();
