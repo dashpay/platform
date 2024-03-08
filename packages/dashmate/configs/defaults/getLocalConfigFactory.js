@@ -25,7 +25,7 @@ export default function getLocalConfigFactory(getBaseConfig) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:20.1.0-nightly.2024.02.15',
+          image: 'dashpay/dashd:20.1.0',
           commandArgs: [],
         },
         p2p: {
