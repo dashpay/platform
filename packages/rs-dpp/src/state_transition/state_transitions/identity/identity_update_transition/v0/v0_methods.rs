@@ -1,30 +1,41 @@
+#[cfg(feature = "state-transition-signing")]
 use crate::serialization::Signable;
 
+#[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
+#[cfg(feature = "state-transition-signing")]
 use crate::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, MissingPublicKeyError, SignatureError,
 };
+#[cfg(feature = "state-transition-signing")]
 use crate::consensus::ConsensusError;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::{Identity, IdentityPublicKey};
 
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::accessors::IdentityGettersV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::prelude::IdentityNonce;
 use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use crate::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
+#[cfg(feature = "state-transition-signing")]
 use crate::version::FeatureVersion;
 use crate::{
-    identity::{KeyID, SecurityLevel},
+    identity::KeyID,
     prelude::{Identifier, Revision, TimestampMillis},
-    ProtocolError,
 };
-
+#[cfg(feature = "state-transition-signing")]
+use crate::{identity::SecurityLevel, ProtocolError};
 impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity_with_signer<'a, S: Signer>(

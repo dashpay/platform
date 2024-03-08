@@ -16,7 +16,7 @@ use dpp::identity::KeyType;
 use dpp::platform_value;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
-use dpp::serialization::{PlatformSerializable, ValueConvertible};
+use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::state_transition::StateTransitionLike;

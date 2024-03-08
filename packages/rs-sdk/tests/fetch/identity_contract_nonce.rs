@@ -1,12 +1,6 @@
-use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::prelude::{Identifier, IdentityPublicKey};
-use dpp::{identity::hash::IdentityPublicKeyHashMethodsV0, prelude::Identity};
-use drive_proof_verifier::types::{
-    IdentityBalance, IdentityBalanceAndRevision, IdentityContractNonceFetcher,
-};
-use rs_sdk::platform::types::identity::PublicKeyHash;
-use rs_sdk::platform::{Fetch, FetchMany};
+use dpp::prelude::Identifier;
+use drive_proof_verifier::types::IdentityContractNonceFetcher;
+use rs_sdk::platform::Fetch;
 
 use super::{common::setup_logs, config::Config};
 

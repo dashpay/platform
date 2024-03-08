@@ -2,14 +2,21 @@ mod v0;
 
 pub use v0::*;
 
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
+#[cfg(feature = "state-transition-signing")]
 use crate::prelude::AssetLockProof;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
+#[cfg(feature = "state-transition-signing")]
 use crate::version::FeatureVersion;
+#[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 
+#[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
 impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransition {

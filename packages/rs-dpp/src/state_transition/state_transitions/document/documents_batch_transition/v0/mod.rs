@@ -16,6 +16,7 @@ use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 
 use platform_value::{BinaryData, Identifier};
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]

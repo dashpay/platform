@@ -9,7 +9,6 @@ use dpp::util::deserializer::ProtocolVersion;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
 use std::path::Path;
-use std::sync::RwLock;
 
 impl Drive {
     /// Opens GroveDB database

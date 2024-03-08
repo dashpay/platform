@@ -10,12 +10,13 @@ mod version;
 
 use crate::identity::KeyID;
 
-use crate::prelude::{Identifier, IdentityNonce, Revision};
+use crate::prelude::{Identifier, IdentityNonce};
 
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::BinaryData;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(

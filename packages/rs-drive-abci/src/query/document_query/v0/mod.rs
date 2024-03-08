@@ -7,7 +7,6 @@ use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV0;
 use dapi_grpc::platform::v0::get_documents_response::{
     get_documents_response_v0, GetDocumentsResponseV0,
 };
-use dapi_grpc::platform::v0::{get_documents_response, GetDocumentsResponse};
 use dpp::check_validation_result_with_data;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identifier::Identifier;

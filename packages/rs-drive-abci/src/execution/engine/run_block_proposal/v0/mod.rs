@@ -12,7 +12,6 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
-    BlockExecutionContextV0Setters,
 };
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::execution::types::block_fees::v0::BlockFeesV0;
