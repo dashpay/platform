@@ -40,6 +40,8 @@ mod tests {
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
+        // We can't return a reference to Arc to we retrieve full Arc with counter incrementation,
+        // but it's not a problem since we are in test environment
         let platform_state = platform.platform.state.load_full();
 
         let platform_version = platform_state.current_platform_version().unwrap();

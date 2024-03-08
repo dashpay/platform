@@ -227,6 +227,8 @@ mod tests {
 
         let original_data_contract = set_up_history(&platform);
 
+        // We can't return a reference to Arc to we retrieve full Arc with counter incrementation,
+        // but it's not a problem since we are in test environment
         let platform_state = platform.platform.state.load_full();
 
         TestData {
