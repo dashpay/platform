@@ -15,7 +15,7 @@ pub struct BumpIdentityDataContractNonceActionV0 {
     /// The identity contract nonce, this is used to stop replay attacks
     pub identity_contract_nonce: IdentityNonce,
     /// fee multiplier
-    pub fee_multiplier: UserFeeIncrease,
+    pub user_fee_increase: UserFeeIncrease,
 }
 
 /// document base transition action accessors v0

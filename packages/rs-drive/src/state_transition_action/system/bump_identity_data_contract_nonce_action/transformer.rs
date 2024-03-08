@@ -13,14 +13,14 @@ impl BumpIdentityDataContractNonceAction {
     pub fn from_document_base_transition(
         value: DocumentBaseTransition,
         identity_id: Identifier,
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
     ) -> Result<Self, ProtocolError> {
         match value {
             DocumentBaseTransition::V0(v0) => Ok(
                 BumpIdentityDataContractNonceActionV0::try_from_base_transition(
                     v0,
                     identity_id,
-                    fee_multiplier,
+                    user_fee_increase,
                 )?
                 .into(),
             ),
@@ -31,14 +31,14 @@ impl BumpIdentityDataContractNonceAction {
     pub fn from_borrowed_document_base_transition(
         value: &DocumentBaseTransition,
         identity_id: Identifier,
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
     ) -> Result<Self, ProtocolError> {
         match value {
             DocumentBaseTransition::V0(v0) => Ok(
                 BumpIdentityDataContractNonceActionV0::try_from_borrowed_base_transition(
                     v0,
                     identity_id,
-                    fee_multiplier,
+                    user_fee_increase,
                 )?
                 .into(),
             ),
@@ -49,14 +49,14 @@ impl BumpIdentityDataContractNonceAction {
     pub fn from_document_base_transition_action(
         value: DocumentBaseTransitionAction,
         identity_id: Identifier,
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
     ) -> Result<Self, ProtocolError> {
         match value {
             DocumentBaseTransitionAction::V0(v0) => Ok(
                 BumpIdentityDataContractNonceActionV0::try_from_base_transition_action(
                     v0,
                     identity_id,
-                    fee_multiplier,
+                    user_fee_increase,
                 )?
                 .into(),
             ),
@@ -67,14 +67,14 @@ impl BumpIdentityDataContractNonceAction {
     pub fn from_document_borrowed_base_transition_action(
         value: &DocumentBaseTransitionAction,
         identity_id: Identifier,
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
     ) -> Result<Self, ProtocolError> {
         match value {
             DocumentBaseTransitionAction::V0(v0) => Ok(
                 BumpIdentityDataContractNonceActionV0::try_from_borrowed_base_transition_action(
                     v0,
                     identity_id,
-                    fee_multiplier,
+                    user_fee_increase,
                 )?
                 .into(),
             ),

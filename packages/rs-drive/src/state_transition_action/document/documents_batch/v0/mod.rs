@@ -10,5 +10,5 @@ pub struct DocumentsBatchTransitionActionV0 {
     /// The inner transitions
     pub transitions: Vec<DocumentTransitionAction>,
     /// fee multiplier
-    pub fee_multiplier: UserFeeIncrease,
+    pub user_fee_increase: UserFeeIncrease,
 }

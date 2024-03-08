@@ -17,5 +17,5 @@ pub struct IdentityTopUpTransitionActionV0 {
     /// asset lock outpoint
     pub asset_lock_outpoint: Bytes36,
     /// fee multiplier
-    pub fee_multiplier: UserFeeIncrease,
+    pub user_fee_increase: UserFeeIncrease,
 }

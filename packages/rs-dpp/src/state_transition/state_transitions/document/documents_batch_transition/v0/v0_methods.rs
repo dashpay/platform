@@ -34,7 +34,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         entropy: [u8; 32],
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
@@ -54,7 +54,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
             owner_id,
             transitions: vec![create_transition.into()],
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
             signature_public_key_id: 0,
             signature: Default::default(),
         }
@@ -74,7 +74,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         document_type: DocumentTypeRef,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
         _batch_feature_version: Option<FeatureVersion>,
@@ -93,7 +93,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
             owner_id,
             transitions: vec![replace_transition.into()],
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
             signature_public_key_id: 0,
             signature: Default::default(),
         }

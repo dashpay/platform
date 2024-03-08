@@ -10,7 +10,7 @@ impl From<IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
             public_keys_disabled_at,
             revision,
             nonce,
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         IdentityUpdateTransitionActionV0 {
@@ -20,7 +20,7 @@ impl From<IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
             identity_id,
             revision,
             nonce,
-            fee_multiplier,
+            user_fee_increase,
         }
     }
 }
@@ -34,7 +34,7 @@ impl From<&IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
             public_keys_disabled_at,
             revision,
             nonce,
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         IdentityUpdateTransitionActionV0 {
@@ -47,7 +47,7 @@ impl From<&IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
             identity_id: *identity_id,
             revision: *revision,
             nonce: *nonce,
-            fee_multiplier: *fee_multiplier,
+            user_fee_increase: *fee_multiplier,
         }
     }
 }

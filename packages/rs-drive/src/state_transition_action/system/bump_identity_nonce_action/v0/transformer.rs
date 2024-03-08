@@ -15,13 +15,13 @@ impl BumpIdentityNonceActionV0 {
         let IdentityUpdateTransitionV0 {
             identity_id,
             nonce,
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
-            fee_multiplier,
+            user_fee_increase,
         })
     }
 
@@ -32,13 +32,13 @@ impl BumpIdentityNonceActionV0 {
         let IdentityUpdateTransitionV0 {
             identity_id,
             nonce,
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
-            fee_multiplier: *fee_multiplier,
+            user_fee_increase: *fee_multiplier,
         })
     }
 
@@ -49,13 +49,13 @@ impl BumpIdentityNonceActionV0 {
         let IdentityUpdateTransitionActionV0 {
             identity_id,
             nonce,
-            fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
-            fee_multiplier,
+            user_fee_increase,
         })
     }
 
@@ -66,13 +66,13 @@ impl BumpIdentityNonceActionV0 {
         let IdentityUpdateTransitionActionV0 {
             identity_id,
             nonce,
-            fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
-            fee_multiplier: *fee_multiplier,
+            user_fee_increase: *fee_multiplier,
         })
     }
 
@@ -83,13 +83,13 @@ impl BumpIdentityNonceActionV0 {
         let IdentityCreditTransferTransitionV0 {
             identity_id,
             nonce,
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
-            fee_multiplier,
+            user_fee_increase,
         })
     }
 
@@ -100,13 +100,13 @@ impl BumpIdentityNonceActionV0 {
         let IdentityCreditTransferTransitionV0 {
             identity_id,
             nonce,
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
-            fee_multiplier: *fee_multiplier,
+            user_fee_increase: *fee_multiplier,
         })
     }
 
@@ -117,13 +117,13 @@ impl BumpIdentityNonceActionV0 {
         let IdentityCreditTransferTransitionActionV0 {
             identity_id,
             nonce,
-            fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
-            fee_multiplier,
+            user_fee_increase,
         })
     }
 
@@ -134,13 +134,13 @@ impl BumpIdentityNonceActionV0 {
         let IdentityCreditTransferTransitionActionV0 {
             identity_id,
             nonce,
-            fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
-            fee_multiplier: *fee_multiplier,
+            user_fee_increase: *fee_multiplier,
         })
     }
 
@@ -151,13 +151,13 @@ impl BumpIdentityNonceActionV0 {
         let IdentityCreditWithdrawalTransitionV0 {
             identity_id,
             nonce,
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
-            fee_multiplier,
+            user_fee_increase,
         })
     }
 
@@ -168,13 +168,13 @@ impl BumpIdentityNonceActionV0 {
         let IdentityCreditWithdrawalTransitionV0 {
             identity_id,
             nonce,
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
-            fee_multiplier: *fee_multiplier,
+            user_fee_increase: *fee_multiplier,
         })
     }
 
@@ -185,13 +185,13 @@ impl BumpIdentityNonceActionV0 {
         let IdentityCreditWithdrawalTransitionActionV0 {
             identity_id,
             nonce,
-            fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
-            fee_multiplier,
+            user_fee_increase,
         })
     }
 
@@ -202,13 +202,13 @@ impl BumpIdentityNonceActionV0 {
         let IdentityCreditWithdrawalTransitionActionV0 {
             identity_id,
             nonce,
-            fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
-            fee_multiplier: *fee_multiplier,
+            user_fee_increase: *fee_multiplier,
         })
     }
 }

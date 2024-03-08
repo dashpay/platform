@@ -15,7 +15,7 @@ pub trait IdentityCreditWithdrawalTransitionMethodsV0 {
         amount: u64,
         pooling: Pooling,
         core_fee_per_byte: u32,
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
         signer: S,
         nonce: IdentityNonce,
         _platform_version: &PlatformVersion,

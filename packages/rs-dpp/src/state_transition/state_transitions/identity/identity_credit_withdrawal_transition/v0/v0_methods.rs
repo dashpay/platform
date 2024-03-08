@@ -19,7 +19,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
         amount: u64,
         pooling: Pooling,
         core_fee_per_byte: u32,
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
         signer: S,
         nonce: IdentityNonce,
         _platform_version: &PlatformVersion,
@@ -32,7 +32,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
             pooling,
             output_script,
             nonce,
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
             signature_public_key_id: 0,
             signature: Default::default(),
         }

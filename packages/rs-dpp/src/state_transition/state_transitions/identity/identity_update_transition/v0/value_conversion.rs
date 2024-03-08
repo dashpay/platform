@@ -61,7 +61,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
             add_public_keys,
             disable_public_keys,
             public_keys_disabled_at,
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
         })
     }
 

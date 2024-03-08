@@ -47,7 +47,7 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
             nonce: identity_credit_withdrawal.nonce,
             prepared_withdrawal_document: withdrawal_document,
             amount: identity_credit_withdrawal.amount,
-            fee_multiplier: identity_credit_withdrawal.user_fee_increase,
+            user_fee_increase: identity_credit_withdrawal.user_fee_increase,
         }
     }
 }

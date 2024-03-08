@@ -27,7 +27,7 @@ pub trait DataContractUpdateTransitionMethodsV0 {
         identity: &PartialIdentity,
         key_id: KeyID,
         identity_contract_nonce: IdentityNonce,
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,

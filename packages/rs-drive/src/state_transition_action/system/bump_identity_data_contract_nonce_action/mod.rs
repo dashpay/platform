@@ -37,7 +37,7 @@ impl BumpIdentityDataContractNonceActionAccessorsV0 for BumpIdentityDataContract
 
     fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
-            BumpIdentityDataContractNonceAction::V0(transition) => transition.fee_multiplier,
+            BumpIdentityDataContractNonceAction::V0(transition) => transition.user_fee_increase,
         }
     }
 }

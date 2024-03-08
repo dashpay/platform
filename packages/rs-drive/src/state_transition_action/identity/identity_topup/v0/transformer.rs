@@ -17,7 +17,7 @@ impl IdentityTopUpTransitionActionV0 {
         let IdentityTopUpTransitionV0 {
             identity_id,
             asset_lock_proof,
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
 
@@ -35,7 +35,7 @@ impl IdentityTopUpTransitionActionV0 {
             top_up_balance_amount,
             identity_id,
             asset_lock_outpoint: Bytes36::new(outpoint_bytes),
-            fee_multiplier,
+            user_fee_increase,
         })
     }
 
@@ -47,7 +47,7 @@ impl IdentityTopUpTransitionActionV0 {
         let IdentityTopUpTransitionV0 {
             identity_id,
             asset_lock_proof,
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
 
@@ -65,7 +65,7 @@ impl IdentityTopUpTransitionActionV0 {
             top_up_balance_amount,
             identity_id: *identity_id,
             asset_lock_outpoint: Bytes36::new(outpoint_bytes),
-            fee_multiplier: *fee_multiplier,
+            user_fee_increase: *fee_multiplier,
         })
     }
 }

@@ -12,5 +12,5 @@ pub struct DataContractCreateTransitionActionV0 {
     /// identity nonce
     pub identity_nonce: IdentityNonce,
     /// fee multiplier
-    pub fee_multiplier: UserFeeIncrease,
+    pub user_fee_increase: UserFeeIncrease,
 }

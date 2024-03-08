@@ -21,7 +21,7 @@ impl TryFromPlatformVersioned<DataContractUpdateTransitionV0>
                 platform_version,
             )?,
             identity_contract_nonce: value.identity_contract_nonce,
-            fee_multiplier: value.user_fee_increase,
+            user_fee_increase: value.user_fee_increase,
         })
     }
 }
@@ -42,7 +42,7 @@ impl TryFromPlatformVersioned<&DataContractUpdateTransitionV0>
                 platform_version,
             )?,
             identity_contract_nonce: value.identity_contract_nonce,
-            fee_multiplier: value.user_fee_increase,
+            user_fee_increase: value.user_fee_increase,
         })
     }
 }

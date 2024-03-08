@@ -10,7 +10,7 @@ pub trait IdentityTopUpTransitionMethodsV0 {
         identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
         version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError>;

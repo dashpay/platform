@@ -67,7 +67,7 @@ impl DocumentsBatchTransitionAction {
     /// fee multiplier
     pub fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
-            DocumentsBatchTransitionAction::V0(transition) => transition.fee_multiplier,
+            DocumentsBatchTransitionAction::V0(transition) => transition.user_fee_increase,
         }
     }
 }

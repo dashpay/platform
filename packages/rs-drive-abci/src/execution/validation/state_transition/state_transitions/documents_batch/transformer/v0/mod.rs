@@ -156,7 +156,7 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
             let batch_transition_action = DocumentsBatchTransitionActionV0 {
                 owner_id,
                 transitions: validation_result.into_data()?,
-                fee_multiplier,
+                user_fee_increase,
             }
             .into();
             Ok(ConsensusValidationResult::new_with_data(

@@ -56,14 +56,14 @@ where
                 identity,
                 operations,
                 execution_operations,
-                fee_multiplier,
+                user_fee_increase,
                 ..
             }
             | ExecutionEvent::PaidDriveEvent {
                 identity,
                 operations,
                 execution_operations,
-                fee_multiplier,
+                user_fee_increase,
                 ..
             } => {
                 if fee_validation_result.is_valid_with_data() {

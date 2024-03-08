@@ -34,7 +34,7 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
         disable_public_keys: Vec<KeyID>,
         public_keys_disabled_at: Option<u64>,
         nonce: IdentityNonce,
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
         signer: &S,
         _platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
@@ -53,7 +53,7 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
             add_public_keys: add_public_keys_in_creation,
             disable_public_keys,
             public_keys_disabled_at,
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
         };
 
         let state_transition: StateTransition = identity_update_transition.clone().into();

@@ -22,5 +22,5 @@ pub struct IdentityUpdateTransitionActionV0 {
     /// nonce used to prevent replay attacks
     pub nonce: IdentityNonce,
     /// fee multiplier
-    pub fee_multiplier: UserFeeIncrease,
+    pub user_fee_increase: UserFeeIncrease,
 }

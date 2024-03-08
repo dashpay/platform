@@ -18,7 +18,7 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransition {
         identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
         version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
@@ -32,7 +32,7 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransition {
                 identity,
                 asset_lock_proof,
                 asset_lock_proof_private_key,
-                fee_multiplier,
+                user_fee_increase,
                 platform_version,
                 version,
             )?),

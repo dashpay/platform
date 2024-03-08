@@ -35,7 +35,7 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         /// the execution operations that we must also pay for
         execution_operations: Vec<ValidationOperation>,
         /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
     },
     /// A drive event that is paid from an asset lock
     PaidFromAssetLockDriveEvent {
@@ -48,7 +48,7 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         /// the execution operations that we must also pay for
         execution_operations: Vec<ValidationOperation>,
         /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
     },
     /// A drive event that is free
     FreeDriveEvent {
@@ -76,7 +76,7 @@ impl<'a> ExecutionEvent<'a> {
                     added_balance: 0,
                     operations,
                     execution_operations: execution_context.operations_consume(),
-                    fee_multiplier,
+                    user_fee_increase,
                 })
             }
             StateTransitionAction::IdentityTopUpAction(identity_top_up_action) => {
@@ -90,7 +90,7 @@ impl<'a> ExecutionEvent<'a> {
                         added_balance,
                         operations,
                         execution_operations: execution_context.operations_consume(),
-                        fee_multiplier,
+                        user_fee_increase,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -109,7 +109,7 @@ impl<'a> ExecutionEvent<'a> {
                         removed_balance: Some(removed_balance),
                         operations,
                         execution_operations: execution_context.operations_consume(),
-                        fee_multiplier,
+                        user_fee_increase,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -128,7 +128,7 @@ impl<'a> ExecutionEvent<'a> {
                         removed_balance: Some(removed_balance),
                         operations,
                         execution_operations: execution_context.operations_consume(),
-                        fee_multiplier,
+                        user_fee_increase,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -146,7 +146,7 @@ impl<'a> ExecutionEvent<'a> {
                         removed_balance: None,
                         operations,
                         execution_operations: execution_context.operations_consume(),
-                        fee_multiplier,
+                        user_fee_increase,
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(

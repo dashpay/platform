@@ -14,7 +14,7 @@ impl BumpIdentityDataContractNonceActionV0 {
     pub fn try_from_base_transition(
         value: DocumentBaseTransitionV0,
         identity_id: Identifier,
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
     ) -> Result<Self, ProtocolError> {
         let DocumentBaseTransitionV0 {
             data_contract_id,
@@ -25,7 +25,7 @@ impl BumpIdentityDataContractNonceActionV0 {
             identity_id,
             data_contract_id,
             identity_contract_nonce,
-            fee_multiplier,
+            user_fee_increase,
         })
     }
 
@@ -33,7 +33,7 @@ impl BumpIdentityDataContractNonceActionV0 {
     pub fn try_from_borrowed_base_transition(
         value: &DocumentBaseTransitionV0,
         identity_id: Identifier,
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
     ) -> Result<Self, ProtocolError> {
         let DocumentBaseTransitionV0 {
             data_contract_id,
@@ -44,7 +44,7 @@ impl BumpIdentityDataContractNonceActionV0 {
             identity_id,
             data_contract_id: *data_contract_id,
             identity_contract_nonce: *identity_contract_nonce,
-            fee_multiplier,
+            user_fee_increase,
         })
     }
 
@@ -52,7 +52,7 @@ impl BumpIdentityDataContractNonceActionV0 {
     pub fn try_from_base_transition_action(
         value: DocumentBaseTransitionActionV0,
         identity_id: Identifier,
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
     ) -> Result<Self, ProtocolError> {
         let DocumentBaseTransitionActionV0 {
             data_contract,
@@ -63,7 +63,7 @@ impl BumpIdentityDataContractNonceActionV0 {
             identity_id,
             data_contract_id: data_contract.contract.id(),
             identity_contract_nonce,
-            fee_multiplier,
+            user_fee_increase,
         })
     }
 
@@ -71,7 +71,7 @@ impl BumpIdentityDataContractNonceActionV0 {
     pub fn try_from_borrowed_base_transition_action(
         value: &DocumentBaseTransitionActionV0,
         identity_id: Identifier,
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
     ) -> Result<Self, ProtocolError> {
         let DocumentBaseTransitionActionV0 {
             data_contract,
@@ -82,7 +82,7 @@ impl BumpIdentityDataContractNonceActionV0 {
             identity_id,
             data_contract_id: data_contract.contract.id(),
             identity_contract_nonce: *identity_contract_nonce,
-            fee_multiplier,
+            user_fee_increase,
         })
     }
 
@@ -93,14 +93,14 @@ impl BumpIdentityDataContractNonceActionV0 {
         let DataContractUpdateTransitionV0 {
             data_contract,
             identity_contract_nonce,
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         Ok(BumpIdentityDataContractNonceActionV0 {
             identity_id: data_contract.owner_id(),
             data_contract_id: data_contract.id(),
             identity_contract_nonce,
-            fee_multiplier,
+            user_fee_increase,
         })
     }
 
@@ -111,14 +111,14 @@ impl BumpIdentityDataContractNonceActionV0 {
         let DataContractUpdateTransitionV0 {
             data_contract,
             identity_contract_nonce,
-            user_fee_increase: fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         Ok(BumpIdentityDataContractNonceActionV0 {
             identity_id: data_contract.owner_id(),
             data_contract_id: data_contract.id(),
             identity_contract_nonce: *identity_contract_nonce,
-            fee_multiplier: *fee_multiplier,
+            user_fee_increase: *user_fee_increase,
         })
     }
 
@@ -129,14 +129,14 @@ impl BumpIdentityDataContractNonceActionV0 {
         let DataContractUpdateTransitionActionV0 {
             data_contract,
             identity_contract_nonce,
-            fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         Ok(BumpIdentityDataContractNonceActionV0 {
             identity_id: data_contract.owner_id(),
             data_contract_id: data_contract.id(),
             identity_contract_nonce,
-            fee_multiplier,
+            user_fee_increase,
         })
     }
 
@@ -147,14 +147,14 @@ impl BumpIdentityDataContractNonceActionV0 {
         let DataContractUpdateTransitionActionV0 {
             data_contract,
             identity_contract_nonce,
-            fee_multiplier,
+            user_fee_increase,
             ..
         } = value;
         Ok(BumpIdentityDataContractNonceActionV0 {
             identity_id: data_contract.owner_id(),
             data_contract_id: data_contract.id(),
             identity_contract_nonce: *identity_contract_nonce,
-            fee_multiplier: *fee_multiplier,
+            user_fee_increase: *user_fee_increase,
         })
     }
 }

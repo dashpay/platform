@@ -19,5 +19,5 @@ pub struct IdentityCreditWithdrawalTransitionActionV0 {
     /// amount
     pub amount: u64,
     /// fee multiplier
-    pub fee_multiplier: UserFeeIncrease,
+    pub user_fee_increase: UserFeeIncrease,
 }

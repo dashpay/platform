@@ -48,7 +48,7 @@ where
                 added_balance,
                 operations,
                 execution_operations,
-                fee_multiplier,
+                user_fee_increase,
             } => {
                 let previous_balance = identity.balance.ok_or(Error::Execution(
                     ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
@@ -99,7 +99,7 @@ where
                 removed_balance,
                 operations,
                 execution_operations,
-                fee_multiplier,
+                user_fee_increase,
             } => {
                 let balance = identity.balance.ok_or(Error::Execution(
                     ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),

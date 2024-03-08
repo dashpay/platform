@@ -39,7 +39,7 @@ impl DataContractCreateTransitionAction {
     /// fee multiplier
     pub fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
-            DataContractCreateTransitionAction::V0(transition) => transition.fee_multiplier,
+            DataContractCreateTransitionAction::V0(transition) => transition.user_fee_increase,
         }
     }
 }

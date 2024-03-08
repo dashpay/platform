@@ -16,7 +16,7 @@ pub trait IdentityUpdateTransitionMethodsV0 {
         disable_public_keys: Vec<KeyID>,
         public_keys_disabled_at: Option<u64>,
         nonce: IdentityNonce,
-        fee_multiplier: UserFeeIncrease,
+        user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
         version: Option<FeatureVersion>,
