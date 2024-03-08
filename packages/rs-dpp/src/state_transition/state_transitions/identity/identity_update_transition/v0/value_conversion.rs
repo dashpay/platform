@@ -10,7 +10,7 @@ use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation
 use crate::state_transition::StateTransitionValueConvert;
 
 use crate::state_transition::state_transitions::common_fields::property_names::{
-    FEE_MULTIPLIER, NONCE,
+    USER_FEE_MULTIPLIER, NONCE,
 };
 use platform_version::version::PlatformVersion;
 
@@ -35,8 +35,8 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
         let nonce = raw_object
             .get_integer(NONCE)
             .map_err(ProtocolError::ValueError)?;
-        let fee_multiplier = raw_object
-            .get_optional_integer(FEE_MULTIPLIER)
+        let user_fee_increase = raw_object
+            .get_optional_integer(USER_FEE_MULTIPLIER)
             .map_err(ProtocolError::ValueError)?
             .unwrap_or_default();
         let add_public_keys = raw_object
