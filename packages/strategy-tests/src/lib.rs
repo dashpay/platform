@@ -428,7 +428,7 @@ impl Strategy {
                         document_op.contract = contract.clone();
                         let document_type = contract.document_type_cloned_for_name(document_op.document_type.name())
                             .expect("Expected to get a document type for name while creating initial strategy contracts");
-                        document_op.document_type = document_type.clone();
+                        document_op.document_type = document_type;
                     }
                 }
                 self.operations = operations;
