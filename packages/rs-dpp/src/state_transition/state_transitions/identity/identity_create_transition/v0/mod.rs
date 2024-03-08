@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::Identity;
-use crate::prelude::{FeeMultiplier, Identifier};
+use crate::prelude::{UserFeeMultiplier, Identifier};
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::state_transition::AssetLockProved;
@@ -45,7 +45,7 @@ pub struct IdentityCreateTransitionV0 {
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]
     pub public_keys: Vec<IdentityPublicKeyInCreation>,
     pub asset_lock_proof: AssetLockProof,
-    pub fee_multiplier: FeeMultiplier,
+    pub fee_multiplier: UserFeeMultiplier,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(skip))]
@@ -63,7 +63,7 @@ struct IdentityCreateTransitionV0Inner {
     public_keys: Vec<IdentityPublicKeyInCreation>,
     asset_lock_proof: AssetLockProof,
     // Generic identity ST fields
-    fee_multiplier: FeeMultiplier,
+    fee_multiplier: UserFeeMultiplier,
     // protocol_version: u32,
     signature: BinaryData,
 }

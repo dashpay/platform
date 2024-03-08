@@ -3,7 +3,7 @@ mod v0;
 pub use v0::*;
 
 use crate::identity::Identity;
-use crate::prelude::{AssetLockProof, FeeMultiplier};
+use crate::prelude::{AssetLockProof, UserFeeMultiplier};
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::state_transition::StateTransition;
@@ -18,7 +18,7 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransition {
         identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
-        fee_multiplier: FeeMultiplier,
+        fee_multiplier: UserFeeMultiplier,
         platform_version: &PlatformVersion,
         version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {

@@ -2,7 +2,7 @@ use crate::data_contract::DataContract;
 use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
 
-use crate::prelude::{FeeMultiplier, IdentityNonce};
+use crate::prelude::{UserFeeMultiplier, IdentityNonce};
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
@@ -27,7 +27,7 @@ pub trait DataContractUpdateTransitionMethodsV0 {
         identity: &PartialIdentity,
         key_id: KeyID,
         identity_contract_nonce: IdentityNonce,
-        fee_multiplier: FeeMultiplier,
+        fee_multiplier: UserFeeMultiplier,
         signer: &S,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,

@@ -15,7 +15,7 @@ use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 
-use crate::prelude::FeeMultiplier;
+use crate::prelude::UserFeeMultiplier;
 use platform_value::{BinaryData, Identifier};
 use serde::{Deserialize, Serialize};
 
@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 pub struct DocumentsBatchTransitionV0 {
     pub owner_id: Identifier,
     pub transitions: Vec<DocumentTransition>,
-    pub fee_multiplier: FeeMultiplier,
+    pub fee_multiplier: UserFeeMultiplier,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]

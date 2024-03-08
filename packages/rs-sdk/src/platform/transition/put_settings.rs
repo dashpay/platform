@@ -1,4 +1,4 @@
-use dpp::prelude::FeeMultiplier;
+use dpp::prelude::UserFeeMultiplier;
 use rs_dapi_client::RequestSettings;
 
 /// The options when putting something to platform
@@ -6,5 +6,5 @@ use rs_dapi_client::RequestSettings;
 pub struct PutSettings {
     pub request_settings: RequestSettings,
     pub identity_nonce_stale_time_s: Option<u64>,
-    pub fee_multiplier: Option<FeeMultiplier>,
+    pub fee_multiplier: Option<UserFeeMultiplier>,
 }

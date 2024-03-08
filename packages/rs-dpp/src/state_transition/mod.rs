@@ -51,7 +51,7 @@ use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGetter
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use crate::prelude::{AssetLockProof, FeeMultiplier};
+use crate::prelude::{AssetLockProof, UserFeeMultiplier};
 pub use state_transitions::*;
 
 use crate::serialization::Signable;
@@ -302,7 +302,7 @@ impl StateTransition {
     }
 
     /// returns the fee_multiplier
-    pub fn fee_multiplier(&self) -> FeeMultiplier {
+    pub fn fee_multiplier(&self) -> UserFeeMultiplier {
         call_method!(self, fee_multiplier)
     }
 
@@ -339,7 +339,7 @@ impl StateTransition {
     }
 
     /// set fee multiplier
-    pub fn set_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier) {
+    pub fn set_fee_multiplier(&mut self, fee_multiplier: UserFeeMultiplier) {
         call_method!(self, set_fee_multiplier, fee_multiplier)
     }
 

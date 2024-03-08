@@ -65,7 +65,7 @@ pub mod prelude {
     pub type TimestampMillis = u64;
     pub type Revision = u64;
     pub type IdentityNonce = u64;
-    pub type FeeMultiplier = u16;
+    pub type UserFeeMultiplier = u16;
 }
 
 pub use bincode;

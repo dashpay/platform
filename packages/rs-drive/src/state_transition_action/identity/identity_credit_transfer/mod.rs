@@ -7,7 +7,7 @@ use crate::state_transition_action::identity::identity_credit_transfer::v0::Iden
 use derive_more::From;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
-use dpp::prelude::{FeeMultiplier, IdentityNonce};
+use dpp::prelude::{UserFeeMultiplier, IdentityNonce};
 
 /// action
 #[derive(Debug, Clone, From)]
@@ -46,7 +46,7 @@ impl IdentityCreditTransferTransitionAction {
     }
 
     /// fee multiplier
-    pub fn fee_multiplier(&self) -> FeeMultiplier {
+    pub fn fee_multiplier(&self) -> UserFeeMultiplier {
         match self {
             IdentityCreditTransferTransitionAction::V0(transition) => transition.fee_multiplier,
         }

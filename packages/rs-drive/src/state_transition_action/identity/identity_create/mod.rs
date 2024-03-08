@@ -9,7 +9,7 @@ use crate::state_transition_action::identity::identity_create::v0::{
 use derive_more::From;
 use dpp::identity::{Identity, IdentityPublicKey, PartialIdentity};
 use dpp::platform_value::{Bytes36, Identifier};
-use dpp::prelude::FeeMultiplier;
+use dpp::prelude::UserFeeMultiplier;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 
@@ -51,7 +51,7 @@ impl IdentityCreateTransitionAction {
     }
 
     /// fee multiplier
-    pub fn fee_multiplier(&self) -> FeeMultiplier {
+    pub fn fee_multiplier(&self) -> UserFeeMultiplier {
         match self {
             IdentityCreateTransitionAction::V0(transition) => transition.fee_multiplier,
         }

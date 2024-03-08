@@ -1,6 +1,6 @@
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::platform_value::Identifier;
-use dpp::prelude::FeeMultiplier;
+use dpp::prelude::UserFeeMultiplier;
 
 use dpp::ProtocolError;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
@@ -14,7 +14,7 @@ impl BumpIdentityDataContractNonceActionV0 {
     pub fn try_from_base_transition(
         value: DocumentBaseTransitionV0,
         identity_id: Identifier,
-        fee_multiplier: FeeMultiplier,
+        fee_multiplier: UserFeeMultiplier,
     ) -> Result<Self, ProtocolError> {
         let DocumentBaseTransitionV0 {
             data_contract_id,
@@ -33,7 +33,7 @@ impl BumpIdentityDataContractNonceActionV0 {
     pub fn try_from_borrowed_base_transition(
         value: &DocumentBaseTransitionV0,
         identity_id: Identifier,
-        fee_multiplier: FeeMultiplier,
+        fee_multiplier: UserFeeMultiplier,
     ) -> Result<Self, ProtocolError> {
         let DocumentBaseTransitionV0 {
             data_contract_id,
@@ -52,7 +52,7 @@ impl BumpIdentityDataContractNonceActionV0 {
     pub fn try_from_base_transition_action(
         value: DocumentBaseTransitionActionV0,
         identity_id: Identifier,
-        fee_multiplier: FeeMultiplier,
+        fee_multiplier: UserFeeMultiplier,
     ) -> Result<Self, ProtocolError> {
         let DocumentBaseTransitionActionV0 {
             data_contract,
@@ -71,7 +71,7 @@ impl BumpIdentityDataContractNonceActionV0 {
     pub fn try_from_borrowed_base_transition_action(
         value: &DocumentBaseTransitionActionV0,
         identity_id: Identifier,
-        fee_multiplier: FeeMultiplier,
+        fee_multiplier: UserFeeMultiplier,
     ) -> Result<Self, ProtocolError> {
         let DocumentBaseTransitionActionV0 {
             data_contract,

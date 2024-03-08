@@ -1,7 +1,7 @@
 use derive_more::From;
 use dpp::platform_value::Identifier;
 
-use dpp::prelude::{FeeMultiplier, IdentityNonce};
+use dpp::prelude::{UserFeeMultiplier, IdentityNonce};
 
 /// transformer module
 pub mod transformer;
@@ -29,7 +29,7 @@ impl BumpIdentityNonceActionAccessorsV0 for BumpIdentityNonceAction {
         }
     }
 
-    fn fee_multiplier(&self) -> FeeMultiplier {
+    fn fee_multiplier(&self) -> UserFeeMultiplier {
         match self {
             BumpIdentityNonceAction::V0(transition) => transition.fee_multiplier,
         }

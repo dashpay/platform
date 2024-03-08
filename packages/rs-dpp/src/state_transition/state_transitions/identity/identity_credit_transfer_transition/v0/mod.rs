@@ -10,7 +10,7 @@ mod version;
 
 use crate::identity::KeyID;
 
-use crate::prelude::{FeeMultiplier, Identifier, IdentityNonce, Revision};
+use crate::prelude::{UserFeeMultiplier, Identifier, IdentityNonce, Revision};
 
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -41,7 +41,7 @@ pub struct IdentityCreditTransferTransitionV0 {
     pub recipient_id: Identifier,
     pub amount: u64,
     pub nonce: IdentityNonce,
-    pub fee_multiplier: FeeMultiplier,
+    pub fee_multiplier: UserFeeMultiplier,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]

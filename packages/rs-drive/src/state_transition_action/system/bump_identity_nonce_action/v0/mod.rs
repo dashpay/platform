@@ -2,7 +2,7 @@
 pub mod transformer;
 
 use dpp::identifier::Identifier;
-use dpp::prelude::{FeeMultiplier, IdentityNonce};
+use dpp::prelude::{UserFeeMultiplier, IdentityNonce};
 
 #[derive(Debug, Clone)]
 /// Version 0 of the bump identity nonce action
@@ -14,7 +14,7 @@ pub struct BumpIdentityNonceActionV0 {
     /// The identity contract nonce, this is used to stop replay attacks
     pub identity_nonce: IdentityNonce,
     /// fee multiplier
-    pub fee_multiplier: FeeMultiplier,
+    pub fee_multiplier: UserFeeMultiplier,
 }
 
 /// document base transition action accessors v0
@@ -25,5 +25,5 @@ pub trait BumpIdentityNonceActionAccessorsV0 {
     fn identity_nonce(&self) -> IdentityNonce;
 
     /// fee multiplier
-    fn fee_multiplier(&self) -> FeeMultiplier;
+    fn fee_multiplier(&self) -> UserFeeMultiplier;
 }

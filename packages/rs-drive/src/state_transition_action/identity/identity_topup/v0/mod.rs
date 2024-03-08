@@ -3,7 +3,7 @@ mod transformer;
 use dpp::identifier::Identifier;
 
 use dpp::platform_value::Bytes36;
-use dpp::prelude::FeeMultiplier;
+use dpp::prelude::UserFeeMultiplier;
 use serde::{Deserialize, Serialize};
 
 /// action v0
@@ -17,5 +17,5 @@ pub struct IdentityTopUpTransitionActionV0 {
     /// asset lock outpoint
     pub asset_lock_outpoint: Bytes36,
     /// fee multiplier
-    pub fee_multiplier: FeeMultiplier,
+    pub fee_multiplier: UserFeeMultiplier,
 }

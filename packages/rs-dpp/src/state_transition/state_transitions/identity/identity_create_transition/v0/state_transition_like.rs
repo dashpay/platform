@@ -1,6 +1,6 @@
 use platform_value::BinaryData;
 
-use crate::prelude::FeeMultiplier;
+use crate::prelude::UserFeeMultiplier;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::{
     prelude::Identifier,
@@ -56,11 +56,11 @@ impl StateTransitionLike for IdentityCreateTransitionV0 {
         vec![base64::encode(self.identity_id)]
     }
 
-    fn fee_multiplier(&self) -> FeeMultiplier {
+    fn fee_multiplier(&self) -> UserFeeMultiplier {
         self.fee_multiplier
     }
 
-    fn set_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier) {
+    fn set_fee_multiplier(&mut self, fee_multiplier: UserFeeMultiplier) {
         self.fee_multiplier = fee_multiplier
     }
 }

@@ -18,7 +18,7 @@ use platform_version::version::PlatformVersion;
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-use crate::prelude::{FeeMultiplier, IdentityNonce};
+use crate::prelude::{UserFeeMultiplier, IdentityNonce};
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::state_transition::StateTransition;
 use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};
@@ -37,7 +37,7 @@ pub struct DataContractUpdateTransitionV0 {
     )]
     pub identity_contract_nonce: IdentityNonce,
     pub data_contract: DataContractInSerializationFormat,
-    pub fee_multiplier: FeeMultiplier,
+    pub fee_multiplier: UserFeeMultiplier,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]

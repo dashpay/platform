@@ -8,7 +8,6 @@ use crate::{data_contract::DataContract, ProtocolError};
 use platform_version::TryIntoPlatformVersioned;
 use platform_version::version::PlatformVersion;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-use crate::fee::default_costs::constants::DEFAULT_FEE_MULTIPLIER;
 use crate::state_transition::{StateTransitionFieldTypes, StateTransitionValueConvert};
 use crate::state_transition::data_contract_create_transition::{DataContractCreateTransitionV0};
 use crate::state_transition::data_contract_create_transition::fields::*;

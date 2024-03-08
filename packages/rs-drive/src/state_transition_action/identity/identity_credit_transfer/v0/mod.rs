@@ -2,7 +2,7 @@ mod transformer;
 
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
-use dpp::prelude::{FeeMultiplier, IdentityNonce};
+use dpp::prelude::{UserFeeMultiplier, IdentityNonce};
 use serde::{Deserialize, Serialize};
 
 /// action v0
@@ -18,5 +18,5 @@ pub struct IdentityCreditTransferTransitionActionV0 {
     /// nonce
     pub nonce: IdentityNonce,
     /// fee multiplier
-    pub fee_multiplier: FeeMultiplier,
+    pub fee_multiplier: UserFeeMultiplier,
 }

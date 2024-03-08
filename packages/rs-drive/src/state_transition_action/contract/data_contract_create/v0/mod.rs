@@ -2,7 +2,7 @@
 pub mod transformer;
 
 use dpp::data_contract::DataContract;
-use dpp::prelude::{FeeMultiplier, IdentityNonce};
+use dpp::prelude::{UserFeeMultiplier, IdentityNonce};
 
 /// data contract create transition action v0
 #[derive(Debug, Clone)]
@@ -12,5 +12,5 @@ pub struct DataContractCreateTransitionActionV0 {
     /// identity nonce
     pub identity_nonce: IdentityNonce,
     /// fee multiplier
-    pub fee_multiplier: FeeMultiplier,
+    pub fee_multiplier: UserFeeMultiplier,
 }

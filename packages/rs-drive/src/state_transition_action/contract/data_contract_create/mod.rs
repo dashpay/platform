@@ -6,7 +6,7 @@ pub mod v0;
 use crate::state_transition_action::contract::data_contract_create::v0::DataContractCreateTransitionActionV0;
 use derive_more::From;
 use dpp::data_contract::DataContract;
-use dpp::prelude::{FeeMultiplier, IdentityNonce};
+use dpp::prelude::{UserFeeMultiplier, IdentityNonce};
 
 /// data contract create transition action
 #[derive(Debug, Clone, From)]
@@ -37,7 +37,7 @@ impl DataContractCreateTransitionAction {
     }
 
     /// fee multiplier
-    pub fn fee_multiplier(&self) -> FeeMultiplier {
+    pub fn fee_multiplier(&self) -> UserFeeMultiplier {
         match self {
             DataContractCreateTransitionAction::V0(transition) => transition.fee_multiplier,
         }

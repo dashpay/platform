@@ -1,4 +1,4 @@
-use crate::prelude::FeeMultiplier;
+use crate::prelude::UserFeeMultiplier;
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
@@ -41,13 +41,13 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
     }
 
     /// returns the fee multiplier
-    fn fee_multiplier(&self) -> FeeMultiplier {
+    fn fee_multiplier(&self) -> UserFeeMultiplier {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => transition.fee_multiplier(),
         }
     }
     /// set a fee multiplier
-    fn set_fee_multiplier(&mut self, fee_multiplier: FeeMultiplier) {
+    fn set_fee_multiplier(&mut self, fee_multiplier: UserFeeMultiplier) {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => {
                 transition.set_fee_multiplier(fee_multiplier)
