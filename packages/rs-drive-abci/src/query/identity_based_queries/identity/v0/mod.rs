@@ -6,7 +6,6 @@ use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
 use dapi_grpc::platform::v0::get_identity_response::{
     get_identity_response_v0, GetIdentityResponseV0,
 };
-use dapi_grpc::platform::v0::{get_identity_response, GetIdentityResponse};
 use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializable;
@@ -73,7 +72,7 @@ mod tests {
 
     #[test]
     fn test_invalid_identity_id() {
-        let (platform, version) = setup_platform();
+        let (platform, _unused_version) = setup_platform();
 
         let version = PlatformVersion::latest();
 

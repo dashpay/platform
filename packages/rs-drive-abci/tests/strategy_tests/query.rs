@@ -95,7 +95,7 @@ impl<'a> ProofVerification<'a> {
             r#type: SignedMsgType::Precommit.into(),
         };
 
-        let digest = match v.sign_digest(
+        let digest = match v.calculate_sign_hash(
             &self.chain_id,
             self.quorum_type as u8,
             self.quorum_hash,
