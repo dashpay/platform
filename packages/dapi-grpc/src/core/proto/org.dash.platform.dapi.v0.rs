@@ -762,7 +762,7 @@ pub mod core_server {
             tonic::Status,
         >;
         /// Server streaming response type for the subscribeToBlockHeadersWithChainLocks method.
-        type SubscribeToBlockHeadersWithChainLocksStream: futures_core::Stream<
+        type subscribeToBlockHeadersWithChainLocksStream: futures_core::Stream<
                 Item = std::result::Result<
                     super::BlockHeadersWithChainLocksResponse,
                     tonic::Status,
@@ -774,11 +774,11 @@ pub mod core_server {
             &self,
             request: tonic::Request<super::BlockHeadersWithChainLocksRequest>,
         ) -> std::result::Result<
-            tonic::Response<Self::SubscribeToBlockHeadersWithChainLocksStream>,
+            tonic::Response<Self::subscribeToBlockHeadersWithChainLocksStream>,
             tonic::Status,
         >;
         /// Server streaming response type for the subscribeToTransactionsWithProofs method.
-        type SubscribeToTransactionsWithProofsStream: futures_core::Stream<
+        type subscribeToTransactionsWithProofsStream: futures_core::Stream<
                 Item = std::result::Result<
                     super::TransactionsWithProofsResponse,
                     tonic::Status,
@@ -790,7 +790,7 @@ pub mod core_server {
             &self,
             request: tonic::Request<super::TransactionsWithProofsRequest>,
         ) -> std::result::Result<
-            tonic::Response<Self::SubscribeToTransactionsWithProofsStream>,
+            tonic::Response<Self::subscribeToTransactionsWithProofsStream>,
             tonic::Status,
         >;
     }
@@ -1107,7 +1107,7 @@ pub mod core_server {
                         super::BlockHeadersWithChainLocksRequest,
                     > for subscribeToBlockHeadersWithChainLocksSvc<T> {
                         type Response = super::BlockHeadersWithChainLocksResponse;
-                        type ResponseStream = T::SubscribeToBlockHeadersWithChainLocksStream;
+                        type ResponseStream = T::subscribeToBlockHeadersWithChainLocksStream;
                         type Future = BoxFuture<
                             tonic::Response<Self::ResponseStream>,
                             tonic::Status,
@@ -1159,7 +1159,7 @@ pub mod core_server {
                         super::TransactionsWithProofsRequest,
                     > for subscribeToTransactionsWithProofsSvc<T> {
                         type Response = super::TransactionsWithProofsResponse;
-                        type ResponseStream = T::SubscribeToTransactionsWithProofsStream;
+                        type ResponseStream = T::subscribeToTransactionsWithProofsStream;
                         type Future = BoxFuture<
                             tonic::Response<Self::ResponseStream>,
                             tonic::Status,
