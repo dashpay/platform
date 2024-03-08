@@ -7,7 +7,7 @@ use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::{Identity, KeyType, Purpose, SecurityLevel};
 #[cfg(feature = "state-transition-signing")]
-use crate::prelude::IdentityNonce;
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
@@ -28,6 +28,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
         amount: u64,
         pooling: Pooling,
         core_fee_per_byte: u32,
+        user_fee_increase: UserFeeIncrease,
         signer: S,
         nonce: IdentityNonce,
         _platform_version: &PlatformVersion,
@@ -40,6 +41,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
             pooling,
             output_script,
             nonce,
+            user_fee_increase,
             signature_public_key_id: 0,
             signature: Default::default(),
         }

@@ -2,9 +2,9 @@
 use crate::identity::accessors::IdentityGettersV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
-#[cfg(feature = "state-transition-signing")]
-use crate::prelude::AssetLockProof;
 use crate::prelude::Identifier;
+#[cfg(feature = "state-transition-signing")]
+use crate::prelude::{AssetLockProof, UserFeeIncrease};
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
@@ -30,12 +30,14 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
         identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
+        user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
         let identity_top_up_transition = IdentityTopUpTransitionV0 {
             asset_lock_proof,
             identity_id: identity.id(),
+            user_fee_increase,
             signature: Default::default(),
         };
 

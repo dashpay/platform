@@ -5,7 +5,7 @@ use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
-use crate::prelude::IdentityNonce;
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionType;
@@ -24,6 +24,7 @@ pub trait IdentityCreditWithdrawalTransitionMethodsV0 {
         amount: u64,
         pooling: Pooling,
         core_fee_per_byte: u32,
+        user_fee_increase: UserFeeIncrease,
         signer: S,
         nonce: IdentityNonce,
         _platform_version: &PlatformVersion,

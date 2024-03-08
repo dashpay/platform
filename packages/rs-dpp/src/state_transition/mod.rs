@@ -63,7 +63,7 @@ use crate::identity::state_transition::OptionallyAssetLockProved;
 ))]
 use crate::identity::{IdentityPublicKey, KeyType, Purpose};
 use crate::identity::{KeyID, SecurityLevel};
-use crate::prelude::AssetLockProof;
+use crate::prelude::{AssetLockProof, UserFeeIncrease};
 pub use state_transitions::*;
 
 use crate::serialization::Signable;
@@ -315,6 +315,11 @@ impl StateTransition {
         call_method!(self, signature)
     }
 
+    /// returns the fee_increase additional percentage multiplier, it affects only processing costs
+    pub fn user_fee_increase(&self) -> UserFeeIncrease {
+        call_method!(self, user_fee_increase)
+    }
+
     /// The transaction id is a single hash of the data with the signature
     pub fn transaction_id(&self) -> Result<[u8; 32], ProtocolError> {
         Ok(hash_single(
@@ -345,6 +350,11 @@ impl StateTransition {
     /// set a new signature
     pub fn set_signature(&mut self, signature: BinaryData) {
         call_method!(self, set_signature, signature)
+    }
+
+    /// set fee multiplier
+    pub fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
+        call_method!(self, set_user_fee_increase, fee_multiplier)
     }
 
     /// set a new signature

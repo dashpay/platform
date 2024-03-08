@@ -6,7 +6,7 @@ use crate::document::Document;
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
-use crate::prelude::IdentityNonce;
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 use crate::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
@@ -43,6 +43,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
         entropy: [u8; 32],
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
         batch_feature_version: Option<FeatureVersion>,
@@ -63,6 +64,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
                     entropy,
                     identity_public_key,
                     identity_contract_nonce,
+                    user_fee_increase,
                     signer,
                     platform_version,
                     batch_feature_version,
@@ -84,6 +86,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
         document_type: DocumentTypeRef,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
         batch_feature_version: Option<FeatureVersion>,
@@ -103,6 +106,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
                     document_type,
                     identity_public_key,
                     identity_contract_nonce,
+                    user_fee_increase,
                     signer,
                     platform_version,
                     batch_feature_version,

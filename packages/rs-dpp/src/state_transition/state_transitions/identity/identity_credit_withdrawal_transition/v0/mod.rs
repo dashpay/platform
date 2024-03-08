@@ -16,7 +16,7 @@ use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
 
 use crate::balances::credits::CREDITS_PER_DUFF;
-use crate::prelude::IdentityNonce;
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::Identifier,
@@ -46,6 +46,7 @@ pub struct IdentityCreditWithdrawalTransitionV0 {
     pub pooling: Pooling,
     pub output_script: CoreScript,
     pub nonce: IdentityNonce,
+    pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]

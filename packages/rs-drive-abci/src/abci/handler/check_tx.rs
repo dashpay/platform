@@ -60,7 +60,7 @@ where
                 gas_wanted: gas_wanted as SignedCredits,
                 codespace: "".to_string(),
                 sender: first_unique_identifier,
-                priority: 0,
+                priority: check_tx_result.priority as i64,
             })
         }
         Err(error) => {

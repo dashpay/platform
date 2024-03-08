@@ -1,3 +1,4 @@
+use crate::prelude::UserFeeIncrease;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
@@ -32,6 +33,21 @@ impl StateTransitionLike for DataContractCreateTransition {
     fn set_signature(&mut self, signature: BinaryData) {
         match self {
             DataContractCreateTransition::V0(transition) => transition.set_signature(signature),
+        }
+    }
+
+    /// returns the fee multiplier
+    fn user_fee_increase(&self) -> UserFeeIncrease {
+        match self {
+            DataContractCreateTransition::V0(transition) => transition.user_fee_increase(),
+        }
+    }
+    /// set a fee multiplier
+    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
+        match self {
+            DataContractCreateTransition::V0(transition) => {
+                transition.set_user_fee_increase(fee_multiplier)
+            }
         }
     }
 

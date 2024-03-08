@@ -484,6 +484,7 @@ impl NetworkStrategy {
                     &identity,
                     1, //key id 1 should always be a high or critical auth key in these tests
                     *identity_contract_nonce,
+                    0,
                     signer,
                     platform_version,
                     None,
@@ -572,6 +573,7 @@ impl NetworkStrategy {
                                     DocumentsBatchTransitionV0 {
                                         owner_id: identity.id(),
                                         transitions: vec![document_create_transition.into()],
+                                        user_fee_increase: 0,
                                         signature_public_key_id: 0,
                                         signature: BinaryData::default(),
                                     }
@@ -686,6 +688,7 @@ impl NetworkStrategy {
                                     DocumentsBatchTransitionV0 {
                                         owner_id: identity.id(),
                                         transitions: vec![document_create_transition.into()],
+                                        user_fee_increase: 0,
                                         signature_public_key_id: 0,
                                         signature: BinaryData::default(),
                                     }
@@ -784,6 +787,7 @@ impl NetworkStrategy {
                                 DocumentsBatchTransitionV0 {
                                     owner_id: identity.id,
                                     transitions: vec![document_delete_transition.into()],
+                                    user_fee_increase: 0,
                                     signature_public_key_id: 0,
                                     signature: BinaryData::default(),
                                 }
@@ -884,6 +888,7 @@ impl NetworkStrategy {
                                 DocumentsBatchTransitionV0 {
                                     owner_id: identity.id,
                                     transitions: vec![document_replace_transition.into()],
+                                    user_fee_increase: 0,
                                     signature_public_key_id: 0,
                                     signature: BinaryData::default(),
                                 }
@@ -1126,6 +1131,7 @@ impl NetworkStrategy {
             identity,
             asset_lock_proof,
             secret_key.as_ref(),
+            0,
             platform_version,
             None,
         )

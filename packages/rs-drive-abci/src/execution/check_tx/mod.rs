@@ -64,6 +64,9 @@ pub struct CheckTxResult {
     /// reject the transition. All transitions return only 1 unique identifier except the documents
     /// batch transition that returns 1 for each document transition
     pub unique_identifiers: Vec<String>,
+    /// Priority to return to tenderdash. State Transitions with higher priority take precedence
+    /// over state transitions with lower priority
+    pub priority: u32,
 }
 
 impl<C> Platform<C>
