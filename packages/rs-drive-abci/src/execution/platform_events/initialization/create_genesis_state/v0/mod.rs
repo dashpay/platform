@@ -83,20 +83,20 @@ impl<C> Platform<C> {
 
         let system_data_contracts = &self.drive.cache.system_data_contracts;
 
-        let dpns_data_contract = system_data_contracts.read_dpns();
+        let dpns_data_contract = system_data_contracts.load_dpns();
 
         let system_data_contract_types = BTreeMap::from_iter([
             (
                 SystemDataContract::DPNS,
                 (
-                    system_data_contracts.read_dpns(),
+                    system_data_contracts.load_dpns(),
                     system_identity_public_keys.dpns_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::Withdrawals,
                 (
-                    system_data_contracts.read_withdrawals(),
+                    system_data_contracts.load_withdrawals(),
                     system_identity_public_keys.withdrawals_contract_owner(),
                 ),
             ),
@@ -114,14 +114,14 @@ impl<C> Platform<C> {
             (
                 SystemDataContract::Dashpay,
                 (
-                    system_data_contracts.read_dashpay(),
+                    system_data_contracts.load_dashpay(),
                     system_identity_public_keys.dashpay_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::MasternodeRewards,
                 (
-                    system_data_contracts.read_masternode_reward_shares(),
+                    system_data_contracts.load_masternode_reward_shares(),
                     system_identity_public_keys.masternode_reward_shares_contract_owner(),
                 ),
             ),

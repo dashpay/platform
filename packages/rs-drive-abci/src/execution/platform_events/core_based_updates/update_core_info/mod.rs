@@ -8,6 +8,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
+use std::sync::Arc;
 
 impl<C> Platform<C>
 where

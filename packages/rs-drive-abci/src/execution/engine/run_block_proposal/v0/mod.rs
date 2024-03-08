@@ -26,6 +26,7 @@ use crate::platform_types::epoch_info::v0::{EpochInfoV0Getters, EpochInfoV0Metho
 use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::verify_chain_lock_result::v0::VerifyChainLockResult;
 use crate::rpc::core::CoreRPCLike;
 
@@ -63,6 +64,7 @@ where
         known_from_us: bool,
         epoch_info: EpochInfo,
         transaction: &Transaction,
+        last_committed_platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
@@ -75,17 +77,15 @@ where
             block_proposal.round,
         );
 
-        // Start by getting information from the state
-        let state = self.state.read();
+        let last_block_time_ms = last_committed_platform_state.last_committed_block_time_ms();
+        let last_block_height = last_committed_platform_state
+            .last_committed_known_height_or(self.config.abci.genesis_height.saturating_sub(1));
+        let last_block_core_height = last_committed_platform_state
+            .last_committed_known_core_height_or(self.config.abci.genesis_core_height);
+        let hpmn_list_len = last_committed_platform_state.hpmn_list_len() as u32;
 
-        let last_block_time_ms = state.last_committed_block_time_ms();
-        let last_block_height =
-            state.last_committed_known_height_or(self.config.abci.genesis_height.saturating_sub(1));
-        let last_block_core_height =
-            state.last_committed_known_core_height_or(self.config.abci.genesis_core_height);
-        let hpmn_list_len = state.hpmn_list_len() as u32;
-
-        let mut block_platform_state = state.clone();
+        // Create a bock state from previous committed state
+        let mut block_platform_state = last_committed_platform_state.clone();
 
         // Init block execution context
         let block_state_info = block_state_info::v0::BlockStateInfoV0::from_block_proposal(
@@ -207,7 +207,7 @@ where
 
         // Update the masternode list and create masternode identities and also update the active quorums
         self.update_core_info(
-            Some(&state),
+            Some(last_committed_platform_state),
             &mut block_platform_state,
             core_chain_locked_height,
             false,
@@ -215,7 +215,6 @@ where
             transaction,
             platform_version,
         )?;
-        drop(state);
 
         // Update the validator proposed app version
         self.drive
@@ -359,9 +358,11 @@ where
             .block_state_info_mut()
             .set_app_hash(Some(root_hash));
 
-        let state = self.state.read();
-        let validator_set_update =
-            self.validator_set_update(&state, &mut block_execution_context, platform_version)?;
+        let validator_set_update = self.validator_set_update(
+            last_committed_platform_state,
+            &mut block_execution_context,
+            platform_version,
+        )?;
 
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(
@@ -373,17 +374,14 @@ where
             );
         }
 
-        self.block_execution_context
-            .write()
-            .unwrap()
-            .replace(block_execution_context);
-
         Ok(ValidationResult::new_with_data(
             block_execution_outcome::v0::BlockExecutionOutcome {
                 app_hash: root_hash,
                 state_transitions_result,
                 validator_set_update,
+                // TODO: We already know the version outside sine we have state and platform version what pass here
                 protocol_version: platform_version.protocol_version,
+                block_execution_context,
             },
         ))
     }

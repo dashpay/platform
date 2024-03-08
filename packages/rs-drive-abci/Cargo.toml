@@ -13,6 +13,7 @@ rust-version = "1.76"
 license = "MIT"
 
 [dependencies]
+arc-swap = "1.7.0"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
 chrono = "0.4.20"
@@ -29,7 +30,6 @@ drive = { path = "../rs-drive", default-features = false, features = [
 thiserror = "1.0.30"
 rand = "0.8.5"
 tempfile = "3.3.0"
-parking_lot = "0.12.1"
 hex = "0.4.3"
 indexmap = { version = "1.9.3", features = ["serde"] }
 sha2 = "0.10.6"

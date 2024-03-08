@@ -183,7 +183,7 @@ mod tests {
                 signature_public_key_id: 0,
             };
 
-            let state = platform.state.read();
+            let state = platform.state.load();
 
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
@@ -264,7 +264,7 @@ mod tests {
                 signature_public_key_id: 0,
             };
 
-            let state = platform.state.read();
+            let state = platform.state.load();
 
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
@@ -414,7 +414,7 @@ mod tests {
 
             let state_transition: DataContractUpdateTransition = state_transition.into();
 
-            let state = platform.state.read();
+            let state = platform.state.load();
 
             let platform_ref = PlatformRef {
                 drive: &platform.drive,

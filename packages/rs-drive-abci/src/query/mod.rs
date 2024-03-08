@@ -19,6 +19,7 @@ pub type QueryValidationResult<TData> = ValidationResult<TData, QueryError>;
 mod tests {
     use crate::error::query::QueryError;
     use crate::platform_types::platform::Platform;
+    use crate::platform_types::platform_state::PlatformState;
     use crate::query::QueryValidationResult;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
@@ -28,20 +29,24 @@ mod tests {
     use drive::drive::batch::DriveOperation::DataContractOperation;
     use platform_version::version::PlatformVersion;
     use std::borrow::Cow;
+    use std::sync::Arc;
 
-    pub fn setup_platform<'a>() -> (TempPlatform<MockCoreRPCLike>, &'a PlatformVersion) {
+    pub fn setup_platform<'a>() -> (
+        TempPlatform<MockCoreRPCLike>,
+        Arc<PlatformState>,
+        &'a PlatformVersion,
+    ) {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
-        let platform_version = platform
-            .platform
-            .state
-            .read()
-            .current_platform_version()
-            .unwrap();
+        // We can't return a reference to Arc (`load` method) so we clone Arc (`load_full`).
+        // This is a bit slower but we don't care since we are in test environment
+        let platform_state = platform.platform.state.load_full();
 
-        (platform, platform_version)
+        let platform_version = platform_state.current_platform_version().unwrap();
+
+        (platform, platform_state, platform_version)
     }
 
     pub fn store_data_contract(

@@ -1,6 +1,7 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use crate::rpc::core::DefaultCoreRPC;
 use crate::utils::spawn_blocking_task_with_name_if_supported;
@@ -25,7 +26,6 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use dpp::version::PlatformVersion;
-use dpp::version::PlatformVersionCurrentVersion;
 use std::sync::Arc;
 use tracing::Instrument;
 
@@ -34,8 +34,12 @@ pub struct QueryService {
     platform: Arc<Platform<DefaultCoreRPC>>,
 }
 
-type QueryMethod<RQ, RS> =
-    fn(&Platform<DefaultCoreRPC>, RQ, &PlatformVersion) -> Result<QueryValidationResult<RS>, Error>;
+type QueryMethod<RQ, RS> = fn(
+    &Platform<DefaultCoreRPC>,
+    RQ,
+    &PlatformState,
+    &PlatformVersion,
+) -> Result<QueryValidationResult<RS>, Error>;
 
 impl QueryService {
     /// Creates new QueryService
@@ -56,12 +60,19 @@ impl QueryService {
         let platform = Arc::clone(&self.platform);
 
         spawn_blocking_task_with_name_if_supported("query", move || {
-            let Some(platform_version) = PlatformVersion::get_maybe_current() else {
-                return Err(Status::unavailable("platform is not initialized"));
-            };
+            let platform_state = platform.state.load();
 
-            let mut result = query_method(&platform, request.into_inner(), platform_version)
-                .map_err(error_into_status)?;
+            let platform_version = platform_state
+                .current_platform_version()
+                .map_err(|e| Status::unavailable("platform is not initialized"))?;
+
+            let mut result = query_method(
+                &platform,
+                request.into_inner(),
+                &platform_state,
+                platform_version,
+            )
+            .map_err(error_into_status)?;
 
             if result.is_valid() {
                 let response = result
