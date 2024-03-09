@@ -109,7 +109,7 @@ where
             end_transaction_index,
         );
 
-        let withdrawals_contract = self.drive.cache.system_data_contracts.read_withdrawals();
+        let withdrawals_contract = self.drive.cache.system_data_contracts.load_withdrawals();
 
         self.drive.add_update_multiple_documents_operations(
             &documents,

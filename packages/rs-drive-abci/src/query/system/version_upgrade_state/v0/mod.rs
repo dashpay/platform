@@ -8,11 +8,13 @@ use dpp::version::PlatformVersion;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_request::GetProtocolVersionUpgradeStateRequestV0;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_response::get_protocol_version_upgrade_state_response_v0::{VersionEntry, Versions};
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_response::{get_protocol_version_upgrade_state_response_v0, GetProtocolVersionUpgradeStateResponseV0};
+use crate::platform_types::platform_state::PlatformState;
 
 impl<C> Platform<C> {
     pub(super) fn query_version_upgrade_state_v0(
         &self,
         GetProtocolVersionUpgradeStateRequestV0 { prove }: GetProtocolVersionUpgradeStateRequestV0,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetProtocolVersionUpgradeStateResponseV0>, Error> {
         let response = if prove {
@@ -20,11 +22,13 @@ impl<C> Platform<C> {
                 .drive
                 .fetch_proved_versions_with_counter(None, &platform_version.drive));
 
-            let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
-
             GetProtocolVersionUpgradeStateResponseV0 {
-                result: Some(get_protocol_version_upgrade_state_response_v0::Result::Proof(proof)),
-                metadata: Some(metadata),
+                result: Some(
+                    get_protocol_version_upgrade_state_response_v0::Result::Proof(
+                        self.response_proof_v0(platform_state, proof),
+                    ),
+                ),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
             let protocol_versions_counter = self.drive.cache.protocol_versions_counter.read();
@@ -46,7 +50,7 @@ impl<C> Platform<C> {
                         versions,
                     }),
                 ),
-                metadata: Some(self.response_metadata_v0()),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         };
 
@@ -73,12 +77,12 @@ mod tests {
 
     #[test]
     fn test_query_empty_upgrade_state() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetProtocolVersionUpgradeStateRequestV0 { prove: false };
 
         let validation_result = platform
-            .query_version_upgrade_state_v0(request, version)
+            .query_version_upgrade_state_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -92,7 +96,7 @@ mod tests {
 
     #[test]
     fn test_query_upgrade_state() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -168,7 +172,7 @@ mod tests {
         let request = GetProtocolVersionUpgradeStateRequestV0 { prove: false };
 
         let validation_result = platform
-            .query_version_upgrade_state_v0(request, version)
+            .query_version_upgrade_state_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -182,12 +186,12 @@ mod tests {
 
     #[test]
     fn test_prove_empty_upgrade_state() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetProtocolVersionUpgradeStateRequestV0 { prove: true };
 
         let validation_result = platform
-            .query_version_upgrade_state_v0(request, version)
+            .query_version_upgrade_state_v0(request, &state, version)
             .expect("expected query to succeed");
 
         let path_query = PathQuery::new_unsized(
@@ -214,7 +218,7 @@ mod tests {
 
     #[test]
     fn test_prove_upgrade_state() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -289,7 +293,7 @@ mod tests {
         let request = GetProtocolVersionUpgradeStateRequestV0 { prove: true };
 
         let validation_result = platform
-            .query_version_upgrade_state_v0(request, version)
+            .query_version_upgrade_state_v0(request, &state, version)
             .expect("expected query to succeed");
 
         let Some(GetProtocolVersionUpgradeStateResponseV0 {

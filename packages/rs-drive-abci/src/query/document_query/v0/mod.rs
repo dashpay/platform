@@ -1,13 +1,13 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
 use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV0;
 use dapi_grpc::platform::v0::get_documents_response::{
     get_documents_response_v0, GetDocumentsResponseV0,
 };
-use dapi_grpc::platform::v0::{get_documents_response, GetDocumentsResponse};
 use dpp::check_validation_result_with_data;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identifier::Identifier;
@@ -29,6 +29,7 @@ impl<C> Platform<C> {
             prove,
             start,
         }: GetDocumentsRequestV0,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetDocumentsResponseV0>, Error> {
         let contract_id: Identifier = check_validation_result_with_data!(data_contract_id
@@ -141,11 +142,11 @@ impl<C> Platform<C> {
                     Err(e) => return Err(e.into()),
                 };
 
-            let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
-
             GetDocumentsResponseV0 {
-                result: Some(get_documents_response_v0::Result::Proof(proof)),
-                metadata: Some(metadata),
+                result: Some(get_documents_response_v0::Result::Proof(
+                    self.response_proof_v0(platform_state, proof),
+                )),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
             let results = match drive_query.execute_raw_results_no_proof(
@@ -167,7 +168,7 @@ impl<C> Platform<C> {
                 result: Some(get_documents_response_v0::Result::Documents(
                     get_documents_response_v0::Documents { documents: results },
                 )),
-                metadata: Some(self.response_metadata_v0()),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         };
 
@@ -183,7 +184,7 @@ mod tests {
 
     #[test]
     fn test_invalid_document_id() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetDocumentsRequestV0 {
             data_contract_id: vec![0; 8],
@@ -196,7 +197,7 @@ mod tests {
         };
 
         let result = platform
-            .query_documents_v0(request, version)
+            .query_documents_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert_invalid_identifier(result);
@@ -204,7 +205,7 @@ mod tests {
 
     #[test]
     fn test_data_contract_not_found_in_documents_request() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let data_contract_id = vec![0; 32];
 
@@ -219,7 +220,7 @@ mod tests {
         };
 
         let result = platform
-            .query_documents_v0(request, version)
+            .query_documents_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -230,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_absent_document_type() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
         store_data_contract(&platform, created_data_contract.data_contract(), version);
@@ -249,7 +250,7 @@ mod tests {
         };
 
         let result = platform
-            .query_documents_v0(request, version)
+            .query_documents_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -262,7 +263,7 @@ mod tests {
 
     #[test]
     fn test_invalid_where_clause() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
         store_data_contract(&platform, created_data_contract.data_contract(), version);
@@ -281,7 +282,7 @@ mod tests {
         };
 
         let result = platform
-            .query_documents_v0(request, version)
+            .query_documents_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -292,7 +293,7 @@ mod tests {
 
     #[test]
     fn test_invalid_order_by_clause() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
         store_data_contract(&platform, created_data_contract.data_contract(), version);
@@ -311,7 +312,7 @@ mod tests {
         };
 
         let result = platform
-            .query_documents_v0(request, version)
+            .query_documents_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -322,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_invalid_start_at_clause() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
         store_data_contract(&platform, created_data_contract.data_contract(), version);
@@ -341,7 +342,7 @@ mod tests {
         };
 
         let result = platform
-            .query_documents_v0(request, version)
+            .query_documents_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -352,7 +353,7 @@ mod tests {
 
     #[test]
     fn test_invalid_start_after_clause() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
         store_data_contract(&platform, created_data_contract.data_contract(), version);
@@ -371,7 +372,7 @@ mod tests {
         };
 
         let result = platform
-            .query_documents_v0(request, version)
+            .query_documents_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -382,7 +383,7 @@ mod tests {
 
     #[test]
     fn test_invalid_limit() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
         store_data_contract(&platform, created_data_contract.data_contract(), version);
@@ -402,7 +403,7 @@ mod tests {
         };
 
         let result = platform
-            .query_documents_v0(request, version)
+            .query_documents_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -413,7 +414,7 @@ mod tests {
 
     #[test]
     fn test_documents_not_found() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
         store_data_contract(&platform, created_data_contract.data_contract(), version);
@@ -432,7 +433,7 @@ mod tests {
         };
 
         let result = platform
-            .query_documents_v0(request, version)
+            .query_documents_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -446,7 +447,7 @@ mod tests {
 
     #[test]
     fn test_documents_absence_proof() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let created_data_contract = get_data_contract_fixture(None, 0, version.protocol_version);
         store_data_contract(&platform, created_data_contract.data_contract(), version);
@@ -465,7 +466,7 @@ mod tests {
         };
 
         let result = platform
-            .query_documents_v0(request, version)
+            .query_documents_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(

@@ -9,8 +9,10 @@ use drive::grovedb::Transaction;
 
 use crate::platform_types::cleaned_abci_messages::request_init_chain_cleaned_params;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
 use dpp::version::PlatformVersion;
+use std::sync::Arc;
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
 
 impl<C> Platform<C>
@@ -28,6 +30,7 @@ where
             request_init_chain_cleaned_params::v0::RequestInitChainCleanedParams::try_from(
                 request,
             )?;
+
         // We get core height early, as this also verifies v20 fork
         let core_height =
             self.initial_core_height(request.initial_core_height, platform_version)?;
@@ -37,6 +40,7 @@ where
         let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
             self.config.abci.keys.clone().into();
 
+        // Create genesis drive state
         self.create_genesis_state(
             genesis_time,
             system_identity_public_keys_v0.into(),
@@ -44,7 +48,11 @@ where
             platform_version,
         )?;
 
-        let mut state_guard = self.state.write();
+        // Create platform execution state
+        let mut initial_platform_state = PlatformState::default_with_protocol_versions(
+            request.initial_protocol_version,
+            request.initial_protocol_version,
+        );
 
         let genesis_block_info = BlockInfo {
             height: request.initial_height,
@@ -55,7 +63,7 @@ where
 
         self.update_core_info(
             None,
-            &mut state_guard,
+            &mut initial_platform_state,
             core_height,
             true,
             &genesis_block_info,
@@ -63,23 +71,23 @@ where
             platform_version,
         )?;
 
-        let (quorum_hash, validator_set) =
-            {
-                let validator_set_inner = state_guard.validator_sets().first().ok_or(
-                    ExecutionError::InitializationError("we should have at least one quorum"),
-                )?;
+        let (quorum_hash, validator_set) = {
+            let validator_set_inner = initial_platform_state.validator_sets().first().ok_or(
+                ExecutionError::InitializationError("we should have at least one quorum"),
+            )?;
 
-                (
-                    *validator_set_inner.0,
-                    ValidatorSetUpdate::from(validator_set_inner.1),
-                )
-            };
+            (
+                *validator_set_inner.0,
+                ValidatorSetUpdate::from(validator_set_inner.1),
+            )
+        };
 
-        state_guard.set_current_validator_set_quorum_hash(quorum_hash);
+        initial_platform_state.set_current_validator_set_quorum_hash(quorum_hash);
 
-        state_guard.set_genesis_block_info(Some(genesis_block_info));
+        initial_platform_state.set_genesis_block_info(Some(genesis_block_info));
 
-        state_guard.set_current_protocol_version_in_consensus(request.initial_protocol_version);
+        initial_platform_state
+            .set_current_protocol_version_in_consensus(request.initial_protocol_version);
 
         self.drive.store_current_protocol_version(
             request.initial_protocol_version,
@@ -89,10 +97,12 @@ where
 
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(
-                platform_state_fingerprint = hex::encode(state_guard.fingerprint()),
+                platform_state_fingerprint = hex::encode(initial_platform_state.fingerprint()),
                 "platform runtime state",
             );
         }
+
+        self.state.store(Arc::new(initial_platform_state));
 
         let app_hash = self
             .drive

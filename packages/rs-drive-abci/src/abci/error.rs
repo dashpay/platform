@@ -1,4 +1,3 @@
-use crate::error::Error;
 use dpp::bls_signatures::BlsError;
 use dpp::consensus::ConsensusError;
 use tenderdash_abci::proto::abci::ExtendVoteExtension;

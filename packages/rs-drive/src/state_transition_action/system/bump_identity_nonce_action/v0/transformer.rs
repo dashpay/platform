@@ -13,11 +13,15 @@ impl BumpIdentityNonceActionV0 {
         value: IdentityUpdateTransitionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityUpdateTransitionV0 {
-            identity_id, nonce, ..
+            identity_id,
+            nonce,
+            user_fee_increase,
+            ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
+            user_fee_increase,
         })
     }
 
@@ -26,11 +30,15 @@ impl BumpIdentityNonceActionV0 {
         value: &IdentityUpdateTransitionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityUpdateTransitionV0 {
-            identity_id, nonce, ..
+            identity_id,
+            nonce,
+            user_fee_increase,
+            ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
+            user_fee_increase: *user_fee_increase,
         })
     }
 
@@ -39,11 +47,15 @@ impl BumpIdentityNonceActionV0 {
         value: IdentityUpdateTransitionActionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityUpdateTransitionActionV0 {
-            identity_id, nonce, ..
+            identity_id,
+            nonce,
+            user_fee_increase,
+            ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
+            user_fee_increase,
         })
     }
 
@@ -52,11 +64,15 @@ impl BumpIdentityNonceActionV0 {
         value: &IdentityUpdateTransitionActionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityUpdateTransitionActionV0 {
-            identity_id, nonce, ..
+            identity_id,
+            nonce,
+            user_fee_increase,
+            ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
+            user_fee_increase: *user_fee_increase,
         })
     }
 
@@ -65,11 +81,15 @@ impl BumpIdentityNonceActionV0 {
         value: IdentityCreditTransferTransitionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreditTransferTransitionV0 {
-            identity_id, nonce, ..
+            identity_id,
+            nonce,
+            user_fee_increase,
+            ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
+            user_fee_increase,
         })
     }
 
@@ -78,11 +98,15 @@ impl BumpIdentityNonceActionV0 {
         value: &IdentityCreditTransferTransitionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreditTransferTransitionV0 {
-            identity_id, nonce, ..
+            identity_id,
+            nonce,
+            user_fee_increase,
+            ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
+            user_fee_increase: *user_fee_increase,
         })
     }
 
@@ -91,11 +115,15 @@ impl BumpIdentityNonceActionV0 {
         value: IdentityCreditTransferTransitionActionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreditTransferTransitionActionV0 {
-            identity_id, nonce, ..
+            identity_id,
+            nonce,
+            user_fee_increase,
+            ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
+            user_fee_increase,
         })
     }
 
@@ -104,11 +132,15 @@ impl BumpIdentityNonceActionV0 {
         value: &IdentityCreditTransferTransitionActionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreditTransferTransitionActionV0 {
-            identity_id, nonce, ..
+            identity_id,
+            nonce,
+            user_fee_increase,
+            ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
+            user_fee_increase: *user_fee_increase,
         })
     }
 
@@ -117,11 +149,15 @@ impl BumpIdentityNonceActionV0 {
         value: IdentityCreditWithdrawalTransitionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreditWithdrawalTransitionV0 {
-            identity_id, nonce, ..
+            identity_id,
+            nonce,
+            user_fee_increase,
+            ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
+            user_fee_increase,
         })
     }
 
@@ -130,11 +166,15 @@ impl BumpIdentityNonceActionV0 {
         value: &IdentityCreditWithdrawalTransitionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreditWithdrawalTransitionV0 {
-            identity_id, nonce, ..
+            identity_id,
+            nonce,
+            user_fee_increase,
+            ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
+            user_fee_increase: *user_fee_increase,
         })
     }
 
@@ -143,11 +183,15 @@ impl BumpIdentityNonceActionV0 {
         value: IdentityCreditWithdrawalTransitionActionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreditWithdrawalTransitionActionV0 {
-            identity_id, nonce, ..
+            identity_id,
+            nonce,
+            user_fee_increase,
+            ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
+            user_fee_increase,
         })
     }
 
@@ -156,11 +200,15 @@ impl BumpIdentityNonceActionV0 {
         value: &IdentityCreditWithdrawalTransitionActionV0,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreditWithdrawalTransitionActionV0 {
-            identity_id, nonce, ..
+            identity_id,
+            nonce,
+            user_fee_increase,
+            ..
         } = value;
         Ok(BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
+            user_fee_increase: *user_fee_increase,
         })
     }
 }

@@ -3,8 +3,10 @@ use crate::state_transition::state_transitions;
 pub use state_transitions::common_fields::property_names::{
     IDENTITY_NONCE, SIGNATURE, SIGNATURE_PUBLIC_KEY_ID, STATE_TRANSITION_PROTOCOL_VERSION,
 };
+#[allow(unused_imports)] // Removing causes build failures; yet clippy insists it's unused
+pub use state_transitions::contract::common_fields::property_names::DATA_CONTRACT;
 pub use state_transitions::contract::common_fields::property_names::{
-    DATA_CONTRACT, DATA_CONTRACT_ID, DATA_CONTRACT_OWNER_ID, DATA_CONTRACT_PROTOCOL_VERSION,
+    DATA_CONTRACT_ID, DATA_CONTRACT_OWNER_ID, DATA_CONTRACT_PROTOCOL_VERSION,
 };
 
 pub const IDENTIFIER_FIELDS: [&str; 2] = [DATA_CONTRACT_ID, DATA_CONTRACT_OWNER_ID];

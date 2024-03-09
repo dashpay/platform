@@ -791,7 +791,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
 
     let file = File::open(path).expect("should read domains from file");
 
-    for domain_json in io::BufReader::new(file).lines().flatten() {
+    for domain_json in io::BufReader::new(file).lines().map_while(Result::ok) {
         let domain_json: serde_json::Value =
             serde_json::from_str(&domain_json).expect("should parse json");
 

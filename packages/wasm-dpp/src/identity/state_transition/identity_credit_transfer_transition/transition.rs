@@ -15,7 +15,7 @@ use dpp::identifier::Identifier;
 use dpp::identity::KeyType;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
-use dpp::serialization::{PlatformSerializable, ValueConvertible};
+use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;

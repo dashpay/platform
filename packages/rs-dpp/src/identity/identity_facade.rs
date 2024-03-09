@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
-use crate::prelude::{Identifier, IdentityNonce, Revision};
+use crate::prelude::{Identifier, IdentityNonce};
 
 use crate::identity::identity_factory::IdentityFactory;
 #[cfg(feature = "state-transitions")]

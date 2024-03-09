@@ -8,7 +8,7 @@ use wasm_bindgen::prelude::*;
 
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
-use dpp::platform_value::{platform_value, Bytes32, Value};
+use dpp::platform_value::{platform_value, Value};
 
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::DataContractConfig;
@@ -152,8 +152,6 @@ impl DataContractWasm {
             .inner
             .document_type_for_name(doc_type)
             .with_js_error()?;
-
-        let binary_paths_o = document_type.binary_paths();
 
         let mut binary_paths = BTreeMap::new();
 

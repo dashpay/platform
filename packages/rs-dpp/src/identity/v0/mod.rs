@@ -3,16 +3,22 @@ mod conversion;
 pub mod random;
 
 use std::collections::BTreeMap;
+#[cfg(feature = "identity-value-conversion")]
 use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
 
+#[cfg(feature = "identity-value-conversion")]
 use platform_value::Value;
+#[cfg(feature = "identity-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use crate::prelude::Revision;
 
-use crate::{errors::ProtocolError, identifier::Identifier};
+#[cfg(feature = "identity-value-conversion")]
+use crate::errors::ProtocolError;
+use crate::identifier::Identifier;
+#[cfg(feature = "identity-serialization")]
 use bincode::{Decode, Encode};
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
@@ -24,6 +30,7 @@ use bincode::{Decode, Encode};
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
+
 pub struct IdentityV0 {
     pub id: Identifier,
     #[cfg_attr(

@@ -3,7 +3,6 @@
 // pub use validation::*;
 
 use dpp::consensus::ConsensusError;
-use dpp::ed25519_dalek::ed25519::signature::SignerMut;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;

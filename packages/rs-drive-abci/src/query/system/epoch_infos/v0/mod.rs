@@ -8,10 +8,10 @@ use dapi_grpc::platform::v0::get_epochs_info_response::get_epochs_info_response_
 use dapi_grpc::platform::v0::get_epochs_info_response::{
     get_epochs_info_response_v0, GetEpochsInfoResponseV0,
 };
-use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::check_validation_result_with_data;
 
+use crate::platform_types::platform_state::PlatformState;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 
@@ -24,15 +24,14 @@ impl<C> Platform<C> {
             ascending,
             prove,
         }: GetEpochsInfoRequestV0,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetEpochsInfoResponseV0>, Error> {
-        let state = self.state.read();
-
         let start_epoch = start_epoch.unwrap_or_else(|| {
             if ascending {
                 0
             } else {
-                state.last_committed_block_epoch_ref().index as u32
+                platform_state.last_committed_block_epoch_ref().index as u32
             }
         });
 
@@ -51,43 +50,22 @@ impl<C> Platform<C> {
             ));
         }
 
-        let metadata = ResponseMetadata {
-            height: state.last_committed_height(),
-            core_chain_locked_height: state.last_committed_core_height(),
-            epoch: state.last_committed_block_epoch().index as u32,
-            time_ms: state.last_committed_block_time_ms().unwrap_or_default(),
-            chain_id: self.config.abci.chain_id.clone(),
-            protocol_version: state.current_protocol_version_in_consensus(),
-        };
-
         let response = if prove {
-            let mut proof_response = Proof {
-                grovedb_proof: Vec::new(),
-                quorum_hash: state.last_committed_quorum_hash().to_vec(),
-                quorum_type: self.config.validator_set_quorum_type() as u32,
-                block_id_hash: state.last_committed_block_id_hash().to_vec(),
-                signature: state.last_committed_block_signature().to_vec(),
-                round: state.last_committed_block_round(),
-            };
-
-            drop(state);
-
-            proof_response.grovedb_proof =
-                check_validation_result_with_data!(self.drive.prove_epochs_infos(
-                    start_epoch as u16,
-                    count as u16,
-                    ascending,
-                    None,
-                    platform_version
-                ));
+            let proof = check_validation_result_with_data!(self.drive.prove_epochs_infos(
+                start_epoch as u16,
+                count as u16,
+                ascending,
+                None,
+                platform_version
+            ));
 
             GetEpochsInfoResponseV0 {
-                result: Some(get_epochs_info_response_v0::Result::Proof(proof_response)),
-                metadata: Some(metadata),
+                result: Some(get_epochs_info_response_v0::Result::Proof(
+                    self.response_proof_v0(platform_state, proof),
+                )),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
-            drop(state);
-
             let result = check_validation_result_with_data!(self.drive.get_epochs_infos(
                 start_epoch as u16,
                 count as u16,
@@ -111,7 +89,7 @@ impl<C> Platform<C> {
                 result: Some(get_epochs_info_response_v0::Result::Epochs(EpochInfos {
                     epoch_infos,
                 })),
-                metadata: Some(metadata),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         };
 
@@ -126,7 +104,7 @@ mod tests {
 
     #[test]
     fn test_query_empty_epoch_infos() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetEpochsInfoRequestV0 {
             start_epoch: None, // 0
@@ -136,7 +114,7 @@ mod tests {
         };
 
         let result = platform
-            .query_epoch_infos_v0(request, version)
+            .query_epoch_infos_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -150,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_query_empty_epoch_infos_descending() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetEpochsInfoRequestV0 {
             start_epoch: None, // 0
@@ -160,7 +138,7 @@ mod tests {
         };
 
         let validation_result = platform
-            .query_epoch_infos_v0(request, version)
+            .query_epoch_infos_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(

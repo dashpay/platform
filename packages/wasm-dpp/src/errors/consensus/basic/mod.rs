@@ -25,8 +25,6 @@ pub use json_schema_compilation_error::*;
 pub use json_schema_error::*;
 pub use public_key_is_disabled_error::*;
 pub use public_key_security_level_not_met_error::*;
-#[cfg(test)]
-pub use test_consensus_error::*;
 pub use unsupported_protocol_version_error::*;
 pub use unsupported_version_error::*;
 pub use wrong_public_key_purpose_error::*;

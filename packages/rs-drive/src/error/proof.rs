@@ -60,6 +60,8 @@ pub enum ProofError {
     },
 }
 #[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 fn get_error_code(error: &ProofError) -> u32 {
     match error {
         ProofError::TooManyElements(_) => 6000,
