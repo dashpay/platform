@@ -145,7 +145,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -191,7 +191,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -238,7 +238,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -366,7 +366,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -501,7 +501,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -562,7 +562,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -612,7 +612,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -670,7 +670,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -733,7 +733,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -809,7 +809,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -874,7 +874,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -942,7 +942,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -1037,7 +1037,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1091,7 +1091,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1169,7 +1169,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![(contract, None)],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1276,7 +1276,7 @@ mod tests {
                     ])),
                 )],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1376,7 +1376,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1452,7 +1452,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1556,7 +1556,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1660,7 +1660,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1779,7 +1779,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1900,7 +1900,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -2010,7 +2010,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -2120,7 +2120,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..30,
                     chance_per_block: None,
@@ -2244,7 +2244,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..6,
                     chance_per_block: None,
@@ -2312,7 +2312,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -2386,7 +2386,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -2467,7 +2467,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -2556,7 +2556,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -3112,7 +3112,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     //we do this to create some paying transactions
                     times_per_block_range: 1..2,
@@ -3272,7 +3272,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     //we do this to create some paying transactions
                     times_per_block_range: 1..2,
@@ -3403,7 +3403,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     //we do this to create some paying transactions
                     times_per_block_range: 1..2,
@@ -3535,7 +3535,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -3668,7 +3668,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 6..10,
                     chance_per_block: None,
