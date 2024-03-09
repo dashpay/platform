@@ -78,7 +78,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
 
     #[wasm_bindgen(js_name=getAmount)]
     pub fn get_amount(&self) -> u64 {
-        self.0.amount() as u64
+        self.0.amount()
     }
 
     #[wasm_bindgen(js_name=setAmount)]
@@ -88,12 +88,12 @@ impl IdentityCreditWithdrawalTransitionWasm {
 
     #[wasm_bindgen(js_name=getCoreFeePerByte)]
     pub fn get_core_fee_per_byte(&self) -> u32 {
-        self.0.core_fee_per_byte() as u32
+        self.0.core_fee_per_byte()
     }
 
     #[wasm_bindgen(js_name=setCoreFeePerByte)]
     pub fn set_core_fee_per_byte(&mut self, core_fee_per_byte: u32) {
-        self.0.set_core_fee_per_byte(core_fee_per_byte as u32);
+        self.0.set_core_fee_per_byte(core_fee_per_byte);
     }
 
     #[wasm_bindgen(js_name=getPooling)]
@@ -126,7 +126,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
 
     #[wasm_bindgen(js_name=getNonce)]
     pub fn get_nonce(&self) -> u64 {
-        self.0.nonce() as u64
+        self.0.nonce()
     }
 
     #[wasm_bindgen(js_name=setNonce)]
@@ -385,7 +385,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
     #[wasm_bindgen(js_name=setSignature)]
     pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
         self.0
-            .set_signature(BinaryData::new(signature.unwrap_or(vec![])))
+            .set_signature(BinaryData::new(signature.unwrap_or_default()))
     }
 
     #[wasm_bindgen]
