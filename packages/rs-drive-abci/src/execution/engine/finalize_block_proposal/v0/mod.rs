@@ -16,12 +16,13 @@ use tenderdash_abci::{
 };
 
 use crate::abci::AbciError;
-use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
+    BlockExecutionContextV0OwnedGetters,
 };
+use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::execution::types::block_state_info::v0::{
     BlockStateInfoV0Getters, BlockStateInfoV0Methods,
 };
@@ -61,24 +62,20 @@ where
     pub(super) fn finalize_block_proposal_v0(
         &self,
         request_finalize_block: FinalizeBlockCleanedRequest,
+        mut block_execution_context: BlockExecutionContext,
         transaction: &Transaction,
-        _platform_version: &PlatformVersion,
+        _last_committed_platform_version: &PlatformVersion,
     ) -> Result<block_execution_outcome::v0::BlockFinalizationOutcome, Error> {
         let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
-
-        // Retrieve block execution context before we do anything at all
-        let guarded_block_execution_context = self.block_execution_context.read().unwrap();
-        let block_execution_context =
-            guarded_block_execution_context
-                .as_ref()
-                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "block execution context must be set in block begin handler for finalize block proposal",
-                )))?;
 
         let block_state_info = block_execution_context.block_state_info();
         let epoch_info = block_execution_context.epoch_info();
         let block_platform_state = block_execution_context.block_platform_state();
 
+        // TODO: The block was processed with last committed platform version, it's wrong to call all functions
+        //  here with new version. Except probably state storage version.
+        //  Another problem that block was processed wit last committed version but we storing state with new version.
+        //  It means when we load the state we would expect this block to be processed with the new version.
         let current_protocol_version = block_platform_state.current_protocol_version_in_consensus();
 
         let platform_version = PlatformVersion::get(current_protocol_version)?;
@@ -134,8 +131,9 @@ where
             return Ok(validation_result.into());
         }
 
-        let state_cache = self.state.read();
-        let current_quorum_hash = state_cache.current_validator_set_quorum_hash().into();
+        let current_quorum_hash = block_platform_state
+            .current_validator_set_quorum_hash()
+            .into();
         if current_quorum_hash != commit_info.quorum_hash {
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {} with validator set quorum hash {} expected current validator set quorum hash is {}",
@@ -170,7 +168,9 @@ where
         {
             // Verify commit
 
-            let quorum_public_key = &state_cache.current_validator_set()?.threshold_public_key();
+            let quorum_public_key = block_platform_state
+                .current_validator_set()?
+                .threshold_public_key();
             let quorum_type = self.config.validator_set_quorum_type();
             // TODO: We already had commit in the function above, why do we need to create it again with clone?
             let commit = Commit::new_from_cleaned(
@@ -188,7 +188,6 @@ where
                 return Ok(validation_result.into());
             }
         }
-        drop(state_cache);
 
         if height == self.config.abci.genesis_height {
             self.drive
@@ -204,26 +203,12 @@ where
 
         to_commit_block_info.core_height = block_header.core_chain_locked_height;
 
-        drop(guarded_block_execution_context);
-
         // Append signatures and broadcast asset unlock transactions to Core
 
-        // Borrow execution context as mutable
-        let mut mutable_block_execution_context_guard =
-            self.block_execution_context.write().unwrap();
-        let mutable_block_execution_context =
-            mutable_block_execution_context_guard
-                .as_mut()
-                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "block execution context must be set in block begin handler for finalize block proposal",
-                )))?;
-
         // Drain withdrawal transaction instead of cloning
-        let unsigned_withdrawal_transactions = mutable_block_execution_context
+        let unsigned_withdrawal_transactions = block_execution_context
             .unsigned_withdrawal_transactions_mut()
             .drain();
-
-        drop(mutable_block_execution_context_guard);
 
         // Drain signatures instead of cloning
         let signatures = commit_info
@@ -260,7 +245,14 @@ where
         }
         .into();
 
-        self.update_state_cache(extended_block_info, transaction, platform_version)?;
+        let block_platform_state = block_execution_context.block_platform_state_owned();
+
+        self.update_state_cache(
+            extended_block_info,
+            block_platform_state,
+            transaction,
+            platform_version,
+        )?;
 
         self.update_drive_cache(platform_version)?;
 

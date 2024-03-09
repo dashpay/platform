@@ -178,11 +178,12 @@ mod tests {
                     platform_version,
                 )
                 .expect("to be able to convert data contract to serialization format"),
+                user_fee_increase: 0,
                 signature: BinaryData::new(vec![0; 65]),
                 signature_public_key_id: 0,
             };
 
-            let state = platform.state.read();
+            let state = platform.state.load();
 
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
@@ -258,11 +259,12 @@ mod tests {
                     platform_version,
                 )
                 .expect("to be able to convert data contract to serialization format"),
+                user_fee_increase: 0,
                 signature: BinaryData::new(vec![0; 65]),
                 signature_public_key_id: 0,
             };
 
-            let state = platform.state.read();
+            let state = platform.state.load();
 
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
@@ -412,7 +414,7 @@ mod tests {
 
             let state_transition: DataContractUpdateTransition = state_transition.into();
 
-            let state = platform.state.read();
+            let state = platform.state.load();
 
             let platform_ref = PlatformRef {
                 drive: &platform.drive,

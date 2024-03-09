@@ -365,8 +365,15 @@ impl NetworkStrategy {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
         let mut state_transitions = vec![];
-        if block_info.height == 1 && !self.strategy.start_identities.is_empty() {
-            state_transitions.append(&mut self.strategy.start_identities.clone());
+        if block_info.height == 1 && self.strategy.start_identities.0 > 0 {
+            let mut new_transitions = NetworkStrategy::create_identities_state_transitions(
+                self.strategy.start_identities.0.into(),
+                5,
+                signer,
+                rng,
+                platform_version,
+            );
+            state_transitions.append(&mut new_transitions);
         }
         let frequency = &self.strategy.identities_inserts;
         if frequency.check_hit(rng) {
@@ -484,6 +491,7 @@ impl NetworkStrategy {
                     &identity,
                     1, //key id 1 should always be a high or critical auth key in these tests
                     *identity_contract_nonce,
+                    0,
                     signer,
                     platform_version,
                     None,
@@ -572,6 +580,7 @@ impl NetworkStrategy {
                                     DocumentsBatchTransitionV0 {
                                         owner_id: identity.id(),
                                         transitions: vec![document_create_transition.into()],
+                                        user_fee_increase: 0,
                                         signature_public_key_id: 0,
                                         signature: BinaryData::default(),
                                     }
@@ -686,6 +695,7 @@ impl NetworkStrategy {
                                     DocumentsBatchTransitionV0 {
                                         owner_id: identity.id(),
                                         transitions: vec![document_create_transition.into()],
+                                        user_fee_increase: 0,
                                         signature_public_key_id: 0,
                                         signature: BinaryData::default(),
                                     }
@@ -784,6 +794,7 @@ impl NetworkStrategy {
                                 DocumentsBatchTransitionV0 {
                                     owner_id: identity.id,
                                     transitions: vec![document_delete_transition.into()],
+                                    user_fee_increase: 0,
                                     signature_public_key_id: 0,
                                     signature: BinaryData::default(),
                                 }
@@ -884,6 +895,7 @@ impl NetworkStrategy {
                                 DocumentsBatchTransitionV0 {
                                     owner_id: identity.id,
                                     transitions: vec![document_replace_transition.into()],
+                                    user_fee_increase: 0,
                                     signature_public_key_id: 0,
                                     signature: BinaryData::default(),
                                 }
@@ -1034,7 +1046,7 @@ impl NetworkStrategy {
         rng: &mut StdRng,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
         let mut finalize_block_operations = vec![];
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
         let platform_version = platform_state
             .current_platform_version()
             .expect("expected platform version");
@@ -1126,6 +1138,7 @@ impl NetworkStrategy {
             identity,
             asset_lock_proof,
             secret_key.as_ref(),
+            0,
             platform_version,
             None,
         )

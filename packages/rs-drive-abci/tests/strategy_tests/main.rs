@@ -145,7 +145,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -191,7 +191,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -238,7 +238,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -299,10 +299,10 @@ mod tests {
             .unwrap()
             .expect("expected root hash");
 
-        let state = abci_app.platform.state.read();
+        let state = abci_app.platform.state.load();
 
         let protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
+
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
 
@@ -329,10 +329,9 @@ mod tests {
         assert_eq!(last_block_height, 15);
         assert_eq!(last_block_app_hash, known_root_hash);
 
-        let block_start = abci_app
-            .platform
-            .state
-            .read()
+        let state = abci_app.platform.state.load();
+
+        let block_start = state
             .last_committed_block_info()
             .as_ref()
             .unwrap()
@@ -367,7 +366,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -434,10 +433,10 @@ mod tests {
             .unwrap()
             .expect("expected root hash");
 
-        let state = abci_app.platform.state.read();
+        let state = abci_app.platform.state.load();
 
         let protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
+
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
 
@@ -464,10 +463,9 @@ mod tests {
         assert_eq!(last_block_height, 15);
         assert_eq!(last_block_app_hash, known_root_hash);
 
-        let block_start = abci_app
-            .platform
-            .state
-            .read()
+        let state = abci_app.platform.state.load();
+
+        let block_start = state
             .last_committed_block_info()
             .as_ref()
             .unwrap()
@@ -503,7 +501,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -564,7 +562,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -614,7 +612,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -672,7 +670,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -735,7 +733,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -790,10 +788,10 @@ mod tests {
             .fetch_versions_with_counter(None, &platform_version.drive)
             .expect("expected to get versions");
 
+        let state = abci_app.platform.state.load();
+
         assert_eq!(
-            platform
-                .state
-                .read()
+            state
                 .last_committed_block_info()
                 .as_ref()
                 .unwrap()
@@ -811,7 +809,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -865,7 +863,7 @@ mod tests {
         // can expect it to be much higher.
 
         let platform = abci_app.platform;
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
 
         assert!(platform_state.hpmn_masternode_list().len() > 100);
     }
@@ -876,7 +874,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -933,7 +931,7 @@ mod tests {
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
         let platform = abci_app.platform;
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
 
         assert_ne!(platform_state.hpmn_masternode_list().len(), 100);
     }
@@ -944,7 +942,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -1001,7 +999,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         let platform = abci_app.platform;
-        let _platform_state = platform.state.read();
+        let _platform_state = platform.state.load();
 
         // We need to find if any masternode has ever had their keys disabled.
 
@@ -1039,7 +1037,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1093,7 +1091,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1171,7 +1169,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![(contract, None)],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1278,7 +1276,7 @@ mod tests {
                     ])),
                 )],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1378,7 +1376,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1454,7 +1452,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1558,7 +1556,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1662,7 +1660,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1781,7 +1779,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1902,7 +1900,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -2012,7 +2010,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -2122,7 +2120,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..30,
                     chance_per_block: None,
@@ -2246,7 +2244,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..6,
                     chance_per_block: None,
@@ -2314,7 +2312,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -2388,7 +2386,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -2429,7 +2427,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
-        let state = outcome.abci_app.platform.state.read();
+        let state = outcome.abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
@@ -2469,7 +2467,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -2558,7 +2556,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -3114,7 +3112,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     //we do this to create some paying transactions
                     times_per_block_range: 1..2,
@@ -3274,7 +3272,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     //we do this to create some paying transactions
                     times_per_block_range: 1..2,
@@ -3405,7 +3403,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     //we do this to create some paying transactions
                     times_per_block_range: 1..2,
@@ -3537,7 +3535,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -3591,9 +3589,9 @@ mod tests {
             ..
         } = run_chain_for_strategy(&mut platform, 100, strategy.clone(), config.clone(), 89);
 
-        let state = abci_app.platform.state.read();
+        let state = abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
+
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
         let known_root_hash = abci_app
@@ -3627,10 +3625,9 @@ mod tests {
         assert_eq!(last_block_height, 100);
         assert_eq!(last_block_app_hash, known_root_hash);
 
-        let block_start = abci_app
-            .platform
-            .state
-            .read()
+        let state = abci_app.platform.state.load();
+
+        let block_start = state
             .last_committed_block_info()
             .as_ref()
             .unwrap()
@@ -3671,7 +3668,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: 6..10,
                     chance_per_block: None,

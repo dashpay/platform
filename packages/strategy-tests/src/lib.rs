@@ -92,7 +92,7 @@ pub struct Strategy {
         Option<BTreeMap<u64, CreatedDataContract>>,
     )>,
     pub operations: Vec<Operation>,
-    pub start_identities: Vec<(Identity, StateTransition)>,
+    pub start_identities: (u8, u8),
     pub identities_inserts: Frequency,
     pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
@@ -120,7 +120,7 @@ pub enum LocalDocumentQuery<'a> {
 struct StrategyInSerializationFormat {
     pub contracts_with_updates: Vec<(Vec<u8>, Option<BTreeMap<u64, Vec<u8>>>)>,
     pub operations: Vec<Vec<u8>>,
-    pub start_identities: Vec<(Identity, StateTransition)>,
+    pub start_identities: (u8, u8),
     pub identities_inserts: Frequency,
     pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
@@ -325,8 +325,16 @@ impl Strategy {
         let mut state_transitions = vec![];
 
         // Add start_identities
-        if block_info.height == config.start_block_height && !self.start_identities.is_empty() {
-            state_transitions.append(&mut self.start_identities.clone());
+        if block_info.height == config.start_block_height && self.start_identities.0 > 0 {
+            let mut new_transitions = crate::transitions::create_identities_state_transitions(
+                self.start_identities.0.into(), // number of identities
+                self.start_identities.1.into(), // number of keys per identity
+                signer,
+                rng,
+                create_asset_lock,
+                platform_version,
+            )?;
+            state_transitions.append(&mut new_transitions);
         }
 
         // Add identities_inserts
@@ -535,6 +543,7 @@ impl Strategy {
                     &identity_info,
                     2, // Assuming key id 2 is a high or critical auth key
                     *nonce,
+                    0,
                     signer,
                     platform_version,
                     None,
@@ -678,6 +687,7 @@ impl Strategy {
                                     DocumentsBatchTransitionV0 {
                                         owner_id: identity.id(),
                                         transitions: vec![document_create_transition.into()],
+                                        user_fee_increase: 0,
                                         signature_public_key_id: 2,
                                         signature: BinaryData::default(),
                                     }
@@ -791,6 +801,7 @@ impl Strategy {
                                     DocumentsBatchTransitionV0 {
                                         owner_id: identity.id(),
                                         transitions: vec![document_create_transition.into()],
+                                        user_fee_increase: 0,
                                         signature_public_key_id: 1,
                                         signature: BinaryData::default(),
                                     }
@@ -893,6 +904,7 @@ impl Strategy {
                                 DocumentsBatchTransitionV0 {
                                     owner_id: identity.id,
                                     transitions: vec![document_delete_transition.into()],
+                                    user_fee_increase: 0,
                                     signature_public_key_id: 1,
                                     signature: BinaryData::default(),
                                 }
@@ -998,6 +1010,7 @@ impl Strategy {
                                 DocumentsBatchTransitionV0 {
                                     owner_id: identity.id,
                                     transitions: vec![document_replace_transition.into()],
+                                    user_fee_increase: 0,
                                     signature_public_key_id: 1,
                                     signature: BinaryData::default(),
                                 }
@@ -1564,7 +1577,7 @@ mod tests {
                     },
                 },
             ],
-            start_identities,
+            start_identities: (2, 3),
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,

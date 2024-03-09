@@ -6,6 +6,7 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::error::execution::ExecutionError;
+use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain};
 
@@ -19,9 +20,10 @@ where
         request: RequestInitChain,
         transaction: &Transaction,
     ) -> Result<ResponseInitChain, Error> {
-        let state = self.state.read();
-        let platform_version = state.current_platform_version()?;
-        drop(state);
+        // We don't have platform state at this point, so we should
+        // use initial protocol version from genesis
+        let protocol_version = self.config.initial_protocol_version;
+        let platform_version = PlatformVersion::get(protocol_version)?;
 
         match platform_version.drive_abci.methods.engine.init_chain {
             0 => self.init_chain_v0(request, transaction, platform_version),

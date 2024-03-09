@@ -867,7 +867,7 @@ impl IdentityKeysRequest {
                     query: SizedQuery {
                         query: Self::specific_keys_query(key_ids),
                         limit,
-                        offset,
+                        offset: None,
                     },
                 }
             }

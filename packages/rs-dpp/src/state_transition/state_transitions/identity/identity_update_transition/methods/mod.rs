@@ -18,7 +18,7 @@ use crate::version::FeatureVersion;
 use crate::ProtocolError;
 
 #[cfg(feature = "state-transition-signing")]
-use crate::prelude::IdentityNonce;
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
@@ -31,6 +31,7 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransition {
         disable_public_keys: Vec<KeyID>,
         public_keys_disabled_at: Option<u64>,
         nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
         version: Option<FeatureVersion>,
@@ -49,6 +50,7 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransition {
                 disable_public_keys,
                 public_keys_disabled_at,
                 nonce,
+                user_fee_increase,
                 signer,
                 platform_version,
                 version,

@@ -9,11 +9,13 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::GetIdentityBalanceAndRevisionRequestV0;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_response::get_identity_balance_and_revision_response_v0::BalanceAndRevision;
+use crate::platform_types::platform_state::PlatformState;
 
 impl<C> Platform<C> {
     pub(super) fn query_balance_and_revision_v0(
         &self,
         GetIdentityBalanceAndRevisionRequestV0 { id, prove }: GetIdentityBalanceAndRevisionRequestV0,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetIdentityBalanceAndRevisionResponseV0>, Error> {
         let identity_id: Identifier =
@@ -30,11 +32,13 @@ impl<C> Platform<C> {
                 &platform_version.drive,
             )?;
 
-            let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
-
             GetIdentityBalanceAndRevisionResponseV0 {
-                result: Some(get_identity_balance_and_revision_response_v0::Result::Proof(proof)),
-                metadata: Some(metadata),
+                result: Some(
+                    get_identity_balance_and_revision_response_v0::Result::Proof(
+                        self.response_proof_v0(platform_state, proof),
+                    ),
+                ),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
             let maybe_balance = self.drive.fetch_identity_balance(
@@ -68,7 +72,7 @@ impl<C> Platform<C> {
                         BalanceAndRevision { balance, revision },
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0()),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         };
 
@@ -83,7 +87,7 @@ mod tests {
 
     #[test]
     fn test_invalid_identity_id() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentityBalanceAndRevisionRequestV0 {
             id: vec![0; 8],
@@ -91,7 +95,7 @@ mod tests {
         };
 
         let result = platform
-            .query_balance_and_revision_v0(request, version)
+            .query_balance_and_revision_v0(request, &state, version)
             .expect("should query balance and revision");
 
         assert_invalid_identifier(result);
@@ -99,7 +103,7 @@ mod tests {
 
     #[test]
     fn test_identity_not_found_when_querying_balance_and_revision() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let id = vec![0; 32];
 
@@ -109,7 +113,7 @@ mod tests {
         };
 
         let result = platform
-            .query_balance_and_revision_v0(request, version)
+            .query_balance_and_revision_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -120,7 +124,7 @@ mod tests {
 
     #[test]
     fn test_identity_balance_and_revision_absence_proof() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let id = vec![0; 32];
 
@@ -130,7 +134,7 @@ mod tests {
         };
 
         let result = platform
-            .query_balance_and_revision_v0(request, version)
+            .query_balance_and_revision_v0(request, &state, version)
             .expect("should query balance and revision");
 
         assert!(matches!(
