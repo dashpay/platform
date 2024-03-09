@@ -205,6 +205,20 @@ class PlatformPromiseClient {
   }
 
   /**
+   * @param {!GetIdentityKeysRequest} getIdentityKeysRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetIdentityKeysResponse>}
+   */
+  getIdentityKeys(getIdentityKeysRequest, metadata = {}) {
+    return promisify(
+      this.client.getIdentityKeys.bind(this.client),
+    )(
+      getIdentityKeysRequest,
+      metadata,
+    );
+  }
+
+  /**
    * @param {string} protocolVersion
    */
   setProtocolVersion(protocolVersion) {

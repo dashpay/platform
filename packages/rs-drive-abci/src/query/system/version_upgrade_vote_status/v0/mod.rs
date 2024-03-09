@@ -9,6 +9,7 @@ use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::G
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_response::get_protocol_version_upgrade_vote_status_response_v0::{VersionSignal, VersionSignals};
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_response::{get_protocol_version_upgrade_vote_status_response_v0, GetProtocolVersionUpgradeVoteStatusResponseV0};
 use crate::error::query::QueryError;
+use crate::platform_types::platform_state::PlatformState;
 
 impl<C> Platform<C> {
     pub(super) fn query_version_upgrade_vote_status_v0(
@@ -18,6 +19,7 @@ impl<C> Platform<C> {
             count,
             prove,
         }: GetProtocolVersionUpgradeVoteStatusRequestV0,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetProtocolVersionUpgradeVoteStatusResponseV0>, Error> {
         let start_pro_tx_hash: Option<[u8; 32]> = if start_pro_tx_hash.is_empty() {
@@ -52,13 +54,13 @@ impl<C> Platform<C> {
                     &platform_version.drive
                 ));
 
-            let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
-
             GetProtocolVersionUpgradeVoteStatusResponseV0 {
                 result: Some(
-                    get_protocol_version_upgrade_vote_status_response_v0::Result::Proof(proof),
+                    get_protocol_version_upgrade_vote_status_response_v0::Result::Proof(
+                        self.response_proof_v0(platform_state, proof),
+                    ),
                 ),
-                metadata: Some(metadata),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
             let result =
@@ -84,7 +86,7 @@ impl<C> Platform<C> {
                         },
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0()),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         };
 
@@ -111,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_query_empty_upgrade_vote_status() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -124,7 +126,7 @@ mod tests {
         };
 
         let validation_result = platform
-            .query_version_upgrade_vote_status_v0(request, version)
+            .query_version_upgrade_vote_status_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(validation_result.data, Some(
@@ -137,7 +139,7 @@ mod tests {
 
     #[test]
     fn test_query_upgrade_vote_status() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -215,7 +217,7 @@ mod tests {
         };
 
         let validation_result = platform
-            .query_version_upgrade_vote_status_v0(request, version)
+            .query_version_upgrade_vote_status_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(validation_result.data, Some(
@@ -228,7 +230,7 @@ mod tests {
 
     #[test]
     fn test_prove_empty_upgrade_vote_status() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -241,7 +243,7 @@ mod tests {
         };
 
         let validation_result = platform
-            .query_version_upgrade_vote_status_v0(request, version)
+            .query_version_upgrade_vote_status_v0(request, &state, version)
             .expect("expected query to succeed");
 
         let Some(GetProtocolVersionUpgradeVoteStatusResponseV0 {
@@ -272,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_prove_upgrade_vote_status() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -351,7 +353,7 @@ mod tests {
         };
 
         let validation_result = platform
-            .query_version_upgrade_vote_status_v0(request, version)
+            .query_version_upgrade_vote_status_v0(request, &state, version)
             .expect("expected query to succeed");
 
         let Some(GetProtocolVersionUpgradeVoteStatusResponseV0 {

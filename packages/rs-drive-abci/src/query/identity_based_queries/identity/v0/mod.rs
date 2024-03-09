@@ -1,6 +1,7 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
 use dapi_grpc::platform::v0::get_identity_response::{
@@ -16,6 +17,7 @@ impl<C> Platform<C> {
     pub(super) fn query_identity_v0(
         &self,
         GetIdentityRequestV0 { id, prove }: GetIdentityRequestV0,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetIdentityResponseV0>, Error> {
         let identity_id: Identifier =
@@ -32,11 +34,11 @@ impl<C> Platform<C> {
                 &platform_version.drive,
             )?;
 
-            let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
-
             GetIdentityResponseV0 {
-                result: Some(get_identity_response_v0::Result::Proof(proof)),
-                metadata: Some(metadata),
+                result: Some(get_identity_response_v0::Result::Proof(
+                    self.response_proof_v0(platform_state, proof),
+                )),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
             let maybe_identity = self.drive.fetch_full_identity(
@@ -57,7 +59,7 @@ impl<C> Platform<C> {
                 result: Some(get_identity_response_v0::Result::Identity(
                     serialized_identity,
                 )),
-                metadata: Some(self.response_metadata_v0()),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         };
 
@@ -72,7 +74,7 @@ mod tests {
 
     #[test]
     fn test_invalid_identity_id() {
-        let (platform, _unused_version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let version = PlatformVersion::latest();
 
@@ -82,7 +84,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_v0(request, version)
+            .query_identity_v0(request, &state, version)
             .expect("should execute query");
 
         assert_invalid_identifier(result);
@@ -90,7 +92,7 @@ mod tests {
 
     #[test]
     fn test_identity_not_found() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let id = vec![0; 32];
         let request = GetIdentityRequestV0 {
@@ -99,7 +101,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_v0(request, version)
+            .query_identity_v0(request, &state, version)
             .expect("should execute query");
 
         let validation_error = result.first_error().unwrap();
@@ -112,7 +114,7 @@ mod tests {
 
     #[test]
     fn test_identity_absence_proof() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let id = vec![0; 32];
         let request = GetIdentityRequestV0 {
@@ -121,7 +123,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_v0(request, version)
+            .query_identity_v0(request, &state, version)
             .expect("should execute query");
 
         assert!(matches!(

@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 
-use crate::prelude::Identifier;
+use crate::prelude::{Identifier, UserFeeIncrease};
 
 use crate::ProtocolError;
 
@@ -41,6 +41,7 @@ pub struct IdentityTopUpTransitionV0 {
     // Own ST fields
     pub asset_lock_proof: AssetLockProof,
     pub identity_id: Identifier,
+    pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
 }

@@ -1,4 +1,4 @@
-use crate::abci::app::PlatformApplication;
+use crate::abci::app::{BlockExecutionApplication, PlatformApplication};
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
@@ -13,7 +13,7 @@ pub fn verify_vote_extension<A, C>(
     request: proto::RequestVerifyVoteExtension,
 ) -> Result<proto::ResponseVerifyVoteExtension, Error>
 where
-    A: PlatformApplication<C>,
+    A: PlatformApplication<C> + BlockExecutionApplication,
     C: CoreRPCLike,
 {
     let _timer = crate::metrics::abci_request_duration("verify_vote_extension");
@@ -30,8 +30,8 @@ where
     let round: u32 = round as u32;
 
     // Make sure we are in a block execution phase
-    let guarded_block_execution_context = app.platform().block_execution_context.read().unwrap();
-    let Some(block_execution_context) = guarded_block_execution_context.as_ref() else {
+    let block_execution_context_ref = app.block_execution_context().read().unwrap();
+    let Some(block_execution_context) = block_execution_context_ref.as_ref() else {
         tracing::warn!(
                 "vote extensions for height: {}, round: {} are rejected because we are not in a block execution phase",
                 height,

@@ -56,12 +56,14 @@ where
                 identity,
                 operations,
                 execution_operations,
+                user_fee_increase,
                 ..
             }
             | ExecutionEvent::PaidDriveEvent {
                 identity,
                 operations,
                 execution_operations,
+                user_fee_increase,
                 ..
             } => {
                 if fee_validation_result.is_valid_with_data() {
@@ -83,6 +85,8 @@ where
                         &block_info.epoch,
                         platform_version,
                     )?;
+
+                    individual_fee_result.apply_user_fee_increase(user_fee_increase);
 
                     let balance_change = individual_fee_result.into_balance_change(identity.id);
 

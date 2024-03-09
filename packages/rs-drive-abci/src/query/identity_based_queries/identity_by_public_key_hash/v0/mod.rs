@@ -1,6 +1,7 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_response::{
@@ -19,6 +20,7 @@ impl<C> Platform<C> {
             public_key_hash,
             prove,
         }: GetIdentityByPublicKeyHashRequestV0,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetIdentityByPublicKeyHashResponseV0>, Error> {
         let public_key_hash =
@@ -35,13 +37,11 @@ impl<C> Platform<C> {
                 platform_version,
             )?;
 
-            let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
-
             GetIdentityByPublicKeyHashResponseV0 {
                 result: Some(get_identity_by_public_key_hash_response_v0::Result::Proof(
-                    proof,
+                    self.response_proof_v0(platform_state, proof),
                 )),
-                metadata: Some(metadata),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
             let maybe_identity = self.drive.fetch_full_identity_by_unique_public_key_hash(
@@ -62,7 +62,7 @@ impl<C> Platform<C> {
                 .map_err(Error::Protocol)?;
 
             GetIdentityByPublicKeyHashResponseV0 {
-                metadata: Some(self.response_metadata_v0()),
+                metadata: Some(self.response_metadata_v0(platform_state)),
                 result: Some(
                     get_identity_by_public_key_hash_response_v0::Result::Identity(
                         serialized_identity,
@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn test_invalid_public_key_hash() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentityByPublicKeyHashRequestV0 {
             public_key_hash: vec![0; 8],
@@ -90,7 +90,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_by_public_key_hash_v0(request, version)
+            .query_identity_by_public_key_hash_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -101,7 +101,7 @@ mod tests {
 
     #[test]
     fn test_identity_not_found() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let public_key_hash = vec![0; 20];
         let request = GetIdentityByPublicKeyHashRequestV0 {
@@ -110,7 +110,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_by_public_key_hash_v0(request, version)
+            .query_identity_by_public_key_hash_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -121,7 +121,7 @@ mod tests {
 
     #[test]
     fn test_identity_absence_proof() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let public_key_hash = vec![0; 20];
         let request = GetIdentityByPublicKeyHashRequestV0 {
@@ -130,7 +130,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identity_by_public_key_hash_v0(request, version)
+            .query_identity_by_public_key_hash_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(

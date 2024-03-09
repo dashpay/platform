@@ -757,7 +757,7 @@ pub(crate) fn start_chain_for_strategy(
     current_quorum_hash = abci_application
         .platform
         .state
-        .read()
+        .load()
         .current_validator_set_quorum_hash();
 
     continue_chain_for_strategy(
@@ -838,7 +838,7 @@ pub(crate) fn continue_chain_for_strategy(
     let mut state_transition_results_per_block = BTreeMap::new();
 
     for block_height in block_start..(block_start + block_count) {
-        let state = platform.state.read();
+        let state = platform.state.load();
         let epoch_info = EpochInfoV0::calculate(
             first_block_time,
             current_time_ms,
@@ -974,7 +974,7 @@ pub(crate) fn continue_chain_for_strategy(
             continue;
         }
 
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
 
         let platform_version = platform_state.current_platform_version().unwrap();
 
@@ -1063,7 +1063,7 @@ pub(crate) fn continue_chain_for_strategy(
     } else {
         platform
             .state
-            .read()
+            .load()
             .last_committed_block_info()
             .as_ref()
             .unwrap()

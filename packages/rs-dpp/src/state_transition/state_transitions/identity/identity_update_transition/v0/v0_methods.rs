@@ -19,7 +19,7 @@ use crate::identity::{Identity, IdentityPublicKey};
 use crate::identity::accessors::IdentityGettersV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use crate::prelude::IdentityNonce;
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use crate::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
@@ -45,6 +45,7 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
         disable_public_keys: Vec<KeyID>,
         public_keys_disabled_at: Option<u64>,
         nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
         signer: &S,
         _platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
@@ -63,6 +64,7 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
             add_public_keys: add_public_keys_in_creation,
             disable_public_keys,
             public_keys_disabled_at,
+            user_fee_increase,
         };
 
         let state_transition: StateTransition = identity_update_transition.clone().into();
