@@ -1,4 +1,4 @@
-///! The `withdrawals_data_triggers` module contains data triggers related to withdrawals.
+//! The `withdrawals_data_triggers` module contains data triggers related to withdrawals.
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
@@ -158,7 +158,7 @@ mod tests {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
-        let state_read_guard = platform.state.read();
+        let state_read_guard = platform.state.load();
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_read_guard,
@@ -248,7 +248,7 @@ mod tests {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_genesis_state();
-        let state_read_guard = platform.state.read();
+        let state_read_guard = platform.state.load();
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,

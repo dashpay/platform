@@ -1,6 +1,7 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identity_contract_nonce_request::Version as RequestVersion;
 use dapi_grpc::platform::v0::get_identity_contract_nonce_response::Version as ResponseVersion;
@@ -14,6 +15,7 @@ impl<C> Platform<C> {
     pub fn query_identity_contract_nonce(
         &self,
         GetIdentityContractNonceRequest { version }: GetIdentityContractNonceRequest,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetIdentityContractNonceResponse>, Error> {
         let Some(version) = version else {
@@ -46,7 +48,11 @@ impl<C> Platform<C> {
         }
         match version {
             RequestVersion::V0(request_v0) => {
-                let result = self.query_identity_contract_nonce_v0(request_v0, platform_version)?;
+                let result = self.query_identity_contract_nonce_v0(
+                    request_v0,
+                    platform_state,
+                    platform_version,
+                )?;
 
                 Ok(result.map(|response_v0| GetIdentityContractNonceResponse {
                     version: Some(ResponseVersion::V0(response_v0)),

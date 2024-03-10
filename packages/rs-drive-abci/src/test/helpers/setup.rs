@@ -110,7 +110,7 @@ impl TempPlatform<MockCoreRPCLike> {
                 None,
                 self.platform
                     .state
-                    .read()
+                    .load()
                     .current_platform_version()
                     .expect("expected to get current platform version"),
             )

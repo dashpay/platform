@@ -6,6 +6,7 @@ use dapi_grpc::platform::v0::get_data_contract_history_request::Version as Reque
 use dapi_grpc::platform::v0::get_data_contract_history_response::Version as ResponseVersion;
 use dapi_grpc::platform::v0::{GetDataContractHistoryRequest, GetDataContractHistoryResponse};
 
+use crate::platform_types::platform_state::PlatformState;
 use dpp::version::PlatformVersion;
 
 mod v0;
@@ -15,6 +16,7 @@ impl<C> Platform<C> {
     pub fn query_data_contract_history(
         &self,
         GetDataContractHistoryRequest { version }: GetDataContractHistoryRequest,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetDataContractHistoryResponse>, Error> {
         let Some(version) = version else {
@@ -45,7 +47,11 @@ impl<C> Platform<C> {
         }
         match version {
             RequestVersion::V0(request_v0) => {
-                let result = self.query_data_contract_history_v0(request_v0, platform_version)?;
+                let result = self.query_data_contract_history_v0(
+                    request_v0,
+                    platform_state,
+                    platform_version,
+                )?;
 
                 Ok(result.map(|response_v0| GetDataContractHistoryResponse {
                     version: Some(ResponseVersion::V0(response_v0)),

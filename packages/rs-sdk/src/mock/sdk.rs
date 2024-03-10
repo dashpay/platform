@@ -317,6 +317,8 @@ impl MockDashPlatformSdk {
     }
 
     /// Wrapper around [FromProof] that uses mock expectations instead of executing [FromProof] trait.
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
     pub(crate) fn parse_proof<I, O: FromProof<I>>(
         &self,
         request: O::Request,

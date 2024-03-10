@@ -29,23 +29,20 @@ impl DriveHighLevelDocumentOperationConverter for DocumentReplaceTransitionActio
 
         let storage_flags = StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
 
-        let mut drive_operations = vec![];
-        drive_operations.push(IdentityOperation(
-            IdentityOperationType::UpdateIdentityContractNonce {
+        Ok(vec![
+            IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
                 identity_id: owner_id.into_buffer(),
                 contract_id: data_contract_id.into_buffer(),
                 nonce: identity_contract_nonce,
-            },
-        ));
-        drive_operations.push(DocumentOperation(DocumentOperationType::UpdateDocument {
-            owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentOwnedInfo((document, Some(Cow::Owned(storage_flags)))),
-                owner_id: Some(owner_id.into_buffer()),
-            },
-            contract_id: data_contract_id,
-            document_type_name: Cow::Owned(document_type_name),
-        }));
-
-        Ok(drive_operations)
+            }),
+            DocumentOperation(DocumentOperationType::UpdateDocument {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentOwnedInfo((document, Some(Cow::Owned(storage_flags)))),
+                    owner_id: Some(owner_id.into_buffer()),
+                },
+                contract_id: data_contract_id,
+                document_type_name: Cow::Owned(document_type_name),
+            }),
+        ])
     }
 }

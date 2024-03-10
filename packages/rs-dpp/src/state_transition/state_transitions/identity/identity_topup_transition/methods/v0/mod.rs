@@ -1,7 +1,13 @@
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
-use crate::prelude::AssetLockProof;
-use crate::state_transition::{StateTransition, StateTransitionType};
+#[cfg(feature = "state-transition-signing")]
+use crate::prelude::{AssetLockProof, UserFeeIncrease};
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::StateTransition;
+use crate::state_transition::StateTransitionType;
+#[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
+#[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
 pub trait IdentityTopUpTransitionMethodsV0 {
@@ -10,6 +16,7 @@ pub trait IdentityTopUpTransitionMethodsV0 {
         identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
+        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
         version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError>;

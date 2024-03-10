@@ -58,7 +58,6 @@ impl StateTransitionFactoryWasm {
                 StateTransition::DocumentsBatch(st) => {
                     Ok(DocumentsBatchTransitionWasm::from(st).into())
                 }
-                _ => Err("Unsupported state transition type".into()),
             },
             Err(dpp::ProtocolError::StateTransitionError(e)) => match e {
                 StateTransitionError::InvalidStateTransitionError {

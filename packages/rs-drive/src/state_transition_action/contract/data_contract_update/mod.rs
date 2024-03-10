@@ -6,7 +6,7 @@ pub mod v0;
 use crate::state_transition_action::contract::data_contract_update::v0::DataContractUpdateTransitionActionV0;
 use derive_more::From;
 use dpp::data_contract::DataContract;
-use dpp::prelude::IdentityNonce;
+use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 
 /// data contract update transition action
 #[derive(Debug, Clone, From)]
@@ -35,6 +35,13 @@ impl DataContractUpdateTransitionAction {
             DataContractUpdateTransitionAction::V0(transition) => {
                 transition.identity_contract_nonce
             }
+        }
+    }
+
+    /// fee multiplier
+    pub fn user_fee_increase(&self) -> UserFeeIncrease {
+        match self {
+            DataContractUpdateTransitionAction::V0(transition) => transition.user_fee_increase,
         }
     }
 }

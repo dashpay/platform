@@ -7,7 +7,7 @@ use crate::state_transition_action::identity::identity_update::v0::IdentityUpdat
 use derive_more::From;
 use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::platform_value::Identifier;
-use dpp::prelude::Revision;
+use dpp::prelude::{Revision, UserFeeIncrease};
 
 /// action
 #[derive(Debug, Clone, From)]
@@ -57,6 +57,13 @@ impl IdentityUpdateTransitionAction {
     pub fn revision(&self) -> Revision {
         match self {
             IdentityUpdateTransitionAction::V0(transition) => transition.revision,
+        }
+    }
+
+    /// fee multiplier
+    pub fn user_fee_increase(&self) -> UserFeeIncrease {
+        match self {
+            IdentityUpdateTransitionAction::V0(transition) => transition.user_fee_increase,
         }
     }
 }

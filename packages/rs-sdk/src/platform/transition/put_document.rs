@@ -72,12 +72,16 @@ impl<S: Signer> PutDocument<S> for Document {
                 settings,
             )
             .await?;
+
+        let settings = settings.unwrap_or_default();
+
         let transition = DocumentsBatchTransition::new_document_creation_transition_from_document(
             self.clone(),
             document_type.as_ref(),
             document_state_transition_entropy,
             &identity_public_key,
             new_identity_contract_nonce,
+            settings.user_fee_increase.unwrap_or_default(),
             signer,
             sdk.version(),
             None,
@@ -89,7 +93,7 @@ impl<S: Signer> PutDocument<S> for Document {
 
         request
             .clone()
-            .execute(sdk, settings.unwrap_or_default().request_settings)
+            .execute(sdk, settings.request_settings)
             .await?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
