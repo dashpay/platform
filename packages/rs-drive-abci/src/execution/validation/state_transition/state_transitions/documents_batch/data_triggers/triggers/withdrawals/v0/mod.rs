@@ -1,4 +1,4 @@
-///! The `withdrawals_data_triggers` module contains data triggers related to withdrawals.
+//! The `withdrawals_data_triggers` module contains data triggers related to withdrawals.
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 

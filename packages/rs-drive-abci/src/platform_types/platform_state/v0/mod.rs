@@ -114,7 +114,7 @@ fn hex_encoded_validator_sets(validator_sets: &IndexMap<QuorumHash, ValidatorSet
 
 /// Platform state
 #[derive(Clone, Debug, Encode, Decode)]
-pub(super) struct PlatformStateForSavingV0 {
+pub struct PlatformStateForSavingV0 {
     /// Information about the genesis block
     pub genesis_block_info: Option<BlockInfo>,
     /// Information about the last block

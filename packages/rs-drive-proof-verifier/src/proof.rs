@@ -371,16 +371,16 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
                 .map(|(k, v)| {
                      let v = v.security_level_map
                             .iter()
-                            .map(|(level, kind)| {
-                                let kt = match GrpcKeyKind::from_i32(*kind) {
-                                    Some(GrpcKeyKind::CurrentKeyOfKindRequest) => {
+                            .map(|(level, &kind)| {
+                                let kt = match GrpcKeyKind::try_from(kind) {
+                                    Ok(GrpcKeyKind::CurrentKeyOfKindRequest) => {
                                         Ok(KeyKindRequestType::CurrentKeyOfKindRequest)
                                     }
-                                    Some(GrpcKeyKind::AllKeysOfKindRequest) => {
+                                    Ok(GrpcKeyKind::AllKeysOfKindRequest) => {
                                         Ok(KeyKindRequestType::AllKeysOfKindRequest)
                                     }
-                                    None => Err(Error::RequestDecodeError {
-                                        error: format!("missing requested key type: {}", *kind),
+                                    _ => Err(Error::RequestDecodeError {
+                                        error: format!("missing requested key type: {}", kind),
                                     }),
                                 };
                                 match kt  {

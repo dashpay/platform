@@ -791,7 +791,7 @@ pub(crate) fn continue_chain_for_strategy(
     let platform = abci_app.platform;
     let ChainExecutionParameters {
         block_start,
-        core_height_start,
+        core_height_start: _,
         block_count,
         proposers: proposers_with_updates,
         quorums,

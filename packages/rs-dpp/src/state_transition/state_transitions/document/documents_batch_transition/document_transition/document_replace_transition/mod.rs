@@ -1,6 +1,6 @@
 mod from_document;
 pub mod v0;
-mod v0_methods;
+pub mod v0_methods;
 
 use crate::document::Document;
 use crate::ProtocolError;

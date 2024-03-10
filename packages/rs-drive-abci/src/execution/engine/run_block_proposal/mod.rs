@@ -1,7 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::{block_execution_outcome, block_proposal};
 use crate::rpc::core::CoreRPCLike;

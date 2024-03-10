@@ -1,8 +1,6 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::error::Error;
-use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
-use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
 
 pub fn init_chain<'a, A, C>(

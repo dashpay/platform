@@ -19,6 +19,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
 use crate::data_contract::DataContractWasm;
+#[allow(deprecated)] // BinaryType is unsed in unused code below
 use crate::document::BinaryType;
 use crate::document::{ConversionOptions, DocumentWasm};
 use crate::errors::RustConversionError;

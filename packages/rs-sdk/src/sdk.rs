@@ -259,7 +259,7 @@ impl Sdk {
 
         if should_query_platform {
             let platform_nonce = IdentityNonceFetcher::fetch_with_settings(
-                &self,
+                self,
                 identity_id,
                 settings.request_settings,
             )
@@ -284,12 +284,10 @@ impl Sdk {
                         } else {
                             platform_nonce
                         }
+                    } else if bump_first {
+                        *current_nonce + 1
                     } else {
-                        if bump_first {
-                            *current_nonce + 1
-                        } else {
-                            *current_nonce
-                        }
+                        *current_nonce
                     };
                     e.insert((insert_nonce, current_time_s));
                     Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
@@ -353,7 +351,7 @@ impl Sdk {
 
         if should_query_platform {
             let platform_nonce = IdentityContractNonceFetcher::fetch_with_settings(
-                &self,
+                self,
                 (identity_id, contract_id),
                 settings.request_settings,
             )
@@ -378,12 +376,10 @@ impl Sdk {
                         } else {
                             platform_nonce
                         }
+                    } else if bump_first {
+                        *current_nonce + 1
                     } else {
-                        if bump_first {
-                            *current_nonce + 1
-                        } else {
-                            *current_nonce
-                        }
+                        *current_nonce
                     };
                     e.insert((insert_nonce, current_time_s));
                     Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)

@@ -127,7 +127,7 @@ impl<C> Platform<C> {
             ),
         ]);
 
-        for (_, (data_contract, identity_public_keys_set)) in &system_data_contract_types {
+        for (data_contract, identity_public_keys_set) in system_data_contract_types.values() {
             let public_keys = [
                 (
                     0,

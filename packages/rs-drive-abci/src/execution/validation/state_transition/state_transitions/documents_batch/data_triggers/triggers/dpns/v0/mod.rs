@@ -1,7 +1,7 @@
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contracts::dpns_contract::v1::document_types::domain::properties::PARENT_DOMAIN_NAME;
-///! The `dpns_triggers` module contains data triggers specific to the DPNS data contract.
+/// The `dpns_triggers` module contains data triggers specific to the DPNS data contract.
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 
