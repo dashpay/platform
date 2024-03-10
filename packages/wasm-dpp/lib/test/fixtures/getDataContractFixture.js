@@ -280,5 +280,6 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
     documentsMutableContractDefault: true,
   };
 
-  return factory.create(ownerId, documents, config);
+  // eslint-disable-next-line
+  return factory.create(ownerId, BigInt(1), documents, config);
 };

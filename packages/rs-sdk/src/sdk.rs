@@ -9,14 +9,10 @@ use crate::internal_cache::InternalSdkCache;
 use crate::mock::MockResponse;
 #[cfg(feature = "mocks")]
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
-use crate::platform::transition::put_document::PutSettings;
+use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Fetch, Identifier};
 use dapi_grpc::mock::Mockable;
-use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0;
-use dapi_grpc::platform::v0::get_identity_contract_nonce_response::Version;
-use dapi_grpc::platform::v0::{
-    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, Proof, ResponseMetadata,
-};
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
 use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -263,7 +259,7 @@ impl Sdk {
 
         if should_query_platform {
             let platform_nonce = IdentityNonceFetcher::fetch_with_settings(
-                &self,
+                self,
                 identity_id,
                 settings.request_settings,
             )
@@ -288,12 +284,10 @@ impl Sdk {
                         } else {
                             platform_nonce
                         }
+                    } else if bump_first {
+                        *current_nonce + 1
                     } else {
-                        if bump_first {
-                            *current_nonce + 1
-                        } else {
-                            *current_nonce
-                        }
+                        *current_nonce
                     };
                     e.insert((insert_nonce, current_time_s));
                     Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
@@ -357,7 +351,7 @@ impl Sdk {
 
         if should_query_platform {
             let platform_nonce = IdentityContractNonceFetcher::fetch_with_settings(
-                &self,
+                self,
                 (identity_id, contract_id),
                 settings.request_settings,
             )
@@ -382,12 +376,10 @@ impl Sdk {
                         } else {
                             platform_nonce
                         }
+                    } else if bump_first {
+                        *current_nonce + 1
                     } else {
-                        if bump_first {
-                            *current_nonce + 1
-                        } else {
-                            *current_nonce
-                        }
+                        *current_nonce
                     };
                     e.insert((insert_nonce, current_time_s));
                     Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)

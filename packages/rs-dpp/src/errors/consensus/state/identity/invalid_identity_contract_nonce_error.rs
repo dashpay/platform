@@ -1,11 +1,11 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
-use crate::errors::ProtocolError;
+use crate::ProtocolError; // needed for PlatformDeserialize and PlatformSerialize
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
 
-use crate::prelude::{Identifier, IdentityNonce, Revision};
+use crate::prelude::{Identifier, IdentityNonce};
 
 use crate::identity::identity_nonce::MergeIdentityNonceResult;
 use bincode::{Decode, Encode};

@@ -1,13 +1,12 @@
 const {
   v0: {
     GetProofsRequest,
-    GetProofsResponse,
   },
 } = require('@dashevo/dapi-grpc');
 const { StateTransitionTypes } = require('@dashevo/wasm-dpp');
 
 /**
- * @param {DriveClient} driveClient
+ * @param {PlatformPromiseClient} driveClient
  * @return {fetchProofForStateTransition}
  */
 function fetchProofForStateTransitionFactory(driveClient) {
@@ -17,11 +16,11 @@ function fetchProofForStateTransitionFactory(driveClient) {
    * @return {Promise<GetProofsResponse>}
    */
   async function fetchProofForStateTransition(stateTransition) {
-    const getProofsRequest = new GetProofsRequest();
-
     const modifiedIds = stateTransition.getModifiedDataIds();
 
     const { GetProofsRequestV0 } = GetProofsRequest;
+
+    const requestV0 = new GetProofsRequestV0();
 
     if (stateTransition.isDocumentStateTransition()) {
       const { DocumentRequest } = GetProofsRequestV0;
@@ -34,7 +33,7 @@ function fetchProofForStateTransitionFactory(driveClient) {
         return documentRequest;
       });
 
-      getProofsRequest.setV0(new GetProofsRequestV0().setDocumentsList(documentsList));
+      requestV0.setDocumentsList(documentsList);
     } if (stateTransition.isIdentityStateTransition()) {
       const { IdentityRequest } = GetProofsRequestV0;
 
@@ -65,7 +64,7 @@ function fetchProofForStateTransitionFactory(driveClient) {
         return proofRequests;
       });
 
-      getProofsRequest.setV0(new GetProofsRequestV0().setIdentitiesList(identitiesList));
+      requestV0.setIdentitiesList(identitiesList);
     } if (stateTransition.isDataContractStateTransition()) {
       const { ContractRequest } = GetProofsRequestV0;
 
@@ -75,12 +74,13 @@ function fetchProofForStateTransitionFactory(driveClient) {
         return identityRequest;
       });
 
-      getProofsRequest.setV0(new GetProofsRequestV0()
-        .setContractsList(contractsList));
+      requestV0.setContractsList(contractsList);
     }
 
-    const responseBytes = await driveClient.fetchProofs(getProofsRequest);
-    return GetProofsResponse.deserializeBinary(responseBytes);
+    const request = new GetProofsRequest();
+    request.setV0(requestV0);
+
+    return driveClient.getProofs(request);
   }
 
   return fetchProofForStateTransition;

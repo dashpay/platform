@@ -6274,6 +6274,7 @@ __metadata:
     ajv-formats: "npm:^2.1.1"
     awilix: "npm:^4.2.6"
     begoo: "npm:^2.0.2"
+    bs58: "npm:^4.0.1"
     chai: "npm:^4.3.10"
     chai-as-promised: "npm:^7.1.1"
     chalk: "npm:^4.1.0"

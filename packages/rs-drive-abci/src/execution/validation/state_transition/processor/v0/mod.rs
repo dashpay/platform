@@ -113,7 +113,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let result = state_transition.validate_balance(
         maybe_identity.as_mut(),
         &platform.into(),
-        platform.block_info,
+        platform.state.last_block_info(),
         transaction,
         platform_version,
     )?;
@@ -125,7 +125,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     // Validating identity contract nonce, this must happen after validating the signature
     let result = state_transition.validate_nonces(
         &platform.into(),
-        platform.block_info,
+        platform.state.last_block_info(),
         transaction,
         platform_version,
     )?;
@@ -338,6 +338,9 @@ impl StateTransitionNonceValidationV0 for StateTransition {
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
             StateTransition::DocumentsBatch(st) => {
+                st.validate_nonces(platform, block_info, tx, platform_version)
+            }
+            StateTransition::DataContractCreate(st) => {
                 st.validate_nonces(platform, block_info, tx, platform_version)
             }
             StateTransition::DataContractUpdate(st) => {

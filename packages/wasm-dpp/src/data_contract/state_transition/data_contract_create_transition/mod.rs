@@ -67,9 +67,9 @@ impl DataContractCreateTransitionWasm {
     //     Ok(())
     // }
 
-    #[wasm_bindgen(js_name=getEntropy)]
-    pub fn get_entropy(&self) -> Buffer {
-        Buffer::from_bytes_owned(self.0.entropy().to_vec())
+    #[wasm_bindgen(js_name=getIdentityNonce)]
+    pub fn get_identity_nonce(&self) -> u64 {
+        self.0.identity_nonce()
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]

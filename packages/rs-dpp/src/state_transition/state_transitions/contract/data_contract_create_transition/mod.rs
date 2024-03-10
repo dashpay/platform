@@ -4,7 +4,6 @@ mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 pub mod methods;
-mod serialize;
 mod state_transition_like;
 mod v0;
 #[cfg(feature = "state-transition-value-conversion")]
@@ -24,6 +23,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, Plat
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use platform_versioning::PlatformVersioned;
 
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
@@ -135,7 +135,7 @@ impl StateTransitionFieldTypes for DataContractCreateTransition {
     }
 
     fn binary_property_paths() -> Vec<&'static str> {
-        vec![SIGNATURE, ENTROPY]
+        vec![SIGNATURE, IDENTITY_NONCE]
     }
 }
 
@@ -171,7 +171,7 @@ mod test {
     }
 
     pub(crate) fn get_test_data() -> TestData {
-        let created_data_contract = get_data_contract_fixture(None, 1);
+        let created_data_contract = get_data_contract_fixture(None, 0, 1);
 
         let state_transition = DataContractCreateTransition::from_object(
             Value::from([
@@ -187,8 +187,8 @@ mod test {
                     ),
                 ),
                 (
-                    ENTROPY,
-                    Value::Bytes32(created_data_contract.entropy_used().to_buffer()),
+                    IDENTITY_NONCE,
+                    Value::U64(created_data_contract.identity_nonce()),
                 ),
                 (
                     DATA_CONTRACT,

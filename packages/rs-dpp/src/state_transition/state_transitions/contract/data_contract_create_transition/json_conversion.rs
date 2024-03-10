@@ -33,8 +33,8 @@ mod test {
         JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
     };
 
+    use crate::prelude::IdentityNonce;
     use dpp::util::json_value::JsonValueExt;
-    use platform_value::Bytes32;
 
     #[test]
     fn should_return_state_transition_in_json_format() {
@@ -68,10 +68,10 @@ mod test {
         );
 
         assert_eq!(
-            <Bytes32 as Into<String>>::into(data.created_data_contract.entropy_used_owned()),
+            data.created_data_contract.identity_nonce(),
             json_object
-                .remove_into::<String>(ENTROPY)
-                .expect("the entropy should be present")
+                .remove_into::<IdentityNonce>(IDENTITY_NONCE)
+                .expect("the identity_nonce should be present")
         )
     }
 }

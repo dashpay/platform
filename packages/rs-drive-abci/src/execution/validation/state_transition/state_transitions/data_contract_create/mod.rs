@@ -1,3 +1,4 @@
+mod identity_nonce;
 mod state;
 mod structure;
 
@@ -15,15 +16,13 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 
 use crate::execution::validation::state_transition::data_contract_create::state::v0::DataContractCreateStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::data_contract_create::structure::v0::DataContractCreatedStateTransitionStructureValidationV0;
-use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
+use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::processor::v0::{
     StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0,
-    StateTransitionStructureKnownInStateValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
     fn transform_into_action<C: CoreRPCLike>(
@@ -33,8 +32,8 @@ impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        let platform_version = platform.state.current_platform_version()?;
+
         match platform_version
             .drive_abci
             .validation_and_processing
@@ -82,8 +81,8 @@ impl StateTransitionStateValidationV0 for DataContractCreateTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        let platform_version = platform.state.current_platform_version()?;
+
         match platform_version
             .drive_abci
             .validation_and_processing

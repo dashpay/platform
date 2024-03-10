@@ -1,10 +1,10 @@
 use platform_value::BinaryData;
 
+use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
-    ProtocolError,
 };
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
@@ -65,5 +65,13 @@ impl StateTransitionLike for IdentityTopUpTransitionV0 {
                 vec![String::default()]
             }
         }
+    }
+
+    fn user_fee_increase(&self) -> UserFeeIncrease {
+        self.user_fee_increase
+    }
+
+    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
+        self.user_fee_increase = fee_multiplier
     }
 }

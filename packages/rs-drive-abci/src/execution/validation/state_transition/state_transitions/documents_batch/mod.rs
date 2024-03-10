@@ -30,7 +30,6 @@ use crate::execution::validation::state_transition::processor::v0::{
     StateTransitionStateValidationV0, StateTransitionStructureKnownInStateValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
     fn transform_into_action<C: CoreRPCLike>(
@@ -40,8 +39,8 @@ impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        let platform_version = platform.state.current_platform_version()?;
+
         match platform_version
             .drive_abci
             .validation_and_processing
@@ -166,8 +165,7 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        let platform_version = platform.state.current_platform_version()?;
 
         match platform_version
             .drive_abci

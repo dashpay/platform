@@ -1,5 +1,5 @@
 use crate::identity::core_script::CoreScript;
-use crate::prelude::{IdentityNonce, Revision};
+use crate::prelude::IdentityNonce;
 use crate::withdrawal::Pooling;
 use platform_value::Identifier;
 

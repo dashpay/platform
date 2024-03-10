@@ -7,6 +7,7 @@ use dpp::identity::{IdentityPublicKey, IdentityV0, PartialIdentity};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
 use dpp::platform_value::Bytes36;
+use dpp::prelude::UserFeeIncrease;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
@@ -23,6 +24,8 @@ pub struct IdentityCreateTransitionActionV0 {
     pub identity_id: Identifier,
     /// asset lock outpoint
     pub asset_lock_outpoint: Bytes36,
+    /// fee multiplier
+    pub user_fee_increase: UserFeeIncrease,
 }
 
 impl From<IdentityCreateTransitionActionV0> for PartialIdentity {

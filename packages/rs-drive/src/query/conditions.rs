@@ -1151,7 +1151,7 @@ impl<'a> WhereClause {
                 negated,
                 expr,
                 pattern,
-                escape_char,
+                escape_char: _,
             } => {
                 let where_operator = WhereOperator::StartsWith;
                 if *negated {
@@ -1283,7 +1283,7 @@ impl<'a> WhereClause {
     }
 }
 
-impl<'a> From<WhereClause> for Value {
+impl From<WhereClause> for Value {
     fn from(value: WhereClause) -> Self {
         Value::Array(vec![value.field.into(), value.operator.into(), value.value])
     }

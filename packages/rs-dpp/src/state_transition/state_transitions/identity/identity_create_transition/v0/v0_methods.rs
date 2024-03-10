@@ -1,23 +1,34 @@
-use crate::{prelude::Identifier, state_transition::StateTransitionType, BlsModule, ProtocolError};
+use crate::{prelude::Identifier, state_transition::StateTransitionType};
+#[cfg(feature = "state-transition-signing")]
+use crate::{BlsModule, ProtocolError};
 
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::accessors::IdentityGettersV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::state_transition::AssetLockProved;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::KeyType::ECDSA_HASH160;
+#[cfg(feature = "state-transition-signing")]
 use crate::prelude::AssetLockProof;
+#[cfg(feature = "state-transition-signing")]
 use crate::serialization::Signable;
 use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
+#[cfg(feature = "state-transition-signing")]
 use crate::version::PlatformVersion;
-
-use tracing::info;
 
 impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]

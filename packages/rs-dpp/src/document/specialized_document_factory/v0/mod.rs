@@ -246,6 +246,7 @@ impl SpecializedDocumentFactoryV0 {
         Ok(DocumentsBatchTransitionV0 {
             owner_id,
             transitions,
+            user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: Default::default(),
         }

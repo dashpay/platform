@@ -6,7 +6,9 @@ use dashcore::transaction::special_transaction::TransactionPayload;
 use dashcore::{InstantLock, OutPoint, Transaction, TxIn, TxOut};
 use platform_value::{BinaryData, Value};
 
+#[cfg(feature = "validation")]
 use crate::identity::state_transition::asset_lock_proof::instant::methods;
+#[cfg(feature = "validation")]
 use platform_version::version::PlatformVersion;
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
@@ -16,6 +18,7 @@ use crate::prelude::Identifier;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::hash::hash_double;
+#[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 

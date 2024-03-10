@@ -1,5 +1,4 @@
-use std::sync::Arc;
-
+use std::rc::Rc;
 use wasm_bindgen::{prelude::*, JsValue};
 
 use crate::document::factory::DocumentFactoryWASM;
@@ -11,14 +10,14 @@ use crate::document::state_transition::document_batch_transition::DocumentsBatch
 #[wasm_bindgen(js_name=DocumentFacade)]
 pub struct DocumentFacadeWasm {
     // validator: Arc<DocumentValidatorWasm>,
-    factory: Arc<DocumentFactoryWASM>,
+    factory: Rc<DocumentFactoryWASM>,
     // data_contract_fetcher_and_validator: Arc<DataContractFetcherAndValidatorWasm>,
 }
 
 impl DocumentFacadeWasm {
     pub fn new_with_arc(
         // document_validator: Arc<DocumentValidatorWasm>,
-        document_factory: Arc<DocumentFactoryWASM>,
+        document_factory: Rc<DocumentFactoryWASM>,
         // data_contract_fetcher_and_validator: Arc<DataContractFetcherAndValidatorWasm>,
     ) -> Self {
         Self {
@@ -33,7 +32,7 @@ impl DocumentFacadeWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(document_factory: DocumentFactoryWASM) -> Self {
         Self {
-            factory: Arc::new(document_factory),
+            factory: Rc::new(document_factory),
         }
     }
 

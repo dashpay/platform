@@ -645,7 +645,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     advanced_structure: None,
                     identity_signatures: None,
                     balance: None,
-                    nonce: None,
+                    nonce: Some(0),
                     state: 0,
                     transform_into_action: 0,
                 },
@@ -690,7 +690,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         },
         query: DriveAbciQueryVersions {
             response_metadata: 0,
-            base_query_structure: 0,
             proofs_query: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,

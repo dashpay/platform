@@ -76,10 +76,10 @@ mod tests {
     use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::drive::Drive;
 
+    use crate::common::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
     use crate::query::DriveQuery;
     use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
-    use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
@@ -1824,11 +1824,10 @@ mod tests {
             }
         });
 
-        let factory = DataContractFactory::new(1, Some(Box::new(TestEntropyGenerator::new())))
-            .expect("expected to create factory");
+        let factory = DataContractFactory::new(1).expect("expected to create factory");
 
         let contract = factory
-            .create_with_value_config(owner_id, documents, None, None)
+            .create_with_value_config(owner_id, 0, documents, None, None)
             .expect("data in fixture should be correct")
             .data_contract_owned();
 

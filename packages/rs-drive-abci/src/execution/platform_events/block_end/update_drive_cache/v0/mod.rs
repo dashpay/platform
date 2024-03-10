@@ -9,13 +9,14 @@ where
     /// the data contract cache and the platform versions cache.
     ///
     pub(super) fn update_drive_cache_v0(&self) {
-        let mut drive_cache = self.drive.cache.write().unwrap();
-
         // Update global cache with updated contracts
-        drive_cache.cached_contracts.merge_block_cache();
-        // This is unnecessary since we clear block cache before every proposal execution
-        drive_cache.cached_contracts.clear_block_cache();
+        self.drive
+            .cache
+            .data_contracts
+            .merge_and_clear_block_cache();
 
-        drive_cache.protocol_versions_counter.merge_block_cache()
+        let mut protocol_versions_counter = self.drive.cache.protocol_versions_counter.write();
+
+        protocol_versions_counter.merge_block_cache()
     }
 }

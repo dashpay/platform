@@ -1,4 +1,4 @@
-use crate::drive::balances::{balance_path, balance_path_vec};
+use crate::drive::balances::balance_path;
 use crate::drive::identity::{identity_key_tree_path, identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 
