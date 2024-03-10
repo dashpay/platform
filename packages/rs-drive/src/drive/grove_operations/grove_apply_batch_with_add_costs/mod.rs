@@ -35,7 +35,7 @@ impl Drive {
         match drive_version
             .grove_methods
             .apply
-            .grove_apply_batch_with_add_costs
+            .grove_apply_batch
         {
             0 => self.grove_apply_batch_with_add_costs_v0(
                 ops,
