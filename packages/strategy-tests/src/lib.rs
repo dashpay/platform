@@ -428,7 +428,17 @@ impl Strategy {
                         updated_contract_data.set_owner_id(contract.owner_id());
                     }
                 }
-
+                
+                // Update any document transitions that registered to the old contract id
+                for op in self.operations.iter_mut() {
+                    if let OperationType::Document(document_op) = &mut op.op_type {
+                        document_op.contract = contract.clone();
+                        let document_type = contract.document_type_cloned_for_name(document_op.document_type.name())
+                            .expect("Expected to get a document type for name while creating initial strategy contracts");
+                        document_op.document_type = document_type;
+                    }
+                }
+                                
                 DataContractCreateTransition::new_from_data_contract(
                     contract.clone(),
                     *identity_nonce,
