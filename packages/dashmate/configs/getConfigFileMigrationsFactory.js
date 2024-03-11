@@ -488,6 +488,15 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '1.0.0-dev.8': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            options.core.docker.image = defaultConfig.get('core.docker.image');
+          });
+
+        return configFile;
+      },
     };
   }
 
