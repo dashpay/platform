@@ -26,8 +26,7 @@ impl InvalidIdentityNonceErrorWasm {
 
     #[wasm_bindgen(js_name=getCurrentIdentityContractNonce)]
     pub fn current_identity_contract_nonce(&self) -> Option<u64> {
-        self.inner
-            .current_identity_contract_nonce().copied()
+        self.inner.current_identity_contract_nonce().copied()
     }
 
     #[wasm_bindgen(js_name=getSettingIdentityContractNonce)]

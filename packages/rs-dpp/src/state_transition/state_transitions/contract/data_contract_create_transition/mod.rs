@@ -183,7 +183,8 @@ mod test {
                             .validation_and_processing
                             .state_transitions
                             .contract_create_state_transition
-                            .base_structure,
+                            .basic_structure
+                            .unwrap(),
                     ),
                 ),
                 (

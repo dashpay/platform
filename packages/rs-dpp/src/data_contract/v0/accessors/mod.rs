@@ -62,6 +62,10 @@ impl DataContractV0Getters for DataContractV0 {
         &self.document_types
     }
 
+    fn document_types_mut(&mut self) -> &mut BTreeMap<DocumentName, DocumentType> {
+        &mut self.document_types
+    }
+
     fn metadata(&self) -> Option<&Metadata> {
         self.metadata.as_ref()
     }

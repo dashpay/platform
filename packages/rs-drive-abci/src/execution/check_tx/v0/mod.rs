@@ -192,6 +192,11 @@ mod tests {
     use dpp::NativeBlsModule;
 
     use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
+    use dpp::data_contract::document_type::v0::random_document_type::{
+        FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
+    };
+    use dpp::data_contract::document_type::v0::DocumentTypeV0;
+    use dpp::data_contract::document_type::DocumentType;
     use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
     use dpp::platform_value::Bytes32;
     use dpp::system_data_contracts::dashpay_contract;
@@ -392,6 +397,192 @@ mod tests {
             .expect("expected to process state transition");
 
         assert_eq!(processing_result.aggregated_fees().processing_fee, 2604790);
+
+        let check_result = platform
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(check_result.is_valid()); // it should still be valid, because we didn't commit the transaction
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let check_result = platform
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(check_result.is_valid()); // it should still be valid, because we don't validate state
+    }
+
+    #[test]
+    fn data_contract_create_check_tx_for_invalid_contract() {
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig::default())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
+        let platform_state = platform.state.load();
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            1,
+            Some(1),
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        platform
+            .drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create state structure");
+        let identity: Identity = IdentityV0 {
+            id: Identifier::new([
+                158, 113, 180, 126, 91, 83, 62, 44, 83, 54, 97, 88, 240, 215, 84, 139, 167, 156,
+                166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
+            ]),
+            public_keys: BTreeMap::from([(1, key.clone())]),
+            balance: 1000000000,
+            revision: 0,
+        }
+        .into();
+
+        let mut dashpay = get_dashpay_contract_fixture(Some(identity.id()), 1, protocol_version);
+
+        let dashpay_id = dashpay.data_contract().id();
+        // we need to alter dashpay to make it invalid
+
+        let document_types = dashpay.data_contract_mut().document_types_mut();
+
+        let parameters = RandomDocumentTypeParameters {
+            new_fields_optional_count_range: 5..6,
+            new_fields_required_count_range: 3..4,
+            new_indexes_count_range: Default::default(),
+            field_weights: FieldTypeWeights {
+                string_weight: 5,
+                float_weight: 3,
+                integer_weight: 2,
+                date_weight: 0,
+                boolean_weight: 1,
+                byte_array_weight: 0,
+            },
+            field_bounds: FieldMinMaxBounds {
+                string_min_len: Default::default(),
+                string_has_min_len_chance: 0.0,
+                string_max_len: Default::default(),
+                string_has_max_len_chance: 0.0,
+                integer_min: Default::default(),
+                integer_has_min_chance: 0.0,
+                integer_max: Default::default(),
+                integer_has_max_chance: 0.0,
+                float_min: Default::default(),
+                float_has_min_chance: 0.0,
+                float_max: Default::default(),
+                float_has_max_chance: 0.0,
+                date_min: 0,
+                date_max: 100,
+                byte_array_min_len: Default::default(),
+                byte_array_has_min_len_chance: 0.0,
+                byte_array_max_len: Default::default(),
+                byte_array_has_max_len_chance: 0.0,
+            },
+            keep_history_chance: 0.0,
+            documents_mutable_chance: 0.0,
+        };
+
+        let mut rng = StdRng::seed_from_u64(6);
+
+        document_types.insert(
+            "invalid".to_string(),
+            DocumentType::V0(
+                DocumentTypeV0::invalid_random_document_type(
+                    parameters,
+                    dashpay_id,
+                    &mut rng,
+                    platform_version,
+                )
+                .expect("expected an invalid document type"),
+            ),
+        );
+
+        let mut create_contract_state_transition: StateTransition = dashpay
+            .try_into_platform_versioned(platform_version)
+            .expect("expected a state transition");
+        create_contract_state_transition
+            .sign(&key, private_key.as_slice(), &NativeBlsModule)
+            .expect("expected to sign transition");
+        let serialized = create_contract_state_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+        platform
+            .drive
+            .add_new_identity(
+                identity,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        let validation_result = platform
+            .check_tx(
+                serialized.as_slice(),
+                FirstTimeCheck,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(validation_result.errors.is_empty());
+
+        let check_result = platform
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(check_result.is_valid());
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![serialized.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        // We have one invalid paid for state transition
+        assert_eq!(processing_result.invalid_paid_count(), 1);
+
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 736520);
 
         let check_result = platform
             .check_tx(
