@@ -265,10 +265,8 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 )
             }
         }
-        _ => {
-            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "CheckTxLevel must be first time check or recheck",
-            )))
-        }
+        _ => Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "CheckTxLevel must be first time check or recheck",
+        ))),
     }
 }

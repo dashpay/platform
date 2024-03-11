@@ -641,10 +641,9 @@ pub fn create_identities_state_transitions(
     // Update keys with new KeyIDs and add them to signer
     let mut current_id_num = starting_id_num;
     for (key, _) in &mut keys {
-        if let IdentityPublicKey::V0(ref mut id_pub_key_v0) = key {
-            id_pub_key_v0.set_id(current_id_num);
-            current_id_num += 1; // Increment for each key
-        }
+        let IdentityPublicKey::V0(ref mut id_pub_key_v0) = key;
+        id_pub_key_v0.set_id(current_id_num);
+        current_id_num += 1; // Increment for each key
     }
     signer.add_keys(keys);
 
@@ -662,10 +661,9 @@ pub fn create_identities_state_transitions(
                 .values_mut()
                 .enumerate()
                 .for_each(|(key_index, public_key)| {
-                    if let IdentityPublicKey::V0(ref mut id_pub_key_v0) = public_key {
-                        let new_id = identity_starting_id + key_index as u32;
-                        id_pub_key_v0.set_id(new_id);
-                    }
+                    let IdentityPublicKey::V0(ref mut id_pub_key_v0) = public_key;
+                    let new_id = identity_starting_id + key_index as u32;
+                    id_pub_key_v0.set_id(new_id);
                 });
 
             // Attempt to create an asset lock

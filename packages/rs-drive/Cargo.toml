@@ -11,7 +11,6 @@ authors = [
 edition = "2021"
 rust-version = "1.76"
 license = "MIT"
-private = true
 
 [dependencies]
 parking_lot = "0.12.1"

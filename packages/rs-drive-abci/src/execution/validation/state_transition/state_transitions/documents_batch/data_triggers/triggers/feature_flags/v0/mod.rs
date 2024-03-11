@@ -1,4 +1,4 @@
-///! The `feature_flags_data_triggers` module contains data triggers related to feature flags.
+//! The `feature_flags_data_triggers` module contains data triggers related to feature flags.
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;

@@ -57,11 +57,13 @@ use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGetter
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
+#[cfg(feature = "state-transition-signing")]
+use crate::identity::Purpose;
 #[cfg(any(
     feature = "state-transition-signing",
     feature = "state-transition-validation"
 ))]
-use crate::identity::{IdentityPublicKey, KeyType, Purpose};
+use crate::identity::{IdentityPublicKey, KeyType};
 use crate::identity::{KeyID, SecurityLevel};
 use crate::prelude::{AssetLockProof, UserFeeIncrease};
 pub use state_transitions::*;
@@ -76,15 +78,13 @@ use crate::state_transition::data_contract_update_transition::{
 use crate::state_transition::documents_batch_transition::{
     DocumentsBatchTransition, DocumentsBatchTransitionSignable,
 };
-#[cfg(any(
-    feature = "state-transition-signing",
-    feature = "state-transition-validation"
-))]
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::errors::InvalidSignaturePublicKeyError;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::WrongPublicKeyPurposeError;
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
-    StateTransitionIsNotSignedError,
+    InvalidIdentityPublicKeyTypeError, PublicKeyMismatchError, StateTransitionIsNotSignedError,
 };
 use crate::state_transition::identity_create_transition::{
     IdentityCreateTransition, IdentityCreateTransitionSignable,

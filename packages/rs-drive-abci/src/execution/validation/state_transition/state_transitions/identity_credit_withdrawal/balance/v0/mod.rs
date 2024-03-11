@@ -35,7 +35,7 @@ impl IdentityCreditTransferTransitionBalanceValidationV0 for IdentityCreditWithd
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let balance = if let Some(identity) = identity {
-            let balance = if let Some(balance) = identity.balance {
+            if let Some(balance) = identity.balance {
                 balance
             } else {
                 let maybe_existing_identity_balance = platform.drive.fetch_identity_balance(
@@ -53,8 +53,7 @@ impl IdentityCreditTransferTransitionBalanceValidationV0 for IdentityCreditWithd
                 identity.balance = Some(existing_identity_balance);
 
                 existing_identity_balance
-            };
-            balance
+            }
         } else {
             let maybe_existing_identity_balance = platform.drive.fetch_identity_balance(
                 self.identity_id().to_buffer(),

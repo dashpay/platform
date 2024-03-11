@@ -52,14 +52,14 @@ where
             self.validate_fees_of_event(&event, block_info, Some(transaction), platform_version)?;
 
         match event {
-            ExecutionEvent::PaidFromAssetLockDriveEvent {
+            ExecutionEvent::PaidFromAssetLock {
                 identity,
                 operations,
                 execution_operations,
                 user_fee_increase,
                 ..
             }
-            | ExecutionEvent::PaidDriveEvent {
+            | ExecutionEvent::Paid {
                 identity,
                 operations,
                 execution_operations,
@@ -108,7 +108,7 @@ where
                     ))
                 }
             }
-            ExecutionEvent::FreeDriveEvent { operations } => {
+            ExecutionEvent::Free { operations } => {
                 self.drive
                     .apply_drive_operations(
                         operations,

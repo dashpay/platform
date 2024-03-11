@@ -86,7 +86,7 @@ where
         // special logic on init chain
         let transaction_guard = app.transaction().read().unwrap();
         if transaction_guard.is_none() {
-            return Err(Error::Abci(AbciError::BadRequest("received a prepare proposal request for the genesis height before an init chain request".to_string())))?;
+            Err(Error::Abci(AbciError::BadRequest("received a prepare proposal request for the genesis height before an init chain request".to_string())))?;
         };
         if request.round > 0 {
             transaction_guard

@@ -387,7 +387,7 @@ impl Strategy {
     /// ```
     pub fn contract_state_transitions(
         &mut self,
-        current_identities: &Vec<Identity>,
+        current_identities: &[Identity],
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         signer: &SimpleSigner,
         rng: &mut StdRng,
@@ -481,7 +481,7 @@ impl Strategy {
     /// ```
     pub fn contract_update_state_transitions(
         &mut self,
-        current_identities: &Vec<Identity>,
+        current_identities: &[Identity],
         block_height: u64,
         initial_block_height: u64,
         signer: &SimpleSigner,
@@ -603,7 +603,7 @@ impl Strategy {
         ) -> PartialIdentity,
         create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
         block_info: &BlockInfo,
-        current_identities: &mut Vec<Identity>,
+        current_identities: &mut [Identity],
         known_contracts: &mut BTreeMap<String, DataContract>,
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
@@ -1147,7 +1147,7 @@ impl Strategy {
 
                     // Generate state transition for identity transfer operation
                     OperationType::IdentityTransfer if current_identities.len() > 1 => {
-                        let identities_clone = current_identities.clone();
+                        let identities_clone = current_identities.to_owned();
                         // Sender is the first in the list, which should be loaded_identity
                         let owner = &mut current_identities[0];
                         // Recipient is the second in the list

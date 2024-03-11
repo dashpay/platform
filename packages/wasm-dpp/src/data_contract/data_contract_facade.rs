@@ -8,7 +8,6 @@ use dpp::identifier::Identifier;
 use crate::data_contract::state_transition::DataContractCreateTransitionWasm;
 use crate::data_contract::state_transition::DataContractUpdateTransitionWasm;
 use crate::data_contract::DataContractWasm;
-use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::errors::protocol_error::from_protocol_error;
 use crate::utils::{
     get_bool_from_options, ToSerdeJSONExt, WithJsError, SKIP_VALIDATION_PROPERTY_NAME,

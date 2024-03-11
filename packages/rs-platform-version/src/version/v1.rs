@@ -463,9 +463,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             apply: DriveGroveApplyMethodVersions {
                 grove_apply_operation: 0,
                 grove_apply_batch: 0,
-                grove_apply_batch_with_add_costs: 0,
                 grove_apply_partial_batch: 0,
-                grove_apply_partial_batch_with_add_costs: 0,
             },
             costs: DriveGroveCostMethodVersions {
                 grove_batch_operations_costs: 0,

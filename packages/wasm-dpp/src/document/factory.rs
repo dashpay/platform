@@ -312,33 +312,29 @@ fn extract_documents_of_action(
     documents: &JsValue,
     action: &str,
 ) -> Result<Vec<ExtendedDocument>, anyhow::Error> {
-    let mut extracted_documents: Vec<ExtendedDocument> = vec![];
-
     let documents_with_action =
         js_sys::Reflect::get(documents, &action.to_string().into()).unwrap_or(JsValue::NULL);
 
     if documents_with_action.is_null() || documents_with_action.is_undefined() {
-        return Ok(extracted_documents);
+        return Ok(vec![]);
     }
 
     let documents_array = js_sys::Array::try_from(documents_with_action)
         .map_err(|e| anyhow!("property '{}' isn't an array: {}", action, e))?;
 
-    for js_document in documents_array.iter() {
-        let document: ExtendedDocument = js_document
-            .to_wasm::<ExtendedDocumentWasm>("ExtendedDocument")
-            .map_err(|e| {
-                anyhow!(
-                    "Element in '{}' isn't an Extended Document instance: {:#?}",
-                    action,
-                    e
-                )
-            })?
-            .clone()
-            .into();
-
-        extracted_documents.push(document)
-    }
-
-    Ok(extracted_documents)
+    documents_array
+        .iter()
+        .map(|js_document| {
+            js_document
+                .to_wasm::<ExtendedDocumentWasm>("ExtendedDocument")
+                .map_err(|e| {
+                    anyhow!(
+                        "Element in '{}' isn't an Extended Document instance: {:#?}",
+                        action,
+                        e
+                    )
+                })
+                .map(|wasm_doc| wasm_doc.clone().into())
+        })
+        .collect()
 }

@@ -49,7 +49,7 @@ impl<C> Platform<C> {
             RequestVersion::V0(request_v0) => {
                 let result = self.query_data_contract_history_v0(
                     request_v0,
-                    &platform_state,
+                    platform_state,
                     platform_version,
                 )?;
 
