@@ -1,4 +1,3 @@
-mod v0;
 
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
@@ -35,19 +34,13 @@ impl Drive {
         ) -> Result<Vec<GroveDbOp>, GroveError>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.grove_methods.apply.grove_apply_partial_batch {
-            0 => self.grove_apply_partial_batch_v0(
-                ops,
-                validate,
-                add_on_operations,
-                transaction,
-                drive_version,
-            ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "grove_apply_partial_batch".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
+        self.grove_apply_partial_batch_with_add_costs(
+            ops,
+            validate,
+            transaction,
+            add_on_operations,
+            &mut vec![],
+            drive_version,
+        )
     }
 }
