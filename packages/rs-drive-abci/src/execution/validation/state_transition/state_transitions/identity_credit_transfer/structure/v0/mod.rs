@@ -8,7 +8,7 @@ use dpp::state_transition::identity_credit_transfer_transition::accessors::Ident
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 
-const MIN_TRANSFER_AMOUNT: u64 = 1000;
+const MIN_TRANSFER_AMOUNT: u64 = 100000;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_credit_transfer) trait IdentityCreditTransferStateTransitionStructureValidationV0 {
     fn validate_base_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error>;

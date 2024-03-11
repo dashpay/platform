@@ -22,12 +22,13 @@ use crate::execution::validation::state_transition::processor::v0::{
     StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::execution::validation::state_transition::ValidationMode;
 
 impl StateTransitionActionTransformerV0 for IdentityCreditTransferTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        _validate: bool,
+        _validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -60,13 +61,17 @@ impl StateTransitionBasicStructureValidationV0 for IdentityCreditTransferTransit
             .validation_and_processing
             .state_transitions
             .identity_credit_transfer_state_transition
-            .base_structure
+            .basic_structure
         {
-            0 => self.validate_base_structure_v0(),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "identity credit transfer transition: validate_structure".to_string(),
+            Some(0) => self.validate_base_structure_v0(),
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "identity credit transfer transition: validate_basic_structure".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                method: "identity credit transfer transition: validate_basic_structure".to_string(),
+                known_versions: vec![0],
             })),
         }
     }
@@ -77,6 +82,7 @@ impl StateTransitionStateValidationV0 for IdentityCreditTransferTransition {
         &self,
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
+        _validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {

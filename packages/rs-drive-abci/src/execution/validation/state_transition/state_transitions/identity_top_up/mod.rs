@@ -23,12 +23,13 @@ use crate::execution::validation::state_transition::processor::v0::{
 };
 
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::execution::validation::state_transition::ValidationMode;
 
 impl StateTransitionActionTransformerV0 for IdentityTopUpTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        _validate: bool,
+        _validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -61,13 +62,17 @@ impl StateTransitionBasicStructureValidationV0 for IdentityTopUpTransition {
             .validation_and_processing
             .state_transitions
             .identity_top_up_state_transition
-            .base_structure
+            .basic_structure
         {
-            0 => self.validate_base_structure_v0(platform_version),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+            Some(0) => self.validate_base_structure_v0(platform_version),
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity top up transition: validate_basic_structure".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                method: "identity top up transition: validate_basic_structure".to_string(),
+                known_versions: vec![0],
             })),
         }
     }
@@ -78,6 +83,7 @@ impl StateTransitionStateValidationV0 for IdentityTopUpTransition {
         &self,
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
+        _validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {

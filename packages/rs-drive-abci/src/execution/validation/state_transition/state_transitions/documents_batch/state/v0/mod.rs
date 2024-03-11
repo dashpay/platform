@@ -18,6 +18,7 @@ use crate::execution::validation::state_transition::documents_batch::action_vali
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
 use crate::platform_types::platform::{PlatformStateRef};
 use crate::execution::validation::state_transition::state_transitions::documents_batch::transformer::v0::DocumentsBatchTransitionTransformerV0;
+use crate::execution::validation::state_transition::ValidationMode;
 
 mod data_triggers;
 pub mod fetch_documents;
@@ -35,7 +36,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
     fn transform_into_action_v0(
         &self,
         platform: &PlatformStateRef,
-        validate: bool,
+        validation_mode: ValidationMode,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -153,7 +154,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
     fn transform_into_action_v0(
         &self,
         platform: &PlatformStateRef,
-        validate: bool,
+        validation_mode: ValidationMode,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
@@ -161,8 +162,12 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
         let mut execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
-        let validation_result =
-            self.try_into_action_v0(platform, validate, tx, &mut execution_context)?;
+        let validation_result = self.try_into_action_v0(
+            platform,
+            validation_mode.should_validate_document_valid_against_state(),
+            tx,
+            &mut execution_context,
+        )?;
 
         Ok(validation_result.map(Into::into))
     }
