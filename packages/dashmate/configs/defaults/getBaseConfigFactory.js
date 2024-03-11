@@ -6,7 +6,8 @@ import DashPayContract from '@dashevo/dashpay-contract/lib/systemIds.js';
 
 import FeatureFlagsContract from '@dashevo/feature-flags-contract/lib/systemIds.js';
 
-import MasternodeRewardSharesContract from '@dashevo/masternode-reward-shares-contract/lib/systemIds.js';
+import MasternodeRewardSharesContract
+  from '@dashevo/masternode-reward-shares-contract/lib/systemIds.js';
 
 import WithdrawalsContract from '@dashevo/withdrawals-contract/lib/systemIds.js';
 
@@ -18,11 +19,17 @@ import {
 } from '../../src/constants.js';
 import Config from '../../src/config/Config.js';
 
-const { contractId: dpnsContractId, ownerId: dpnsOwnerId } = DPNSContract;
+const {
+  contractId: dpnsContractId,
+  ownerId: dpnsOwnerId,
+} = DPNSContract;
 
 const { contractId: dashpayContractId } = DashPayContract;
 
-const { contractId: featureFlagsContractId, ownerId: featureFlagsOwnerId } = FeatureFlagsContract;
+const {
+  contractId: featureFlagsContractId,
+  ownerId: featureFlagsOwnerId,
+} = FeatureFlagsContract;
 const { contractId: masternodeRewardSharesContractId } = MasternodeRewardSharesContract;
 const { contractId: withdrawalsContractId } = WithdrawalsContract;
 
@@ -72,7 +79,8 @@ export default function getBaseConfigFactory(homeDir) {
           port: 3001,
         },
         docker: {
-          image: 'dashpay/dashd:20', commandArgs: [],
+          image: 'dashpay/dashd:20',
+          commandArgs: [],
         },
         p2p: {
           host: '0.0.0.0',
@@ -87,7 +95,8 @@ export default function getBaseConfigFactory(homeDir) {
           allowIps: ['127.0.0.1', '172.16.0.0/12', '192.168.0.0/16'],
         },
         spork: {
-          address: null, privateKey: null,
+          address: null,
+          privateKey: null,
         },
         masternode: {
           enable: true,
@@ -96,14 +105,20 @@ export default function getBaseConfigFactory(homeDir) {
           },
         },
         miner: {
-          enable: false, interval: '2.5m', mediantime: null, address: null,
+          enable: false,
+          interval: '2.5m',
+          mediantime: null,
+          address: null,
         },
         devnet: {
-          name: null, minimumDifficultyBlocks: 0, powTargetSpacing: 150,
+          name: null,
+          minimumDifficultyBlocks: 0,
+          powTargetSpacing: 150,
         },
         log: {
           file: {
-            categories: [], path: homeDir.joinPath('logs', 'base', 'core.log'),
+            categories: [],
+            path: homeDir.joinPath('logs', 'base', 'core.log'),
           },
         },
         logIps: 0,
@@ -122,14 +137,18 @@ export default function getBaseConfigFactory(homeDir) {
               responseTimeout: '15s',
             },
             rateLimiter: {
-              maxTokens: 300, tokensPerFill: 150, fillInterval: '60s', enabled: true,
+              maxTokens: 300,
+              tokensPerFill: 150,
+              fillInterval: '60s',
+              enabled: true,
             },
             ssl: {
               enabled: false,
               provider: 'zerossl',
               providerConfigs: {
                 zerossl: {
-                  apiKey: null, id: null,
+                  apiKey: null,
+                  id: null,
                 },
               },
             },
@@ -162,8 +181,17 @@ export default function getBaseConfigFactory(homeDir) {
             },
             logs: {
               stdout: {
-                destination: 'stdout', level: 'info', format: 'compact', color: true,
+                destination: 'stdout',
+                level: 'info',
+                format: 'compact',
+                color: true,
               },
+            },
+            tokioConsole: {
+              enabled: false,
+              host: '127.0.0.1',
+              port: 6669,
+              retention_secs: 60 * 3,
             },
             validatorSet: {
               llmqType: 4,
@@ -178,7 +206,7 @@ export default function getBaseConfigFactory(homeDir) {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:0.14.0-dev.2',
+              image: 'dashpay/tenderdash:experimental',
             },
             p2p: {
               host: '0.0.0.0',
@@ -196,7 +224,8 @@ export default function getBaseConfigFactory(homeDir) {
               maxOpenConnections: 900,
             },
             pprof: {
-              enabled: false, port: 6060,
+              enabled: false,
+              port: 6060,
             },
             metrics: {
               enabled: false,
@@ -231,15 +260,20 @@ export default function getBaseConfigFactory(homeDir) {
               },
             },
             log: {
-              level: 'info', format: 'plain', path: null,
+              level: 'info',
+              format: 'plain',
+              path: null,
             },
             node: {
-              id: null, key: null,
+              id: null,
+              key: null,
             },
             genesis: {
               consensus_params: {
                 block: {
-                  max_bytes: '2097152', max_gas: '57631392000', time_iota_ms: '5000',
+                  max_bytes: '2097152',
+                  max_gas: '57631392000',
+                  time_iota_ms: '5000',
                 },
                 evidence: {
                   max_age: '100000',
@@ -323,7 +357,8 @@ export default function getBaseConfigFactory(homeDir) {
             },
           },
           api: {
-            enable: false, port: 9100,
+            enable: false,
+            port: 9100,
           },
         },
       },

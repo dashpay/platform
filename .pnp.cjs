@@ -8416,6 +8416,7 @@ const RAW_RUNTIME_STATE =
           ["ajv-formats", "virtual:e822c5b02ef2b3c5fb9c8d88d5e0ca208365bff76f80510f4ccf9b1de44e2078264bcb00d3cdd5e193c256e9ab81e27c34fcfb1ad3a0e8c1dc8fa0066c78c468#npm:2.1.1"],\
           ["awilix", "npm:4.3.4"],\
           ["begoo", "npm:2.0.2"],\
+          ["bs58", "npm:4.0.1"],\
           ["chai", "npm:4.3.10"],\
           ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
           ["chalk", "npm:4.1.2"],\

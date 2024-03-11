@@ -16,7 +16,7 @@ use crate::serialization::{
     PlatformSerializableWithPlatformVersion,
 };
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
-use platform_value::{Bytes32, Value};
+use platform_value::Value;
 use platform_version::TryIntoPlatformVersioned;
 
 /// The created data contract is a intermediate structure that can be consumed by a

@@ -1,11 +1,11 @@
 use crate::masternodes::MasternodeListItemWithUpdates;
 use crate::query::QueryStrategy;
 use crate::BlockHeight;
-use dashcore_rpc::dashcore::{self, Network, PrivateKey};
+use dashcore_rpc::dashcore::{Network, PrivateKey};
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
-use dpp::{NativeBlsModule, ProtocolError};
+use dpp::ProtocolError;
 
 use dpp::dashcore::secp256k1::SecretKey;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -34,7 +34,6 @@ use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use drive::query::DriveQuery;
-use drive_abci::abci::AbciApplication;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
@@ -44,7 +43,6 @@ use strategy_tests::Strategy;
 use strategy_tests::transitions::{create_state_transitions_for_identities, instant_asset_lock_proof_fixture};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::ops::AddAssign;
 use std::str::FromStr;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -59,6 +57,7 @@ use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
+use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 
 use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;
@@ -114,18 +113,6 @@ impl MasternodeListChangesStrategy {
             || self.changed_ip_masternodes.is_set()
     }
 
-    pub fn removed_any_masternode_types(&self) -> bool {
-        self.removed_masternodes.is_set() || self.removed_hpmns.is_set()
-    }
-
-    pub fn updated_any_masternode_types(&self) -> bool {
-        self.updated_masternodes.is_set() || self.updated_hpmns.is_set()
-    }
-
-    pub fn added_any_masternode_types(&self) -> bool {
-        self.new_masternodes.is_set() || self.new_hpmns.is_set()
-    }
-
     pub fn any_kind_of_update_is_set(&self) -> bool {
         self.updated_hpmns.is_set()
             || self.banned_hpmns.is_set()
@@ -138,8 +125,30 @@ impl MasternodeListChangesStrategy {
             || self.unbanned_masternodes.is_set()
             || self.changed_ip_masternodes.is_set()
     }
+
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
+    pub fn removed_any_masternode_types(&self) -> bool {
+        self.removed_masternodes.is_set() || self.removed_hpmns.is_set()
+    }
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
+    pub fn updated_any_masternode_types(&self) -> bool {
+        self.updated_masternodes.is_set() || self.updated_hpmns.is_set()
+    }
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
+    pub fn added_any_masternode_types(&self) -> bool {
+        self.new_masternodes.is_set() || self.new_hpmns.is_set()
+    }
 }
 
+#[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 pub enum StrategyMode {
     ProposerOnly,
     ProposerAndValidatorHashValidationOnly,
@@ -185,6 +194,9 @@ impl CoreHeightIncrease {
             }
         }
     }
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn average_core_height(&self, block_count: u64, initial_core_height: u32) -> u32 {
         match self {
             NoCoreHeightIncrease => initial_core_height,
@@ -198,6 +210,9 @@ impl CoreHeightIncrease {
         }
     }
 
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn add_events_if_hit(&mut self, core_height: u32, rng: &mut StdRng) -> u32 {
         match self {
             NoCoreHeightIncrease => 0,
@@ -313,6 +328,9 @@ impl NetworkStrategy {
     }
 
     // TODO: This belongs to `DocumentOp`
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn add_strategy_contracts_into_drive(
         &mut self,
         drive: &Drive,
@@ -347,8 +365,15 @@ impl NetworkStrategy {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
         let mut state_transitions = vec![];
-        if block_info.height == 1 && !self.strategy.start_identities.is_empty() {
-            state_transitions.append(&mut self.strategy.start_identities.clone());
+        if block_info.height == 1 && self.strategy.start_identities.0 > 0 {
+            let mut new_transitions = NetworkStrategy::create_identities_state_transitions(
+                self.strategy.start_identities.0.into(),
+                5,
+                signer,
+                rng,
+                platform_version,
+            );
+            state_transitions.append(&mut new_transitions);
         }
         let frequency = &self.strategy.identities_inserts;
         if frequency.check_hit(rng) {
@@ -466,6 +491,7 @@ impl NetworkStrategy {
                     &identity,
                     1, //key id 1 should always be a high or critical auth key in these tests
                     *identity_contract_nonce,
+                    0,
                     signer,
                     platform_version,
                     None,
@@ -554,6 +580,7 @@ impl NetworkStrategy {
                                     DocumentsBatchTransitionV0 {
                                         owner_id: identity.id(),
                                         transitions: vec![document_create_transition.into()],
+                                        user_fee_increase: 0,
                                         signature_public_key_id: 0,
                                         signature: BinaryData::default(),
                                     }
@@ -668,6 +695,7 @@ impl NetworkStrategy {
                                     DocumentsBatchTransitionV0 {
                                         owner_id: identity.id(),
                                         transitions: vec![document_create_transition.into()],
+                                        user_fee_increase: 0,
                                         signature_public_key_id: 0,
                                         signature: BinaryData::default(),
                                     }
@@ -766,6 +794,7 @@ impl NetworkStrategy {
                                 DocumentsBatchTransitionV0 {
                                     owner_id: identity.id,
                                     transitions: vec![document_delete_transition.into()],
+                                    user_fee_increase: 0,
                                     signature_public_key_id: 0,
                                     signature: BinaryData::default(),
                                 }
@@ -866,6 +895,7 @@ impl NetworkStrategy {
                                 DocumentsBatchTransitionV0 {
                                     owner_id: identity.id,
                                     transitions: vec![document_replace_transition.into()],
+                                    user_fee_increase: 0,
                                     signature_public_key_id: 0,
                                     signature: BinaryData::default(),
                                 }
@@ -1016,7 +1046,7 @@ impl NetworkStrategy {
         rng: &mut StdRng,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
         let mut finalize_block_operations = vec![];
-        let platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.load();
         let platform_version = platform_state
             .current_platform_version()
             .expect("expected platform version");
@@ -1108,6 +1138,7 @@ impl NetworkStrategy {
             identity,
             asset_lock_proof,
             secret_key.as_ref(),
+            0,
             platform_version,
             None,
         )
@@ -1129,7 +1160,7 @@ pub struct ValidatorVersionMigration {
 
 #[derive(Debug)]
 pub struct ChainExecutionOutcome<'a> {
-    pub abci_app: AbciApplication<'a, MockCoreRPCLike>,
+    pub abci_app: FullAbciApplication<'a, MockCoreRPCLike>,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
     pub proposers: Vec<MasternodeListItemWithUpdates>,

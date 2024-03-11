@@ -4,7 +4,6 @@ use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::{data_contract::DataContractFactory, platform_value, prelude::Identifier, ProtocolError};
 use wasm_bindgen::prelude::*;
 
-use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::utils::{ToSerdeJSONExt, WithJsError};
 
 use crate::data_contract::{DataContractCreateTransitionWasm, DataContractWasm};
@@ -28,18 +27,11 @@ impl From<DataContractFactoryWasm> for DataContractFactory {
 #[wasm_bindgen(js_class=DataContractFactory)]
 impl DataContractFactoryWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        protocol_version: u32,
-        external_entropy_generator_arg: Option<ExternalEntropyGenerator>,
-    ) -> DataContractFactoryWasm {
-        if let Some(external_entropy_generator) = external_entropy_generator_arg {
-            DataContractFactory::new(protocol_version)
-        } else {
-            DataContractFactory::new(protocol_version)
-        }
-        .with_js_error()
-        .expect("should create a factory")
-        .into()
+    pub fn new(protocol_version: u32) -> DataContractFactoryWasm {
+        DataContractFactory::new(protocol_version)
+            .with_js_error()
+            .expect("should create a factory")
+            .into()
     }
 
     #[wasm_bindgen(js_name=create)]

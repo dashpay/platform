@@ -26,22 +26,19 @@ impl DriveHighLevelDocumentOperationConverter for DocumentDeleteTransitionAction
 
         let identity_contract_nonce = base.identity_contract_nonce();
 
-        let mut drive_operations = vec![];
-        drive_operations.push(IdentityOperation(
-            IdentityOperationType::UpdateIdentityContractNonce {
+        Ok(vec![
+            IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
                 identity_id: owner_id.into_buffer(),
                 contract_id: data_contract_id.into_buffer(),
                 nonce: identity_contract_nonce,
-            },
-        ));
-        drive_operations.push(DocumentOperation(
-            DocumentOperationType::DeleteDocumentOfNamedTypeForContractId {
-                document_id: base.id().to_buffer(),
-                contract_id: base.data_contract_id().to_buffer(),
-                document_type_name: Cow::Owned(base.document_type_name_owned()),
-            },
-        ));
-
-        Ok(drive_operations)
+            }),
+            DocumentOperation(
+                DocumentOperationType::DeleteDocumentOfNamedTypeForContractId {
+                    document_id: base.id().to_buffer(),
+                    contract_id: base.data_contract_id().to_buffer(),
+                    document_type_name: Cow::Owned(base.document_type_name_owned()),
+                },
+            ),
+        ])
     }
 }

@@ -1,18 +1,13 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
+use dpp::validation::SimpleConsensusValidationResult;
 use drive::grovedb::TransactionArg;
-use drive::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
 use crate::error::Error;
 use crate::error::execution::ExecutionError;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::data_contract_update::identity_contract_nonce::v0::DataContractUpdateStateTransitionIdentityContractNonceV0;
-use crate::execution::validation::state_transition::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::processor::v0::{StateTransitionNonceValidationV0, StateTransitionStateValidationV0};
-use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use crate::rpc::core::CoreRPCLike;
+use crate::execution::validation::state_transition::processor::v0::{StateTransitionNonceValidationV0};
+use crate::platform_types::platform::{PlatformStateRef};
 
 pub(crate) mod v0;
 

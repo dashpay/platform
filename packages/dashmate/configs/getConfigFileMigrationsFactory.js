@@ -186,7 +186,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             if (defaultConfigs.has(name) && !options.platform.drive.tenderdash.metrics) {
-              options.platform.drive.tenderdash.metrics = defaultConfigs.get(name).get('platform.drive.tenderdash.metrics');
+              options.platform.drive.tenderdash.metrics = defaultConfigs.get(name)
+                .get('platform.drive.tenderdash.metrics');
             }
           });
         return configFile;
@@ -426,7 +427,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (defaultConfigs.has(name)) {
-              options.platform.drive.tenderdash.genesis = defaultConfigs.get(name).get('platform.drive.tenderdash.genesis');
+              options.platform.drive.tenderdash.genesis = defaultConfigs.get(name)
+                .get('platform.drive.tenderdash.genesis');
             }
             options.platform.dapi.api.docker.deploy = base.get('platform.dapi.api.docker.deploy');
 
@@ -437,7 +439,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               baseConfigName = 'testnet';
             }
 
-            options.platform.drive.abci.chainLock = defaultConfigs.get(baseConfigName).get('platform.drive.abci.chainLock');
+            options.platform.drive.abci.chainLock = defaultConfigs.get(baseConfigName)
+              .get('platform.drive.abci.chainLock');
           });
 
         return configFile;
@@ -457,6 +460,39 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             options.platform.drive.tenderdash.mempool.cacheSize = base.get('platform.drive.tenderdash.mempool.cacheSize');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.6': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            options.platform.drive.abci.tokioConsole = base.get('platform.drive.abci.tokioConsole');
+
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            options.platform.drive.tenderdash.docker.image = defaultConfig.get('platform.drive.tenderdash.docker.image');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.7': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (options.network === NETWORK_TESTNET && name !== 'base') {
+              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+            }
+
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            options.core.docker.image = defaultConfig.get('core.docker.image');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.8': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            options.core.docker.image = defaultConfig.get('core.docker.image');
           });
 
         return configFile;

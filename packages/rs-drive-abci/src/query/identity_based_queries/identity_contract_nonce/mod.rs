@@ -3,29 +3,21 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_identity_contract_nonce_request::Version;
-use dapi_grpc::platform::v0::GetIdentityContractNonceRequest;
-use dapi_grpc::Message;
-use dpp::check_validation_result_with_data;
-use dpp::validation::ValidationResult;
+use dapi_grpc::platform::v0::get_identity_contract_nonce_request::Version as RequestVersion;
+use dapi_grpc::platform::v0::get_identity_contract_nonce_response::Version as ResponseVersion;
+use dapi_grpc::platform::v0::{GetIdentityContractNonceRequest, GetIdentityContractNonceResponse};
 use dpp::version::PlatformVersion;
 
 mod v0;
 
 impl<C> Platform<C> {
     /// Querying of an identity by a public key hash
-    pub(in crate::query) fn query_identity_contract_nonce(
+    pub fn query_identity_contract_nonce(
         &self,
-        state: &PlatformState,
-        query_data: &[u8],
+        GetIdentityContractNonceRequest { version }: GetIdentityContractNonceRequest,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let GetIdentityContractNonceRequest { version } =
-            check_validation_result_with_data!(GetIdentityContractNonceRequest::decode(query_data)
-                .map_err(|e| {
-                    QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
-                }));
-
+    ) -> Result<QueryValidationResult<GetIdentityContractNonceResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::DecodingError(
@@ -41,7 +33,7 @@ impl<C> Platform<C> {
             .identity_contract_nonce;
 
         let feature_version = match &version {
-            Version::V0(_) => 0,
+            RequestVersion::V0(_) => 0,
         };
         if !feature_version_bounds.check_version(feature_version) {
             return Ok(QueryValidationResult::new_with_error(
@@ -55,12 +47,17 @@ impl<C> Platform<C> {
             ));
         }
         match version {
-            Version::V0(get_identity_contract_nonce_request) => self
-                .query_identity_contract_nonce_v0(
-                    state,
-                    get_identity_contract_nonce_request,
+            RequestVersion::V0(request_v0) => {
+                let result = self.query_identity_contract_nonce_v0(
+                    request_v0,
+                    platform_state,
                     platform_version,
-                ),
+                )?;
+
+                Ok(result.map(|response_v0| GetIdentityContractNonceResponse {
+                    version: Some(ResponseVersion::V0(response_v0)),
+                }))
+            }
         }
     }
 }

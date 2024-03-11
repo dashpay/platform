@@ -25,7 +25,8 @@ export default function getLocalConfigFactory(getBaseConfig) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:20.1.0-devpr5855.4d19698f', commandArgs: [],
+          image: 'dashpay/dashd:20.1.0',
+          commandArgs: [],
         },
         p2p: {
           port: 20001,
@@ -83,7 +84,8 @@ export default function getLocalConfigFactory(getBaseConfig) {
       network: NETWORK_LOCAL,
     };
 
-    return new Config('local', lodashMerge({}, getBaseConfig().getOptions(), options));
+    return new Config('local', lodashMerge({}, getBaseConfig()
+      .getOptions(), options));
   }
 
   return getLocalConfig;

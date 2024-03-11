@@ -1,13 +1,12 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_data_contract_request::GetDataContractRequestV0;
-use dapi_grpc::platform::v0::get_data_contract_response::GetDataContractResponseV0;
-use dapi_grpc::platform::v0::{get_data_contract_response, GetDataContractResponse, Proof};
-use dapi_grpc::Message;
+use dapi_grpc::platform::v0::get_data_contract_response::{
+    get_data_contract_response_v0, GetDataContractResponseV0,
+};
 use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
@@ -17,38 +16,28 @@ use dpp::version::PlatformVersion;
 impl<C> Platform<C> {
     pub(super) fn query_data_contract_v0(
         &self,
-        state: &PlatformState,
-        request: GetDataContractRequestV0,
+        GetDataContractRequestV0 { id, prove }: GetDataContractRequestV0,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let metadata = self.response_metadata_v0(state);
-        let quorum_type = self.config.validator_set_quorum_type() as u32;
-        let GetDataContractRequestV0 { id, prove } = request;
+    ) -> Result<QueryValidationResult<GetDataContractResponseV0>, Error> {
         let contract_id: Identifier =
             check_validation_result_with_data!(id.try_into().map_err(|_| {
                 QueryError::InvalidArgument(
                     "id must be a valid identifier (32 bytes long)".to_string(),
                 )
             }));
-        let response_data = if prove {
+
+        let response = if prove {
             let proof =
                 self.drive
                     .prove_contract(contract_id.into_buffer(), None, platform_version)?;
 
-            GetDataContractResponse {
-                version: Some(get_data_contract_response::Version::V0(GetDataContractResponseV0 {
-                    result: Some(get_data_contract_response::get_data_contract_response_v0::Result::Proof(Proof {
-                        grovedb_proof: proof,
-                        quorum_hash: state.last_committed_quorum_hash().to_vec(),
-                        quorum_type,
-                        block_id_hash: state.last_committed_block_id_hash().to_vec(),
-                        signature: state.last_committed_block_signature().to_vec(),
-                        round: state.last_committed_block_round(),
-                    })),
-                    metadata: Some(metadata),
-                })),
+            GetDataContractResponseV0 {
+                result: Some(get_data_contract_response_v0::Result::Proof(
+                    self.response_proof_v0(platform_state, proof),
+                )),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
-                .encode_to_vec()
         } else {
             let maybe_data_contract_fetch_info = self
                 .drive
@@ -71,14 +60,77 @@ impl<C> Platform<C> {
                 .serialize_to_bytes_with_platform_version(platform_version)
                 .map_err(Error::Protocol)?;
 
-            GetDataContractResponse {
-                version: Some(get_data_contract_response::Version::V0(GetDataContractResponseV0 {
-                    result: Some(get_data_contract_response::get_data_contract_response_v0::Result::DataContract(serialized_data_contract)),
-                    metadata: Some(metadata),
-                })),
+            GetDataContractResponseV0 {
+                result: Some(get_data_contract_response_v0::Result::DataContract(
+                    serialized_data_contract,
+                )),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
-                .encode_to_vec()
         };
-        Ok(QueryValidationResult::new_with_data(response_data))
+
+        Ok(QueryValidationResult::new_with_data(response))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::{assert_invalid_identifier, setup_platform};
+
+    #[test]
+    fn test_invalid_data_contract_id() {
+        let (platform, state, version) = setup_platform();
+
+        let request = GetDataContractRequestV0 {
+            id: vec![0; 8],
+            prove: false,
+        };
+
+        let result = platform.query_data_contract_v0(request, &state, version);
+
+        assert_invalid_identifier(result.unwrap());
+    }
+
+    #[test]
+    fn test_data_contract_not_found() {
+        let (platform, state, version) = setup_platform();
+
+        let id = vec![0; 32];
+        let request = GetDataContractRequestV0 {
+            id: id.clone(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_data_contract_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::NotFound(msg)] if msg.contains("data contract")
+        ));
+    }
+
+    #[test]
+    fn test_data_contract_absence_proof() {
+        let (platform, state, version) = setup_platform();
+
+        let id = vec![0; 32];
+        let request = GetDataContractRequestV0 {
+            id: id.clone(),
+            prove: true,
+        };
+
+        let validation_result = platform
+            .query_data_contract_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            validation_result.data,
+            Some(GetDataContractResponseV0 {
+                result: Some(get_data_contract_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
     }
 }

@@ -39,6 +39,4 @@ pub use noop::MockResponse;
 #[cfg(feature = "mocks")]
 pub use requests::MockResponse;
 #[cfg(feature = "mocks")]
-pub use requests::*;
-#[cfg(feature = "mocks")]
 pub use sdk::MockDashPlatformSdk;

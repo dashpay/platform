@@ -15,7 +15,9 @@ use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 
+use crate::prelude::UserFeeIncrease;
 use platform_value::{BinaryData, Identifier};
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
@@ -27,6 +29,7 @@ use serde::{Deserialize, Serialize};
 pub struct DocumentsBatchTransitionV0 {
     pub owner_id: Identifier,
     pub transitions: Vec<DocumentTransition>,
+    pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]

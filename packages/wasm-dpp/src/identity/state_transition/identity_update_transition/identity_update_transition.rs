@@ -27,7 +27,6 @@ use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
 use dpp::prelude::Revision;
 use dpp::serialization::PlatformSerializable;
-use dpp::serialization::ValueConvertible;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;

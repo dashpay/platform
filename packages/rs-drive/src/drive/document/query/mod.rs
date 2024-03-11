@@ -47,6 +47,8 @@ use grovedb::TransactionArg;
 use crate::drive::Drive;
 
 #[cfg(feature = "fixtures-and-mocks")]
+use crate::drive::verify::RootHash;
+#[cfg(feature = "fixtures-and-mocks")]
 use crate::error::query::QuerySyntaxError;
 #[cfg(feature = "fixtures-and-mocks")]
 use crate::error::Error;
@@ -289,7 +291,7 @@ impl Drive {
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
         protocol_version: Option<u32>,
-    ) -> Result<([u8; 32], Vec<Vec<u8>>, u64), Error> {
+    ) -> Result<(RootHash, Vec<Vec<u8>>, u64), Error> {
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
@@ -327,7 +329,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         protocol_version: Option<u32>,
-    ) -> Result<([u8; 32], Vec<Vec<u8>>), Error> {
+    ) -> Result<(RootHash, Vec<Vec<u8>>), Error> {
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let query = DriveQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
 

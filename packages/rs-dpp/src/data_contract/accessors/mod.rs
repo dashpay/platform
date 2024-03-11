@@ -72,6 +72,12 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
+    fn document_types_mut(&mut self) -> &mut BTreeMap<DocumentName, DocumentType> {
+        match self {
+            DataContract::V0(v0) => v0.document_types_mut(),
+        }
+    }
+
     fn metadata(&self) -> Option<&Metadata> {
         match self {
             DataContract::V0(v0) => v0.metadata(),

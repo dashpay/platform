@@ -8,7 +8,6 @@ mod document;
 mod identity;
 mod system;
 
-use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;
 use crate::state_transition_action::StateTransitionAction;
@@ -25,7 +24,7 @@ pub trait DriveHighLevelOperationConverter {
     ) -> Result<Vec<DriveOperation<'a>>, Error>;
 }
 
-impl<'s> DriveHighLevelOperationConverter for StateTransitionAction {
+impl DriveHighLevelOperationConverter for StateTransitionAction {
     fn into_high_level_drive_operations<'a>(
         self,
         epoch: &Epoch,

@@ -64,7 +64,6 @@ where
             state: block_platform_state,
             config: &self.config,
             core_rpc: &self.core_rpc,
-            block_info,
         };
 
         let mut processing_result = StateTransitionsProcessingResult::default();
@@ -251,8 +250,7 @@ where
 
                         StateTransitionExecutionResult::DriveAbciError(format!(
                             "{} {}",
-                            first_consensus_error.to_string(),
-                            payment_consensus_error.to_string()
+                            first_consensus_error, payment_consensus_error
                         ))
                     }
                 }

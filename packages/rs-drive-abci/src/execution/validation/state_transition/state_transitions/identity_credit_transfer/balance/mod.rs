@@ -1,10 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::validation::state_transition::identity_credit_transfer::balance::v0::IdentityCreditTransferTransitionBalanceValidationV0;
-use crate::execution::validation::state_transition::identity_credit_transfer::nonce::v0::IdentityCreditTransferTransitionIdentityNonceV0;
-use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionBalanceValidationV0, StateTransitionNonceValidationV0,
-};
+use crate::execution::validation::state_transition::processor::v0::StateTransitionBalanceValidationV0;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::PartialIdentity;
