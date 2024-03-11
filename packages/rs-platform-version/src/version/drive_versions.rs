@@ -343,9 +343,7 @@ pub struct DriveGroveBatchMethodVersions {
 pub struct DriveGroveApplyMethodVersions {
     pub grove_apply_operation: FeatureVersion,
     pub grove_apply_batch: FeatureVersion,
-    pub grove_apply_batch_with_add_costs: FeatureVersion,
     pub grove_apply_partial_batch: FeatureVersion,
-    pub grove_apply_partial_batch_with_add_costs: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
