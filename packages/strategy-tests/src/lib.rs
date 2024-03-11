@@ -3,6 +3,8 @@ use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
 use crate::operations::{
     DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
 };
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::PrivateKey;
 use dpp::data_contract::created_data_contract::CreatedDataContract;
@@ -30,6 +32,8 @@ use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tracing::error;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use bincode::{Decode, Encode};
@@ -274,6 +278,33 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
             signer,
         })
     }
+}
+
+#[derive(Serialize, Deserialize)]
+struct StrategyJsonWrapper {
+    strategy_base64: String,
+}
+
+pub fn serialize_strategy_to_json(strategy: &Strategy, platform_version: &PlatformVersion) -> Result<String, ProtocolError> {
+    let binary_data = strategy.serialize_to_bytes_with_platform_version(platform_version)
+        .map_err(|e| ProtocolError::PlatformSerializationError(format!("Failed to serialize strategy: {}", e)))?;
+
+    let base64_encoded = STANDARD.encode(&binary_data);
+    let json = json!({ "strategy_base64": base64_encoded });
+
+    serde_json::to_string(&json)
+        .map_err(|e| ProtocolError::PlatformSerializationError(format!("Failed to serialize JSON: {}", e)))
+}
+
+pub fn deserialize_strategy_from_json(json_str: &str, platform_version: &PlatformVersion) -> Result<Strategy, ProtocolError> {
+    let wrapper: StrategyJsonWrapper = serde_json::from_str(json_str)
+        .map_err(|e| ProtocolError::ParsingJsonError(e))?;
+
+    let binary_data = STANDARD.decode(&wrapper.strategy_base64)
+        .map_err(|e| ProtocolError::PlatformDeserializationError(format!("Failed to decode Base64 string: {}", e)))?;
+
+    Strategy::versioned_deserialize(&binary_data, true, platform_version)
+        .map_err(|e| ProtocolError::PlatformDeserializationError(format!("Failed to deserialize strategy: {}", e)))
 }
 
 impl Strategy {
