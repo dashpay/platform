@@ -1,6 +1,6 @@
+mod advanced_structure;
 mod identity_contract_nonce;
 mod state;
-mod structure;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::ConsensusValidationResult;

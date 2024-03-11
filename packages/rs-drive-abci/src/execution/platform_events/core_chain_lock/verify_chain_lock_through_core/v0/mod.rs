@@ -1,7 +1,7 @@
 use crate::error::Error;
+use crate::execution::platform_events::core_chain_lock::make_sure_core_is_synced_to_chain_lock::CoreSyncStatus;
 use dpp::dashcore::ChainLock;
 use dpp::version::PlatformVersion;
-use crate::execution::platform_events::core_chain_lock::make_sure_core_is_synced_to_chain_lock::CoreSyncStatus;
 
 use crate::platform_types::platform::Platform;
 

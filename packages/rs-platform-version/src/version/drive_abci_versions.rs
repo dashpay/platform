@@ -121,7 +121,7 @@ pub struct DriveAbciValidationDataTriggerVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciStateTransitionValidationVersion {
-    pub base_structure: FeatureVersion,
+    pub basic_structure: OptionalFeatureVersion,
     pub advanced_structure: OptionalFeatureVersion,
     pub identity_signatures: OptionalFeatureVersion,
     pub balance: OptionalFeatureVersion,

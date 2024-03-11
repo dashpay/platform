@@ -594,7 +594,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     validate_unique_identity_public_key_hashes_in_state: 0,
                 },
                 identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
-                    base_structure: 0,
+                    basic_structure: Some(0),
                     advanced_structure: None,
                     identity_signatures: Some(0),
                     balance: None,
@@ -603,7 +603,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     transform_into_action: 0,
                 },
                 identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
-                    base_structure: 0,
+                    basic_structure: Some(0),
                     advanced_structure: None,
                     identity_signatures: Some(0),
                     balance: None,
@@ -612,7 +612,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     transform_into_action: 0,
                 },
                 identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion {
-                    base_structure: 0,
+                    basic_structure: Some(0),
                     advanced_structure: None,
                     identity_signatures: Some(0),
                     balance: None,
@@ -622,7 +622,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
                 identity_credit_withdrawal_state_transition:
                     DriveAbciStateTransitionValidationVersion {
-                        base_structure: 0,
+                        basic_structure: Some(0),
                         advanced_structure: None,
                         identity_signatures: None,
                         balance: Some(0),
@@ -632,7 +632,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     },
                 identity_credit_transfer_state_transition:
                     DriveAbciStateTransitionValidationVersion {
-                        base_structure: 0,
+                        basic_structure: Some(0),
                         advanced_structure: None,
                         identity_signatures: None,
                         balance: Some(0),
@@ -641,8 +641,8 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                         transform_into_action: 0,
                     },
                 contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
-                    base_structure: 0,
-                    advanced_structure: None,
+                    basic_structure: Some(0),
+                    advanced_structure: Some(0),
                     identity_signatures: None,
                     balance: None,
                     nonce: Some(0),
@@ -650,8 +650,8 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     transform_into_action: 0,
                 },
                 contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
-                    base_structure: 0,
-                    advanced_structure: None,
+                    basic_structure: None,
+                    advanced_structure: Some(0),
                     identity_signatures: None,
                     balance: None,
                     nonce: Some(0),

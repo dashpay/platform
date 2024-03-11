@@ -152,7 +152,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
         }
     }
 
-    fn requires_advance_structure_validation(&self) -> bool {
+    fn requires_advance_structure_validation_from_state(&self) -> bool {
         true
     }
 }

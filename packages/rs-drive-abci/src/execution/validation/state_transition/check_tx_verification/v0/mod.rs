@@ -74,7 +74,8 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     );
                 }
 
-                let action = if state_transition.requires_advance_structure_validation() {
+                let action = if state_transition.requires_advance_structure_validation_from_state()
+                {
                     let state_transition_action_result = state_transition.transform_into_action(
                         platform,
                         true,

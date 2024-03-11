@@ -32,17 +32,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let mut state_transition_execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
-    // We start with basic structure validation, this is structure validation that does not require
-    // state.
-    let consensus_result = state_transition.validate_basic_structure(platform_version)?;
-
-    if !consensus_result.is_valid() {
-        return Ok(
-            ConsensusValidationResult::<ExecutionEvent>::new_with_errors(consensus_result.errors),
-        );
-    }
-
-    let action = if state_transition.requires_advance_structure_validation() {
+    let action = if state_transition.requires_state_to_validate_identity_and_signatures() {
         let state_transition_action_result = state_transition.transform_into_action(
             platform,
             true,
@@ -61,17 +51,61 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         None
     };
 
-    // Validating structure
-    let result = state_transition.validate_advanced_structure_from_state(
-        &platform.into(),
+    // Validating signatures
+    let result = state_transition.validate_identity_and_signatures(
+        platform.drive,
         action.as_ref(),
+        transaction,
+        &mut state_transition_execution_context,
         platform_version,
     )?;
+
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
     }
 
-    let action = if state_transition.requires_state_to_validate_identity_and_signatures() {
+    let mut maybe_identity = result.into_data()?;
+
+    // Validating identity contract nonce, this must happen after validating the signature
+    let result = state_transition.validate_nonces(
+        &platform.into(),
+        platform.state.last_block_info(),
+        transaction,
+        platform_version,
+    )?;
+
+    if !result.is_valid() {
+        return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+    }
+
+    // We validate basic structure validation after verifying the identity,
+    // this is structure validation that does not require state and is already checked on check_tx
+    let consensus_result = state_transition.validate_basic_structure(platform_version)?;
+
+    if !consensus_result.is_valid() {
+        return Ok(
+            ConsensusValidationResult::<ExecutionEvent>::new_with_errors(consensus_result.errors),
+        );
+    }
+
+    // Next we have advanced structure validation, this is structure validation that does not require
+    // state but isn't checked on check_tx. If advanced structure fails identity nonces or identity
+    // contract nonces will be bumped
+    let consensus_result = state_transition.validate_advanced_structure(platform_version)?;
+
+    if !consensus_result.is_valid() {
+        return consensus_result.map_result(|action| {
+            ExecutionEvent::create_from_state_transition_action(
+                action,
+                maybe_identity,
+                platform.state.last_committed_block_epoch_ref(),
+                state_transition_execution_context,
+                platform_version,
+            )
+        });
+    }
+
+    let action = if state_transition.requires_advance_structure_validation_from_state() {
         if let Some(action) = action {
             Some(action)
         } else {
@@ -94,36 +128,20 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         None
     };
 
-    // Validating signatures
-    let result = state_transition.validate_identity_and_signatures(
-        platform.drive,
+    // Validating structure
+    let result = state_transition.validate_advanced_structure_from_state(
+        &platform.into(),
         action.as_ref(),
-        transaction,
-        &mut state_transition_execution_context,
         platform_version,
     )?;
-
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
     }
 
-    let mut maybe_identity = result.into_data()?;
-
-    // Validating identity contract nonce, this must happen after validating the signature
+    // Validating that we have sufficient balance for a transfer or withdrawal,
+    // this must happen after validating the signature
     let result = state_transition.validate_balance(
         maybe_identity.as_mut(),
-        &platform.into(),
-        platform.state.last_block_info(),
-        transaction,
-        platform_version,
-    )?;
-
-    if !result.is_valid() {
-        return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
-    }
-
-    // Validating identity contract nonce, this must happen after validating the signature
-    let result = state_transition.validate_nonces(
         &platform.into(),
         platform.state.last_block_info(),
         transaction,
@@ -204,6 +222,26 @@ pub(crate) trait StateTransitionBasicStructureValidationV0 {
 }
 
 /// A trait for validating state transitions within a blockchain.
+/// The advanced structure validation should always happen in a block
+/// and not in check_tx
+pub(crate) trait StateTransitionAdvancedStructureValidationV0 {
+    /// Validates the structure of a transaction by checking its basic elements.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform` - A reference to the platform state ref.
+    /// * `platform_version` - The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<SimpleConsensusValidationResult, Error>` - A result with either a SimpleConsensusValidationResult or an Error.
+    fn validate_advanced_structure(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+}
+
+/// A trait for validating state transitions within a blockchain.
 pub(crate) trait StateTransitionNonceValidationV0 {
     /// Validates the structure of a transaction by checking its basic elements.
     ///
@@ -244,7 +282,7 @@ pub(crate) trait StateTransitionStructureKnownInStateValidationV0 {
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
     /// This means we should transform into the action before validation of the structure
-    fn requires_advance_structure_validation(&self) -> bool {
+    fn requires_advance_structure_validation_from_state(&self) -> bool {
         false
     }
 }
@@ -311,8 +349,9 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
             StateTransition::DataContractCreate(st) => {
                 st.validate_basic_structure(platform_version)
             }
-            StateTransition::DataContractUpdate(st) => {
-                st.validate_basic_structure(platform_version)
+            StateTransition::DataContractUpdate(_) => {
+                // no basic structure validation
+                Ok(SimpleConsensusValidationResult::new())
             }
             StateTransition::IdentityCreate(st) => st.validate_basic_structure(platform_version),
             StateTransition::IdentityUpdate(st) => st.validate_basic_structure(platform_version),
@@ -381,6 +420,23 @@ impl StateTransitionBalanceValidationV0 for StateTransition {
     }
 }
 
+impl StateTransitionAdvancedStructureValidationV0 for StateTransition {
+    fn validate_advanced_structure(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        match self {
+            StateTransition::DataContractCreate(st) => {
+                st.validate_advanced_structure(platform_version)
+            }
+            StateTransition::DataContractUpdate(st) => {
+                st.validate_advanced_structure(platform_version)
+            }
+            _ => Ok(ConsensusValidationResult::<StateTransitionAction>::new()),
+        }
+    }
+}
+
 impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
     fn validate_advanced_structure_from_state(
         &self,
@@ -397,7 +453,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
     }
 
     /// This means we should transform into the action before validation of the structure
-    fn requires_advance_structure_validation(&self) -> bool {
+    fn requires_advance_structure_validation_from_state(&self) -> bool {
         matches!(self, StateTransition::DocumentsBatch(_))
     }
 }

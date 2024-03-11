@@ -62,13 +62,17 @@ impl StateTransitionBasicStructureValidationV0 for IdentityCreateTransition {
             .validation_and_processing
             .state_transitions
             .identity_create_state_transition
-            .base_structure
+            .basic_structure
         {
-            0 => self.validate_base_structure_v0(platform_version),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+            Some(0) => self.validate_base_structure_v0(platform_version),
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create transition: validate_basic_structure".to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+            None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                method: "identity create transition: validate_basic_structure".to_string(),
+                known_versions: vec![0],
             })),
         }
     }
