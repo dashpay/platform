@@ -23,6 +23,7 @@ use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::ValidationMode;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 
@@ -30,7 +31,7 @@ impl StateTransitionActionTransformerV0 for IdentityCreateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        _validate: bool,
+        _validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -83,6 +84,7 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
         &self,
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
+        _validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {

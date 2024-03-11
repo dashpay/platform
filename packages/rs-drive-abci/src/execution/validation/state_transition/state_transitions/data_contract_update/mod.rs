@@ -16,6 +16,7 @@ use drive::state_transition_action::StateTransitionAction;
 
 use crate::execution::validation::state_transition::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
@@ -23,7 +24,7 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        _validate: bool,
+        _validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -132,6 +133,7 @@ mod tests {
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
         use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+        use crate::execution::validation::state_transition::ValidationMode;
         use dpp::version::TryFromPlatformVersioned;
         use platform_version::version::LATEST_PLATFORM_VERSION;
         use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
@@ -197,7 +199,13 @@ mod tests {
                     .expect("expected a platform version");
 
             let result = DataContractUpdateTransition::V0(state_transition)
-                .validate_state(None, &platform_ref, &mut execution_context, None)
+                .validate_state(
+                    None,
+                    &platform_ref,
+                    ValidationMode::Validator,
+                    &mut execution_context,
+                    None,
+                )
                 .expect("state transition to be validated");
 
             assert!(!result.is_valid());
@@ -278,7 +286,13 @@ mod tests {
                     .expect("expected a platform version");
 
             let result = DataContractUpdateTransition::V0(state_transition)
-                .validate_state(None, &platform_ref, &mut execution_context, None)
+                .validate_state(
+                    None,
+                    &platform_ref,
+                    ValidationMode::Validator,
+                    &mut execution_context,
+                    None,
+                )
                 .expect("state transition to be validated");
 
             assert!(result.is_valid());
@@ -428,7 +442,13 @@ mod tests {
                     .expect("expected a platform version");
 
             let result = state_transition
-                .validate_state(None, &platform_ref, &mut execution_context, None)
+                .validate_state(
+                    None,
+                    &platform_ref,
+                    ValidationMode::Validator,
+                    &mut execution_context,
+                    None,
+                )
                 .expect("state transition to be validated");
 
             assert!(!result.is_valid());

@@ -15,6 +15,7 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::execution::validation::state_transition::processor::v0::{StateTransitionBalanceValidationV0, StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0, StateTransitionSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0};
+use crate::execution::validation::state_transition::ValidationMode;
 
 /// A trait for validating state transitions within a blockchain.
 pub(crate) trait StateTransitionCheckTxValidationV0 {
@@ -78,7 +79,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 {
                     let state_transition_action_result = state_transition.transform_into_action(
                         platform,
-                        true,
+                        ValidationMode::CheckTx,
                         &mut state_transition_execution_context,
                         None,
                     )?;
@@ -121,7 +122,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         let state_transition_action_result = state_transition
                             .transform_into_action(
                                 platform,
-                                true,
+                                ValidationMode::CheckTx,
                                 &mut state_transition_execution_context,
                                 None,
                             )?;
@@ -177,7 +178,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 } else {
                     let state_transition_action_result = state_transition.transform_into_action(
                         platform,
-                        true,
+                        ValidationMode::CheckTx,
                         &mut state_transition_execution_context,
                         None,
                     )?;
@@ -231,7 +232,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
 
                 let state_transition_action_result = state_transition.transform_into_action(
                     platform,
-                    true,
+                    ValidationMode::RecheckTx,
                     &mut state_transition_execution_context,
                     None,
                 )?;

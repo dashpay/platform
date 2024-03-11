@@ -22,6 +22,7 @@ use crate::execution::validation::state_transition::common::validate_state_trans
 use crate::execution::validation::state_transition::state_transitions::identity_update::identity_and_signatures::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_create::identity_and_signatures::v0::IdentityCreateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_top_up::identity_retrieval::v0::IdentityTopUpStateTransitionIdentityRetrievalV0;
+use crate::execution::validation::state_transition::ValidationMode;
 
 pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
@@ -35,7 +36,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let action = if state_transition.requires_state_to_validate_identity_and_signatures() {
         let state_transition_action_result = state_transition.transform_into_action(
             platform,
-            true,
+            ValidationMode::Validator,
             &mut state_transition_execution_context,
             transaction,
         )?;
@@ -111,7 +112,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         } else {
             let state_transition_action_result = state_transition.transform_into_action(
                 platform,
-                true,
+                ValidationMode::Validator,
                 &mut state_transition_execution_context,
                 transaction,
             )?;
@@ -156,6 +157,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let result = state_transition.validate_state(
         action,
         platform,
+        ValidationMode::Validator,
         &mut state_transition_execution_context,
         transaction,
     )?;
@@ -335,6 +337,7 @@ pub(crate) trait StateTransitionStateValidationV0:
         &self,
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
+        validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -613,36 +616,37 @@ impl StateTransitionStateValidationV0 for StateTransition {
         &self,
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
+        validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
             // The replay attack is prevented by checking if a data contract exists with this id first
             StateTransition::DataContractCreate(st) => {
-                st.validate_state(action, platform, execution_context, tx)
+                st.validate_state(action, platform, validation_mode, execution_context, tx)
             }
             // The replay attack is prevented by identity data contract nonce
             StateTransition::DataContractUpdate(st) => {
-                st.validate_state(action, platform, execution_context, tx)
+                st.validate_state(action, platform, validation_mode, execution_context, tx)
             }
             StateTransition::IdentityCreate(st) => {
-                st.validate_state(action, platform, execution_context, tx)
+                st.validate_state(action, platform, validation_mode, execution_context, tx)
             }
             StateTransition::IdentityUpdate(st) => {
-                st.validate_state(action, platform, execution_context, tx)
+                st.validate_state(action, platform, validation_mode, execution_context, tx)
             }
             StateTransition::IdentityTopUp(st) => {
-                st.validate_state(action, platform, execution_context, tx)
+                st.validate_state(action, platform, validation_mode, execution_context, tx)
             }
             StateTransition::IdentityCreditWithdrawal(st) => {
-                st.validate_state(action, platform, execution_context, tx)
+                st.validate_state(action, platform, validation_mode, execution_context, tx)
             }
             // The replay attack is prevented by identity data contract nonce
             StateTransition::DocumentsBatch(st) => {
-                st.validate_state(action, platform, execution_context, tx)
+                st.validate_state(action, platform, validation_mode, execution_context, tx)
             }
             StateTransition::IdentityCreditTransfer(st) => {
-                st.validate_state(action, platform, execution_context, tx)
+                st.validate_state(action, platform, validation_mode, execution_context, tx)
             }
         }
     }
