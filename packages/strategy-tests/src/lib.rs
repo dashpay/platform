@@ -64,9 +64,7 @@ pub mod transitions;
 ///
 /// - `operations`: A list of `Operation`s which define individual tasks or actions that are part of the strategy. Operations could encompass a range of blockchain-related actions like transfers, state changes, contract creations, etc.
 ///
-/// - `start_identities`: A list of tuples representing the starting state of identities. Each tuple contains:
-///   1. `Identity`: The initial identity state.
-///   2. `StateTransition`: The state transition that led to the current state of the identity.
+/// - `start_identities`: An instance of StartIdentities, which specifies the number of identities to register on the first block of the strategy, along with number of keys per identity and starting balance of each identity.
 ///
 /// - `identities_inserts`: Defines the frequency distribution of identity inserts. `Frequency` might encapsulate statistical data like mean, median, variance, etc., for understanding or predicting the frequency of identity insertions.
 ///
@@ -105,6 +103,7 @@ pub struct StrategyConfig {
     pub number_of_blocks: u64,
 }
 
+/// Identities to register on the first block of the strategy
 #[derive(Clone, Debug, PartialEq, Default, Encode, Decode)]
 pub struct StartIdentities {
     pub number_of_identities: u8,
