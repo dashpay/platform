@@ -365,9 +365,9 @@ impl NetworkStrategy {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
         let mut state_transitions = vec![];
-        if block_info.height == 1 && self.strategy.start_identities.0 > 0 {
+        if block_info.height == 1 && self.strategy.start_identities.number_of_identities > 0 {
             let mut new_transitions = NetworkStrategy::create_identities_state_transitions(
-                self.strategy.start_identities.0.into(),
+                self.strategy.start_identities.number_of_identities.into(),
                 5,
                 signer,
                 rng,
