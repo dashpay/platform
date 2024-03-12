@@ -1,9 +1,8 @@
-const { BytesValue } = require('google-protobuf/google/protobuf/wrappers_pb');
 const {
   v0: {
     PlatformPromiseClient,
-    GetIdentitiesByPublicKeyHashesRequest,
-    GetIdentitiesByPublicKeyHashesResponse,
+    GetIdentityByPublicKeyHashRequest,
+    GetIdentityByPublicKeyHashResponse,
     ResponseMetadata,
     Proof: ProofResponse,
   },
@@ -13,14 +12,14 @@ const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdent
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
 
-const getIdentitiesByPublicKeyHashesFactory = require(
-  '../../../../../lib/methods/platform/getIdentitiesByPublicKeyHashes/getIdentitiesByPublicKeyHashesFactory',
+const getIdentityByPublicKeyHashFactory = require(
+  '../../../../../lib/methods/platform/getIdentityByPublicKeyHash/getIdentityByPublicKeyHashFactory',
 );
 const Proof = require('../../../../../lib/methods/platform/response/Proof');
 
-describe('getIdentitiesByPublicKeyHashesFactory', () => {
+describe('getIdentityByPublicKeyHashFactory', () => {
   let grpcTransportMock;
-  let getIdentitiesByPublicKeyHashes;
+  let getIdentityByPublicKeyHash;
   let options;
   let response;
   let identityFixture;
@@ -41,21 +40,14 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     const {
-      IdentitiesByPublicKeyHashes,
-      PublicKeyHashIdentityEntry,
-      GetIdentitiesByPublicKeyHashesResponseV0,
-    } = GetIdentitiesByPublicKeyHashesResponse;
+      GetIdentityByPublicKeyHashResponseV0,
+    } = GetIdentityByPublicKeyHashResponse;
 
-    response = new GetIdentitiesByPublicKeyHashesResponse();
+    response = new GetIdentityByPublicKeyHashResponse();
     response.setV0(
-      new GetIdentitiesByPublicKeyHashesResponseV0().setIdentities(
-        new IdentitiesByPublicKeyHashes()
-          .setIdentityEntriesList([
-            new PublicKeyHashIdentityEntry()
-              .setPublicKeyHash(publicKeyHash)
-              .setValue(new BytesValue().setValue(identityFixture.toBuffer())),
-          ]),
-      ).setMetadata(metadata),
+      new GetIdentityByPublicKeyHashResponseV0()
+        .setIdentity(identityFixture.toBuffer())
+        .setMetadata(metadata),
     );
 
     proofResponse = new ProofResponse();
@@ -75,27 +67,27 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
       timeout: 1000,
     };
 
-    getIdentitiesByPublicKeyHashes = getIdentitiesByPublicKeyHashesFactory(grpcTransportMock);
+    getIdentityByPublicKeyHash = getIdentityByPublicKeyHashFactory(grpcTransportMock);
   });
 
-  it('should return public key hashes to identity map', async () => {
-    const result = await getIdentitiesByPublicKeyHashes([publicKeyHash], options);
+  it('should return identity', async () => {
+    const result = await getIdentityByPublicKeyHash(publicKeyHash, options);
 
-    const { GetIdentitiesByPublicKeyHashesRequestV0 } = GetIdentitiesByPublicKeyHashesRequest;
-    const request = new GetIdentitiesByPublicKeyHashesRequest();
+    const { GetIdentityByPublicKeyHashRequestV0 } = GetIdentityByPublicKeyHashRequest;
+    const request = new GetIdentityByPublicKeyHashRequest();
     request.setV0(
-      new GetIdentitiesByPublicKeyHashesRequestV0()
-        .setPublicKeyHashesList([publicKeyHash])
+      new GetIdentityByPublicKeyHashRequestV0()
+        .setPublicKeyHash(publicKeyHash)
         .setProve(false),
     );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
-      'getIdentitiesByPublicKeyHashes',
+      'getIdentityByPublicKeyHash',
       request,
       options,
     );
-    expect(result.getIdentities()).to.have.deep.equal([identityFixture.toBuffer()]);
+    expect(result.getIdentity()).to.have.deep.equal(identityFixture.toBuffer());
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
     expect(result.getProof()).to.equal(undefined);
   });
@@ -104,23 +96,23 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
     options.prove = true;
     response.getV0().setProof(proofResponse);
 
-    const result = await getIdentitiesByPublicKeyHashes([publicKeyHash], options);
+    const result = await getIdentityByPublicKeyHash(publicKeyHash, options);
 
-    const { GetIdentitiesByPublicKeyHashesRequestV0 } = GetIdentitiesByPublicKeyHashesRequest;
-    const request = new GetIdentitiesByPublicKeyHashesRequest();
+    const { GetIdentityByPublicKeyHashRequestV0 } = GetIdentityByPublicKeyHashRequest;
+    const request = new GetIdentityByPublicKeyHashRequest();
     request.setV0(
-      new GetIdentitiesByPublicKeyHashesRequestV0()
-        .setPublicKeyHashesList([publicKeyHash])
+      new GetIdentityByPublicKeyHashRequestV0()
+        .setPublicKeyHash(publicKeyHash)
         .setProve(true),
     );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
-      'getIdentitiesByPublicKeyHashes',
+      'getIdentityByPublicKeyHash',
       request,
       options,
     );
-    expect(result.getIdentities()).to.have.deep.members([]);
+    expect(result.getIdentity()).to.deep.equal(Buffer.alloc(0));
 
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
 
@@ -141,23 +133,23 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
 
     grpcTransportMock.request.throws(error);
 
-    const { GetIdentitiesByPublicKeyHashesRequestV0 } = GetIdentitiesByPublicKeyHashesRequest;
-    const request = new GetIdentitiesByPublicKeyHashesRequest();
+    const { GetIdentityByPublicKeyHashRequestV0 } = GetIdentityByPublicKeyHashRequest;
+    const request = new GetIdentityByPublicKeyHashRequest();
     request.setV0(
-      new GetIdentitiesByPublicKeyHashesRequestV0()
-        .setPublicKeyHashesList([publicKeyHash])
+      new GetIdentityByPublicKeyHashRequestV0()
+        .setPublicKeyHash(publicKeyHash)
         .setProve(false),
     );
 
     try {
-      await getIdentitiesByPublicKeyHashes([publicKeyHash], options);
+      await getIdentityByPublicKeyHash(publicKeyHash, options);
 
       expect.fail('should throw unknown error');
     } catch (e) {
       expect(e).to.deep.equal(error);
       expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
         PlatformPromiseClient,
-        'getIdentitiesByPublicKeyHashes',
+        'getIdentityByPublicKeyHash',
         request,
         options,
       );
