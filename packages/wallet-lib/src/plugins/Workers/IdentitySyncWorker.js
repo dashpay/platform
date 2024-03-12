@@ -1,4 +1,5 @@
 const { default: loadDpp, Identity } = require('@dashevo/wasm-dpp');
+const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 const Worker = require('../Worker');
 
@@ -68,25 +69,27 @@ class IdentitySyncWorker extends Worker {
       const { privateKey } = this.identities.getIdentityHDKeyByIndex(index, 0);
       const publicKey = privateKey.toPublicKey();
 
-      console.log({
-        hash: publicKey.hash,
-      });
-      // eslint-disable-next-line no-await-in-loop
-      const identityBuffer = await this.transport.getIdentityByPublicKeyHash(
-        publicKey.hash,
-      );
+      let identityBuffer;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        identityBuffer = await this.transport.getIdentityByPublicKeyHash(
+          publicKey.hash,
+        );
+      } catch (e) {
+        // if identity is not preset then increment gap count
+        // and stop sync if gap limit is reached
+        if (e.code === GrpcErrorCodes.NOT_FOUND) {
+          gapCount += 1;
 
-      // if identity is not preset then increment gap count
-      // and stop sync if gap limit is reached
-      if (identityBuffer.length === 0) {
-        gapCount += 1;
+          if (gapCount >= this.gapLimit) {
+            break;
+          }
 
-        if (gapCount >= this.gapLimit) {
-          break;
+          // eslint-disable-next-line no-continue
+          continue;
+        } else {
+          throw e;
         }
-
-        // eslint-disable-next-line no-continue
-        continue;
       }
 
       // If it's not an undefined and not a buffer or Identifier (which inherits Buffer),

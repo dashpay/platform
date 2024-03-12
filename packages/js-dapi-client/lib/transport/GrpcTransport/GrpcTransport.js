@@ -1,3 +1,4 @@
+const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const logger = require('../../logger');
 
 const MaxRetriesReachedError = require('../errors/response/MaxRetriesReachedError');
@@ -81,7 +82,12 @@ class GrpcTransport {
     } catch (error) {
       this.lastUsedAddress = address;
 
-      this.logger.error(`GRPC Request ${method} to ${address.toString()} failed with error: ${error.message}`);
+      // Show NOT_FOUND errors only in debug mode
+      if (error.code !== GrpcErrorCodes.NOT_FOUND) {
+        this.logger.error(`GRPC Request ${method} to ${address.toString()} failed with error: ${error.message}`);
+      } else {
+        this.logger.debug(`GRPC Request ${method} to ${address.toString()} failed with error: ${error.message}`);
+      }
 
       // for unknown errors
       if (error.code === undefined) {
