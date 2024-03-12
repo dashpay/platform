@@ -88,6 +88,9 @@ impl ErrorWithCode for BasicError {
             Self::ContractError(DataContractError::CorruptedSerialization(_)) => 1091,
             Self::ContractError(DataContractError::CorruptedCodeExecution(_)) => 1092,
             Self::ContractError(DataContractError::JsonSchema(_)) => 1093,
+            Self::ContractError(DataContractError::InvalidURI(_)) => 1094,
+            Self::ContractError(DataContractError::KeyWrongBounds(_)) => 1095,
+            Self::ContractError(DataContractError::KeyValueMustExist(_)) => 1096,
 
             // Document
             Self::DataContractNotPresentError { .. } => 1018,

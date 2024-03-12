@@ -45,14 +45,16 @@ pub enum DocumentPropertyType {
 }
 
 impl DocumentPropertyType {
-    pub fn try_from_name(name: &str) -> Result<Self, ProtocolError> {
+    pub fn try_from_name(name: &str) -> Result<Self, DataContractError> {
         match name {
             "integer" => Ok(DocumentPropertyType::Integer),
             "number" => Ok(DocumentPropertyType::Number),
             "boolean" => Ok(DocumentPropertyType::Boolean),
             "date" => Ok(DocumentPropertyType::Date),
             "identifier" => Ok(DocumentPropertyType::Identifier),
-            _ => Err(DataContractError::ValueWrongType("invalid type".to_string()).into()),
+            _ => Err(DataContractError::ValueWrongType(
+                "invalid type".to_string(),
+            )),
         }
     }
 

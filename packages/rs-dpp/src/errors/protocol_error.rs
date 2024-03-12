@@ -100,9 +100,6 @@ pub enum ProtocolError {
     InvalidStateTransitionType(String),
 
     #[error(transparent)]
-    StructureError(#[from] StructureError),
-
-    #[error(transparent)]
     PlatformVersionError(#[from] PlatformVersionError),
 
     #[error(transparent)]
@@ -213,6 +210,10 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     InvalidVectorSizeError(InvalidVectorSizeError),
+
+    /// Invalid CBOR error
+    #[error("invalid cbor error: {0}")]
+    InvalidCBOR(String),
 }
 
 impl From<&str> for ProtocolError {

@@ -30,7 +30,7 @@ use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesE
 #[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;
 use crate::data_contract::document_type::{property_names, DocumentType};
-use crate::data_contract::errors::{DataContractError, StructureError};
+use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::identity::SecurityLevel;
 use crate::util::json_schema::resolve_uri;
@@ -129,6 +129,7 @@ impl DocumentTypeV0 {
             }
         }
 
+        // This has already been validated, but we leave the map_err here for consistency
         let schema_map = schema.to_map().map_err(|err| {
             ProtocolError::ConsensusError(
                 ConsensusError::BasicError(BasicError::ContractError(
@@ -404,19 +405,17 @@ impl DocumentTypeV0 {
             .unwrap_or(SecurityLevel::HIGH);
 
         #[cfg(feature = "validation")]
-        if validate {
-            if security_level_requirement == SecurityLevel::MASTER {
-                return Err(ConsensusError::BasicError(
-                    BasicError::InvalidDocumentTypeRequiredSecurityLevelError(
-                        InvalidDocumentTypeRequiredSecurityLevelError::new(
-                            security_level_requirement,
-                            data_contract_id,
-                            name.to_string(),
-                        ),
+        if validate && security_level_requirement == SecurityLevel::MASTER {
+            return Err(ConsensusError::BasicError(
+                BasicError::InvalidDocumentTypeRequiredSecurityLevelError(
+                    InvalidDocumentTypeRequiredSecurityLevelError::new(
+                        security_level_requirement,
+                        data_contract_id,
+                        name.to_string(),
                     ),
-                )
-                .into());
-            }
+                ),
+            )
+            .into());
         }
 
         let requires_identity_encryption_bounded_key = schema
@@ -468,7 +467,7 @@ fn insert_values(
     property_key: String,
     property_value: &Value,
     root_schema: &Value,
-) -> Result<(), ProtocolError> {
+) -> Result<(), DataContractError> {
     let mut to_visit: Vec<(Option<String>, String, &Value)> =
         vec![(prefix, property_key, property_value)];
 
@@ -480,20 +479,13 @@ fn insert_values(
 
         let mut inner_properties = property_value.to_btree_ref_string_map()?;
 
-        if let Some(schema_ref) = inner_properties
-            .get_optional_str(property_names::REF)
-            .map_err(ProtocolError::ValueError)?
-        {
-            let referenced_sub_schema = resolve_uri(root_schema, schema_ref).map_err(|err| {
-                ProtocolError::Generic(format!("invalid schema reference url: {err}"))
-            })?;
+        if let Some(schema_ref) = inner_properties.get_optional_str(property_names::REF)? {
+            let referenced_sub_schema = resolve_uri(root_schema, schema_ref)?;
 
             inner_properties = referenced_sub_schema.to_btree_ref_string_map()?
         }
 
-        let type_value = inner_properties
-            .get_str(property_names::TYPE)
-            .map_err(ProtocolError::ValueError)?;
+        let type_value = inner_properties.get_str(property_names::TYPE)?;
 
         let is_required = known_required.contains(&prefixed_property_key);
         let field_type: DocumentPropertyType;
@@ -519,10 +511,8 @@ fn insert_values(
                                 ),
                             }
                         } else {
-                            return Err(ProtocolError::DataContractError(
-                                DataContractError::InvalidContractStructure(
-                                    "byteArray should always be true if defined".to_string(),
-                                ),
+                            return Err(DataContractError::InvalidContractStructure(
+                                "byteArray should always be true if defined".to_string(),
                             ));
                         }
                     }
@@ -547,16 +537,16 @@ fn insert_values(
                     let properties =
                         properties_as_value
                             .as_map()
-                            .ok_or(ProtocolError::StructureError(
-                                StructureError::ValueWrongType("properties must be a map"),
+                            .ok_or(DataContractError::ValueWrongType(
+                                "properties must be a map".to_string(),
                             ))?;
 
                     for (object_property_key, object_property_value) in properties.iter() {
                         let object_property_string = object_property_key
                             .as_text()
-                            .ok_or(ProtocolError::StructureError(StructureError::KeyWrongType(
-                                "property key must be a string",
-                            )))?
+                            .ok_or(DataContractError::KeyWrongType(
+                                "property key must be a string".to_string(),
+                            ))?
                             .to_string();
                         to_visit.push((
                             Some(prefixed_property_key.clone()),
@@ -603,23 +593,16 @@ fn insert_values_nested(
     property_key: String,
     property_value: &Value,
     root_schema: &Value,
-) -> Result<(), ProtocolError> {
+) -> Result<(), DataContractError> {
     let mut inner_properties = property_value.to_btree_ref_string_map()?;
 
-    if let Some(schema_ref) = inner_properties
-        .get_optional_str(property_names::REF)
-        .map_err(ProtocolError::ValueError)?
-    {
-        let referenced_sub_schema = resolve_uri(root_schema, schema_ref).map_err(|err| {
-            ProtocolError::Generic(format!("invalid schema reference url: {err}"))
-        })?;
+    if let Some(schema_ref) = inner_properties.get_optional_str(property_names::REF)? {
+        let referenced_sub_schema = resolve_uri(root_schema, schema_ref)?;
 
         inner_properties = referenced_sub_schema.to_btree_ref_string_map()?;
     }
 
-    let type_value = inner_properties
-        .get_str(property_names::TYPE)
-        .map_err(ProtocolError::ValueError)?;
+    let type_value = inner_properties.get_str(property_names::TYPE)?;
 
     let is_required = known_required.contains(&property_key);
 
@@ -648,10 +631,8 @@ fn insert_values_nested(
                             ),
                         }
                     } else {
-                        return Err(ProtocolError::DataContractError(
-                            DataContractError::InvalidContractStructure(
-                                "byteArray should always be true if defined".to_string(),
-                            ),
+                        return Err(DataContractError::InvalidContractStructure(
+                            "byteArray should always be true if defined".to_string(),
                         ));
                     }
                 }
@@ -668,8 +649,8 @@ fn insert_values_nested(
                 let properties =
                     properties_as_value
                         .as_map()
-                        .ok_or(ProtocolError::StructureError(
-                            StructureError::ValueWrongType("properties must be a map"),
+                        .ok_or(DataContractError::ValueWrongType(
+                            "properties must be a map".to_string(),
                         ))?;
 
                 let mut sorted_properties: Vec<_> = properties.iter().collect();
@@ -699,9 +680,9 @@ fn insert_values_nested(
                 for (object_property_key, object_property_value) in properties.iter() {
                     let object_property_string = object_property_key
                         .as_text()
-                        .ok_or(ProtocolError::StructureError(StructureError::KeyWrongType(
-                            "property key must be a string",
-                        )))?
+                        .ok_or(DataContractError::KeyWrongType(
+                            "property key must be a string".to_string(),
+                        ))?
                         .to_string();
 
                     insert_values_nested(

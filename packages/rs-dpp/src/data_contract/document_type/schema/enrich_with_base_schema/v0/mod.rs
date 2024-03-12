@@ -53,7 +53,7 @@ pub fn enrich_with_base_schema_v0(
         return Err(ProtocolError::ConsensusError(
             ConsensusError::BasicError(BasicError::ContractError(
                 DataContractError::InvalidContractStructure(
-                    "document schema shouldn't contain '$schema' property".to_string(),
+                    "document schema shouldn't contain '$defs' property".to_string(),
                 ),
             ))
             .into(),

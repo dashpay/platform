@@ -29,8 +29,8 @@ use std::convert::TryFrom;
 )]
 pub enum SecurityLevel {
     MASTER = 0,
-    #[default]
     CRITICAL = 1,
+    #[default]
     HIGH = 2,
     MEDIUM = 3,
 }

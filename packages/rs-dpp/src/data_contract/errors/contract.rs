@@ -3,8 +3,6 @@ use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::data_contract::DataContract;
-
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::errors::json_schema_error::JsonSchemaError;
 use crate::ProtocolError;
@@ -15,11 +13,6 @@ pub enum DataContractError {
     #[error("Data Contract already exists")]
     DataContractAlreadyExistsError,
 
-    // #[error("Invalid Data Contract: {errors:?}")]
-    // InvalidDataContractError {
-    //     errors: Vec<ConsensusError>,
-    //     raw_data_contract: DataContract,
-    // },
     #[error(transparent)]
     DecodingContractError(DecodingError),
 
@@ -40,6 +33,17 @@ pub enum DataContractError {
 
     #[error("value wrong type error: {0}")]
     ValueWrongType(String),
+
+    #[error("invalid uri error: {0}")]
+    InvalidURI(String),
+
+    /// Key wrong bounds error
+    #[error("key out of bounds error: {0}")]
+    KeyWrongBounds(String),
+
+    /// A key value pair must exist
+    #[error("key value must exist: {0}")]
+    KeyValueMustExist(String),
 
     #[error("value decoding error: {0}")]
     ValueDecodingError(String),
@@ -76,4 +80,10 @@ pub enum DataContractError {
 
     #[error("Corrupted Code Execution: {0}")]
     JsonSchema(JsonSchemaError),
+}
+
+impl From<platform_value::Error> for DataContractError {
+    fn from(value: platform_value::Error) -> Self {
+        DataContractError::ValueDecodingError(format!("{:?}", value))
+    }
 }
