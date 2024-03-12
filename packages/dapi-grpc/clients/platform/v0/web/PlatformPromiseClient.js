@@ -87,17 +87,17 @@ class PlatformPromiseClient {
   }
 
   /**
-   * @param {!GetIdentitiesByPublicKeyHashesRequest} getIdentitiesByPublicKeyHashesRequest
+   * @param {!GetIdentityByPublicKeyHash} getIdentityByPublicKeyHashRequest
    * @param {?Object<string, string>} metadata
-   * @returns {Promise<!GetIdentitiesByPublicKeyHashesResponse>}
+   * @returns {Promise<!GetIdentityByPublicKeyHashResponse>}
    */
-  getIdentitiesByPublicKeyHashes(
-    getIdentitiesByPublicKeyHashesRequest, metadata = {}
+  getIdentityByPublicKeyHash(
+    getIdentityByPublicKeyHashRequest, metadata = {}
   ) {
     return promisify(
-      this.client.getIdentitiesByPublicKeyHashes.bind(this.client),
+      this.client.getIdentityByPublicKeyHash.bind(this.client),
     )(
-      getIdentitiesByPublicKeyHashesRequest,
+      getIdentityByPublicKeyHashRequest,
       metadata,
     );
   }

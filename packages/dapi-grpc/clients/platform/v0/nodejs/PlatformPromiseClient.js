@@ -34,8 +34,8 @@ const {
             GetDataContractHistoryResponse: PBJSGetDataContractHistoryResponse,
             GetDocumentsRequest: PBJSGetDocumentsRequest,
             GetDocumentsResponse: PBJSGetDocumentsResponse,
-            GetIdentitiesByPublicKeyHashesRequest: PBJSGetIdentitiesByPublicKeyHashesRequest,
-            GetIdentitiesByPublicKeyHashesResponse: PBJSGetIdentitiesByPublicKeyHashesResponse,
+            GetIdentityByPublicKeyHashRequest: PBJSGetIdentityByPublicKeyHashRequest,
+            GetIdentityByPublicKeyHashResponse: PBJSGetIdentityByPublicKeyHashResponse,
             WaitForStateTransitionResultRequest: PBJSWaitForStateTransitionResultRequest,
             WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
             GetConsensusParamsRequest: PBJSGetConsensusParamsRequest,
@@ -69,7 +69,7 @@ const {
   GetDataContractResponse: ProtocGetDataContractResponse,
   GetDataContractHistoryResponse: ProtocGetDataContractHistoryResponse,
   GetDocumentsResponse: ProtocGetDocumentsResponse,
-  GetIdentitiesByPublicKeyHashesResponse: ProtocGetIdentitiesByPublicKeyHashesResponse,
+  GetIdentityByPublicKeyHashResponse: ProtocGetIdentityByPublicKeyHashResponse,
   WaitForStateTransitionResultResponse: ProtocWaitForStateTransitionResultResponse,
   GetConsensusParamsResponse: ProtocGetConsensusParamsResponse,
   GetEpochsInfoResponse: ProtocGetEpochsInfoResponse,
@@ -125,8 +125,8 @@ class PlatformPromiseClient {
       this.client.getDocuments.bind(this.client),
     );
 
-    this.client.getIdentitiesByPublicKeyHashes = promisify(
-      this.client.getIdentitiesByPublicKeyHashes.bind(this.client),
+    this.client.getIdentityByPublicKeyHash = promisify(
+      this.client.getIdentityByPublicKeyHash.bind(this.client),
     );
 
     this.client.waitForStateTransitionResult = promisify(
@@ -327,13 +327,13 @@ class PlatformPromiseClient {
   }
 
   /**
-   * @param {!GetIdentitiesByPublicKeyHashesRequest} getIdentitiesByPublicKeyHashesRequest
+   * @param {!GetIdentityByPublicKeyHashRequest} getIdentityByPublicKeyHashRequest
    * @param {?Object<string, string>} metadata
    * @param {CallOptions} [options={}]
-   * @returns {Promise<!GetIdentitiesByPublicKeyHashesResponse>}
+   * @returns {Promise<!GetIdentityByPublicKeyHashResponse>}
    */
-  getIdentitiesByPublicKeyHashes(
-    getIdentitiesByPublicKeyHashesRequest,
+  getIdentityByPublicKeyHash(
+    getIdentityByPublicKeyHashRequest,
     metadata = {},
     options = {},
   ) {
@@ -341,18 +341,18 @@ class PlatformPromiseClient {
       throw new Error('metadata must be an object');
     }
 
-    return this.client.getIdentitiesByPublicKeyHashes(
-      getIdentitiesByPublicKeyHashesRequest,
+    return this.client.getIdentityByPublicKeyHash(
+      getIdentityByPublicKeyHashRequest,
       convertObjectToMetadata(metadata),
       {
         interceptors: [
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
-              ProtocGetIdentitiesByPublicKeyHashesResponse,
-              PBJSGetIdentitiesByPublicKeyHashesResponse,
+              ProtocGetIdentityByPublicKeyHashResponse,
+              PBJSGetIdentityByPublicKeyHashResponse,
             ),
             protobufToJsonFactory(
-              PBJSGetIdentitiesByPublicKeyHashesRequest,
+              PBJSGetIdentityByPublicKeyHashRequest,
             ),
           ),
         ],
