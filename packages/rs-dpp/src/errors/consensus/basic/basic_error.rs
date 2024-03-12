@@ -3,20 +3,11 @@ use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
+use platform_value::{Error as PlatformValueError};
+
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
-use crate::consensus::basic::data_contract::{
-    DataContractEmptySchemaError, DataContractHaveNewUniqueIndexError,
-    DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError,
-    DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
-    IncompatibleDataContractSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
-    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidIndexPropertyTypeError,
-    InvalidIndexedPropertyConstraintError, InvalidJsonSchemaRefError,
-    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError,
-};
-use crate::consensus::basic::decode::{
-    ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
-};
+use crate::consensus::basic::data_contract::{DataContractEmptySchemaError, DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError, InvalidDataContractVersionError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError, InvalidJsonSchemaRefError, SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError, UniqueIndicesLimitReachedError, InvalidDocumentTypeRequiredSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownSecurityLevelError};
+use crate::consensus::basic::decode::{DecodingError, ProtocolVersionParsingError, SerializedObjectParsingError, VersionError};
 use crate::consensus::basic::document::{
     DataContractNotPresentError, DocumentTransitionsAreAbsentError,
     DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
@@ -57,6 +48,7 @@ use crate::consensus::basic::json_schema_compilation_error::JsonSchemaCompilatio
 use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
+use crate::data_contract::errors::DataContractError;
 
 #[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone)]
 pub enum BasicError {
@@ -71,6 +63,15 @@ pub enum BasicError {
 
     #[error(transparent)]
     VersionError(VersionError),
+
+    #[error(transparent)]
+    ContractError(DataContractError),
+
+    #[error(transparent)]
+    UnknownSecurityLevelError(UnknownSecurityLevelError),
+
+    #[error(transparent)]
+    UnknownStorageKeyRequirementsError(UnknownStorageKeyRequirementsError),
 
     #[error(transparent)]
     SerializedObjectParsingError(SerializedObjectParsingError),
@@ -259,6 +260,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     MissingMasterPublicKeyError(MissingMasterPublicKeyError),
+
+    #[error(transparent)]
+    InvalidDocumentTypeRequiredSecurityLevelError(InvalidDocumentTypeRequiredSecurityLevelError),
 
     #[error(transparent)]
     InvalidIdentityPublicKeySecurityLevelError(InvalidIdentityPublicKeySecurityLevelError),

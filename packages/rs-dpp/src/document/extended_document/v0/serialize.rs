@@ -22,6 +22,8 @@ use crate::version::PlatformVersion;
 use integer_encoding::{VarInt, VarIntReader};
 
 use platform_version::version::FeatureVersion;
+use crate::consensus::basic::decode::DecodingError;
+use crate::data_contract::errors::DataContractError;
 
 impl ExtendedDocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
     /// Serializes the extended document.
@@ -95,10 +97,10 @@ impl ExtendedDocumentPlatformDeserializationMethodsV0 for ExtendedDocumentV0 {
         let (document_type_name_len, rest) =
             serialized_document
                 .split_first()
-                .ok_or(ProtocolError::DecodingError(
+                .ok_or(DataContractError::DecodingDocumentError(DecodingError::new(
                     "error reading document type name len from serialized extended document"
                         .to_string(),
-                ))?;
+                )))?;
         if serialized_document.len() < *document_type_name_len as usize {
             return Err(ProtocolError::DecodingError(
                 "serialized extended document isn't big enough for the document type len"

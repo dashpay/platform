@@ -1,15 +1,5 @@
 use crate::version::contracts::SystemDataContractVersions;
-use crate::version::dpp_versions::{
-    ContractVersions, CostVersions, DPPValidationVersions, DPPVersion, DataContractMethodVersions,
-    DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions,
-    DocumentTransitionVersions, DocumentTypeClassMethodVersions, DocumentTypeIndexVersions,
-    DocumentTypeMethodVersions, DocumentTypeSchemaVersions, DocumentTypeVersions, DocumentVersions,
-    DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
-    IdentityKeyTypeMethodVersions, IdentityTransitionAssetLockVersions, IdentityTransitionVersions,
-    IdentityVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
-    RecursiveSchemaValidatorVersions, StateTransitionConversionVersions,
-    StateTransitionMethodVersions, StateTransitionSerializationVersions, StateTransitionVersions,
-};
+use crate::version::dpp_versions::{ContractVersions, CostVersions, DPPValidationVersions, DPPVersion, DataContractMethodVersions, DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions, DocumentTransitionVersions, DocumentTypeClassMethodVersions, DocumentTypeIndexVersions, DocumentTypeMethodVersions, DocumentTypeSchemaVersions, DocumentTypeVersions, DocumentVersions, DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions, IdentityKeyTypeMethodVersions, IdentityTransitionAssetLockVersions, IdentityTransitionVersions, IdentityVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions, RecursiveSchemaValidatorVersions, StateTransitionConversionVersions, StateTransitionMethodVersions, StateTransitionSerializationVersions, StateTransitionVersions, DocumentTypeValidationVersions};
 use crate::version::drive_abci_versions::{
     DriveAbciAssetLockValidationVersions, DriveAbciBlockEndMethodVersions,
     DriveAbciBlockFeeProcessingMethodVersions, DriveAbciBlockStartMethodVersions,
@@ -802,6 +792,9 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 validate_index_naming_duplicates: 0,
                 validate_not_defined_properties: 0,
                 validate_property_definition: 0,
+            },
+            document_type: DocumentTypeValidationVersions {
+                validate_update: 0,
             },
         },
         state_transition_serialization_versions: StateTransitionSerializationVersions {

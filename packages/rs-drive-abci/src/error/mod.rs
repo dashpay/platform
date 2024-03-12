@@ -10,6 +10,7 @@ use drive::dpp::ProtocolError;
 use drive::error::Error as DriveError;
 use tenderdash_abci::proto::abci::ResponseException;
 use tracing::error;
+use dpp::data_contract::errors::DataContractError;
 
 /// Execution errors module
 pub mod execution;
@@ -60,6 +61,13 @@ impl From<PlatformVersionError> for Error {
         platform_error.into()
     }
 }
+
+impl From<DataContractError> for Error {
+    fn from(value: DataContractError) -> Self {
+        Self::Protocol(ProtocolError::DataContractError(value))
+    }
+}
+
 
 impl From<ValueError> for Error {
     fn from(value: ValueError) -> Self {

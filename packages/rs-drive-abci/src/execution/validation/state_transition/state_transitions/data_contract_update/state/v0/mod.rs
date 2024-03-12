@@ -33,17 +33,22 @@ use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use drive::state_transition_action::StateTransitionAction;
+use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceAction;
+use crate::error::execution::ExecutionError;
+use crate::execution::validation::state_transition::ValidationMode;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) trait DataContractUpdateStateTransitionStateValidationV0 {
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        validation_mode: ValidationMode,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
     fn transform_into_action_v0(
         &self,
+        validation_mode: ValidationMode,
         platform_version: &PlatformVersion
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -52,38 +57,29 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        validation_mode: ValidationMode,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let action = self.transform_into_action_v0(platform_version)?;
+        let action = self.transform_into_action_v0(validation_mode, platform_version)?;
 
         if !action.is_valid() {
-            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                    self,
-                )?,
-            );
-
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                bump_action,
-                action.errors,
-            ));
+            return Ok(action);
         }
 
-        let state_transition_action = action.data.as_ref().unwrap();
+        let state_transition_action = action.data.as_ref().ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution("we should always have an action at this point in data contract update")))?;
 
         let new_data_contract = match state_transition_action {
             StateTransitionAction::DataContractUpdateAction(action) => {
                 Some(action.data_contract_ref())
             }
             _ => None,
-        }
-        .unwrap();
+        }.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution("we should always have a data contract at this point in data contract update")))?;
 
         let drive = platform.drive;
         let mut validation_result = ConsensusValidationResult::default();
         // Data contract should exist
-        let add_to_cache_if_pulled = tx.is_some();
+        let add_to_cache_if_pulled = validation_mode.can_alter_cache();
         // Data contract should exist
         let Some(contract_fetch_info) = drive
             .get_contract_with_fetch_info_and_fee(
@@ -131,8 +127,13 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             ));
         }
 
-        if old_data_contract.config().readonly() {
-            validation_result.add_error(DataContractIsReadonlyError::new(new_data_contract.id()));
+        let config_validation_result = old_data_contract.config().validate_config_update(
+            new_data_contract.config(),
+            self.data_contract().id(),
+            platform_version,
+        )?;
+
+        if !config_validation_result.is_valid() {
             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                 BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                     self,
@@ -141,7 +142,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
                 bump_action,
-                validation_result.errors,
+                config_validation_result.errors,
             ));
         }
 
@@ -155,9 +156,25 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 old_data_contract.document_type_optional_for_name(new_contract_document_type_name)
             else {
                 // if it's a new document type (ie the old data contract didn't have it)
-                // then new indices on it are fine
+                // then new indices on it are fine and we don't need to validate that configuration didn't change
                 continue;
             };
+
+            let validate_update_result = old_contract_document_type.validate_update(new_contract_document_type, platform_version)?;
+
+            if !validate_update_result.is_valid() {
+                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                        self,
+                    )?,
+                );
+
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    validate_update_result.errors,
+                ));
+            }
+
             // If the new contract document type doesn't contain all previous indexes then
             // there is a problem
             if let Some(non_subset_path) = new_contract_document_type
@@ -173,39 +190,19 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                     ),
                 )
             }
-        }
 
-        if !validation_result.is_valid() {
-            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                    self,
-                )?,
-            );
+            if !validation_result.is_valid() {
+                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                        self,
+                    )?,
+                );
 
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                bump_action,
-                validation_result.errors,
-            ));
-        }
-
-        let config_validation_result = old_data_contract.config().validate_config_update(
-            new_data_contract.config(),
-            self.data_contract().id(),
-            platform_version,
-        )?;
-
-        if !config_validation_result.is_valid() {
-            validation_result.merge(config_validation_result);
-            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                    self,
-                )?,
-            );
-
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                bump_action,
-                validation_result.errors,
-            ));
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    validation_result.errors,
+                ));
+            }
         }
 
         // Schema defs should be compatible
@@ -321,14 +318,33 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
     fn transform_into_action_v0(
         &self,
+        validation_mode: ValidationMode,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let action: StateTransitionAction = TryIntoPlatformVersioned::<
-            DataContractUpdateTransitionAction,
-        >::try_into_platform_versioned(
-            self, platform_version
-        )?
-        .into();
-        Ok(action.into())
+        let result = DataContractUpdateTransitionAction::try_from_borrowed_transition(
+            self,
+            validation_mode.should_validate_contract_on_transform_into_action(),
+            platform_version,
+        );
+
+        // Return validation result if any consensus errors happened
+        // during data contract validation
+        match result {
+            Err(ProtocolError::ConsensusError(consensus_error)) => {
+                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(self)?,
+                );
+
+                Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    vec![*consensus_error],
+                ))
+            }
+            Err(protocol_error) => Err(protocol_error.into()),
+            Ok(create_action) => {
+                let action: StateTransitionAction = create_action.into();
+                Ok(action.into())
+            },
+        }
     }
 }

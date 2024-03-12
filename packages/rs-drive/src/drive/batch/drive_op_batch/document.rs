@@ -21,6 +21,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
 use std::collections::HashMap;
+use dpp::ProtocolError;
 
 /// A wrapper for a document operation
 #[derive(Clone, Debug)]
@@ -179,7 +180,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 override_document,
                 storage_flags,
             } => {
-                let document_type = contract.document_type_for_name(document_type_name)?;
+                let document_type = contract.document_type_for_name(document_type_name).map_err(ProtocolError::DataContractError)?;
 
                 let document =
                     Document::from_bytes(serialized_document, document_type, platform_version)?;
@@ -225,7 +226,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
 
                 let contract = &contract_fetch_info.contract;
 
-                let document_type = contract.document_type_for_name(document_type_name.as_str())?;
+                let document_type = contract.document_type_for_name(document_type_name.as_str()).map_err(ProtocolError::DataContractError)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,
@@ -249,7 +250,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
             } => {
                 let contract = drive.cache.system_data_contracts.load_withdrawals();
 
-                let document_type = contract.document_type_for_name(withdrawal::NAME)?;
+                let document_type = contract.document_type_for_name(withdrawal::NAME).map_err(ProtocolError::DataContractError)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,
@@ -325,7 +326,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 owner_id,
                 storage_flags,
             } => {
-                let document_type = contract.document_type_for_name(document_type_name)?;
+                let document_type = contract.document_type_for_name(document_type_name).map_err(ProtocolError::DataContractError)?;
 
                 let document =
                     Document::from_bytes(serialized_document, document_type, platform_version)?;
@@ -361,7 +362,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 let document_info =
                     DocumentRefAndSerialization((document, serialized_document, storage_flags));
 
-                let document_type = contract.document_type_for_name(document_type_name)?;
+                let document_type = contract.document_type_for_name(document_type_name).map_err(ProtocolError::DataContractError)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
@@ -471,7 +472,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
 
                 let contract = &contract_fetch_info.contract;
 
-                let document_type = contract.document_type_for_name(document_type_name.as_str())?;
+                let document_type = contract.document_type_for_name(document_type_name.as_str()).map_err(ProtocolError::DataContractError)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,

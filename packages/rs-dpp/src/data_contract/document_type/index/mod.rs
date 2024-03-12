@@ -251,21 +251,21 @@ impl TryFrom<&[(Value, Value)]> for Index {
 impl IndexProperty {
     pub fn from_platform_value(
         index_property_map: &[(Value, Value)],
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<Self, DataContractError> {
         let property = &index_property_map[0];
 
         let key = property
             .0 // key
             .as_text()
-            .ok_or(ProtocolError::DataContractError(
-                DataContractError::KeyWrongType("key should be of type string"),
-            ))?;
+            .ok_or(
+                DataContractError::KeyWrongType("key should be of type string".to_string()),
+            )?;
         let value = property
             .1 // value
             .as_text()
-            .ok_or(ProtocolError::DataContractError(
-                DataContractError::ValueWrongType("value should be of type string"),
-            ))?;
+            .ok_or(
+                DataContractError::ValueWrongType("value should be of type string".to_string()),
+            )?;
 
         let ascending = value == "asc";
 

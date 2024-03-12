@@ -1,7 +1,7 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
+use crate::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Error as PlatformValueError;
 use thiserror::Error;
@@ -36,3 +36,10 @@ impl From<ValueError> for ConsensusError {
         Self::BasicError(BasicError::ValueError(err))
     }
 }
+
+impl From<PlatformValueError> for ValueError {
+    fn from(err: PlatformValueError) -> Self {
+        ValueError::new(err)
+    }
+}
+

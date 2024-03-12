@@ -8,6 +8,7 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 
 use std::collections::BTreeMap;
+use crate::data_contract::errors::DataContractError;
 
 pub mod v0;
 
@@ -36,13 +37,13 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
-    fn document_type_cloned_for_name(&self, name: &str) -> Result<DocumentType, ProtocolError> {
+    fn document_type_cloned_for_name(&self, name: &str) -> Result<DocumentType, DataContractError> {
         match self {
             DataContract::V0(v0) => v0.document_type_cloned_for_name(name),
         }
     }
 
-    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, ProtocolError> {
+    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, DataContractError> {
         match self {
             DataContract::V0(v0) => v0.document_type_for_name(name),
         }

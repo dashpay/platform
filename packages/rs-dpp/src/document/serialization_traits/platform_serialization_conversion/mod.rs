@@ -7,6 +7,7 @@ use crate::document::{Document, DocumentV0};
 use crate::ProtocolError;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 pub use v0::*;
+use crate::prelude::ConsensusValidationResult;
 
 impl DocumentPlatformConversionMethodsV0 for Document {
     /// Serializes the document.
@@ -68,6 +69,21 @@ impl DocumentPlatformConversionMethodsV0 for Document {
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "Document::from_bytes".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    fn from_bytes_in_consensus(serialized_document: &[u8], document_type: DocumentTypeRef, platform_version: &PlatformVersion) -> Result<ConsensusValidationResult<Self>, ProtocolError> where Self: Sized {
+        match platform_version
+            .dpp
+            .document_versions
+            .document_structure_version
+        {
+            0 => Ok(DocumentV0::from_bytes_in_consensus(serialized_document, document_type, platform_version)?.map(|document_v0| document_v0.into())),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Document::from_bytes_in_consensus".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

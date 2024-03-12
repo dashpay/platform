@@ -6,6 +6,10 @@ use ciborium::value::Value as CborValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use std::convert::TryFrom;
+use crate::consensus::basic::BasicError;
+use crate::consensus::basic::data_contract::UnknownSecurityLevelError;
+use crate::consensus::ConsensusError;
+use crate::ProtocolError;
 
 #[repr(u8)]
 #[derive(
@@ -25,8 +29,8 @@ use std::convert::TryFrom;
     strum::EnumIter,
 )]
 pub enum SecurityLevel {
-    #[default]
     MASTER = 0,
+    #[default]
     CRITICAL = 1,
     HIGH = 2,
     MEDIUM = 3,
@@ -40,14 +44,14 @@ impl Into<CborValue> for SecurityLevel {
 }
 
 impl TryFrom<u8> for SecurityLevel {
-    type Error = anyhow::Error;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+    type Error = ProtocolError;
+    fn try_from(value: u8) -> Result<Self, ProtocolError> {
         match value {
             0 => Ok(Self::MASTER),
             1 => Ok(Self::CRITICAL),
             2 => Ok(Self::HIGH),
             3 => Ok(Self::MEDIUM),
-            value => bail!("unrecognized security level: {}", value),
+            value => Err(ProtocolError::ConsensusError(ConsensusError::BasicError(BasicError::UnknownSecurityLevelError(UnknownSecurityLevelError::new(vec![0,1,2,3], value))).into())),
         }
     }
 }

@@ -3,6 +3,8 @@ use crate::data_contract::errors::DataContractError;
 use crate::data_contract::serialized_version::v0::property_names as contract_property_names;
 use crate::ProtocolError;
 use platform_value::{Value, ValueMapHelper};
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 
 pub const DATA_CONTRACT_SCHEMA_URI_V0: &str =
     "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v0/document-meta.json";
@@ -16,17 +18,17 @@ pub fn enrich_with_base_schema_v0(
     schema_defs: Option<Value>,
 ) -> Result<Value, ProtocolError> {
     let schema_map = schema.to_map_mut().map_err(|err| {
-        ProtocolError::DataContractError(DataContractError::InvalidContractStructure(format!(
+        ProtocolError::ConsensusError(ConsensusError::BasicError(BasicError::ContractError(DataContractError::InvalidContractStructure(format!(
             "document schema must be an object: {err}"
-        )))
+        )))).into())
     })?;
 
     // Add $schema
     if schema_map.get_optional_key(PROPERTY_SCHEMA).is_some() {
-        return Err(ProtocolError::DataContractError(
-            DataContractError::InvalidContractStructure(
+        return Err(ProtocolError::ConsensusError(
+            ConsensusError::BasicError(BasicError::ContractError(DataContractError::InvalidContractStructure(
                 "document schema shouldn't contain '$schema' property".to_string(),
-            ),
+            ))).into()
         ));
     }
 
@@ -40,10 +42,10 @@ pub fn enrich_with_base_schema_v0(
         .get_optional_key(contract_property_names::DEFINITIONS)
         .is_some()
     {
-        return Err(ProtocolError::DataContractError(
-            DataContractError::InvalidContractStructure(
+        return Err(ProtocolError::ConsensusError(
+            ConsensusError::BasicError(BasicError::ContractError(DataContractError::InvalidContractStructure(
                 "document schema shouldn't contain '$schema' property".to_string(),
-            ),
+            ))).into()
         ));
     }
 

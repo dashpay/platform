@@ -91,8 +91,7 @@ impl IdentityDataContractKeyApplyInfo {
                 ..
             } => {
                 let document_type = contract
-                    .document_type_for_name(document_type)
-                    .map_err(Error::Protocol)?;
+                    .document_type_for_name(document_type)?;
                 Ok(ContractBased {
                     contract_id: contract.id(),
                     document_type_keys: BTreeMap::from([(
