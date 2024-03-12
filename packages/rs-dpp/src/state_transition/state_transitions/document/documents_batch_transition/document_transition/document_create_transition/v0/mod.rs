@@ -3,8 +3,10 @@ pub mod v0_methods;
 
 use bincode::{Decode, Encode};
 
+#[cfg(feature = "state-transition-value-conversion")]
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Identifier, Value};
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use std::collections::BTreeMap;
@@ -18,9 +20,9 @@ use crate::{data_contract::DataContract, errors::ProtocolError};
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::document::{Document, DocumentV0};
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::{
-    DocumentBaseTransitionV0, DocumentTransitionObjectLike,
-};
+use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+#[cfg(feature = "state-transition-value-conversion")]
+use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use derive_more::Display;
 use platform_version::version::PlatformVersion;

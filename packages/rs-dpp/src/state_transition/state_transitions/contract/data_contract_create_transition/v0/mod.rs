@@ -18,7 +18,7 @@ use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-use crate::prelude::IdentityNonce;
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use bincode::{Decode, Encode};
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
@@ -37,6 +37,7 @@ use crate::version::PlatformVersion;
 pub struct DataContractCreateTransitionV0 {
     pub data_contract: DataContractInSerializationFormat,
     pub identity_nonce: IdentityNonce,
+    pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]
@@ -67,6 +68,7 @@ impl TryFromPlatformVersioned<DataContract> for DataContractCreateTransitionV0 {
         Ok(DataContractCreateTransitionV0 {
             data_contract: value.try_into_platform_versioned(platform_version)?,
             identity_nonce: Default::default(),
+            user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: Default::default(),
         })
@@ -84,6 +86,7 @@ impl TryFromPlatformVersioned<CreatedDataContract> for DataContractCreateTransit
         Ok(DataContractCreateTransitionV0 {
             data_contract: data_contract.try_into_platform_versioned(platform_version)?,
             identity_nonce,
+            user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: Default::default(),
         })

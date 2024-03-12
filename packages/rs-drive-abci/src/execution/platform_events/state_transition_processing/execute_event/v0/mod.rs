@@ -52,16 +52,18 @@ where
             self.validate_fees_of_event(&event, block_info, Some(transaction), platform_version)?;
 
         match event {
-            ExecutionEvent::PaidFromAssetLockDriveEvent {
+            ExecutionEvent::PaidFromAssetLock {
                 identity,
                 operations,
                 execution_operations,
+                user_fee_increase,
                 ..
             }
-            | ExecutionEvent::PaidDriveEvent {
+            | ExecutionEvent::Paid {
                 identity,
                 operations,
                 execution_operations,
+                user_fee_increase,
                 ..
             } => {
                 if fee_validation_result.is_valid_with_data() {
@@ -84,6 +86,8 @@ where
                         platform_version,
                     )?;
 
+                    individual_fee_result.apply_user_fee_increase(user_fee_increase);
+
                     let balance_change = individual_fee_result.into_balance_change(identity.id);
 
                     let outcome = self.drive.apply_balance_change_from_fee_to_identity(
@@ -104,7 +108,7 @@ where
                     ))
                 }
             }
-            ExecutionEvent::FreeDriveEvent { operations } => {
+            ExecutionEvent::Free { operations } => {
                 self.drive
                     .apply_drive_operations(
                         operations,

@@ -98,11 +98,12 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
     fn try_into_action_v0(
         &self,
         platform: &PlatformStateRef,
-        validate: bool,
+        validate_against_state: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
     ) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction>, Error> {
         let owner_id = self.owner_id();
+        let user_fee_increase = self.user_fee_increase();
         let platform_version = platform.state.current_platform_version()?;
         let mut transitions_by_contracts_and_types: BTreeMap<
             &Identifier,
@@ -138,7 +139,7 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
                 |(data_contract_id, document_transitions_by_document_type)| {
                     Self::transform_document_transitions_within_contract_v0(
                         platform,
-                        validate,
+                        validate_against_state,
                         data_contract_id,
                         owner_id,
                         document_transitions_by_document_type,
@@ -155,6 +156,7 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
             let batch_transition_action = DocumentsBatchTransitionActionV0 {
                 owner_id,
                 transitions: validation_result.into_data()?,
+                user_fee_increase,
             }
             .into();
             Ok(ConsensusValidationResult::new_with_data(
@@ -171,7 +173,7 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
 impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition {
     fn transform_document_transitions_within_contract_v0(
         platform: &PlatformStateRef,
-        validate: bool,
+        validate_against_state: bool,
         data_contract_id: &Identifier,
         owner_id: Identifier,
         document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
@@ -204,7 +206,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
         .map(|(document_type_name, document_transitions)| {
             Self::transform_document_transitions_within_document_type_v0(
                 platform,
-                validate,
+                validate_against_state,
                 data_contract_fetch_info.clone(),
                 document_type_name,
                 owner_id,
@@ -221,7 +223,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
 
     fn transform_document_transitions_within_document_type_v0(
         platform: &PlatformStateRef,
-        validate: bool,
+        validate_against_state: bool,
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         document_type_name: &str,
         owner_id: Identifier,
@@ -284,7 +286,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                 .map(|transition| {
                     // we validate every transition in this document type
                     Self::transform_transition_v0(
-                        validate,
+                        validate_against_state,
                         data_contract_fetch_info.clone(),
                         transition,
                         &replaced_documents,
@@ -319,7 +321,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
 
     /// The data contract can be of multiple difference versions
     fn transform_transition_v0<'a>(
-        validate: bool,
+        validate_against_state: bool,
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         transition: &DocumentTransition,
         replaced_documents: &[Document],
@@ -367,7 +369,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                     return Ok(result);
                 }
 
-                if validate {
+                if validate_against_state {
                     //there are situations where we don't want to validate this against the state
                     // for example when we already applied the state transition action
                     // and we are just validating it happened

@@ -475,6 +475,28 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '1.0.0-dev.7': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (options.network === NETWORK_TESTNET && name !== 'base') {
+              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+            }
+
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            options.core.docker.image = defaultConfig.get('core.docker.image');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.8': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            options.core.docker.image = defaultConfig.get('core.docker.image');
+          });
+
+        return configFile;
+      },
     };
   }
 

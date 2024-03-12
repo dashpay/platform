@@ -1,19 +1,11 @@
-use crate::data_contract::document_type::v0::DocumentTypeV0;
-#[cfg(feature = "validation")]
-use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
-#[cfg(feature = "validation")]
-use crate::consensus::ConsensusError;
-use indexmap::IndexMap;
-use std::collections::{BTreeMap, BTreeSet};
-#[cfg(feature = "validation")]
-use std::collections::HashSet;
-use std::convert::TryInto;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::{
     DuplicateIndexNameError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
     SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError,
 };
+#[cfg(feature = "validation")]
+use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::array::ArrayItemType;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
@@ -23,6 +15,14 @@ use crate::data_contract::document_type::schema::{
     byte_array_has_no_items_as_parent_validator, pattern_is_valid_regex_validator,
     traversal_validator, validate_max_depth,
 };
+use crate::data_contract::document_type::v0::DocumentTypeV0;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
+use indexmap::IndexMap;
+#[cfg(feature = "validation")]
+use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::convert::TryInto;
 
 #[cfg(feature = "validation")]
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
@@ -71,6 +71,8 @@ impl DocumentTypeV0 {
 
         #[cfg(not(feature = "validation"))]
         if validate {
+            // TODO we are silently dropping this error when we shouldn't be
+            // but returning this error causes tests to fail; investigate more.
             ProtocolError::CorruptedCodeExecution(
                 "validation is not enabled but is being called on try_from_schema_v0".to_string(),
             );

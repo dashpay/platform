@@ -1,7 +1,7 @@
 [package]
 name = "drive"
 description = "Dash drive built on top of GroveDB"
-version = "1.0.0-dev.6"
+version = "1.0.0-dev.7"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -11,10 +11,10 @@ authors = [
 edition = "2021"
 rust-version = "1.76"
 license = "MIT"
-private = true
 
 [dependencies]
 parking_lot = "0.12.1"
+arc-swap = "1.7.0"
 serde = { version = "1.0.152", features = ["derive"] }
 platform-version = { path = "../rs-platform-version" }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }

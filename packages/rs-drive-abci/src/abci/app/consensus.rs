@@ -1,10 +1,12 @@
-use crate::abci::app::{PlatformApplication, TransactionalApplication};
+use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::handler;
 use crate::abci::handler::error::error_into_exception;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
 use std::sync::RwLock;
@@ -17,8 +19,10 @@ use tenderdash_abci::proto::abci as proto;
 pub struct ConsensusAbciApplication<'a, C> {
     /// Platform
     platform: &'a Platform<C>,
-    /// The current transaction
+    /// The current GroveDb transaction
     transaction: RwLock<Option<Transaction<'a>>>,
+    /// The current block execution context
+    block_execution_context: RwLock<Option<BlockExecutionContext>>,
 }
 
 impl<'a, C> ConsensusAbciApplication<'a, C> {
@@ -26,7 +30,8 @@ impl<'a, C> ConsensusAbciApplication<'a, C> {
     pub fn new(platform: &'a Platform<C>) -> Self {
         Self {
             platform,
-            transaction: RwLock::new(None),
+            transaction: Default::default(),
+            block_execution_context: Default::default(),
         }
     }
 }
@@ -34,6 +39,12 @@ impl<'a, C> ConsensusAbciApplication<'a, C> {
 impl<'a, C> PlatformApplication<C> for ConsensusAbciApplication<'a, C> {
     fn platform(&self) -> &Platform<C> {
         self.platform
+    }
+}
+
+impl<'a, C> BlockExecutionApplication for ConsensusAbciApplication<'a, C> {
+    fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>> {
+        &self.block_execution_context
     }
 }
 
@@ -49,7 +60,7 @@ impl<'a, C> TransactionalApplication<'a> for ConsensusAbciApplication<'a, C> {
     }
 
     /// Commit a transaction
-    fn commit_transaction(&self) -> Result<(), Error> {
+    fn commit_transaction(&self, platform_version: &PlatformVersion) -> Result<(), Error> {
         let transaction = self
             .transaction
             .write()
@@ -59,8 +70,6 @@ impl<'a, C> TransactionalApplication<'a> for ConsensusAbciApplication<'a, C> {
                 "trying to commit a transaction, but we are not in one",
             )))?;
 
-        let platform_state = self.platform.state.read();
-        let platform_version = platform_state.current_platform_version()?;
         self.platform
             .drive
             .commit_transaction(transaction, &platform_version.drive)

@@ -1,4 +1,3 @@
-mod v0;
 
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
@@ -26,13 +25,12 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.grove_methods.apply.grove_apply_batch {
-            0 => self.grove_apply_batch_v0(ops, validate, transaction, drive_version),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "grove_apply_batch".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
+        self.grove_apply_batch_with_add_costs(
+            ops,
+            validate,
+            transaction,
+            &mut vec![],
+            drive_version,
+        )
     }
 }

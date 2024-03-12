@@ -3,44 +3,37 @@ use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
-use platform_version::TryFromPlatformVersioned;
 
-impl TryFromPlatformVersioned<DataContractCreateTransitionV0>
-    for DataContractCreateTransitionActionV0
-{
-    type Error = ProtocolError;
-
-    fn try_from_platform_versioned(
+impl DataContractCreateTransitionActionV0 {
+    pub(in crate::state_transition_action::contract::data_contract_create) fn try_from_platform_versioned(
         value: DataContractCreateTransitionV0,
+        validate: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Self::Error> {
+    ) -> Result<Self, ProtocolError> {
         Ok(DataContractCreateTransitionActionV0 {
             data_contract: DataContract::try_from_platform_versioned(
                 value.data_contract,
-                true,
+                validate,
                 platform_version,
             )?,
             identity_nonce: value.identity_nonce,
+            user_fee_increase: value.user_fee_increase,
         })
     }
-}
 
-impl TryFromPlatformVersioned<&DataContractCreateTransitionV0>
-    for DataContractCreateTransitionActionV0
-{
-    type Error = ProtocolError;
-
-    fn try_from_platform_versioned(
+    pub(in crate::state_transition_action::contract::data_contract_create) fn try_from_borrowed_platform_versioned(
         value: &DataContractCreateTransitionV0,
+        validate: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Self::Error> {
+    ) -> Result<Self, ProtocolError> {
         Ok(DataContractCreateTransitionActionV0 {
             data_contract: DataContract::try_from_platform_versioned(
                 value.data_contract.clone(),
-                true,
+                validate,
                 platform_version,
             )?,
             identity_nonce: value.identity_nonce,
+            user_fee_increase: value.user_fee_increase,
         })
     }
 }

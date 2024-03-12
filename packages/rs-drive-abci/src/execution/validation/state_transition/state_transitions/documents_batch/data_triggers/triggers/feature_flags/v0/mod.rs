@@ -1,4 +1,4 @@
-///! The `feature_flags_data_triggers` module contains data triggers related to feature flags.
+//! The `feature_flags_data_triggers` module contains data triggers related to feature flags.
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -117,7 +117,7 @@ mod test {
     //     let platform = TestPlatformBuilder::new()
     //         .build_with_mock_rpc()
     //         .set_initial_state_structure();
-    //     let state_read_guard = platform.state.read();
+    //     let state_read_guard = platform.state.load();
     //
     //     let platform_ref = PlatformStateRef {
     //         drive: &platform.drive,

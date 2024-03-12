@@ -1,7 +1,6 @@
 use dapi_grpc::platform::v0::get_proofs_request::{get_proofs_request_v0, GetProofsRequestV0};
 use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest};
 use dapi_grpc::platform::VersionedGrpcResponse;
-use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::Document;
@@ -25,6 +24,7 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransitionAction;
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use drive_abci::execution::validation::state_transition::ValidationMode;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use platform_version::DefaultForPlatformVersion;
 
@@ -35,7 +35,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     expected_validation_errors: &[u32],
     platform_version: &PlatformVersion,
 ) -> bool {
-    let state = abci_app.platform.state.read();
+    let state = abci_app.platform.state.load();
     let platform = PlatformRef {
         drive: &abci_app.platform.drive,
         state: &state,
@@ -60,7 +60,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
             let consensus_validation_result = match state_transition.transform_into_action(
                 &platform,
-                false,
+                ValidationMode::CheckTx, //using check_tx so we don't validate state
                 &mut execution_context,
                 None,
             ) {
@@ -112,7 +112,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
                     let result = abci_app
                         .platform
-                        .query_proofs(versioned_request, platform_version)
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
 
                     let response = result.into_data().expect("expected queries to be valid");
@@ -160,7 +160,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query_proofs(versioned_request, platform_version)
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
                     let response = result.into_data().expect("expected queries to be valid");
 
@@ -242,7 +242,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query_proofs(versioned_request, platform_version)
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
                     let response = result.into_data().expect("expected queries to be valid");
 
@@ -392,7 +392,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query_proofs(versioned_request, platform_version)
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
                     let response = result.into_data().expect("expected queries to be valid");
 
@@ -438,7 +438,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query_proofs(versioned_request, platform_version)
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
                     let response = result.into_data().expect("expected queries to be valid");
 
@@ -492,7 +492,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query_proofs(versioned_request, platform_version)
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
 
                     let response = result.into_data().expect("expected queries to be valid");
@@ -532,7 +532,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query_proofs(versioned_request, platform_version)
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
                     let response = result.into_data().expect("expected queries to be valid");
 
@@ -595,7 +595,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
                     let result = abci_app
                         .platform
-                        .query_proofs(versioned_request, platform_version)
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
                     let response = result.into_data().expect("expected queries to be valid");
 

@@ -1,12 +1,12 @@
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0OwnedGetters;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive::grovedb::Transaction;
+use std::sync::Arc;
 
 impl<C> Platform<C>
 where
@@ -37,41 +37,33 @@ where
     pub(super) fn update_state_cache_v0(
         &self,
         extended_block_info: ExtendedBlockInfo,
+        mut block_platform_state: PlatformState,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut block_execution_context_guard = self.block_execution_context.write().unwrap();
-
-        let block_execution_context =
-            block_execution_context_guard
-                .take()
-                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "there should be a block execution context",
-                )))?;
-
-        let mut state_cache = self.state.write();
-
-        *state_cache = block_execution_context.block_platform_state_owned();
-
-        drop(block_execution_context_guard);
+        // Update block state and store it in shared lock
 
         if let Some(next_validator_set_quorum_hash) =
-            state_cache.take_next_validator_set_quorum_hash()
+            block_platform_state.take_next_validator_set_quorum_hash()
         {
-            state_cache.set_current_validator_set_quorum_hash(next_validator_set_quorum_hash);
+            block_platform_state
+                .set_current_validator_set_quorum_hash(next_validator_set_quorum_hash);
         }
 
-        state_cache.set_last_committed_block_info(Some(extended_block_info));
+        block_platform_state.set_last_committed_block_info(Some(extended_block_info));
 
-        state_cache.set_genesis_block_info(None);
+        block_platform_state.set_genesis_block_info(None);
 
         //todo: verify this with an update
         let version = PlatformVersion::get(platform_version.protocol_version)?;
 
         PlatformVersion::set_current(version);
 
-        // Persist state cache
-        self.store_platform_state(&state_cache, Some(transaction), platform_version)?;
+        // Persist block state
+
+        self.store_platform_state(&block_platform_state, Some(transaction), platform_version)?;
+
+        self.state.store(Arc::new(block_platform_state));
 
         Ok(())
     }

@@ -1151,7 +1151,7 @@ impl<'a> WhereClause {
                 negated,
                 expr,
                 pattern,
-                escape_char,
+                escape_char: _,
             } => {
                 let where_operator = WhereOperator::StartsWith;
                 if *negated {

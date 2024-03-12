@@ -16,7 +16,7 @@ use dpp::consensus::ConsensusError;
 
 #[cfg(test)]
 use crate::execution::validation::state_transition::processor::process_state_transition;
-use dpp::fee::fee_result::FeeResult;
+use crate::platform_types::platform_state::PlatformState;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
 #[cfg(test)]
@@ -39,7 +39,7 @@ where
         let state_transition =
             StateTransition::deserialize_from_bytes(raw_tx.as_slice()).map_err(Error::Protocol)?;
 
-        let state_read_guard = self.state.read();
+        let state_read_guard = self.state.load();
 
         let platform_ref = PlatformRef {
             drive: &self.drive,
@@ -86,6 +86,7 @@ where
         &self,
         raw_tx: &[u8],
         check_tx_level: CheckTxLevel,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
         let state_transition = match StateTransition::deserialize_from_bytes(raw_tx) {
@@ -99,19 +100,16 @@ where
             }
         };
 
-        // TODO: We lock state for entire check tx execution that could lead to performance issues
-        //  and writer starvation.
-
-        let state_read_guard = self.state.read();
-
         let platform_ref = PlatformRef {
             drive: &self.drive,
-            state: &state_read_guard,
+            state: platform_state,
             config: &self.config,
             core_rpc: &self.core_rpc,
         };
 
         let unique_identifiers = state_transition.unique_identifiers();
+
+        let priority = state_transition.user_fee_increase() as u32 * 100;
 
         let validation_result = state_transition_to_execution_event_for_check_tx(
             &platform_ref,
@@ -124,7 +122,7 @@ where
             if let Some(execution_event) = execution_event {
                 self.validate_fees_of_event(
                     execution_event,
-                    state_read_guard.last_block_info(),
+                    platform_state.last_block_info(),
                     None,
                     platform_version,
                 )
@@ -133,6 +131,7 @@ where
                         level: check_tx_level,
                         fee_result: Some(fee_result),
                         unique_identifiers,
+                        priority,
                     })
                 })
             } else {
@@ -140,6 +139,7 @@ where
                     level: check_tx_level,
                     fee_result: None,
                     unique_identifiers,
+                    priority,
                 }))
             }
         })
@@ -192,6 +192,11 @@ mod tests {
     use dpp::NativeBlsModule;
 
     use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
+    use dpp::data_contract::document_type::v0::random_document_type::{
+        FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
+    };
+    use dpp::data_contract::document_type::v0::DocumentTypeV0;
+    use dpp::data_contract::document_type::DocumentType;
     use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
     use dpp::platform_value::Bytes32;
     use dpp::system_data_contracts::dashpay_contract;
@@ -200,8 +205,6 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
-    use std::time;
-    use std::time::SystemTime;
 
     // This test needs to be redone with new contract bytes, but is still useful for debugging
     #[test]
@@ -216,8 +219,8 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let state = platform.state.read();
-        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_state = platform.state.load();
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
         let tx: Vec<u8> = vec![
@@ -270,13 +273,13 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let check_result = platform
-            .check_tx(&tx, FirstTimeCheck, platform_version)
+            .check_tx(&tx, FirstTimeCheck, &platform_state, platform_version)
             .expect("expected to check tx");
 
         assert!(check_result.is_valid());
 
         let check_result = platform
-            .check_tx(&tx, Recheck, platform_version)
+            .check_tx(&tx, Recheck, &platform_state, platform_version)
             .expect("expected to check tx");
 
         assert!(check_result.is_valid());
@@ -285,7 +288,7 @@ mod tests {
             .platform
             .process_raw_state_transitions(
                 &vec![tx.clone()],
-                &state,
+                &platform_state,
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
@@ -293,7 +296,7 @@ mod tests {
             .expect("expected to process state transition");
 
         let check_result = platform
-            .check_tx(&tx, Recheck, platform_version)
+            .check_tx(&tx, Recheck, &platform_state, platform_version)
             .expect("expected to check tx");
 
         assert!(!check_result.is_valid());
@@ -310,8 +313,8 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let state = platform.state.read();
-        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_state = platform.state.load();
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
@@ -359,32 +362,49 @@ mod tests {
             .expect("expected to insert identity");
 
         let validation_result = platform
-            .check_tx(serialized.as_slice(), FirstTimeCheck, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                FirstTimeCheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
 
         let check_result = platform
-            .check_tx(serialized.as_slice(), Recheck, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(check_result.is_valid());
 
         let transaction = platform.drive.grove.start_transaction();
 
-        platform
+        let processing_result = platform
             .platform
             .process_raw_state_transitions(
                 &vec![serialized.clone()],
-                &state,
+                &platform_state,
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
             )
             .expect("expected to process state transition");
 
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2604790);
+
         let check_result = platform
-            .check_tx(serialized.as_slice(), Recheck, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(check_result.is_valid()); // it should still be valid, because we didn't commit the transaction
@@ -397,10 +417,343 @@ mod tests {
             .expect("expected to commit");
 
         let check_result = platform
-            .check_tx(serialized.as_slice(), Recheck, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(check_result.is_valid()); // it should still be valid, because we don't validate state
+    }
+
+    #[test]
+    fn data_contract_create_check_tx_for_invalid_contract() {
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig::default())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
+        let platform_state = platform.state.load();
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            1,
+            Some(1),
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        platform
+            .drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create state structure");
+        let identity: Identity = IdentityV0 {
+            id: Identifier::new([
+                158, 113, 180, 126, 91, 83, 62, 44, 83, 54, 97, 88, 240, 215, 84, 139, 167, 156,
+                166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
+            ]),
+            public_keys: BTreeMap::from([(1, key.clone())]),
+            balance: 1000000000,
+            revision: 0,
+        }
+        .into();
+
+        let mut dashpay = get_dashpay_contract_fixture(Some(identity.id()), 1, protocol_version);
+
+        let dashpay_id = dashpay.data_contract().id();
+        // we need to alter dashpay to make it invalid
+
+        let document_types = dashpay.data_contract_mut().document_types_mut();
+
+        let parameters = RandomDocumentTypeParameters {
+            new_fields_optional_count_range: 5..6,
+            new_fields_required_count_range: 3..4,
+            new_indexes_count_range: Default::default(),
+            field_weights: FieldTypeWeights {
+                string_weight: 5,
+                float_weight: 3,
+                integer_weight: 2,
+                date_weight: 0,
+                boolean_weight: 1,
+                byte_array_weight: 0,
+            },
+            field_bounds: FieldMinMaxBounds {
+                string_min_len: Default::default(),
+                string_has_min_len_chance: 0.0,
+                string_max_len: Default::default(),
+                string_has_max_len_chance: 0.0,
+                integer_min: Default::default(),
+                integer_has_min_chance: 0.0,
+                integer_max: Default::default(),
+                integer_has_max_chance: 0.0,
+                float_min: Default::default(),
+                float_has_min_chance: 0.0,
+                float_max: Default::default(),
+                float_has_max_chance: 0.0,
+                date_min: 0,
+                date_max: 100,
+                byte_array_min_len: Default::default(),
+                byte_array_has_min_len_chance: 0.0,
+                byte_array_max_len: Default::default(),
+                byte_array_has_max_len_chance: 0.0,
+            },
+            keep_history_chance: 0.0,
+            documents_mutable_chance: 0.0,
+        };
+
+        let mut rng = StdRng::seed_from_u64(6);
+
+        document_types.insert(
+            "invalid".to_string(),
+            DocumentType::V0(
+                DocumentTypeV0::invalid_random_document_type(
+                    parameters,
+                    dashpay_id,
+                    &mut rng,
+                    platform_version,
+                )
+                .expect("expected an invalid document type"),
+            ),
+        );
+
+        let mut create_contract_state_transition: StateTransition = dashpay
+            .try_into_platform_versioned(platform_version)
+            .expect("expected a state transition");
+        create_contract_state_transition
+            .sign(&key, private_key.as_slice(), &NativeBlsModule)
+            .expect("expected to sign transition");
+        let serialized = create_contract_state_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+        platform
+            .drive
+            .add_new_identity(
+                identity,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        let validation_result = platform
+            .check_tx(
+                serialized.as_slice(),
+                FirstTimeCheck,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(validation_result.errors.is_empty());
+
+        let check_result = platform
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(check_result.is_valid());
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![serialized.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        // We have one invalid paid for state transition
+        assert_eq!(processing_result.invalid_paid_count(), 1);
+
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 736520);
+
+        let check_result = platform
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(check_result.is_valid()); // it should still be valid, because we didn't commit the transaction
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let check_result = platform
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(check_result.is_valid()); // it should still be valid, because we don't validate state
+    }
+
+    #[test]
+    fn data_contract_create_check_tx_priority() {
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig::default())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
+        let platform_state = platform.state.load();
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            1,
+            Some(1),
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        platform
+            .drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create state structure");
+        let identity: Identity = IdentityV0 {
+            id: Identifier::new([
+                158, 113, 180, 126, 91, 83, 62, 44, 83, 54, 97, 88, 240, 215, 84, 139, 167, 156,
+                166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
+            ]),
+            public_keys: BTreeMap::from([(1, key.clone())]),
+            balance: 1000000000,
+            revision: 0,
+        }
+        .into();
+
+        let dashpay = get_dashpay_contract_fixture(Some(identity.id()), 1, protocol_version);
+        let mut create_contract_state_transition: StateTransition = dashpay
+            .try_into_platform_versioned(platform_version)
+            .expect("expected a state transition");
+
+        create_contract_state_transition.set_user_fee_increase(100); // This means that things will be twice as expensive
+
+        create_contract_state_transition
+            .sign(&key, private_key.as_slice(), &NativeBlsModule)
+            .expect("expected to sign transition");
+        let serialized = create_contract_state_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+        platform
+            .drive
+            .add_new_identity(
+                identity,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        let validation_result = platform
+            .check_tx(
+                serialized.as_slice(),
+                FirstTimeCheck,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(validation_result.errors.is_empty());
+
+        assert_eq!(validation_result.data.unwrap().priority, 10000);
+
+        let check_result = platform
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(check_result.is_valid());
+
+        assert_eq!(check_result.data.unwrap().priority, 10000);
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![serialized.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+
+        // The processing fees should be twice as much as a fee multiplier of 0,
+        // since a fee multiplier of 100 means 100% more of 1 (gives 2)
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            2604790 * 2
+        );
+
+        let check_result = platform
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(check_result.is_valid()); // it should still be valid, because we didn't commit the transaction
+
+        assert_eq!(check_result.data.unwrap().priority, 10000);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let check_result = platform
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(check_result.is_valid()); // it should still be valid, because we don't validate state
+
+        assert_eq!(check_result.data.unwrap().priority, 10000);
     }
 
     #[test]
@@ -414,8 +767,8 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let state = platform.state.read();
-        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_state = platform.state.load();
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
@@ -463,13 +816,23 @@ mod tests {
             .expect("expected to insert identity");
 
         let validation_result = platform
-            .check_tx(serialized.as_slice(), FirstTimeCheck, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                FirstTimeCheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
 
         let check_result = platform
-            .check_tx(serialized.as_slice(), Recheck, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(check_result.is_valid());
@@ -480,7 +843,7 @@ mod tests {
             .platform
             .process_raw_state_transitions(
                 &vec![serialized.clone()],
-                &state,
+                &platform_state,
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
@@ -488,7 +851,12 @@ mod tests {
             .expect("expected to process state transition");
 
         let check_result = platform
-            .check_tx(serialized.as_slice(), Recheck, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(check_result.is_valid()); // it should still be valid, because we didn't commit the transaction
@@ -501,7 +869,12 @@ mod tests {
             .expect("expected to commit");
 
         let check_result = platform
-            .check_tx(serialized.as_slice(), Recheck, platform_version)
+            .check_tx(
+                serialized.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
             .expect("expected to check tx");
 
         assert!(!check_result.is_valid()); // the identity shouldn't have enough balance anymore
@@ -519,7 +892,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -615,6 +988,7 @@ mod tests {
                 entropy.0,
                 &key,
                 1,
+                0,
                 &signer,
                 platform_version,
                 None,
@@ -633,6 +1007,7 @@ mod tests {
                 profile,
                 &key,
                 2,
+                0,
                 &signer,
                 platform_version,
                 None,
@@ -677,6 +1052,7 @@ mod tests {
             .check_tx(
                 documents_batch_update_serialized_transition.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -695,7 +1071,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -778,6 +1154,7 @@ mod tests {
                 &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
+                0,
                 platform_version,
                 None,
             )
@@ -791,6 +1168,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -823,7 +1201,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -906,6 +1284,7 @@ mod tests {
                 &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
+                0,
                 platform_version,
                 None,
             )
@@ -919,6 +1298,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -943,6 +1323,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -958,6 +1339,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 Recheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -981,7 +1363,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -1035,6 +1417,7 @@ mod tests {
                 &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
+                0,
                 platform_version,
                 None,
             )
@@ -1048,6 +1431,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1071,7 +1455,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -1154,6 +1538,7 @@ mod tests {
                 &identity,
                 asset_lock_proof_top_up.clone(),
                 pk.as_slice(),
+                0,
                 platform_version,
                 None,
             )
@@ -1167,6 +1552,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1231,6 +1617,7 @@ mod tests {
             .check_tx(
                 identity_create_serialized_transition.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1246,6 +1633,7 @@ mod tests {
             .check_tx(
                 identity_create_serialized_transition.as_slice(),
                 Recheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1291,7 +1679,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let genesis_time = 0;
@@ -1337,6 +1725,7 @@ mod tests {
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
+            user_fee_increase: 0,
             signature_public_key_id: 1,
             signature: Default::default(),
         }
@@ -1362,6 +1751,7 @@ mod tests {
             .check_tx(
                 update_transition_bytes.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to execute identity top up tx");
@@ -1404,7 +1794,7 @@ mod tests {
             .expect_verify_instant_lock()
             .returning(|_, _| Ok(true));
 
-        let platform_state = platform.state.read();
+        let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let genesis_time = 0;
@@ -1448,6 +1838,7 @@ mod tests {
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key.clone())],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
+            user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: Default::default(),
         }
@@ -1472,6 +1863,7 @@ mod tests {
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
+            user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: Default::default(),
         }
@@ -1492,6 +1884,7 @@ mod tests {
             .check_tx(
                 update_transition_bytes.as_slice(),
                 FirstTimeCheck,
+                &platform_state,
                 platform_version,
             )
             .expect("expected to execute identity top up tx");

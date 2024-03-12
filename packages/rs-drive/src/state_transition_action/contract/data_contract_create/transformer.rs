@@ -3,40 +3,42 @@ use crate::state_transition_action::contract::data_contract_create::DataContract
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
-use platform_version::TryFromPlatformVersioned;
 
-impl TryFromPlatformVersioned<DataContractCreateTransition> for DataContractCreateTransitionAction {
-    type Error = ProtocolError;
-
-    fn try_from_platform_versioned(
+impl DataContractCreateTransitionAction {
+    /// tries to transform the DataContractCreateTransition into a DataContractCreateTransitionAction
+    /// if validation is true the data contract transformation verifies that the data contract is valid
+    /// if validation is false, the data contract base structure is created regardless of if it is valid
+    pub fn try_from_platform_versioned(
         value: DataContractCreateTransition,
+        validate: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Self::Error> {
+    ) -> Result<Self, ProtocolError> {
         match value {
             DataContractCreateTransition::V0(v0) => Ok(
                 DataContractCreateTransitionActionV0::try_from_platform_versioned(
                     v0,
+                    validate,
                     platform_version,
                 )?
                 .into(),
             ),
         }
     }
-}
 
-impl TryFromPlatformVersioned<&DataContractCreateTransition>
-    for DataContractCreateTransitionAction
-{
-    type Error = ProtocolError;
+    /// tries to transform the borrowed DataContractCreateTransition into a DataContractCreateTransitionAction
+    /// if validation is true the data contract transformation verifies that the data contract is valid
+    /// if validation is false, the data contract base structure is created regardless of if it is valid
 
-    fn try_from_platform_versioned(
+    pub fn try_from_borrowed_platform_versioned(
         value: &DataContractCreateTransition,
+        validate: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Self::Error> {
+    ) -> Result<Self, ProtocolError> {
         match value {
             DataContractCreateTransition::V0(v0) => Ok(
-                DataContractCreateTransitionActionV0::try_from_platform_versioned(
+                DataContractCreateTransitionActionV0::try_from_borrowed_platform_versioned(
                     v0,
+                    validate,
                     platform_version,
                 )?
                 .into(),

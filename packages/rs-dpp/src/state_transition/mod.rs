@@ -8,12 +8,18 @@ use platform_value::{BinaryData, Identifier};
 pub use state_transition_types::*;
 
 use bincode::{Decode, Encode};
-#[cfg(any(feature = "state-transition-signing", feature="state-transition-validation"))]
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
 use dashcore::signer;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
 mod abstract_state_transition;
-#[cfg(any(feature = "state-transition-signing", feature="state-transition-validation"))]
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
 use crate::BlsModule;
 use crate::ProtocolError;
 
@@ -33,19 +39,33 @@ mod traits;
 
 // pub mod state_transition_fee;
 
+#[cfg(feature = "state-transition-signing")]
+use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
+#[cfg(feature = "state-transition-validation")]
+use crate::consensus::signature::{
+    InvalidStateTransitionSignatureError, PublicKeyIsDisabledError, SignatureError,
+};
+#[cfg(feature = "state-transition-validation")]
+use crate::consensus::ConsensusError;
 pub use traits::*;
 
-use crate::consensus::signature::{
-    InvalidSignaturePublicKeySecurityLevelError, InvalidStateTransitionSignatureError,
-    PublicKeyIsDisabledError, SignatureError,
-};
-use crate::consensus::ConsensusError;
-
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
-use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use crate::prelude::AssetLockProof;
+#[cfg(feature = "state-transition-signing")]
+use crate::identity::Purpose;
+#[cfg(any(
+    feature = "state-transition-signing",
+    feature = "state-transition-validation"
+))]
+use crate::identity::{IdentityPublicKey, KeyType};
+use crate::identity::{KeyID, SecurityLevel};
+use crate::prelude::{AssetLockProof, UserFeeIncrease};
 pub use state_transitions::*;
 
 use crate::serialization::Signable;
@@ -58,15 +78,13 @@ use crate::state_transition::data_contract_update_transition::{
 use crate::state_transition::documents_batch_transition::{
     DocumentsBatchTransition, DocumentsBatchTransitionSignable,
 };
-#[cfg(any(
-    feature = "state-transition-signing",
-    feature = "state-transition-validation"
-))]
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::errors::InvalidSignaturePublicKeyError;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::WrongPublicKeyPurposeError;
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
-    StateTransitionIsNotSignedError,
+    InvalidIdentityPublicKeyTypeError, PublicKeyMismatchError, StateTransitionIsNotSignedError,
 };
 use crate::state_transition::identity_create_transition::{
     IdentityCreateTransition, IdentityCreateTransitionSignable,
@@ -83,6 +101,7 @@ use crate::state_transition::identity_topup_transition::{
 use crate::state_transition::identity_update_transition::{
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 
 pub type GetDataContractSecurityLevelRequirementFn =
@@ -169,6 +188,7 @@ macro_rules! call_method_identity_signed {
     };
 }
 
+#[cfg(feature = "state-transition-signing")]
 macro_rules! call_errorable_method_identity_signed {
     ($state_transition:expr, $method:ident, $args:tt ) => {
         match $state_transition {
@@ -203,25 +223,25 @@ macro_rules! call_errorable_method_identity_signed {
         }
     };
 }
-
-macro_rules! call_static_method {
-    ($state_transition:expr, $method:ident ) => {
-        match $state_transition {
-            StateTransition::DataContractCreate(_) => DataContractCreateTransition::$method(),
-            StateTransition::DataContractUpdate(_) => DataContractUpdateTransition::$method(),
-            StateTransition::DocumentsBatch(_) => DocumentsBatchTransition::$method(),
-            StateTransition::IdentityCreate(_) => IdentityCreateTransition::$method(),
-            StateTransition::IdentityTopUp(_) => IdentityTopUpTransition::$method(),
-            StateTransition::IdentityCreditWithdrawal(_) => {
-                IdentityCreditWithdrawalTransition::$method()
-            }
-            StateTransition::IdentityUpdate(_) => IdentityUpdateTransition::$method(),
-            StateTransition::IdentityCreditTransfer(_) => {
-                IdentityCreditTransferTransition::$method()
-            }
-        }
-    };
-}
+// TODO unused macros below
+// macro_rules! call_static_method {
+//     ($state_transition:expr, $method:ident ) => {
+//         match $state_transition {
+//             StateTransition::DataContractCreate(_) => DataContractCreateTransition::$method(),
+//             StateTransition::DataContractUpdate(_) => DataContractUpdateTransition::$method(),
+//             StateTransition::DocumentsBatch(_) => DocumentsBatchTransition::$method(),
+//             StateTransition::IdentityCreate(_) => IdentityCreateTransition::$method(),
+//             StateTransition::IdentityTopUp(_) => IdentityTopUpTransition::$method(),
+//             StateTransition::IdentityCreditWithdrawal(_) => {
+//                 IdentityCreditWithdrawalTransition::$method()
+//             }
+//             StateTransition::IdentityUpdate(_) => IdentityUpdateTransition::$method(),
+//             StateTransition::IdentityCreditTransfer(_) => {
+//                 IdentityCreditTransferTransition::$method()
+//             }
+//         }
+//     };
+// }
 
 #[derive(
     Debug,
@@ -295,6 +315,11 @@ impl StateTransition {
         call_method!(self, signature)
     }
 
+    /// returns the fee_increase additional percentage multiplier, it affects only processing costs
+    pub fn user_fee_increase(&self) -> UserFeeIncrease {
+        call_method!(self, user_fee_increase)
+    }
+
     /// The transaction id is a single hash of the data with the signature
     pub fn transaction_id(&self) -> Result<[u8; 32], ProtocolError> {
         Ok(hash_single(
@@ -325,6 +350,11 @@ impl StateTransition {
     /// set a new signature
     pub fn set_signature(&mut self, signature: BinaryData) {
         call_method!(self, set_signature, signature)
+    }
+
+    /// set fee multiplier
+    pub fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
+        call_method!(self, set_user_fee_increase, fee_multiplier)
     }
 
     /// set a new signature

@@ -1,4 +1,4 @@
-use crate::abci::app::{PlatformApplication, TransactionalApplication};
+use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Setters;
@@ -20,7 +20,7 @@ pub fn prepare_proposal<'a, A, C>(
     mut request: proto::RequestPrepareProposal,
 ) -> Result<proto::ResponsePrepareProposal, Error>
 where
-    A: PlatformApplication<C> + TransactionalApplication<'a>,
+    A: PlatformApplication<C> + TransactionalApplication<'a> + BlockExecutionApplication,
     C: CoreRPCLike,
 {
     let timer = crate::metrics::abci_request_duration("prepare_proposal");
@@ -30,13 +30,13 @@ where
     // propose one
     // This is done before all else
 
-    let state = app.platform().state.read();
+    let platform_state = app.platform().state.load();
 
-    let last_committed_core_height = state.last_committed_core_height();
+    let last_committed_core_height = platform_state.last_committed_core_height();
 
     let core_chain_lock_update = match app.platform().core_rpc.get_best_chain_lock() {
         Ok(latest_chain_lock) => {
-            if state.last_committed_block_info().is_none()
+            if platform_state.last_committed_block_info().is_none()
                 || latest_chain_lock.block_height > last_committed_core_height
             {
                 Some(latest_chain_lock)
@@ -46,8 +46,6 @@ where
         }
         Err(_) => None,
     };
-
-    drop(state);
 
     // Filter out transactions exceeding max_block_size
     let mut transactions_exceeding_max_block_size = Vec::new();
@@ -86,29 +84,33 @@ where
     // Prepare transaction
     let transaction_guard = if request.height == app.platform().config.abci.genesis_height as i64 {
         // special logic on init chain
-        let transaction = app.transaction().read().unwrap();
-        if transaction.is_none() {
-            return Err(Error::Abci(AbciError::BadRequest("received a prepare proposal request for the genesis height before an init chain request".to_string())))?;
-        }
+        let transaction_guard = app.transaction().read().unwrap();
+        if transaction_guard.is_none() {
+            Err(Error::Abci(AbciError::BadRequest("received a prepare proposal request for the genesis height before an init chain request".to_string())))?;
+        };
         if request.round > 0 {
-            transaction.as_ref().map(|tx| tx.rollback_to_savepoint());
-        }
-        transaction
+            transaction_guard
+                .as_ref()
+                .map(|tx| tx.rollback_to_savepoint());
+        };
+        transaction_guard
     } else {
         app.start_transaction();
         app.transaction().read().unwrap()
     };
 
-    let transaction = transaction_guard.as_ref().unwrap();
+    let transaction = transaction_guard
+        .as_ref()
+        .expect("transaction must be started");
 
     // Running the proposal executes all the state transitions for the block
-    let mut run_result = app
-        .platform()
-        .run_block_proposal(block_proposal, true, transaction)?;
+    let mut run_result =
+        app.platform()
+            .run_block_proposal(block_proposal, true, &platform_state, transaction)?;
 
     if !run_result.is_valid() {
         // This is a system error, because we are proposing
-        return Err(run_result.errors.remove(0).into());
+        return Err(run_result.errors.remove(0));
     }
 
     let block_execution_outcome::v0::BlockExecutionOutcome {
@@ -116,8 +118,10 @@ where
         state_transitions_result,
         validator_set_update,
         protocol_version,
+        mut block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
 
+    // TODO: This is current protocol version and can be read from the state
     let platform_version = PlatformVersion::get(protocol_version)
         .expect("must be set in run block proposal from existing protocol version");
 
@@ -188,12 +192,12 @@ where
         consensus_param_updates: None,
     };
 
-    let mut block_execution_context_guard = app.platform().block_execution_context.write().unwrap();
-
-    let block_execution_context = block_execution_context_guard
-        .as_mut()
-        .expect("expected that a block execution context was set");
     block_execution_context.set_proposer_results(Some(response.clone()));
+
+    app.block_execution_context()
+        .write()
+        .unwrap()
+        .replace(block_execution_context);
 
     let elapsed_time_ms = timer.elapsed().as_millis();
 

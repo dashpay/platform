@@ -29,7 +29,7 @@ use crate::identity::conversion::platform_value::IdentityPlatformValueConversion
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::core_script::CoreScript;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
-use crate::prelude::{IdentityNonce};
+use crate::prelude::IdentityNonce;
 #[cfg(all(feature = "identity-serialization", feature = "client"))]
 use crate::serialization::PlatformDeserializable;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
@@ -200,7 +200,7 @@ impl IdentityFactory {
         let mut identity_topup_transition = IdentityTopUpTransitionV0::default();
 
         identity_topup_transition.set_identity_id(identity_id);
-        identity_topup_transition.set_asset_lock_proof(asset_lock_proof);
+        identity_topup_transition.set_asset_lock_proof(asset_lock_proof)?;
 
         Ok(IdentityTopUpTransition::V0(identity_topup_transition))
     }
@@ -236,14 +236,15 @@ impl IdentityFactory {
         output_script: CoreScript,
         identity_nonce: IdentityNonce,
     ) -> Result<IdentityCreditWithdrawalTransition, ProtocolError> {
-        let mut identity_credit_withdrawal_transition =
-            IdentityCreditWithdrawalTransitionV0::default();
-        identity_credit_withdrawal_transition.identity_id = identity_id;
-        identity_credit_withdrawal_transition.amount = amount;
-        identity_credit_withdrawal_transition.core_fee_per_byte = core_fee_per_byte;
-        identity_credit_withdrawal_transition.pooling = pooling;
-        identity_credit_withdrawal_transition.output_script = output_script;
-        identity_credit_withdrawal_transition.nonce = identity_nonce;
+        let identity_credit_withdrawal_transition = IdentityCreditWithdrawalTransitionV0 {
+            identity_id,
+            amount,
+            core_fee_per_byte,
+            pooling,
+            output_script,
+            nonce: identity_nonce,
+            ..Default::default()
+        };
 
         Ok(IdentityCreditWithdrawalTransition::from(
             identity_credit_withdrawal_transition,

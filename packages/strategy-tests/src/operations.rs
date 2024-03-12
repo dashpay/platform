@@ -349,16 +349,13 @@ pub enum OperationType {
 
 #[derive(Clone, Debug, Encode, Decode)]
 enum OperationTypeInSerializationFormat {
-    OperationTypeInSerializationFormatDocument(Vec<u8>),
-    OperationTypeInSerializationFormatIdentityTopUp,
-    OperationTypeInSerializationFormatIdentityUpdate(IdentityUpdateOp),
-    OperationTypeInSerializationFormatIdentityWithdrawal,
-    OperationTypeInSerializationFormatContractCreate(
-        RandomDocumentTypeParameters,
-        DocumentTypeCount,
-    ),
-    OperationTypeInSerializationFormatContractUpdate(Vec<u8>),
-    OperationTypeInSerializationFormatIdentityTransfer,
+    Document(Vec<u8>),
+    IdentityTopUp,
+    IdentityUpdate(IdentityUpdateOp),
+    IdentityWithdrawal,
+    ContractCreate(RandomDocumentTypeParameters, DocumentTypeCount),
+    ContractUpdate(Vec<u8>),
+    IdentityTransfer,
 }
 
 impl PlatformSerializableWithPlatformVersion for OperationType {
@@ -379,29 +376,29 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
         let op = match self {
             OperationType::Document(document_op) => {
                 // let's just serialize it to make things easier
-                let document_op_in_serialization_format = document_op.serialize_consume_to_bytes_with_platform_version(platform_version)?;
-                OperationTypeInSerializationFormat::OperationTypeInSerializationFormatDocument(document_op_in_serialization_format)
+                let document_op_in_serialization_format = document_op
+                    .serialize_consume_to_bytes_with_platform_version(platform_version)?;
+                OperationTypeInSerializationFormat::Document(document_op_in_serialization_format)
             }
-            OperationType::IdentityTopUp => {
-                OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityTopUp
-            }
+            OperationType::IdentityTopUp => OperationTypeInSerializationFormat::IdentityTopUp,
             OperationType::IdentityUpdate(identity_update_op) => {
-                OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityUpdate(identity_update_op)
+                OperationTypeInSerializationFormat::IdentityUpdate(identity_update_op)
             }
             OperationType::IdentityWithdrawal => {
-                OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityWithdrawal
+                OperationTypeInSerializationFormat::IdentityWithdrawal
             }
             OperationType::ContractCreate(p, c) => {
-                OperationTypeInSerializationFormat::OperationTypeInSerializationFormatContractCreate(p,c)
+                OperationTypeInSerializationFormat::ContractCreate(p, c)
             }
             OperationType::ContractUpdate(update_op) => {
                 // let's just serialize it to make things easier
-                let contract_op_in_serialization_format = update_op.serialize_consume_to_bytes_with_platform_version(platform_version)?;
-                OperationTypeInSerializationFormat::OperationTypeInSerializationFormatContractUpdate(contract_op_in_serialization_format)
+                let contract_op_in_serialization_format =
+                    update_op.serialize_consume_to_bytes_with_platform_version(platform_version)?;
+                OperationTypeInSerializationFormat::ContractUpdate(
+                    contract_op_in_serialization_format,
+                )
             }
-            OperationType::IdentityTransfer => {
-                OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityTransfer
-            }
+            OperationType::IdentityTransfer => OperationTypeInSerializationFormat::IdentityTransfer,
         };
         let config = bincode::config::standard()
             .with_big_endian()
@@ -431,29 +428,33 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 })?
                 .0;
         Ok(match operation_type {
-            OperationTypeInSerializationFormat::OperationTypeInSerializationFormatDocument(serialized_op) => {
-                let document_op = DocumentOp::versioned_deserialize(serialized_op.as_slice(), validate, platform_version)?;
+            OperationTypeInSerializationFormat::Document(serialized_op) => {
+                let document_op = DocumentOp::versioned_deserialize(
+                    serialized_op.as_slice(),
+                    validate,
+                    platform_version,
+                )?;
                 OperationType::Document(document_op)
             }
-            OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityTopUp => {
-                OperationType::IdentityTopUp
-            }
-            OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityUpdate(identity_update_op) => {
+            OperationTypeInSerializationFormat::IdentityTopUp => OperationType::IdentityTopUp,
+            OperationTypeInSerializationFormat::IdentityUpdate(identity_update_op) => {
                 OperationType::IdentityUpdate(identity_update_op)
             }
-            OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityWithdrawal => {
+            OperationTypeInSerializationFormat::IdentityWithdrawal => {
                 OperationType::IdentityWithdrawal
             }
-            OperationTypeInSerializationFormat::OperationTypeInSerializationFormatContractCreate(p, c) => {
+            OperationTypeInSerializationFormat::ContractCreate(p, c) => {
                 OperationType::ContractCreate(p, c)
             }
-            OperationTypeInSerializationFormat::OperationTypeInSerializationFormatContractUpdate(serialized_op) => {
-                let update_op = DataContractUpdateOp::versioned_deserialize(serialized_op.as_slice(), validate, platform_version)?;
+            OperationTypeInSerializationFormat::ContractUpdate(serialized_op) => {
+                let update_op = DataContractUpdateOp::versioned_deserialize(
+                    serialized_op.as_slice(),
+                    validate,
+                    platform_version,
+                )?;
                 OperationType::ContractUpdate(update_op)
             }
-            OperationTypeInSerializationFormat::OperationTypeInSerializationFormatIdentityTransfer => {
-                OperationType::IdentityTransfer
-            }
+            OperationTypeInSerializationFormat::IdentityTransfer => OperationType::IdentityTransfer,
         })
     }
 }

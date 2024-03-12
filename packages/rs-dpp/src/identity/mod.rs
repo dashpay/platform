@@ -18,16 +18,16 @@ pub mod signer;
 
 pub mod accessors;
 pub(crate) mod conversion;
-mod fields;
+pub mod fields;
 #[cfg(feature = "client")]
 mod identity_facade;
 #[cfg(feature = "factories")]
 pub mod identity_factory;
 pub mod identity_nonce;
-mod methods;
+pub mod methods;
 #[cfg(feature = "random-identities")]
 pub mod random;
-mod v0;
+pub mod v0;
 pub mod versions;
 
 pub use fields::*;

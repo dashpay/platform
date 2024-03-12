@@ -17,7 +17,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -83,7 +83,7 @@ mod tests {
 
         // we expect to see quorums with banned members
 
-        let state = outcome.abci_app.platform.state.read();
+        let state = outcome.abci_app.platform.state.load();
 
         let banned_count = state
             .validator_sets()
@@ -117,7 +117,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -183,7 +183,7 @@ mod tests {
 
         // we expect to see quorums with banned members
 
-        let _state = outcome.abci_app.platform.state.read();
+        let _state = outcome.abci_app.platform.state.load();
 
         // We should also see validator sets with less than the quorum size
 
@@ -203,7 +203,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: vec![],
+                start_identities: (0, 0),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,

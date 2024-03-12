@@ -1,5 +1,8 @@
+#[cfg(feature = "cbor")]
 use crate::consensus::basic::decode::ProtocolVersionParsingError;
+#[cfg(feature = "cbor")]
 use crate::consensus::basic::BasicError;
+#[cfg(feature = "cbor")]
 use crate::consensus::ConsensusError;
 use integer_encoding::VarInt;
 use platform_version::version::FeatureVersion;

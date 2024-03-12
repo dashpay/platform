@@ -76,6 +76,8 @@ impl CoreClient {
     /// ## See also
     ///
     /// * [Dash Core documentation](https://docs.dash.org/projects/core/en/stable/docs/api/remote-procedure-calls-wallet.html#listunspent)
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
     pub fn list_unspent(
         &self,
         minimum_sum_satoshi: Option<u64>,
@@ -93,6 +95,8 @@ impl CoreClient {
     }
 
     /// Return address to which change of transaction can be sent.
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
     pub fn get_balance(&self) -> Result<Amount, Error> {
         self.core
             .lock()

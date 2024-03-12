@@ -250,8 +250,7 @@ where
 
                         StateTransitionExecutionResult::DriveAbciError(format!(
                             "{} {}",
-                            first_consensus_error.to_string(),
-                            payment_consensus_error.to_string()
+                            first_consensus_error, payment_consensus_error
                         ))
                     }
                 }

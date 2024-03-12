@@ -36,7 +36,7 @@ impl<C> Platform<C> {
             .drive
             .cache
             .system_data_contracts
-            .read_masternode_reward_shares();
+            .load_masternode_reward_shares();
 
         let document_type =
             masternode_rewards_contract.document_type_for_name(MN_REWARD_SHARES_DOCUMENT_TYPE)?;

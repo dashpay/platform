@@ -11,6 +11,7 @@ use dpp::identifier::Identifier;
 use drive::error::query::QuerySyntaxError;
 use std::collections::BTreeMap;
 
+use crate::platform_types::platform_state::PlatformState;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
@@ -79,6 +80,7 @@ impl<C> Platform<C> {
             offset,
             prove,
         }: GetIdentityKeysRequestV0,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetIdentityKeysResponseV0>, Error> {
         let identity_id: Identifier = check_validation_result_with_data!(identity_id
@@ -138,11 +140,11 @@ impl<C> Platform<C> {
                 .drive
                 .prove_identity_keys(key_request, None, platform_version)?;
 
-            let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
-
             GetIdentityKeysResponseV0 {
-                result: Some(get_identity_keys_response_v0::Result::Proof(proof)),
-                metadata: Some(metadata),
+                result: Some(get_identity_keys_response_v0::Result::Proof(
+                    self.response_proof_v0(platform_state, proof),
+                )),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
             let keys: SerializedKeyVec =
@@ -153,7 +155,7 @@ impl<C> Platform<C> {
                 result: Some(get_identity_keys_response_v0::Result::Keys(
                     get_identity_keys_response_v0::Keys { keys_bytes: keys },
                 )),
-                metadata: Some(self.response_metadata_v0()),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         };
 
@@ -170,7 +172,7 @@ mod tests {
 
     #[test]
     fn test_invalid_identity_id() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 8],
@@ -181,7 +183,7 @@ mod tests {
         };
 
         let result = platform
-            .query_keys_v0(request, version)
+            .query_keys_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert_invalid_identifier(result);
@@ -189,7 +191,7 @@ mod tests {
 
     #[test]
     fn test_invalid_limit_u16_overflow() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 32],
@@ -200,7 +202,7 @@ mod tests {
         };
 
         let result = platform
-            .query_keys_v0(request, version)
+            .query_keys_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -211,7 +213,7 @@ mod tests {
 
     #[test]
     fn test_invalid_limit_max() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 32],
@@ -222,7 +224,7 @@ mod tests {
         };
 
         let result = platform
-            .query_keys_v0(request, version)
+            .query_keys_v0(request, &state, version)
             .expect("expected query to succeed");
 
         let error_message = format!(
@@ -238,7 +240,7 @@ mod tests {
 
     #[test]
     fn test_invalid_offset_u16_overflow() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 32],
@@ -249,7 +251,7 @@ mod tests {
         };
 
         let result = platform
-            .query_keys_v0(request, version)
+            .query_keys_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -260,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_missing_request_type() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 32],
@@ -271,7 +273,7 @@ mod tests {
         };
 
         let result = platform
-            .query_keys_v0(request, version)
+            .query_keys_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -282,7 +284,7 @@ mod tests {
 
     #[test]
     fn test_missing_request() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 32],
@@ -293,7 +295,7 @@ mod tests {
         };
 
         let result = platform
-            .query_keys_v0(request, version)
+            .query_keys_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -304,7 +306,7 @@ mod tests {
 
     #[test]
     fn test_invalid_key_request_type() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 32],
@@ -326,7 +328,7 @@ mod tests {
         };
 
         let result = platform
-            .query_keys_v0(request, version)
+            .query_keys_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -337,7 +339,7 @@ mod tests {
 
     #[test]
     fn test_absent_keys() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 32],
@@ -350,7 +352,7 @@ mod tests {
         };
 
         let result = platform
-            .query_keys_v0(request, version)
+            .query_keys_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(
@@ -364,7 +366,7 @@ mod tests {
 
     #[test]
     fn test_absent_keys_proof() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 32],
@@ -377,7 +379,7 @@ mod tests {
         };
 
         let result = platform
-            .query_keys_v0(request, version)
+            .query_keys_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(

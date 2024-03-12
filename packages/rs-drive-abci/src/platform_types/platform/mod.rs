@@ -7,14 +7,14 @@ use std::fmt::{Debug, Formatter};
 
 #[cfg(any(feature = "mocks", test))]
 use crate::rpc::core::MockCoreRPCLike;
+use arc_swap::ArcSwap;
 use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::RwLock;
+use std::sync::Arc;
 
 use dashcore_rpc::dashcore::BlockHash;
 
-use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -29,15 +29,13 @@ pub struct Platform<C> {
     /// Drive
     pub drive: Drive,
     /// State
-    // We use a parking_lot::RwLock because of it's writer priority which is essential so our
-    // readers in check_tx don't starve block finalization
-    // Todo: Block finalization can still be delayed until we acquire the write lock. We might want
-    //  to think of a custom approach where the writer is always placed at the front of the queue.
-    pub state: parking_lot::RwLock<PlatformState>,
+    // We use ArcSwap that provide very fast and consistent reads
+    // and atomic write (swap). This is important as we want read state
+    // for query and check tx and we don't want to block affect the
+    // state update on finalize block, and vise versa.
+    pub state: ArcSwap<PlatformState>,
     /// Configuration
     pub config: PlatformConfig,
-    /// Block execution context
-    pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
     /// Core RPC Client
     pub core_rpc: C,
 }
@@ -158,8 +156,7 @@ impl Platform<MockCoreRPCLike> {
             persisted_state.current_protocol_version_in_consensus(),
         )?);
 
-        let mut state_cache = self.state.write();
-        *state_cache = persisted_state;
+        self.state.store(Arc::new(persisted_state));
 
         Ok(true)
     }
@@ -224,9 +221,8 @@ impl<C> Platform<C> {
 
         let platform: Platform<C> = Platform {
             drive,
-            state: parking_lot::RwLock::new(platform_state),
+            state: ArcSwap::new(Arc::new(platform_state)),
             config,
-            block_execution_context: RwLock::new(None),
             core_rpc,
         };
 
@@ -253,9 +249,8 @@ impl<C> Platform<C> {
 
         Ok(Platform {
             drive,
-            state: parking_lot::RwLock::new(platform_state),
+            state: ArcSwap::new(Arc::new(platform_state)),
             config,
-            block_execution_context: RwLock::new(None),
             core_rpc,
         })
     }

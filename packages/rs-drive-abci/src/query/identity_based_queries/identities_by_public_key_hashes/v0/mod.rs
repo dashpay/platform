@@ -1,6 +1,7 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_request::GetIdentitiesByPublicKeyHashesRequestV0;
 use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_response;
@@ -21,6 +22,7 @@ impl<C> Platform<C> {
             public_key_hashes,
             prove,
         }: GetIdentitiesByPublicKeyHashesRequestV0,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetIdentitiesByPublicKeyHashesResponseV0>, Error> {
         let public_key_hashes = check_validation_result_with_data!(public_key_hashes
@@ -45,11 +47,13 @@ impl<C> Platform<C> {
                     platform_version,
                 )?;
 
-            let (metadata, proof) = self.response_metadata_and_proof_v0(proof);
-
             GetIdentitiesByPublicKeyHashesResponseV0 {
-                result: Some(get_identities_by_public_key_hashes_response_v0::Result::Proof(proof)),
-                metadata: Some(metadata),
+                result: Some(
+                    get_identities_by_public_key_hashes_response_v0::Result::Proof(
+                        self.response_proof_v0(platform_state, proof),
+                    ),
+                ),
+                metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
             let identities = self
@@ -72,7 +76,7 @@ impl<C> Platform<C> {
                 .collect::<Result<Vec<PublicKeyHashIdentityEntry>, ProtocolError>>()?;
 
             GetIdentitiesByPublicKeyHashesResponseV0 {
-                metadata: Some(self.response_metadata_v0()),
+                metadata: Some(self.response_metadata_v0(platform_state)),
                 result: Some(
                     get_identities_by_public_key_hashes_response_v0::Result::Identities(
                         get_identities_by_public_key_hashes_response::IdentitiesByPublicKeyHashes {
@@ -94,7 +98,7 @@ mod tests {
 
     #[test]
     fn test_invalid_public_key_hash() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentitiesByPublicKeyHashesRequestV0 {
             public_key_hashes: vec![vec![0; 8]],
@@ -102,7 +106,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identities_by_public_key_hashes_v0(request, version)
+            .query_identities_by_public_key_hashes_v0(request, &state, version)
             .expect("should query identities by public key hashes");
 
         assert!(
@@ -112,7 +116,7 @@ mod tests {
 
     #[test]
     fn test_identities_not_found() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentitiesByPublicKeyHashesRequestV0 {
             public_key_hashes: vec![vec![0; 20]],
@@ -120,7 +124,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identities_by_public_key_hashes_v0(request, version)
+            .query_identities_by_public_key_hashes_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(
@@ -133,7 +137,7 @@ mod tests {
 
     #[test]
     fn test_identities_absence_proof() {
-        let (platform, version) = setup_platform();
+        let (platform, state, version) = setup_platform();
 
         let request = GetIdentitiesByPublicKeyHashesRequestV0 {
             public_key_hashes: vec![vec![0; 20]],
@@ -141,7 +145,7 @@ mod tests {
         };
 
         let result = platform
-            .query_identities_by_public_key_hashes_v0(request, version)
+            .query_identities_by_public_key_hashes_v0(request, &state, version)
             .expect("expected query to succeed");
 
         assert!(matches!(

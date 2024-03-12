@@ -1,6 +1,7 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::Version as RequestVersion;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_response::Version as ResponseVersion;
@@ -16,6 +17,7 @@ impl<C> Platform<C> {
     pub fn query_identity_by_public_key_hash(
         &self,
         GetIdentityByPublicKeyHashRequest { version }: GetIdentityByPublicKeyHashRequest,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetIdentityByPublicKeyHashResponse>, Error> {
         let Some(version) = version else {
@@ -50,8 +52,11 @@ impl<C> Platform<C> {
 
         match version {
             RequestVersion::V0(request_v0) => {
-                let request =
-                    self.query_identity_by_public_key_hash_v0(request_v0, platform_version)?;
+                let request = self.query_identity_by_public_key_hash_v0(
+                    request_v0,
+                    platform_state,
+                    platform_version,
+                )?;
 
                 Ok(
                     request.map(|response_v0| GetIdentityByPublicKeyHashResponse {

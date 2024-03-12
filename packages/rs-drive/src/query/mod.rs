@@ -127,6 +127,8 @@ mod test_index;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use single_document_drive_query::SingleDocumentDriveQuery;
 
+#[cfg(all(feature = "full", feature = "verify"))]
+use crate::drive::verify::RootHash;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::DocumentV0Getters;
@@ -1715,7 +1717,7 @@ impl<'a> DriveQuery<'a> {
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<([u8; 32], Vec<Vec<u8>>, u64), Error> {
+    ) -> Result<(RootHash, Vec<Vec<u8>>, u64), Error> {
         let mut drive_operations = vec![];
         let (root_hash, items) = self.execute_with_proof_only_get_elements_internal(
             drive,
@@ -1746,7 +1748,7 @@ impl<'a> DriveQuery<'a> {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<([u8; 32], Vec<Vec<u8>>), Error> {
+    ) -> Result<(RootHash, Vec<Vec<u8>>), Error> {
         let path_query = self.construct_path_query_operations(
             drive,
             true,

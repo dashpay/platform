@@ -9,6 +9,7 @@ const {
     GetProtocolVersionUpgradeStateResponse,
     GetIdentityContractNonceResponse,
     GetIdentityNonceResponse,
+    GetIdentityKeysResponse,
     BroadcastStateTransitionResponse,
     WaitForStateTransitionResultResponse,
   },
@@ -32,6 +33,7 @@ const {
 const { GetProtocolVersionUpgradeStateResponseV0 } = GetProtocolVersionUpgradeStateResponse;
 const { GetIdentityContractNonceResponseV0 } = GetIdentityContractNonceResponse;
 const { GetIdentityNonceResponseV0 } = GetIdentityNonceResponse;
+const { GetIdentityKeysResponseV0 } = GetIdentityKeysResponse;
 
 describe('PlatformMethodsFacade', () => {
   let grpcTransportMock;
@@ -237,6 +239,26 @@ describe('PlatformMethodsFacade', () => {
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.getIdentityNonce(Buffer.alloc(32), Buffer.alloc(32));
+
+      expect(grpcTransportMock.request).to.be.calledOnce();
+    });
+  });
+
+  describe('#getIdentityKeys', () => {
+    it('should get keys', async () => {
+      const response = new GetIdentityKeysResponse();
+
+      const { Keys } = GetIdentityKeysResponseV0;
+
+      response.setV0(
+        new GetIdentityKeysResponseV0()
+          .setKeys(new Keys().setKeysBytesList([Buffer.alloc(41), Buffer.alloc(46)]))
+          .setMetadata(new ResponseMetadata()),
+      );
+
+      grpcTransportMock.request.resolves(response);
+
+      await platformMethods.getIdentityKeys(Buffer.alloc(32), [0, 1], 100, {});
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });

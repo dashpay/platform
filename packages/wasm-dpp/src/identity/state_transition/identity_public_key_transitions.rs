@@ -19,6 +19,8 @@ use dpp::version::PlatformVersion;
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct ToObjectOptions {
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
     pub skip_signature: Option<bool>,
 }
 

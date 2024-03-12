@@ -6,7 +6,9 @@ use crate::identity::KeyType;
 use crate::serialization::PlatformMessageSignable;
 #[cfg(feature = "message-signature-verification")]
 use crate::validation::SimpleConsensusValidationResult;
-use crate::{BlsModule, ProtocolError};
+#[cfg(feature = "message-signing")]
+use crate::BlsModule;
+use crate::ProtocolError;
 use dashcore::signer;
 
 impl PlatformMessageSignable for &[u8] {
@@ -122,7 +124,7 @@ impl PlatformMessageSignable for &[u8] {
             KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
                 Err(ProtocolError::InvalidSigningKeyTypeError(format!(
                     "key type {} can not sign",
-                    key_type.to_string()
+                    key_type
                 )))
             }
         }

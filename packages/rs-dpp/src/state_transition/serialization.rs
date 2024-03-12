@@ -88,6 +88,7 @@ mod tests {
         let identity_topup_transition = IdentityTopUpTransitionV0 {
             asset_lock_proof: AssetLockProof::Instant(asset_lock_proof),
             identity_id: identity.id(),
+            user_fee_increase: 0,
             signature: [1u8; 65].to_vec().into(),
         };
         let state_transition: StateTransition = identity_topup_transition.into();
@@ -125,6 +126,7 @@ mod tests {
             add_public_keys: add_public_keys_in_creation,
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
+            user_fee_increase: 0,
         };
 
         let key_signable_bytes = identity_update_transition
@@ -192,6 +194,7 @@ mod tests {
             add_public_keys: add_public_keys_in_creation,
             disable_public_keys: vec![3, 4, 5],
             public_keys_disabled_at: Some(15),
+            user_fee_increase: 0,
         };
 
         let key_signable_bytes = identity_update_transition
@@ -246,6 +249,7 @@ mod tests {
             pooling: Pooling::Standard,
             output_script: CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
             nonce: 1,
+            user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: [1u8; 65].to_vec().into(),
         };
@@ -287,7 +291,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
-        let mut created_data_contract =
+        let created_data_contract =
             get_data_contract_fixture(Some(identity.id()), 0, platform_version.protocol_version);
         let data_contract_update_transition =
             DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
@@ -296,6 +300,7 @@ mod tests {
                     .data_contract_owned()
                     .try_into_platform_versioned(platform_version)
                     .expect("expected a data contract"),
+                user_fee_increase: 0,
                 signature_public_key_id: 0,
                 signature: [1u8; 65].to_vec().into(),
             });

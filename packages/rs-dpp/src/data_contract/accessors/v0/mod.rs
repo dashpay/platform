@@ -30,6 +30,9 @@ pub trait DataContractV0Getters {
     /// Returns a mapping of document names to their corresponding document types.
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType>;
 
+    /// Returns a mapping of document names to their corresponding document types as mutable.
+    fn document_types_mut(&mut self) -> &mut BTreeMap<DocumentName, DocumentType>;
+
     /// Returns optional metadata associated with the contract.
     fn metadata(&self) -> Option<&Metadata>;
 
