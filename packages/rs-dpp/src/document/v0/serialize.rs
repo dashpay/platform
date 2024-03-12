@@ -22,10 +22,10 @@ use platform_version::version::FeatureVersion;
 
 use std::collections::BTreeMap;
 
-use std::io::{BufReader, Read};
-use crate::consensus::basic::BasicError;
 use crate::consensus::basic::decode::DecodingError;
+use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use std::io::{BufReader, Read};
 
 impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
     /// Serializes the document.
@@ -253,9 +253,11 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
     ) -> Result<Self, DataContractError> {
         let mut buf = BufReader::new(serialized_document);
         if serialized_document.len() < 64 {
-            return Err(DataContractError::DecodingDocumentError(DecodingError::new(
-                "serialized document is too small, must have id and owner id".to_string(),
-            )));
+            return Err(DataContractError::DecodingDocumentError(
+                DecodingError::new(
+                    "serialized document is too small, must have id and owner id".to_string(),
+                ),
+            ));
         }
 
         // $id
@@ -299,11 +301,9 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             .filter_map(|(key, property)| {
                 if finished_buffer {
                     return if property.required {
-                        Some(Err(
-                            DataContractError::CorruptedSerialization(
-                                "required field after finished buffer".to_string(),
-                            ),
-                        ))
+                        Some(Err(DataContractError::CorruptedSerialization(
+                            "required field after finished buffer".to_string(),
+                        )))
                     } else {
                         None
                     };
@@ -435,7 +435,8 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
             ))
         })?;
         match serialized_version {
-            0 => DocumentV0::from_bytes_v0(serialized_document, document_type, platform_version).map_err(ProtocolError::DataContractError),
+            0 => DocumentV0::from_bytes_v0(serialized_document, document_type, platform_version)
+                .map_err(ProtocolError::DataContractError),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "Document::from_bytes (deserialization)".to_string(),
                 known_versions: vec![0],
@@ -457,15 +458,17 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
         })?;
         match serialized_version {
             0 => {
-                match DocumentV0::from_bytes_v0(serialized_document, document_type, platform_version) {
-                    Ok(document) => {
-                        Ok(ConsensusValidationResult::new_with_data(document))
-                    }
-                    Err(err) => {
-                        Ok(ConsensusValidationResult::new_with_error(ConsensusError::BasicError(BasicError::ContractError(err))))
-                    }
+                match DocumentV0::from_bytes_v0(
+                    serialized_document,
+                    document_type,
+                    platform_version,
+                ) {
+                    Ok(document) => Ok(ConsensusValidationResult::new_with_data(document)),
+                    Err(err) => Ok(ConsensusValidationResult::new_with_error(
+                        ConsensusError::BasicError(BasicError::ContractError(err)),
+                    )),
                 }
-            },
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "Document::from_bytes (deserialization)".to_string(),
                 known_versions: vec![0],

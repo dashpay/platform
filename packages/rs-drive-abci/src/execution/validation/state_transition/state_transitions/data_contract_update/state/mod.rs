@@ -36,7 +36,7 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution("data contract update is calling validate state, and the action is already known. It should not be known at this point")));
                 }
                 self.validate_state_v0(platform, validation_mode, tx, platform_version)
-            },
+            }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: validate_state".to_string(),
                 known_versions: vec![0],

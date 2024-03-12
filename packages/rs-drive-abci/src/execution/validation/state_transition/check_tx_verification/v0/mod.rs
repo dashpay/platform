@@ -229,7 +229,6 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     )
                 }
             } else {
-
                 if state_transition.has_nonces_validation() {
                     let result = state_transition.validate_nonces(
                         &platform.into(),

@@ -1,7 +1,7 @@
-use bincode::{Decode, Encode};
-use thiserror::Error;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use crate::consensus::basic::decode::DecodingError;
+use bincode::{Decode, Encode};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use thiserror::Error;
 
 use crate::data_contract::DataContract;
 
@@ -20,8 +20,6 @@ pub enum DataContractError {
     //     errors: Vec<ConsensusError>,
     //     raw_data_contract: DataContract,
     // },
-
-
     #[error(transparent)]
     DecodingContractError(DecodingError),
 

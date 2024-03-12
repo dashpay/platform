@@ -1,9 +1,9 @@
 mod v0;
 
+use crate::data_contract::document_type::DocumentType;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
-use crate::data_contract::document_type::DocumentType;
 
 impl DocumentType {
     pub fn enrich_with_base_schema(
@@ -27,5 +27,3 @@ impl DocumentType {
         }
     }
 }
-
-

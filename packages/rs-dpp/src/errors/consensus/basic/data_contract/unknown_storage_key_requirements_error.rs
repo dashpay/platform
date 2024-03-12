@@ -1,14 +1,18 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-use crate::ProtocolError;
 use thiserror::Error;
 
 #[derive(
-Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Unrecognized storage key requirements: allowed {:?}, got {}", allowed_values, received)]
+#[error(
+    "Unrecognized storage key requirements: allowed {:?}, got {}",
+    allowed_values,
+    received
+)]
 #[platform_serialize(unversioned)]
 pub struct UnknownStorageKeyRequirementsError {
     /*

@@ -1,13 +1,13 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
-use bincode::{Decode, Encode};
 use crate::ProtocolError;
+use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use thiserror::Error;
 
 #[derive(
-Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error("Can't update Document Type {data_contract_id}::{document_type_name} config: {additional_message}")]
 #[platform_serialize(unversioned)]
@@ -23,7 +23,11 @@ pub struct DocumentTypeUpdateError {
 }
 
 impl DocumentTypeUpdateError {
-    pub fn new(data_contract_id: Identifier, document_type_name: impl Into<String>, additional_message: impl Into<String>) -> Self {
+    pub fn new(
+        data_contract_id: Identifier,
+        document_type_name: impl Into<String>,
+        additional_message: impl Into<String>,
+    ) -> Self {
         Self {
             data_contract_id,
             document_type_name: document_type_name.into(),

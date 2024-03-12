@@ -1,7 +1,7 @@
-use bincode::{Decode, Encode};
-use thiserror::Error;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use crate::ProtocolError;
+use bincode::{Decode, Encode};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use thiserror::Error;
 
 // @append_only
 #[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone)]

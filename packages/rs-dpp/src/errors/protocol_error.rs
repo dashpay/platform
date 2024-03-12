@@ -152,9 +152,6 @@ pub enum ProtocolError {
     DataContractAlreadyExistsError,
 
     #[error(transparent)]
-    InvalidDataContractError(InvalidDataContractError),
-
-    #[error(transparent)]
     InvalidDocumentTypeError(InvalidDocumentTypeError),
 
     #[error(transparent)]

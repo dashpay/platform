@@ -1,7 +1,7 @@
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::validation::SimpleConsensusValidationResult;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
+use crate::validation::SimpleConsensusValidationResult;
 
 impl<'a> DocumentTypeRef<'a> {
     pub(super) fn validate_update_v0(

@@ -4,8 +4,8 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
-use bincode::{Decode, Encode};
 use crate::data_contract::errors::DataContractError;
+use bincode::{Decode, Encode};
 
 #[derive(Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
 #[error("Decoding error: {error}")]
@@ -31,7 +31,9 @@ impl DecodingError {
 
 impl From<DecodingError> for ConsensusError {
     fn from(err: DecodingError) -> Self {
-        Self::BasicError(BasicError::ContractError(DataContractError::DecodingContractError( err)))
+        Self::BasicError(BasicError::ContractError(
+            DataContractError::DecodingContractError(err),
+        ))
     }
 }
 

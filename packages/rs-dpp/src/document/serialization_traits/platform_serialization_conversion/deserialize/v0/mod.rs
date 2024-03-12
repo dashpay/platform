@@ -1,7 +1,7 @@
 use crate::data_contract::document_type::DocumentTypeRef;
-use platform_version::version::PlatformVersion;
 use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
 
 pub(in crate::document) trait DocumentPlatformDeserializationMethodsV0 {
     /// Reads a serialized document and creates a Document from it.

@@ -1,7 +1,7 @@
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
-use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 
 mod v0;
 

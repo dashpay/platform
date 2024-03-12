@@ -3,11 +3,23 @@ use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use platform_value::{Error as PlatformValueError};
+use platform_value::Error as PlatformValueError;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
-use crate::consensus::basic::data_contract::{DataContractEmptySchemaError, DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError, InvalidDataContractVersionError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError, InvalidJsonSchemaRefError, SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError, UniqueIndicesLimitReachedError, InvalidDocumentTypeRequiredSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownSecurityLevelError};
-use crate::consensus::basic::decode::{DecodingError, ProtocolVersionParsingError, SerializedObjectParsingError, VersionError};
+use crate::consensus::basic::data_contract::{
+    DataContractEmptySchemaError, DataContractHaveNewUniqueIndexError,
+    DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError,
+    DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
+    IncompatibleDataContractSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
+    InvalidDataContractIdError, InvalidDataContractVersionError,
+    InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
+    InvalidIndexedPropertyConstraintError, InvalidJsonSchemaRefError,
+    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
+    UniqueIndicesLimitReachedError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
+};
+use crate::consensus::basic::decode::{
+    DecodingError, ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
+};
 use crate::consensus::basic::document::{
     DataContractNotPresentError, DocumentTransitionsAreAbsentError,
     DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,

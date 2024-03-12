@@ -4,6 +4,7 @@ use std::io::{BufReader, Read};
 
 use crate::data_contract::errors::DataContractError;
 
+use crate::consensus::basic::decode::DecodingError;
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use array::ArrayItemType;
@@ -15,7 +16,6 @@ use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use crate::consensus::basic::decode::DecodingError;
 
 pub mod array;
 
@@ -442,9 +442,10 @@ impl DocumentPropertyType {
                         let len = *min as usize;
                         let mut bytes = vec![0; len];
                         buf.read_exact(&mut bytes).map_err(|_| {
-                            DataContractError::DecodingContractError(DecodingError::new(
-                                format!("expected to read {} bytes (min size for byte array)", len)
-                            ))
+                            DataContractError::DecodingContractError(DecodingError::new(format!(
+                                "expected to read {} bytes (min size for byte array)",
+                                len
+                            )))
                         })?;
                         // To save space we use predefined types for most popular blob sizes
                         // so we don't need to store the size of the blob
@@ -465,9 +466,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::Identifier => {
                 let mut id = [0; 32];
                 buf.read_exact(&mut id).map_err(|_| {
-                    DataContractError::DecodingContractError(DecodingError::new(
-                        format!("expected to read 32 bytes (identifier)")
-                    ))
+                    DataContractError::DecodingContractError(DecodingError::new(format!(
+                        "expected to read 32 bytes (identifier)"
+                    )))
                 })?;
                 //dbg!(hex::encode(&id));
                 Ok((Some(Value::Identifier(id)), false))
@@ -493,11 +494,9 @@ impl DocumentPropertyType {
                     .filter_map(|(key, field)| {
                         if finished_buffer {
                             return if field.required {
-                                Some(Err(
-                                    DataContractError::CorruptedSerialization(
-                                        "required field after finished buffer in object".to_string(),
-                                    ),
-                                ))
+                                Some(Err(DataContractError::CorruptedSerialization(
+                                    "required field after finished buffer in object".to_string(),
+                                )))
                             } else {
                                 None
                             };
@@ -524,14 +523,12 @@ impl DocumentPropertyType {
                     Ok((Some(Value::Map(values)), false))
                 }
             }
-            DocumentPropertyType::Array(_array_field_type) => {
-                Err(
-                    DataContractError::Unsupported("serialization of arrays not yet supported".to_string()),
-                )
-            }
-            DocumentPropertyType::VariableTypeArray(_) => Err(
-                DataContractError::Unsupported("serialization of variable type arrays not yet supported".to_string()),
-            ),
+            DocumentPropertyType::Array(_array_field_type) => Err(DataContractError::Unsupported(
+                "serialization of arrays not yet supported".to_string(),
+            )),
+            DocumentPropertyType::VariableTypeArray(_) => Err(DataContractError::Unsupported(
+                "serialization of variable type arrays not yet supported".to_string(),
+            )),
         }
     }
 
@@ -774,7 +771,9 @@ impl DocumentPropertyType {
             }
 
             DocumentPropertyType::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
-                DataContractError::Unsupported("serialization of arrays not yet supported".to_string()),
+                DataContractError::Unsupported(
+                    "serialization of arrays not yet supported".to_string(),
+                ),
             )),
         };
     }
@@ -841,24 +840,22 @@ impl DocumentPropertyType {
             DocumentPropertyType::String(min, max) => {
                 if let Some(min) = min {
                     if str.len() < *min as usize {
-                        return Err(
-                            DataContractError::FieldRequirementUnmet("string is too small".to_string()),
-                        );
+                        return Err(DataContractError::FieldRequirementUnmet(
+                            "string is too small".to_string(),
+                        ));
                     }
                 }
                 if let Some(max) = max {
                     if str.len() > *max as usize {
-                        return Err(
-                            DataContractError::FieldRequirementUnmet("string is too big".to_string()),
-                        );
+                        return Err(DataContractError::FieldRequirementUnmet(
+                            "string is too big".to_string(),
+                        ));
                     }
                 }
                 Ok(Value::Text(str.to_string()))
             }
             DocumentPropertyType::Integer => str.parse::<i128>().map(Value::I128).map_err(|_| {
-                DataContractError::ValueWrongType(
-                    "value is not an integer from string".to_string(),
-                )
+                DataContractError::ValueWrongType("value is not an integer from string".to_string())
             }),
             DocumentPropertyType::Number | DocumentPropertyType::Date => {
                 str.parse::<f64>().map(Value::Float).map_err(|_| {
@@ -870,30 +867,27 @@ impl DocumentPropertyType {
             DocumentPropertyType::ByteArray(min, max) => {
                 if let Some(min) = min {
                     if str.len() / 2 < *min as usize {
-                        return Err(
-                            DataContractError::FieldRequirementUnmet("byte array is too small".to_string()),
-                        );
+                        return Err(DataContractError::FieldRequirementUnmet(
+                            "byte array is too small".to_string(),
+                        ));
                     }
                 }
                 if let Some(max) = max {
                     if str.len() / 2 > *max as usize {
-                        return Err(
-                            DataContractError::FieldRequirementUnmet("byte array is too big".to_string()),
-                        );
+                        return Err(DataContractError::FieldRequirementUnmet(
+                            "byte array is too big".to_string(),
+                        ));
                     }
                 }
                 Ok(Value::Bytes(hex::decode(str).map_err(|_| {
-                    DataContractError::ValueDecodingError(
-                        "could not parse hex bytes".to_string(),
-                    )
+                    DataContractError::ValueDecodingError("could not parse hex bytes".to_string())
                 })?))
             }
             DocumentPropertyType::Identifier => Ok(Value::Identifier(
-                Value::Text(str.to_owned()).to_identifier().map_err(|e| {
-                    DataContractError::ValueDecodingError(
-                        format!("{:?}", e),
-                    )
-                })?.into_buffer(),
+                Value::Text(str.to_owned())
+                    .to_identifier()
+                    .map_err(|e| DataContractError::ValueDecodingError(format!("{:?}", e)))?
+                    .into_buffer(),
             )),
             DocumentPropertyType::Boolean => {
                 if str.to_lowercase().as_str() == "true" {
@@ -901,24 +895,20 @@ impl DocumentPropertyType {
                 } else if str.to_lowercase().as_str() == "false" {
                     Ok(Value::Bool(false))
                 } else {
-                    Err(
-                        DataContractError::ValueDecodingError(
-                            "could not parse a boolean to a value".to_string(),
-                        ),
-                    )
+                    Err(DataContractError::ValueDecodingError(
+                        "could not parse a boolean to a value".to_string(),
+                    ))
                 }
             }
-            DocumentPropertyType::Object(_) => Err(
-                DataContractError::EncodingDataStructureNotSupported(
+            DocumentPropertyType::Object(_) => {
+                Err(DataContractError::EncodingDataStructureNotSupported(
                     "we should never try encoding an object".to_string(),
-                )
-            ),
+                ))
+            }
             DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
-                Err(
-                    DataContractError::EncodingDataStructureNotSupported(
-                        "we should never try encoding an array".to_string(),
-                    )
-                )
+                Err(DataContractError::EncodingDataStructureNotSupported(
+                    "we should never try encoding an array".to_string(),
+                ))
             }
         }
     }

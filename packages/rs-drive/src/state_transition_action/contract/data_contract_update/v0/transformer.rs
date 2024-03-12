@@ -5,8 +5,7 @@ use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
 use platform_version::TryFromPlatformVersioned;
 
-impl DataContractUpdateTransitionActionV0
-{
+impl DataContractUpdateTransitionActionV0 {
     pub(in crate::state_transition_action::contract::data_contract_update) fn try_from_transition(
         value: DataContractUpdateTransitionV0,
         validate: bool,

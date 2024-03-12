@@ -1,14 +1,18 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use bincode::{Decode, Encode};
 use crate::ProtocolError;
+use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 #[derive(
-Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Unrecognized security level: allowed {:?}, got {}", allowed_values, received)]
+#[error(
+    "Unrecognized security level: allowed {:?}, got {}",
+    allowed_values,
+    received
+)]
 #[platform_serialize(unversioned)]
 pub struct UnknownSecurityLevelError {
     /*

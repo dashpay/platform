@@ -257,15 +257,15 @@ impl IndexProperty {
         let key = property
             .0 // key
             .as_text()
-            .ok_or(
-                DataContractError::KeyWrongType("key should be of type string".to_string()),
-            )?;
+            .ok_or(DataContractError::KeyWrongType(
+                "key should be of type string".to_string(),
+            ))?;
         let value = property
             .1 // value
             .as_text()
-            .ok_or(
-                DataContractError::ValueWrongType("value should be of type string".to_string()),
-            )?;
+            .ok_or(DataContractError::ValueWrongType(
+                "value should be of type string".to_string(),
+            ))?;
 
         let ascending = value == "asc";
 

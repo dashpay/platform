@@ -1,10 +1,10 @@
 use crate::data_contract::document_type::DocumentTypeRef;
+use crate::validation::ConsensusValidationResult;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_version::version::FeatureVersion;
-use crate::validation::ConsensusValidationResult;
 
-pub trait DocumentPlatformConversionMethodsV0 : Clone {
+pub trait DocumentPlatformConversionMethodsV0: Clone {
     /// Serializes the document.
     ///
     /// The serialization of a document follows the pattern:
@@ -52,7 +52,8 @@ pub trait DocumentPlatformConversionMethodsV0 : Clone {
         document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Self>, ProtocolError>
-    where Self:Sized;
+    where
+        Self: Sized;
 }
 
 pub trait ExtendedDocumentPlatformConversionMethodsV0 {

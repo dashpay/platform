@@ -101,13 +101,14 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
             // Proposers should remove such transactions from the block
             // Other validators should reject blocks with such transactions
             return Ok(
-                ConsensusValidationResult::<ExecutionEvent>::new_with_errors(consensus_result.errors),
+                ConsensusValidationResult::<ExecutionEvent>::new_with_errors(
+                    consensus_result.errors,
+                ),
             );
         }
     }
 
     if state_transition.has_advanced_structure_validation() {
-
         // Next we have advanced structure validation, this is structure validation that does not require
         // state but isn't checked on check_tx. If advanced structure fails identity nonces or identity
         // contract nonces will be bumped
@@ -157,13 +158,11 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
 
         Some(action)
-
     } else {
         None
     };
 
     if state_transition.has_balance_validation() {
-
         // Validating that we have sufficient balance for a transfer or withdrawal,
         // this must happen after validating the signature
         let result = state_transition.validate_balance(
@@ -250,9 +249,7 @@ pub(crate) trait StateTransitionBasicStructureValidationV0 {
 
     /// True if the state transition has basic structure validation.
     /// Currently only data contract update does not
-    fn has_basic_structure_validation(
-        &self,
-    ) -> bool {
+    fn has_basic_structure_validation(&self) -> bool {
         return true;
     }
 }
@@ -278,9 +275,7 @@ pub(crate) trait StateTransitionAdvancedStructureValidationV0 {
 
     /// True if the state transition has advanced structure validation.
     /// This structure validation makes users pay if there is a failure
-    fn has_advanced_structure_validation(
-        &self,
-    ) -> bool;
+    fn has_advanced_structure_validation(&self) -> bool;
 }
 
 /// A trait for validating state transitions within a blockchain.
@@ -304,9 +299,7 @@ pub(crate) trait StateTransitionNonceValidationV0 {
 
     /// True if the state transition validates nonces, either identity nonces or identity contract
     /// nonces
-    fn has_nonces_validation(
-        &self,
-    ) -> bool {
+    fn has_nonces_validation(&self) -> bool {
         return true;
     }
 }
@@ -365,9 +358,7 @@ pub(crate) trait StateTransitionBalanceValidationV0 {
     /// True if the state transition has a balance validation.
     /// This balance validation is not for the operations of the state transition, but more as a
     /// quick early verification that the user has the balance they want to transfer or withdraw.
-    fn has_balance_validation(
-        &self,
-    ) -> bool {
+    fn has_balance_validation(&self) -> bool {
         return true;
     }
 }
@@ -401,9 +392,7 @@ pub(crate) trait StateTransitionStateValidationV0:
 }
 
 impl StateTransitionBasicStructureValidationV0 for StateTransition {
-    fn has_basic_structure_validation(
-        &self,
-    ) -> bool {
+    fn has_basic_structure_validation(&self) -> bool {
         match self {
             StateTransition::DataContractUpdate(_) => false,
             _ => true,
@@ -436,9 +425,7 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
 }
 
 impl StateTransitionNonceValidationV0 for StateTransition {
-    fn has_nonces_validation(
-        &self,
-    ) -> bool {
+    fn has_nonces_validation(&self) -> bool {
         match self {
             StateTransition::DocumentsBatch(_)
             | StateTransition::DataContractCreate(_)
@@ -501,9 +488,7 @@ impl StateTransitionBalanceValidationV0 for StateTransition {
         }
     }
 
-    fn has_balance_validation(
-        &self,
-    ) -> bool {
+    fn has_balance_validation(&self) -> bool {
         match self {
             StateTransition::IdentityCreditTransfer(_)
             | StateTransition::IdentityCreditWithdrawal(_) => true,
@@ -513,9 +498,7 @@ impl StateTransitionBalanceValidationV0 for StateTransition {
 }
 
 impl StateTransitionAdvancedStructureValidationV0 for StateTransition {
-    fn has_advanced_structure_validation(
-        &self,
-    ) -> bool {
+    fn has_advanced_structure_validation(&self) -> bool {
         false
     }
 

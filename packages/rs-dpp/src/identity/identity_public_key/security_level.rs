@@ -1,15 +1,14 @@
-use anyhow::bail;
 use bincode::{Decode, Encode};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
-use std::convert::TryFrom;
-use crate::consensus::basic::BasicError;
 use crate::consensus::basic::data_contract::UnknownSecurityLevelError;
+use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
+use std::convert::TryFrom;
 
 #[repr(u8)]
 #[derive(
@@ -51,7 +50,12 @@ impl TryFrom<u8> for SecurityLevel {
             1 => Ok(Self::CRITICAL),
             2 => Ok(Self::HIGH),
             3 => Ok(Self::MEDIUM),
-            value => Err(ProtocolError::ConsensusError(ConsensusError::BasicError(BasicError::UnknownSecurityLevelError(UnknownSecurityLevelError::new(vec![0,1,2,3], value))).into())),
+            value => Err(ProtocolError::ConsensusError(
+                ConsensusError::BasicError(BasicError::UnknownSecurityLevelError(
+                    UnknownSecurityLevelError::new(vec![0, 1, 2, 3], value),
+                ))
+                .into(),
+            )),
         }
     }
 }

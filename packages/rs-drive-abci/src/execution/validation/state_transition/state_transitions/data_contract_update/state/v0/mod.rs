@@ -29,13 +29,13 @@ use dpp::ProtocolError;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 
+use crate::error::execution::ExecutionError;
+use crate::execution::validation::state_transition::ValidationMode;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
-use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceAction;
-use crate::error::execution::ExecutionError;
-use crate::execution::validation::state_transition::ValidationMode;
+use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) trait DataContractUpdateStateTransitionStateValidationV0 {
     fn validate_state_v0<C: CoreRPCLike>(
@@ -67,14 +67,21 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             return Ok(action);
         }
 
-        let state_transition_action = action.data.as_ref().ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution("we should always have an action at this point in data contract update")))?;
+        let state_transition_action = action.data.as_ref().ok_or(Error::Execution(
+            ExecutionError::CorruptedCodeExecution(
+                "we should always have an action at this point in data contract update",
+            ),
+        ))?;
 
         let new_data_contract = match state_transition_action {
             StateTransitionAction::DataContractUpdateAction(action) => {
                 Some(action.data_contract_ref())
             }
             _ => None,
-        }.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution("we should always have a data contract at this point in data contract update")))?;
+        }
+        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "we should always have a data contract at this point in data contract update",
+        )))?;
 
         let drive = platform.drive;
         let mut validation_result = ConsensusValidationResult::default();
@@ -160,7 +167,8 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 continue;
             };
 
-            let validate_update_result = old_contract_document_type.validate_update(new_contract_document_type, platform_version)?;
+            let validate_update_result = old_contract_document_type
+                .validate_update(new_contract_document_type, platform_version)?;
 
             if !validate_update_result.is_valid() {
                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
@@ -344,7 +352,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             Ok(create_action) => {
                 let action: StateTransitionAction = create_action.into();
                 Ok(action.into())
-            },
+            }
         }
     }
 }

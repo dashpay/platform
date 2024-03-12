@@ -187,11 +187,15 @@ mod tests {
     use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
     use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
     use dpp::state_transition::{StateTransition, StateTransitionLike};
-    use dpp::tests::fixtures::{get_dashpay_contract_fixture, get_dpns_data_contract_fixture, instant_asset_lock_proof_fixture};
+    use dpp::tests::fixtures::{
+        get_dashpay_contract_fixture, get_dpns_data_contract_fixture,
+        instant_asset_lock_proof_fixture,
+    };
     use dpp::version::PlatformVersion;
     use dpp::NativeBlsModule;
 
     use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
+    use dpp::consensus::state::state_error::StateError;
     use dpp::data_contract::document_type::v0::random_document_type::{
         FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
     };
@@ -199,14 +203,13 @@ mod tests {
     use dpp::data_contract::document_type::DocumentType;
     use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
     use dpp::platform_value::Bytes32;
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::system_data_contracts::dashpay_contract;
     use dpp::system_data_contracts::SystemDataContract::Dashpay;
     use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
-    use dpp::consensus::state::state_error::StateError;
-    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
     // This test needs to be redone with new contract bytes, but is still useful for debugging
     #[test]
@@ -431,9 +434,7 @@ mod tests {
 
         assert!(matches!(
             check_result.errors.first().expect("expected an error"),
-            ConsensusError::StateError(
-                StateError::InvalidIdentityNonceError(_)
-            )
+            ConsensusError::StateError(StateError::InvalidIdentityNonceError(_))
         ));
     }
 
@@ -624,9 +625,7 @@ mod tests {
 
         assert!(matches!(
             check_result.errors.first().expect("expected an error"),
-            ConsensusError::StateError(
-                StateError::InvalidIdentityNonceError(_)
-            )
+            ConsensusError::StateError(StateError::InvalidIdentityNonceError(_))
         ));
     }
 
@@ -771,9 +770,7 @@ mod tests {
 
         assert!(matches!(
             check_result.errors.first().expect("expected an error"),
-            ConsensusError::StateError(
-                StateError::InvalidIdentityNonceError(_)
-            )
+            ConsensusError::StateError(StateError::InvalidIdentityNonceError(_))
         ));
     }
 
@@ -921,7 +918,7 @@ mod tests {
             Some(1),
             platform_version,
         )
-            .expect("expected to get key pair");
+        .expect("expected to get key pair");
 
         platform
             .drive
@@ -936,9 +933,10 @@ mod tests {
             balance: 1000000000,
             revision: 0,
         }
-            .into();
+        .into();
 
-        let dashpay_created_contract = get_dashpay_contract_fixture(Some(identity.id()), 1, protocol_version);
+        let dashpay_created_contract =
+            get_dashpay_contract_fixture(Some(identity.id()), 1, protocol_version);
         let mut modified_dashpay_contract = dashpay_created_contract.data_contract().clone();
         let mut create_contract_state_transition: StateTransition = dashpay_created_contract
             .try_into_platform_versioned(platform_version)
@@ -991,11 +989,25 @@ mod tests {
 
         let document_types = modified_dashpay_contract.document_types_mut();
 
-        let dpns_contract = get_dpns_data_contract_fixture(Some(identity.id()), 1, protocol_version).data_contract_owned();
+        let dpns_contract =
+            get_dpns_data_contract_fixture(Some(identity.id()), 1, protocol_version)
+                .data_contract_owned();
 
-        document_types.insert("preorder".to_string(), dpns_contract.document_type_for_name("preorder").expect("expected document type").to_owned_document_type());
+        document_types.insert(
+            "preorder".to_string(),
+            dpns_contract
+                .document_type_for_name("preorder")
+                .expect("expected document type")
+                .to_owned_document_type(),
+        );
 
-        let mut update_contract_state_transition: StateTransition = DataContractUpdateTransition::try_from_platform_versioned((modified_dashpay_contract, 1), platform_version).expect("expected a state transition").into();
+        let mut update_contract_state_transition: StateTransition =
+            DataContractUpdateTransition::try_from_platform_versioned(
+                (modified_dashpay_contract, 1),
+                platform_version,
+            )
+            .expect("expected a state transition")
+            .into();
 
         update_contract_state_transition
             .sign(&key, private_key.as_slice(), &NativeBlsModule)
@@ -1003,7 +1015,6 @@ mod tests {
         let serialized_update = update_contract_state_transition
             .serialize_to_bytes()
             .expect("serialized state transition");
-
 
         let validation_result = platform
             .check_tx(
@@ -1027,7 +1038,6 @@ mod tests {
 
         assert!(check_result.is_valid());
 
-
         let transaction = platform.drive.grove.start_transaction();
 
         let update_processing_result = platform
@@ -1044,7 +1054,10 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(update_processing_result.valid_count(), 1);
 
-        assert_eq!(update_processing_result.aggregated_fees().processing_fee, 5519320);
+        assert_eq!(
+            update_processing_result.aggregated_fees().processing_fee,
+            5519320
+        );
 
         let check_result = platform
             .check_tx(
@@ -1077,12 +1090,9 @@ mod tests {
 
         assert!(matches!(
             check_result.errors.first().expect("expected an error"),
-            ConsensusError::StateError(
-                StateError::InvalidIdentityNonceError(_)
-            )
+            ConsensusError::StateError(StateError::InvalidIdentityNonceError(_))
         ));
     }
-
 
     #[test]
     fn data_contract_update_check_tx_for_invalid_update() {
@@ -1104,7 +1114,7 @@ mod tests {
             Some(1),
             platform_version,
         )
-            .expect("expected to get key pair");
+        .expect("expected to get key pair");
 
         platform
             .drive
@@ -1119,9 +1129,10 @@ mod tests {
             balance: 1000000000,
             revision: 0,
         }
-            .into();
+        .into();
 
-        let dashpay_created_contract = get_dashpay_contract_fixture(Some(identity.id()), 1, protocol_version);
+        let dashpay_created_contract =
+            get_dashpay_contract_fixture(Some(identity.id()), 1, protocol_version);
         let mut modified_dashpay_contract = dashpay_created_contract.data_contract().clone();
         let mut create_contract_state_transition: StateTransition = dashpay_created_contract
             .try_into_platform_versioned(platform_version)
@@ -1219,11 +1230,17 @@ mod tests {
                     &mut rng,
                     platform_version,
                 )
-                    .expect("expected an invalid document type"),
+                .expect("expected an invalid document type"),
             ),
         );
 
-        let mut update_contract_state_transition: StateTransition = DataContractUpdateTransition::try_from_platform_versioned((modified_dashpay_contract, 1), platform_version).expect("expected a state transition").into();
+        let mut update_contract_state_transition: StateTransition =
+            DataContractUpdateTransition::try_from_platform_versioned(
+                (modified_dashpay_contract, 1),
+                platform_version,
+            )
+            .expect("expected a state transition")
+            .into();
 
         update_contract_state_transition
             .sign(&key, private_key.as_slice(), &NativeBlsModule)
@@ -1253,7 +1270,6 @@ mod tests {
             .expect("expected to check tx");
 
         assert!(check_result.is_valid());
-
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -1304,9 +1320,7 @@ mod tests {
 
         assert!(matches!(
             check_result.errors.first().expect("expected an error"),
-            ConsensusError::StateError(
-                StateError::InvalidIdentityNonceError(_)
-            )
+            ConsensusError::StateError(StateError::InvalidIdentityNonceError(_))
         ));
     }
 

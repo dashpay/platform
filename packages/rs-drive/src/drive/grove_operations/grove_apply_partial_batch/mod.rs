@@ -1,4 +1,3 @@
-
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;

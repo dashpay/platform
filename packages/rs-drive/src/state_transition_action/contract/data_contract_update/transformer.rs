@@ -15,14 +15,14 @@ impl DataContractUpdateTransitionAction {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match value {
-            DataContractUpdateTransition::V0(v0) => Ok(
-                DataContractUpdateTransitionActionV0::try_from_transition(
+            DataContractUpdateTransition::V0(v0) => {
+                Ok(DataContractUpdateTransitionActionV0::try_from_transition(
                     v0,
                     validate,
                     platform_version,
                 )?
-                    .into(),
-            ),
+                .into())
+            }
         }
     }
 
@@ -42,7 +42,7 @@ impl DataContractUpdateTransitionAction {
                     validate,
                     platform_version,
                 )?
-                    .into(),
+                .into(),
             ),
         }
     }

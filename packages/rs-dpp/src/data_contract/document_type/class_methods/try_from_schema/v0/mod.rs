@@ -24,6 +24,7 @@ use std::collections::HashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
+use crate::consensus::basic::data_contract::InvalidDocumentTypeRequiredSecurityLevelError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
 #[cfg(feature = "validation")]
@@ -39,7 +40,6 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
-use crate::consensus::basic::data_contract::InvalidDocumentTypeRequiredSecurityLevelError;
 
 const UNIQUE_INDEX_LIMIT_V0: usize = 16;
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
@@ -84,19 +84,21 @@ impl DocumentTypeV0 {
         #[cfg(feature = "validation")]
         if validate {
             // Make sure JSON Schema is compilable
-            let root_json_schema = root_schema
-                .try_to_validating_json()
-                .map_err(|e| ProtocolError::ConsensusError(ConsensusError::BasicError(BasicError::ValueError(e.into())).into()))?;
+            let root_json_schema = root_schema.try_to_validating_json().map_err(|e| {
+                ProtocolError::ConsensusError(
+                    ConsensusError::BasicError(BasicError::ValueError(e.into())).into(),
+                )
+            })?;
 
             json_schema_validator.compile(&root_json_schema, platform_version)?;
 
             // Validate against JSON Schema
             DOCUMENT_META_SCHEMA_V0
-                .validate(
-                    &root_schema
-                        .try_to_validating_json()
-                        .map_err(|e| ProtocolError::ConsensusError(ConsensusError::BasicError(BasicError::ValueError(e.into())).into()))?,
-                )
+                .validate(&root_schema.try_to_validating_json().map_err(|e| {
+                    ProtocolError::ConsensusError(
+                        ConsensusError::BasicError(BasicError::ValueError(e.into())).into(),
+                    )
+                })?)
                 .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
 
             // Validate document schema depth
@@ -128,22 +130,35 @@ impl DocumentTypeV0 {
         }
 
         let schema_map = schema.to_map().map_err(|err| {
-            ProtocolError::ConsensusError(ConsensusError::BasicError(BasicError::ContractError(DataContractError::InvalidContractStructure(format!(
-                "document schema must be an object: {err}"
-            )))).into())
+            ProtocolError::ConsensusError(
+                ConsensusError::BasicError(BasicError::ContractError(
+                    DataContractError::InvalidContractStructure(format!(
+                        "document schema must be an object: {err}"
+                    )),
+                ))
+                .into(),
+            )
         })?;
 
         // TODO: These properties aren't defined in JSON meta schema
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool =
             Value::inner_optional_bool_value(schema_map, "documentsKeepHistory")
-                .map_err(|e| ProtocolError::ConsensusError(ConsensusError::BasicError(BasicError::ValueError(e.into())).into()))?
+                .map_err(|e| {
+                    ProtocolError::ConsensusError(
+                        ConsensusError::BasicError(BasicError::ValueError(e.into())).into(),
+                    )
+                })?
                 .unwrap_or(default_keeps_history);
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
             Value::inner_optional_bool_value(schema_map, "documentsMutable")
-                .map_err(|e| ProtocolError::ConsensusError(ConsensusError::BasicError(BasicError::ValueError(e.into())).into()))?
+                .map_err(|e| {
+                    ProtocolError::ConsensusError(
+                        ConsensusError::BasicError(BasicError::ValueError(e.into())).into(),
+                    )
+                })?
                 .unwrap_or(default_mutability);
 
         // Extract the properties
@@ -152,7 +167,11 @@ impl DocumentTypeV0 {
             property_names::PROPERTIES,
             property_names::POSITION,
         )
-            .map_err(|e| ProtocolError::ConsensusError(ConsensusError::BasicError(BasicError::ValueError(e.into())).into()))?
+        .map_err(|e| {
+            ProtocolError::ConsensusError(
+                ConsensusError::BasicError(BasicError::ValueError(e.into())).into(),
+            )
+        })?
         .unwrap_or_default();
 
         #[cfg(feature = "validation")]
@@ -223,9 +242,13 @@ impl DocumentTypeV0 {
                     .map(|index_value| {
                         let index: Index = index_value
                             .as_map()
-                            .ok_or(ProtocolError::ConsensusError(ConsensusError::BasicError(BasicError::ContractError(DataContractError::InvalidContractStructure(
-                                "index definition is not a map as expected".to_string(),
-                            ))).into()
+                            .ok_or(ProtocolError::ConsensusError(
+                                ConsensusError::BasicError(BasicError::ContractError(
+                                    DataContractError::InvalidContractStructure(
+                                        "index definition is not a map as expected".to_string(),
+                                    ),
+                                ))
+                                .into(),
                             ))?
                             .as_slice()
                             .try_into()?;
@@ -371,7 +394,11 @@ impl DocumentTypeV0 {
 
         let security_level_requirement = schema
             .get_optional_integer::<u8>(property_names::SECURITY_LEVEL_REQUIREMENT)
-            .map_err(|e| ProtocolError::ConsensusError(ConsensusError::BasicError(BasicError::ValueError(e.into())).into()))?
+            .map_err(|e| {
+                ProtocolError::ConsensusError(
+                    ConsensusError::BasicError(BasicError::ValueError(e.into())).into(),
+                )
+            })?
             .map(SecurityLevel::try_from)
             .transpose()?
             .unwrap_or(SecurityLevel::HIGH);
@@ -388,19 +415,27 @@ impl DocumentTypeV0 {
                         ),
                     ),
                 )
-                    .into());
+                .into());
             }
         }
 
         let requires_identity_encryption_bounded_key = schema
             .get_optional_integer::<u8>(property_names::REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY)
-            .map_err(|e| ProtocolError::ConsensusError(ConsensusError::BasicError(BasicError::ValueError(e.into())).into()))?
+            .map_err(|e| {
+                ProtocolError::ConsensusError(
+                    ConsensusError::BasicError(BasicError::ValueError(e.into())).into(),
+                )
+            })?
             .map(StorageKeyRequirements::try_from)
             .transpose()?;
 
         let requires_identity_decryption_bounded_key = schema
             .get_optional_integer::<u8>(property_names::REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY)
-            .map_err(|e| ProtocolError::ConsensusError(ConsensusError::BasicError(BasicError::ValueError(e.into())).into()))?
+            .map_err(|e| {
+                ProtocolError::ConsensusError(
+                    ConsensusError::BasicError(BasicError::ValueError(e.into())).into(),
+                )
+            })?
             .map(StorageKeyRequirements::try_from)
             .transpose()?;
 
