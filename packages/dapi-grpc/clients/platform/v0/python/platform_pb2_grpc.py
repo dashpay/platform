@@ -74,11 +74,6 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetDocumentsRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetDocumentsResponse.FromString,
                 )
-        self.getIdentitiesByPublicKeyHashes = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getIdentitiesByPublicKeyHashes',
-                request_serializer=platform__pb2.GetIdentitiesByPublicKeyHashesRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetIdentitiesByPublicKeyHashesResponse.FromString,
-                )
         self.getIdentityByPublicKeyHash = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityByPublicKeyHash',
                 request_serializer=platform__pb2.GetIdentityByPublicKeyHashRequest.SerializeToString,
@@ -186,12 +181,6 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def getIdentitiesByPublicKeyHashes(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
     def getIdentityByPublicKeyHash(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -290,11 +279,6 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getDocuments,
                     request_deserializer=platform__pb2.GetDocumentsRequest.FromString,
                     response_serializer=platform__pb2.GetDocumentsResponse.SerializeToString,
-            ),
-            'getIdentitiesByPublicKeyHashes': grpc.unary_unary_rpc_method_handler(
-                    servicer.getIdentitiesByPublicKeyHashes,
-                    request_deserializer=platform__pb2.GetIdentitiesByPublicKeyHashesRequest.FromString,
-                    response_serializer=platform__pb2.GetIdentitiesByPublicKeyHashesResponse.SerializeToString,
             ),
             'getIdentityByPublicKeyHash': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityByPublicKeyHash,
@@ -537,23 +521,6 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDocuments',
             platform__pb2.GetDocumentsRequest.SerializeToString,
             platform__pb2.GetDocumentsResponse.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-    @staticmethod
-    def getIdentitiesByPublicKeyHashes(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentitiesByPublicKeyHashes',
-            platform__pb2.GetIdentitiesByPublicKeyHashesRequest.SerializeToString,
-            platform__pb2.GetIdentitiesByPublicKeyHashesResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

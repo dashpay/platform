@@ -24,8 +24,6 @@ service Platform {
   rpc getDataContracts(GetDataContractsRequest)
       returns (GetDataContractsResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
-  rpc getIdentitiesByPublicKeyHashes(GetIdentitiesByPublicKeyHashesRequest)
-      returns (GetIdentitiesByPublicKeyHashesResponse);
   rpc getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest)
       returns (GetIdentityByPublicKeyHashResponse);
   rpc waitForStateTransitionResult(WaitForStateTransitionResultRequest)
@@ -381,35 +379,6 @@ message GetDocumentsResponse {
     ResponseMetadata metadata = 3;
   }
   oneof version { GetDocumentsResponseV0 v0 = 1; }
-}
-
-message GetIdentitiesByPublicKeyHashesRequest {
-  message GetIdentitiesByPublicKeyHashesRequestV0 {
-    repeated bytes public_key_hashes = 1;
-    bool prove = 2;
-  }
-  oneof version { GetIdentitiesByPublicKeyHashesRequestV0 v0 = 1; }
-}
-
-message GetIdentitiesByPublicKeyHashesResponse {
-  message PublicKeyHashIdentityEntry {
-    bytes public_key_hash = 1;
-    google.protobuf.BytesValue value = 2;
-  }
-
-  message IdentitiesByPublicKeyHashes {
-    repeated PublicKeyHashIdentityEntry identity_entries = 1;
-  }
-
-  message GetIdentitiesByPublicKeyHashesResponseV0 {
-    oneof result {
-      IdentitiesByPublicKeyHashes identities = 1;
-      Proof proof = 2;
-    }
-
-    ResponseMetadata metadata = 3;
-  }
-  oneof version { GetIdentitiesByPublicKeyHashesResponseV0 v0 = 1; }
 }
 
 message GetIdentityByPublicKeyHashRequest {

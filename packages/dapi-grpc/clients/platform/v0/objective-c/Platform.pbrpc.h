@@ -28,8 +28,6 @@
 @class GetDocumentsResponse;
 @class GetEpochsInfoRequest;
 @class GetEpochsInfoResponse;
-@class GetIdentitiesByPublicKeyHashesRequest;
-@class GetIdentitiesByPublicKeyHashesResponse;
 @class GetIdentityBalanceAndRevisionRequest;
 @class GetIdentityBalanceAndRevisionResponse;
 @class GetIdentityBalanceRequest;
@@ -129,10 +127,6 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse)
 
 - (GRPCUnaryProtoCall *)getDocumentsWithMessage:(GetDocumentsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
-
-#pragma mark getIdentitiesByPublicKeyHashes(GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse)
-
-- (GRPCUnaryProtoCall *)getIdentitiesByPublicKeyHashesWithMessage:(GetIdentitiesByPublicKeyHashesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest) returns (GetIdentityByPublicKeyHashResponse)
 
@@ -248,13 +242,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(GetDocumentsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(GetDocumentsResponse *_Nullable response, NSError *_Nullable error))handler;
-
-
-#pragma mark getIdentitiesByPublicKeyHashes(GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse)
-
-- (void)getIdentitiesByPublicKeyHashesWithRequest:(GetIdentitiesByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentitiesByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler;
-
-- (GRPCProtoCall *)RPCTogetIdentitiesByPublicKeyHashesWithRequest:(GetIdentitiesByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentitiesByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest) returns (GetIdentityByPublicKeyHashResponse)
