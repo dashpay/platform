@@ -30,8 +30,6 @@
 @class GetEpochsInfoResponse;
 @class GetIdentitiesByPublicKeyHashesRequest;
 @class GetIdentitiesByPublicKeyHashesResponse;
-@class GetIdentitiesRequest;
-@class GetIdentitiesResponse;
 @class GetIdentityBalanceAndRevisionRequest;
 @class GetIdentityBalanceAndRevisionResponse;
 @class GetIdentityBalanceRequest;
@@ -91,10 +89,6 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getIdentity(GetIdentityRequest) returns (GetIdentityResponse)
 
 - (GRPCUnaryProtoCall *)getIdentityWithMessage:(GetIdentityRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
-
-#pragma mark getIdentities(GetIdentitiesRequest) returns (GetIdentitiesResponse)
-
-- (GRPCUnaryProtoCall *)getIdentitiesWithMessage:(GetIdentitiesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse)
 
@@ -184,13 +178,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getIdentityWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetIdentityWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityResponse *_Nullable response, NSError *_Nullable error))handler;
-
-
-#pragma mark getIdentities(GetIdentitiesRequest) returns (GetIdentitiesResponse)
-
-- (void)getIdentitiesWithRequest:(GetIdentitiesRequest *)request handler:(void(^)(GetIdentitiesResponse *_Nullable response, NSError *_Nullable error))handler;
-
-- (GRPCProtoCall *)RPCTogetIdentitiesWithRequest:(GetIdentitiesRequest *)request handler:(void(^)(GetIdentitiesResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse)

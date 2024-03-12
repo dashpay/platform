@@ -22,15 +22,6 @@ type PlatformgetIdentity = {
   readonly responseType: typeof platform_pb.GetIdentityResponse;
 };
 
-type PlatformgetIdentities = {
-  readonly methodName: string;
-  readonly service: typeof Platform;
-  readonly requestStream: false;
-  readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetIdentitiesRequest;
-  readonly responseType: typeof platform_pb.GetIdentitiesResponse;
-};
-
 type PlatformgetIdentityKeys = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -188,7 +179,6 @@ export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
   static readonly getIdentity: PlatformgetIdentity;
-  static readonly getIdentities: PlatformgetIdentities;
   static readonly getIdentityKeys: PlatformgetIdentityKeys;
   static readonly getIdentityNonce: PlatformgetIdentityNonce;
   static readonly getIdentityContractNonce: PlatformgetIdentityContractNonce;
@@ -257,15 +247,6 @@ export class PlatformClient {
   getIdentity(
     requestMessage: platform_pb.GetIdentityRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityResponse|null) => void
-  ): UnaryResponse;
-  getIdentities(
-    requestMessage: platform_pb.GetIdentitiesRequest,
-    metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesResponse|null) => void
-  ): UnaryResponse;
-  getIdentities(
-    requestMessage: platform_pb.GetIdentitiesRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesResponse|null) => void
   ): UnaryResponse;
   getIdentityKeys(
     requestMessage: platform_pb.GetIdentityKeysRequest,

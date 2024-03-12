@@ -24,11 +24,6 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetIdentityRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentityResponse.FromString,
                 )
-        self.getIdentities = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getIdentities',
-                request_serializer=platform__pb2.GetIdentitiesRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetIdentitiesResponse.FromString,
-                )
         self.getIdentityKeys = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityKeys',
                 request_serializer=platform__pb2.GetIdentityKeysRequest.SerializeToString,
@@ -126,12 +121,6 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getIdentity(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def getIdentities(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -251,11 +240,6 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getIdentity,
                     request_deserializer=platform__pb2.GetIdentityRequest.FromString,
                     response_serializer=platform__pb2.GetIdentityResponse.SerializeToString,
-            ),
-            'getIdentities': grpc.unary_unary_rpc_method_handler(
-                    servicer.getIdentities,
-                    request_deserializer=platform__pb2.GetIdentitiesRequest.FromString,
-                    response_serializer=platform__pb2.GetIdentitiesResponse.SerializeToString,
             ),
             'getIdentityKeys': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityKeys,
@@ -383,23 +367,6 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentity',
             platform__pb2.GetIdentityRequest.SerializeToString,
             platform__pb2.GetIdentityResponse.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-    @staticmethod
-    def getIdentities(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentities',
-            platform__pb2.GetIdentitiesRequest.SerializeToString,
-            platform__pb2.GetIdentitiesResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

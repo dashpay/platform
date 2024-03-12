@@ -13,7 +13,7 @@ use dapi_grpc::platform::v0::{
     GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
     GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
     GetEpochsInfoResponse, GetIdentitiesByPublicKeyHashesRequest,
-    GetIdentitiesByPublicKeyHashesResponse, GetIdentitiesRequest, GetIdentitiesResponse,
+    GetIdentitiesByPublicKeyHashesResponse,
     GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
     GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest,
     GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
@@ -53,9 +53,9 @@ impl QueryService {
         query_method: QueryMethod<RQ, RS>,
         endpoint_name: &str,
     ) -> Result<Response<RS>, Status>
-    where
-        RS: Clone + Send + 'static,
-        RQ: Send + 'static,
+        where
+            RS: Clone + Send + 'static,
+            RQ: Send + 'static,
     {
         let platform = Arc::clone(&self.platform);
 
@@ -72,7 +72,7 @@ impl QueryService {
                 &platform_state,
                 platform_version,
             )
-            .map_err(error_into_status)?;
+                .map_err(error_into_status)?;
 
             if result.is_valid() {
                 let response = result
@@ -86,9 +86,9 @@ impl QueryService {
                 Err(query_error_into_status(error))
             }
         })?
-        .instrument(tracing::trace_span!("query", endpoint_name))
-        .await
-        .map_err(|error| Status::internal(format!("join error: {}", error)))?
+            .instrument(tracing::trace_span!("query", endpoint_name))
+            .await
+            .map_err(|error| Status::internal(format!("join error: {}", error)))?
     }
 }
 
@@ -116,19 +116,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_identity,
             "get_identity",
         )
-        .await
-    }
-
-    async fn get_identities(
-        &self,
-        request: Request<GetIdentitiesRequest>,
-    ) -> Result<Response<GetIdentitiesResponse>, Status> {
-        self.handle_blocking_query(
-            request,
-            Platform::<DefaultCoreRPC>::query_identities,
-            "get_identities",
-        )
-        .await
+            .await
     }
 
     async fn get_identity_keys(
@@ -140,7 +128,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_keys,
             "get_identity_keys",
         )
-        .await
+            .await
     }
 
     async fn get_identity_nonce(
@@ -152,7 +140,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_identity_nonce,
             "get_identity_nonce",
         )
-        .await
+            .await
     }
 
     async fn get_identity_contract_nonce(
@@ -164,7 +152,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_identity_contract_nonce,
             "get_identity_contract_nonce",
         )
-        .await
+            .await
     }
 
     async fn get_identity_balance(
@@ -176,7 +164,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_balance,
             "get_identity_balance",
         )
-        .await
+            .await
     }
 
     async fn get_identity_balance_and_revision(
@@ -188,7 +176,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_balance_and_revision,
             "get_identity_balance_and_revision",
         )
-        .await
+            .await
     }
 
     async fn get_proofs(
@@ -200,7 +188,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_proofs,
             "get_proofs",
         )
-        .await
+            .await
     }
 
     async fn get_data_contract(
@@ -212,7 +200,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_data_contract,
             "get_data_contract",
         )
-        .await
+            .await
     }
 
     async fn get_data_contract_history(
@@ -224,7 +212,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_data_contract_history,
             "get_data_contract_history",
         )
-        .await
+            .await
     }
 
     async fn get_data_contracts(
@@ -236,7 +224,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_data_contracts,
             "get_data_contracts",
         )
-        .await
+            .await
     }
 
     async fn get_documents(
@@ -248,7 +236,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_documents,
             "get_documents",
         )
-        .await
+            .await
     }
 
     async fn get_identities_by_public_key_hashes(
@@ -260,7 +248,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_identities_by_public_key_hashes,
             "get_identities_by_public_key_hashes",
         )
-        .await
+            .await
     }
 
     async fn get_identity_by_public_key_hash(
@@ -272,7 +260,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_identity_by_public_key_hash,
             "get_identity_by_public_key_hash",
         )
-        .await
+            .await
     }
 
     async fn wait_for_state_transition_result(
@@ -298,7 +286,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_version_upgrade_state,
             "get_protocol_version_upgrade_state",
         )
-        .await
+            .await
     }
 
     async fn get_protocol_version_upgrade_vote_status(
@@ -310,7 +298,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_version_upgrade_vote_status,
             "get_protocol_version_upgrade_vote_status",
         )
-        .await
+            .await
     }
 
     async fn get_epochs_info(
@@ -322,7 +310,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_epoch_infos,
             "get_epochs_info",
         )
-        .await
+            .await
     }
 }
 
