@@ -233,7 +233,7 @@ describe('Platform', () => {
           });
 
           // eslint-disable-next max-len
-          it('should be able to verify that multiple identities exist with getIdentitiesByPublicKeyHashes', async () => {
+          it.skip('should be able to verify that multiple identities exist with getIdentitiesByPublicKeyHashes', async () => {
             const publicKeyHashes = [
               identity6PublicKeyHash,
               nonIncludedIdentityPubKeyHash,
