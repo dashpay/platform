@@ -53,8 +53,6 @@ pub struct BlockStateInfoV0 {
     pub block_hash: Option<[u8; 32]>,
     /// Application hash
     pub app_hash: Option<[u8; 32]>,
-    /// Current block protocol version
-    pub protocol_version: ProtocolVersion,
 }
 
 impl BlockStateInfoV0 {
@@ -72,7 +70,6 @@ impl BlockStateInfoV0 {
             core_chain_locked_height: proposal.core_chain_locked_height,
             block_hash: proposal.block_hash,
             app_hash: None,
-            protocol_version: proposal.consensus_versions.app as u32,
         }
     }
 }
