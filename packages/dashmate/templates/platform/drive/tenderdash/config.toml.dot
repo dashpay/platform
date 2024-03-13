@@ -473,97 +473,97 @@
   unsafe-propose-timeout-override = "{{= it.platform.drive.tenderdash.consensus.unsafeOverride.propose.timeout }}"
   { { ?} }
 
-  # This field provides an unsafe override of the ProposeDelta timeout consensus parameter.
-  # This field configures how much the propose timeout increases with each round.
-  # If this field is set to a value greater than 0, it will take effect.
-  {{? it.platform.drive.tenderdash.consensus.unsafeOverride.propose.delta === null }}
-  # unsafe-propose-timeout-delta-override = 0s
-  {{??}}
-  unsafe-propose-timeout-delta-override = "{{= it.platform.drive.tenderdash.consensus.unsafeOverride.propose.delta }}"
-  { { ?} }
+    # This field provides an unsafe override of the ProposeDelta timeout consensus parameter.
+    # This field configures how much the propose timeout increases with each round.
+    # If this field is set to a value greater than 0, it will take effect.
+         {{? it.platform.drive.tenderdash.consensus.unsafeOverride.propose.delta === null }}
+    # unsafe-propose-timeout-delta-override = 0s
+         {{??}}
+         unsafe-propose-timeout-delta-override = "{{= it.platform.drive.tenderdash.consensus.unsafeOverride.propose.delta }}"
+    { { ?} }
 
 
-  # This field provides an unsafe override of the Vote timeout consensus parameter.
-  # This field configures how long the consensus engine will wait after
-  # receiving +2/3 votes in a round.
-  # If this field is set to a value greater than 0, it will take effect.
-  {{? it.platform.drive.tenderdash.consensus.unsafeOverride.vote.timeout === null }}
-  # unsafe-vote-timeout-override = 0s
-  {{??}}
-  unsafe-vote-timeout-override = "{{= it.platform.drive.tenderdash.consensus.unsafeOverride.vote.timeout }}"
-  { { ?} }
+      # This field provides an unsafe override of the Vote timeout consensus parameter.
+      # This field configures how long the consensus engine will wait after
+      # receiving +2/3 votes in a round.
+      # If this field is set to a value greater than 0, it will take effect.
+           {{? it.platform.drive.tenderdash.consensus.unsafeOverride.vote.timeout === null }}
+      # unsafe-vote-timeout-override = 0s
+           {{??}}
+           unsafe-vote-timeout-override = "{{= it.platform.drive.tenderdash.consensus.unsafeOverride.vote.timeout }}"
+      { { ?} }
 
-  # This field provides an unsafe override of the VoteDelta timeout consensus parameter.
-  # This field configures how much the vote timeout increases with each round.
-  # If this field is set to a value greater than 0, it will take effect.
-  {{? it.platform.drive.tenderdash.consensus.unsafeOverride.vote.delta === null }}
-  # unsafe-vote-timeout-delta-override = 0s
-  {{??}}
-  unsafe-vote-timeout-delta-override = "{{= it.platform.drive.tenderdash.consensus.unsafeOverride.vote.delta }}"
-  { { ?} }
+        # This field provides an unsafe override of the VoteDelta timeout consensus parameter.
+        # This field configures how much the vote timeout increases with each round.
+        # If this field is set to a value greater than 0, it will take effect.
+             {{? it.platform.drive.tenderdash.consensus.unsafeOverride.vote.delta === null }}
+        # unsafe-vote-timeout-delta-override = 0s
+             {{??}}
+             unsafe-vote-timeout-delta-override = "{{= it.platform.drive.tenderdash.consensus.unsafeOverride.vote.delta }}"
+        { { ?} }
 
-  # This field provides an unsafe override of the Commit timeout consensus parameter.
-  # This field configures how long the consensus engine will wait after receiving
-  # +2/3 precommits before beginning the next height.
-  # If this field is set to a value greater than 0, it will take effect.
-  {{? it.platform.drive.tenderdash.consensus.unsafeOverride.commit.timeout === null }}
-  # unsafe-commit-timeout-override = 0s
-  {{??}}
-  unsafe-commit-timeout-override = "{{= it.platform.drive.tenderdash.consensus.unsafeOverride.commit.timeout }}"
-  { { ?} }
+          # This field provides an unsafe override of the Commit timeout consensus parameter.
+          # This field configures how long the consensus engine will wait after receiving
+          # +2/3 precommits before beginning the next height.
+          # If this field is set to a value greater than 0, it will take effect.
+               {{? it.platform.drive.tenderdash.consensus.unsafeOverride.commit.timeout === null }}
+          # unsafe-commit-timeout-override = 0s
+               {{??}}
+               unsafe-commit-timeout-override = "{{= it.platform.drive.tenderdash.consensus.unsafeOverride.commit.timeout }}"
+          { { ?} }
 
-  # This field provides an unsafe override of the BypassCommitTimeout consensus parameter.
-  # This field configures if the consensus engine will wait for the full Commit timeout
-  # before proceeding to the next height.
-  # If this field is set to true, the consensus engine will proceed to the next height
-  # as soon as the node has gathered votes from all of the validators on the network.
-  {{? it.platform.drive.tenderdash.consensus.unsafeOverride.commit.bypass === null }}
-  # unsafe-bypass-commit-timeout-override =
-  {{??}}
-  unsafe-bypass-commit-timeout-override = {{? it.platform.drive.tenderdash.consensus.unsafeOverride.commit.bypass }}true{{??}}false{{?}}
-  { { ?} }
+            # This field provides an unsafe override of the BypassCommitTimeout consensus parameter.
+            # This field configures if the consensus engine will wait for the full Commit timeout
+            # before proceeding to the next height.
+            # If this field is set to true, the consensus engine will proceed to the next height
+            # as soon as the node has gathered votes from all of the validators on the network.
+                 {{? it.platform.drive.tenderdash.consensus.unsafeOverride.commit.bypass === null }}
+            # unsafe-bypass-commit-timeout-override =
+                 {{??}}
+                 unsafe-bypass-commit-timeout-override = {{? it.platform.drive.tenderdash.consensus.unsafeOverride.commit.bypass }}true{{??}}false{{?}}
+            { { ?} }
 
 
-  #######################################################
-  ###   Transaction Indexer Configuration Options     ###
-  #######################################################
-  [ tx-index ]
+              #######################################################
+              ###   Transaction Indexer Configuration Options     ###
+              #######################################################
+              [ tx-index ]
 
-  # The backend database list to back the indexer.
-  # If list contains "null" or "", meaning no indexer service will be used.
-  #
-  # The application will set which txs to index. In some cases a node operator will be able
-  # to decide which txs to index based on configuration set in the application.
-  #
-  # Options:
-  #   1) "null" (default) - no indexer services.
-  #   2) "kv" - a simple indexer backed by key-value storage (see DBBackend)
-  #   3) "psql" - the indexer services backed by PostgreSQL.
-  # When "kv" or "psql" is chosen "tx.height" and "tx.hash" will always be indexed.
-  indexer = ["kv"]
+              # The backend database list to back the indexer.
+              # If list contains "null" or "", meaning no indexer service will be used.
+              #
+              # The application will set which txs to index. In some cases a node operator will be able
+              # to decide which txs to index based on configuration set in the application.
+              #
+              # Options:
+              #   1) "null" (default) - no indexer services.
+              #   2) "kv" - a simple indexer backed by key-value storage (see DBBackend)
+              #   3) "psql" - the indexer services backed by PostgreSQL.
+              # When "kv" or "psql" is chosen "tx.height" and "tx.hash" will always be indexed.
+                   indexer = ["kv"]
 
-  # The PostgreSQL connection configuration, the connection format:
-  #   postgresql://<user>:<password>@<host>:<port>/<db>?<opts>
-  psql-conn = ""
+              # The PostgreSQL connection configuration, the connection format:
+              #   postgresql://<user>:<password>@<host>:<port>/<db>?<opts>
+                   psql-conn = ""
 
-  #######################################################
-  ###       Instrumentation Configuration Options     ###
-  #######################################################
-  [ instrumentation ]
+              #######################################################
+              ###       Instrumentation Configuration Options     ###
+              #######################################################
+              [ instrumentation ]
 
-  # When true, Prometheus metrics are served under /metrics on
-  # PrometheusListenAddr.
-  # Check out the documentation for the list of available metrics.
-  prometheus = {{? it.platform.drive.tenderdash.metrics.enabled }}true{{??}}false{{?}}
+              # When true, Prometheus metrics are served under /metrics on
+              # PrometheusListenAddr.
+              # Check out the documentation for the list of available metrics.
+                   prometheus = {{? it.platform.drive.tenderdash.metrics.enabled }}true{{??}}false{{?}}
 
-  # Address to listen for Prometheus collector(s) connections
-  prometheus-listen-addr = ":{{= it.platform.drive.tenderdash.metrics.port }}"
+              # Address to listen for Prometheus collector(s) connections
+                   prometheus-listen-addr = ":{{= it.platform.drive.tenderdash.metrics.port }}"
 
-  # Maximum number of simultaneous connections.
-  # If you want to accept a larger number than the default, make sure
-  # you increase your OS limits.
-  # 0 - unlimited.
-  max-open-connections = 3
+              # Maximum number of simultaneous connections.
+              # If you want to accept a larger number than the default, make sure
+              # you increase your OS limits.
+              # 0 - unlimited.
+                   max-open-connections = 3
 
-  # Instrumentation namespace
-  namespace = "drive_tenderdash"
+              # Instrumentation namespace
+                   namespace = "drive_tenderdash"
