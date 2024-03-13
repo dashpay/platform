@@ -144,7 +144,6 @@ where
                 drive_operations.push(IdentityOperation(DisableIdentityKeys {
                     identity_id: new_operator_identifier,
                     keys_ids: old_operator_identity_key_ids_to_disable,
-                    disable_at: block_info.time_ms,
                 }));
             }
 
@@ -232,7 +231,6 @@ where
                 drive_operations.push(IdentityOperation(DisableIdentityKeys {
                     identity_id: old_operator_identifier,
                     keys_ids: old_operator_identity_key_ids_to_disable,
-                    disable_at: block_info.time_ms,
                 }));
             }
             let new_payout_address =

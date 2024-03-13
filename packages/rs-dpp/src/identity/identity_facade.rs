@@ -143,16 +143,12 @@ impl IdentityFacade {
         identity_nonce: u64,
         add_public_keys: Option<Vec<IdentityPublicKeyInCreation>>,
         public_key_ids_to_disable: Option<Vec<KeyID>>,
-        // Pass disable time as argument because SystemTime::now() does not work for wasm target
-        // https://github.com/rust-lang/rust/issues/48564
-        disable_time: Option<TimestampMillis>,
     ) -> Result<IdentityUpdateTransition, ProtocolError> {
         self.factory.create_identity_update_transition(
             identity,
             identity_nonce,
             add_public_keys,
             public_key_ids_to_disable,
-            disable_time,
         )
     }
 }

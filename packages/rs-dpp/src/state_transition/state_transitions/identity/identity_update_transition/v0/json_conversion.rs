@@ -28,7 +28,6 @@ mod test {
             nonce: 1,
             add_public_keys: vec![public_key.into()],
             disable_public_keys: vec![],
-            public_keys_disabled_at: None,
             user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: BinaryData::new(buffer.to_vec()),

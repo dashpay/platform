@@ -7,7 +7,6 @@ impl From<IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
             identity_id,
             add_public_keys,
             disable_public_keys,
-            public_keys_disabled_at,
             revision,
             nonce,
             user_fee_increase,
@@ -16,7 +15,6 @@ impl From<IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
         IdentityUpdateTransitionActionV0 {
             add_public_keys: add_public_keys.into_iter().map(|a| a.into()).collect(),
             disable_public_keys,
-            public_keys_disabled_at,
             identity_id,
             revision,
             nonce,
@@ -31,7 +29,6 @@ impl From<&IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
             identity_id,
             add_public_keys,
             disable_public_keys,
-            public_keys_disabled_at,
             revision,
             nonce,
             user_fee_increase,
@@ -43,7 +40,6 @@ impl From<&IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
                 .map(|key| key.clone().into())
                 .collect(),
             disable_public_keys: disable_public_keys.clone(),
-            public_keys_disabled_at: *public_keys_disabled_at,
             identity_id: *identity_id,
             revision: *revision,
             nonce: *nonce,

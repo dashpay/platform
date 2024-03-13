@@ -14,7 +14,6 @@ module.exports = async function getIdentityUpdateTransitionFixture() {
 
   stateTransition.setPublicKeysToAdd([key]);
   stateTransition.setPublicKeyIdsToDisable([0]);
-  stateTransition.setPublicKeysDisabledAt(new Date());
 
   return stateTransition;
 };

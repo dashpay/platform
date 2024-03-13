@@ -39,13 +39,6 @@ impl IdentityUpdateTransitionAction {
         }
     }
 
-    /// Public Keys Disabled At
-    pub fn public_keys_disabled_at(&self) -> Option<TimestampMillis> {
-        match self {
-            IdentityUpdateTransitionAction::V0(transition) => transition.public_keys_disabled_at,
-        }
-    }
-
     /// Identity Id
     pub fn identity_id(&self) -> Identifier {
         match self {

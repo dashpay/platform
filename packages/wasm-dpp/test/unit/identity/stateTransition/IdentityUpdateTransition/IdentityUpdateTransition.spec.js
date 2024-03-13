@@ -99,23 +99,6 @@ describe('IdentityUpdateTransition', () => {
     });
   });
 
-  describe('#getPublicKeysDisabledAt', () => {
-    it('should return time to disable public keys', () => {
-      expect(stateTransition.getPublicKeysDisabledAt())
-        .to.deep.equal(rawStateTransition.publicKeysDisabledAt);
-    });
-  });
-
-  describe('#setPublicKeysDisabledAt', () => {
-    it('should set time to disable public keys', () => {
-      const now = new Date();
-
-      stateTransition.setPublicKeysDisabledAt(now);
-
-      expect(stateTransition.getPublicKeysDisabledAt()).to.deep.equal(new Date(now));
-    });
-  });
-
   describe('#toObject', () => {
     it('should return raw state transition', () => {
       rawStateTransition = stateTransition.toObject();
@@ -149,7 +132,6 @@ describe('IdentityUpdateTransition', () => {
 
     it('should return raw state transition without optional properties', () => {
       stateTransition.setPublicKeyIdsToDisable(undefined);
-      stateTransition.setPublicKeysDisabledAt(undefined);
       stateTransition.setPublicKeysToAdd(undefined);
 
       rawStateTransition = stateTransition.toObject();
