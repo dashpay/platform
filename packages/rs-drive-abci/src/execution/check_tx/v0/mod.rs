@@ -982,7 +982,7 @@ mod tests {
             .expect("expected to commit");
 
         // Now let's do the data contract update
-        let dashpay_id = modified_dashpay_contract.id();
+        let _dashpay_id = modified_dashpay_contract.id();
         // we need to alter dashpay to make it invalid
 
         modified_dashpay_contract.set_version(2);

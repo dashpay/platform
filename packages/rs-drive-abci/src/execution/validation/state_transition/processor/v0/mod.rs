@@ -250,7 +250,7 @@ pub(crate) trait StateTransitionBasicStructureValidationV0 {
     /// True if the state transition has basic structure validation.
     /// Currently only data contract update does not
     fn has_basic_structure_validation(&self) -> bool {
-        return true;
+        true
     }
 }
 
@@ -300,7 +300,7 @@ pub(crate) trait StateTransitionNonceValidationV0 {
     /// True if the state transition validates nonces, either identity nonces or identity contract
     /// nonces
     fn has_nonces_validation(&self) -> bool {
-        return true;
+        true
     }
 }
 
@@ -359,7 +359,7 @@ pub(crate) trait StateTransitionBalanceValidationV0 {
     /// This balance validation is not for the operations of the state transition, but more as a
     /// quick early verification that the user has the balance they want to transfer or withdraw.
     fn has_balance_validation(&self) -> bool {
-        return true;
+        true
     }
 }
 
@@ -506,9 +506,7 @@ impl StateTransitionAdvancedStructureValidationV0 for StateTransition {
         &self,
         _platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        match self {
-            _ => Ok(ConsensusValidationResult::<StateTransitionAction>::new()),
-        }
+        Ok(ConsensusValidationResult::<StateTransitionAction>::new())
     }
 }
 

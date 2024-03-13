@@ -3,7 +3,6 @@ use crate::state_transition_action::contract::data_contract_update::DataContract
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
-use platform_version::TryFromPlatformVersioned;
 
 impl DataContractUpdateTransitionAction {
     /// tries to transform the DataContractUpdateTransition into a DataContractUpdateTransitionAction

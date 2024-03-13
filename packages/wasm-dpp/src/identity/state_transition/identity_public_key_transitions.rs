@@ -9,7 +9,6 @@ use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use js_sys::Reflect::delete_property;
 pub use serde::{Deserialize, Serialize};
 
-use dpp::data_contract::errors::DataContractError;
 use dpp::ProtocolError;
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;

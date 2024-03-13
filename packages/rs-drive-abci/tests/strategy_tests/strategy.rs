@@ -441,7 +441,7 @@ impl NetworkStrategy {
                     }
                 });
 
-                let state_transition = DataContractCreateTransition::new_from_data_contract(
+                DataContractCreateTransition::new_from_data_contract(
                     contract.clone(),
                     identity_nonce,
                     &identity,
@@ -450,8 +450,7 @@ impl NetworkStrategy {
                     platform_version,
                     None,
                 )
-                .expect("expected to create a create state transition from a data contract");
-                state_transition
+                .expect("expected to create a create state transition from a data contract")
             })
             .collect()
     }
@@ -1074,7 +1073,7 @@ impl NetworkStrategy {
             // Don't do any state transitions on block 1
             let (mut document_state_transitions, mut add_to_finalize_block_operations) = self
                 .state_transitions_for_block(
-                    &platform,
+                    platform,
                     block_info,
                     current_identities,
                     signer,

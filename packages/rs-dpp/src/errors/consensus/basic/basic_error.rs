@@ -3,8 +3,6 @@ use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use platform_value::Error as PlatformValueError;
-
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
     DataContractEmptySchemaError, DataContractHaveNewUniqueIndexError,
@@ -18,7 +16,7 @@ use crate::consensus::basic::data_contract::{
     UniqueIndicesLimitReachedError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
 };
 use crate::consensus::basic::decode::{
-    DecodingError, ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
+    ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
 use crate::consensus::basic::document::{
     DataContractNotPresentError, DocumentTransitionsAreAbsentError,

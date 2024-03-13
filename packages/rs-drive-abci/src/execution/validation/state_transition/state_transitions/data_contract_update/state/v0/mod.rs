@@ -8,10 +8,8 @@ use dpp::consensus::basic::data_contract::{
 };
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
-use dpp::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
-use dpp::data_contract::config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::schema::{
@@ -27,14 +25,14 @@ use dpp::state_transition::data_contract_update_transition::accessors::DataContr
 use dpp::ProtocolError;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
+use dpp::version::PlatformVersion;
 
 use crate::error::execution::ExecutionError;
 use crate::execution::validation::state_transition::ValidationMode;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
-use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceAction;
+
 use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) trait DataContractUpdateStateTransitionStateValidationV0 {

@@ -1,4 +1,3 @@
-use crate::data_contract::errors::InvalidDataContractError;
 use wasm_bindgen::JsValue;
 
 use crate::errors::consensus::consensus_error::from_consensus_error;

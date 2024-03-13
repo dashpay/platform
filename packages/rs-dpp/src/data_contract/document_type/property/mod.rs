@@ -468,9 +468,9 @@ impl DocumentPropertyType {
             DocumentPropertyType::Identifier => {
                 let mut id = [0; 32];
                 buf.read_exact(&mut id).map_err(|_| {
-                    DataContractError::DecodingContractError(DecodingError::new(format!(
-                        "expected to read 32 bytes (identifier)"
-                    )))
+                    DataContractError::DecodingContractError(DecodingError::new(
+                        "expected to read 32 bytes (identifier)".to_string(),
+                    ))
                 })?;
                 //dbg!(hex::encode(&id));
                 Ok((Some(Value::Identifier(id)), false))
