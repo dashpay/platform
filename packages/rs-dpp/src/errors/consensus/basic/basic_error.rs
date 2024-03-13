@@ -29,8 +29,9 @@ use crate::consensus::basic::document::{
     MissingPositionsInDocumentTypePropertiesError,
 };
 use crate::consensus::basic::identity::{
-    DataContractBoundsNotPresentError, DuplicatedIdentityPublicKeyBasicError,
-    DuplicatedIdentityPublicKeyIdBasicError, IdentityAssetLockProofLockedTransactionMismatchError,
+    DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
+    DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
+    IdentityAssetLockProofLockedTransactionMismatchError,
     IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     IdentityAssetLockTransactionOutputNotFoundError, IdentityCreditTransferToSelfError,
@@ -218,6 +219,11 @@ pub enum BasicError {
 
     #[error(transparent)]
     DuplicatedIdentityPublicKeyIdBasicError(DuplicatedIdentityPublicKeyIdBasicError),
+
+    #[error(transparent)]
+    DisablingKeyIdAlsoBeingAddedInSameTransitionError(
+        DisablingKeyIdAlsoBeingAddedInSameTransitionError,
+    ),
 
     #[error(transparent)]
     IdentityAssetLockProofLockedTransactionMismatchError(

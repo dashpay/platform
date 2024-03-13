@@ -124,6 +124,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidInstantAssetLockProofSignatureError(_) => 1042,
             Self::InvalidIdentityAssetLockProofChainLockValidationError(_) => 1043,
             Self::DataContractBoundsNotPresentError(_) => 1066,
+            Self::DisablingKeyIdAlsoBeingAddedInSameTransitionError(_) => 1096,
 
             Self::MissingMasterPublicKeyError(_) => 1046,
             Self::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
