@@ -32,7 +32,7 @@ impl DriveHighLevelOperationConverter for DataContractCreateTransitionAction {
                 IdentityOperationType::UpdateIdentityContractNonce {
                     identity_id: self.data_contract_ref().owner_id().into_buffer(),
                     contract_id: self.data_contract_ref().id().into_buffer(),
-                    nonce: 0,
+                    nonce: 1,
                 },
             ));
         }

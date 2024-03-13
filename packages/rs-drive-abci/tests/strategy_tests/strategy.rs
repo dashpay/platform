@@ -394,6 +394,7 @@ impl NetworkStrategy {
         &mut self,
         current_identities: &Vec<Identity>,
         signer: &SimpleSigner,
+        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
@@ -440,6 +441,11 @@ impl NetworkStrategy {
                         }
                     }
                 });
+
+                let identity_contract_nonce = contract_nonce_counter
+                    .entry((identity.id, contract.id()))
+                    .or_default();
+                *identity_contract_nonce += 1;
 
                 DataContractCreateTransition::new_from_data_contract(
                     contract.clone(),
@@ -1066,8 +1072,13 @@ impl NetworkStrategy {
 
         if block_info.height == 1 {
             // add contracts on block 1
-            let mut contract_state_transitions =
-                self.contract_state_transitions(current_identities, signer, rng, platform_version);
+            let mut contract_state_transitions = self.contract_state_transitions(
+                current_identities,
+                signer,
+                contract_nonce_counter,
+                rng,
+                platform_version,
+            );
             state_transitions.append(&mut contract_state_transitions);
         } else {
             // Don't do any state transitions on block 1

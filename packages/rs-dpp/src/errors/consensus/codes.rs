@@ -69,7 +69,6 @@ impl ErrorWithCode for BasicError {
             Self::UnknownSecurityLevelError { .. } => 1072,
             Self::UnknownStorageKeyRequirementsError { .. } => 1073,
             Self::ContractError(DataContractError::DecodingContractError { .. }) => 1074,
-            Self::ContractError(DataContractError::DataContractAlreadyExistsError { .. }) => 1075,
             Self::ContractError(DataContractError::DecodingDocumentError { .. }) => 1076,
             Self::ContractError(DataContractError::InvalidDocumentTypeError { .. }) => 1077,
             Self::ContractError(DataContractError::MissingRequiredKey(_)) => 1078,
@@ -86,11 +85,10 @@ impl ErrorWithCode for BasicError {
             Self::ContractError(DataContractError::DocumentIdMissing(_)) => 1089,
             Self::ContractError(DataContractError::Unsupported(_)) => 1090,
             Self::ContractError(DataContractError::CorruptedSerialization(_)) => 1091,
-            Self::ContractError(DataContractError::CorruptedCodeExecution(_)) => 1092,
-            Self::ContractError(DataContractError::JsonSchema(_)) => 1093,
-            Self::ContractError(DataContractError::InvalidURI(_)) => 1094,
-            Self::ContractError(DataContractError::KeyWrongBounds(_)) => 1095,
-            Self::ContractError(DataContractError::KeyValueMustExist(_)) => 1096,
+            Self::ContractError(DataContractError::JsonSchema(_)) => 1092,
+            Self::ContractError(DataContractError::InvalidURI(_)) => 1093,
+            Self::ContractError(DataContractError::KeyWrongBounds(_)) => 1094,
+            Self::ContractError(DataContractError::KeyValueMustExist(_)) => 1095,
 
             // Document
             Self::DataContractNotPresentError { .. } => 1018,

@@ -27,7 +27,6 @@ use std::convert::TryInto;
 use crate::consensus::basic::data_contract::InvalidDocumentTypeRequiredSecurityLevelError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
-use crate::consensus::basic::value_error::ValueError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;
 use crate::data_contract::document_type::{property_names, DocumentType};

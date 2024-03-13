@@ -144,10 +144,6 @@ pub enum ProtocolError {
     #[error(transparent)]
     CompatibleProtocolVersionIsNotDefinedError(#[from] CompatibleProtocolVersionIsNotDefinedError),
 
-    // Data Contract
-    #[error("Data Contract already exists")]
-    DataContractAlreadyExistsError,
-
     #[error(transparent)]
     InvalidDocumentTypeError(InvalidDocumentTypeError),
 

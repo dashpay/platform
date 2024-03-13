@@ -10,9 +10,6 @@ use crate::ProtocolError;
 // @append_only
 #[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone)]
 pub enum DataContractError {
-    #[error("Data Contract already exists")]
-    DataContractAlreadyExistsError,
-
     #[error(transparent)]
     DecodingContractError(DecodingError),
 
@@ -74,9 +71,6 @@ pub enum DataContractError {
 
     #[error("Corrupted Serialization: {0}")]
     CorruptedSerialization(String),
-
-    #[error("Corrupted Code Execution: {0}")]
-    CorruptedCodeExecution(String),
 
     #[error("Corrupted Code Execution: {0}")]
     JsonSchema(JsonSchemaError),

@@ -401,7 +401,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2604790);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2796590);
 
         let check_result = platform
             .check_tx(
@@ -734,7 +734,7 @@ mod tests {
         // since a fee multiplier of 100 means 100% more of 1 (gives 2)
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            2604790 * 2
+            2796590 * 2
         );
 
         let check_result = platform
@@ -972,7 +972,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2604790);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2796590);
 
         platform
             .drive
@@ -1003,7 +1003,7 @@ mod tests {
 
         let mut update_contract_state_transition: StateTransition =
             DataContractUpdateTransition::try_from_platform_versioned(
-                (modified_dashpay_contract, 1),
+                (modified_dashpay_contract, 2),
                 platform_version,
             )
             .expect("expected a state transition")
@@ -1056,7 +1056,7 @@ mod tests {
 
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
-            5519320
+            5704920
         );
 
         let check_result = platform
@@ -1168,7 +1168,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2604790);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2796590);
 
         platform
             .drive
@@ -1236,7 +1236,7 @@ mod tests {
 
         let mut update_contract_state_transition: StateTransition =
             DataContractUpdateTransition::try_from_platform_versioned(
-                (modified_dashpay_contract, 1),
+                (modified_dashpay_contract, 2),
                 platform_version,
             )
             .expect("expected a state transition")
@@ -1287,7 +1287,7 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 941460);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1127060);
 
         let check_result = platform
             .check_tx(
@@ -1431,7 +1431,7 @@ mod tests {
                 profile,
                 entropy.0,
                 &key,
-                1,
+                2,
                 0,
                 &signer,
                 platform_version,
@@ -1450,7 +1450,7 @@ mod tests {
                 altered_document,
                 profile,
                 &key,
-                2,
+                3,
                 0,
                 &signer,
                 platform_version,

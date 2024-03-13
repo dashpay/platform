@@ -392,12 +392,6 @@ pub(crate) trait StateTransitionStateValidationV0:
 }
 
 impl StateTransitionBasicStructureValidationV0 for StateTransition {
-    fn has_basic_structure_validation(&self) -> bool {
-        match self {
-            StateTransition::DataContractUpdate(_) => false,
-            _ => true,
-        }
-    }
     fn validate_basic_structure(
         &self,
         platform_version: &PlatformVersion,
@@ -422,21 +416,12 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
             }
         }
     }
+    fn has_basic_structure_validation(&self) -> bool {
+        !matches!(self, StateTransition::DataContractUpdate(_))
+    }
 }
 
 impl StateTransitionNonceValidationV0 for StateTransition {
-    fn has_nonces_validation(&self) -> bool {
-        match self {
-            StateTransition::DocumentsBatch(_)
-            | StateTransition::DataContractCreate(_)
-            | StateTransition::DataContractUpdate(_)
-            | StateTransition::IdentityUpdate(_)
-            | StateTransition::IdentityCreditTransfer(_)
-            | StateTransition::IdentityCreditWithdrawal(_) => true,
-            _ => false,
-        }
-    }
-
     fn validate_nonces(
         &self,
         platform: &PlatformStateRef,
@@ -466,6 +451,18 @@ impl StateTransitionNonceValidationV0 for StateTransition {
             _ => Ok(SimpleConsensusValidationResult::new()),
         }
     }
+
+    fn has_nonces_validation(&self) -> bool {
+        matches!(
+            self,
+            StateTransition::DocumentsBatch(_)
+                | StateTransition::DataContractCreate(_)
+                | StateTransition::DataContractUpdate(_)
+                | StateTransition::IdentityUpdate(_)
+                | StateTransition::IdentityCreditTransfer(_)
+                | StateTransition::IdentityCreditWithdrawal(_)
+        )
+    }
 }
 
 impl StateTransitionBalanceValidationV0 for StateTransition {
@@ -489,11 +486,11 @@ impl StateTransitionBalanceValidationV0 for StateTransition {
     }
 
     fn has_balance_validation(&self) -> bool {
-        match self {
+        matches!(
+            self,
             StateTransition::IdentityCreditTransfer(_)
-            | StateTransition::IdentityCreditWithdrawal(_) => true,
-            _ => false,
-        }
+                | StateTransition::IdentityCreditWithdrawal(_)
+        )
     }
 }
 
