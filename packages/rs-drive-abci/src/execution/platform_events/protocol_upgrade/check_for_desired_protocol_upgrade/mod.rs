@@ -28,10 +28,9 @@ impl<C> Platform<C> {
     /// * There is an issue interacting with the underlying storage.
     /// * An overflow occurs when calculating the required block count.
     /// * More than one version pass the threshold to upgrade.
-    pub fn check_for_desired_protocol_upgrade_and_reset(
+    pub fn check_for_desired_protocol_upgrade(
         &self,
         total_hpmns: u32,
-        transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<Option<ProtocolVersion>, Error> {
         match platform_version
@@ -40,11 +39,7 @@ impl<C> Platform<C> {
             .protocol_upgrade
             .check_for_desired_protocol_upgrade
         {
-            0 => self.check_for_desired_protocol_upgrade_and_reset_v0(
-                total_hpmns,
-                transaction,
-                platform_version,
-            ),
+            0 => self.check_for_desired_protocol_upgrade_v0(total_hpmns),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "check_for_desired_protocol_upgrade".to_string(),
                 known_versions: vec![0],

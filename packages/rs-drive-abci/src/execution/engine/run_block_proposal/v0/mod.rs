@@ -291,15 +291,18 @@ where
             }
 
             // Determine new protocol version based on votes for the next epoch
-            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade_and_reset(
-                hpmn_list_len,
-                transaction,
-                platform_version,
-            )?;
+            let maybe_new_protocol_version =
+                self.check_for_desired_protocol_upgrade(hpmn_list_len, platform_version)?;
 
             if let Some(new_protocol_version) = maybe_new_protocol_version {
                 block_platform_state.set_next_epoch_protocol_version(new_protocol_version);
             }
+
+            // Since we are starting new epoch we need to drop previously
+            // proposed versions
+            self.drive
+                .clear_version_information(Some(transaction), &platform_version.drive)
+                .map_err(Error::Drive)?;
         }
 
         // Mark all previously broadcasted and chainlocked withdrawals as complete

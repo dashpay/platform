@@ -1,3 +1,6 @@
+use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::execution::types::block_execution_context::BlockExecutionContext;
+use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
@@ -8,8 +11,8 @@ where
     /// Updates the drive cache at the end of finalize block. This does a few things like merging
     /// the data contract cache and the platform versions cache.
     ///
-    pub(super) fn update_drive_cache_v0(&self) {
-        // Update global cache with updated contracts
+    pub(super) fn update_drive_cache_v0(&self, block_execution_context: &BlockExecutionContext) {
+        // Update global cache with updated contracts form this block
         self.drive
             .cache
             .data_contracts
@@ -17,6 +20,12 @@ where
 
         let mut protocol_versions_counter = self.drive.cache.protocol_versions_counter.write();
 
-        protocol_versions_counter.merge_block_cache()
+        if block_execution_context.epoch_info().is_epoch_change() {
+            // Clear previously proposed versions since we started a new epoch
+            protocol_versions_counter.clear();
+        } else {
+            // Update proposed versions with new proposal from the current block
+            protocol_versions_counter.merge_block_cache()
+        }
     }
 }

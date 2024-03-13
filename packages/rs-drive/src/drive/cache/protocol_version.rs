@@ -58,21 +58,23 @@ impl ProtocolVersionsCache {
         self.global_cache.extend(self.block_cache.drain());
     }
 
+    /// Clears the cache
+    pub fn clear(&mut self) {
+        self.loaded = false;
+        self.global_cache.clear();
+        self.block_cache.clear();
+    }
+
     /// Clear block cache
     pub fn clear_block_cache(&mut self) {
         self.block_cache.clear()
     }
 
     /// Collect versions passing threshold
-    /// and clear both global and block caches
-    pub fn aggregate_into_versions_passing_threshold(
-        &mut self,
-        required_upgraded_hpmns: u64,
-    ) -> Vec<ProtocolVersion> {
+    pub fn versions_passing_threshold(&self, required_upgraded_hpmns: u64) -> Vec<ProtocolVersion> {
         let mut cache = self.global_cache.clone();
-        self.global_cache.clear();
 
-        cache.extend(self.block_cache.drain());
+        cache.extend(self.block_cache.iter());
         cache
             .into_iter()
             .filter_map(|(protocol_version, count)| {
