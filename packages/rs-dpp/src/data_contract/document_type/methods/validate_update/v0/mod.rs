@@ -72,9 +72,7 @@ impl<'a> DocumentTypeRef<'a> {
             );
         }
 
-        if new_document_type
-            .security_level_requirement() != self.security_level_requirement()
-        {
+        if new_document_type.security_level_requirement() != self.security_level_requirement() {
             return SimpleConsensusValidationResult::new_with_error(
                 DocumentTypeUpdateError::new(
                     self.data_contract_id(),
