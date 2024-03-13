@@ -32,7 +32,6 @@ use crate::error::Error;
 use crate::platform_types::block_proposal::v0::BlockProposal;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use dpp::util::deserializer::ProtocolVersion;
 
 /// Block info
 #[derive(Debug, Clone, PartialEq, Eq)]
