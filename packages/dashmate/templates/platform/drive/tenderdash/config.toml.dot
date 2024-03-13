@@ -124,7 +124,7 @@ root-ca-file = ""
 #######################################################
 ###       RPC Server Configuration Options          ###
 #######################################################
-[ rpc ]
+[rpc]
 
 # TCP or UNIX socket address for the RPC server to listen on
 laddr = "tcp://0.0.0.0:{{=it.platform.drive.tenderdash.rpc.port}}"
@@ -228,7 +228,7 @@ pprof-laddr = "{{? it.platform.drive.tenderdash.pprof.enabled}}:{{=it.platform.d
 #######################################################
 ###           P2P Configuration Options             ###
 #######################################################
-[ p2p ]
+[p2p]
 
 # TODO: Investigate which one is the most suitable for Dash Platform
 # Select the p2p internal queue.
@@ -305,7 +305,7 @@ recv-rate = {{= it.platform.drive.tenderdash.p2p.recvRate }}
 #######################################################
 ###          Mempool Configuration Option          ###
 #######################################################
-[ mempool ]
+[mempool]
 
 # recheck has been moved from a config option to a global
 # consensus param in v0.36
@@ -388,7 +388,7 @@ ttl-num-blocks = 0
 #######################################################
 ###         State Sync Configuration Options        ###
 #######################################################
-[ statesync ]
+[statesync]
 # State sync rapidly bootstraps a new node by discovering, fetching, and restoring a state machine
 # snapshot from peers instead of fetching and replaying historical blocks. Requires some peers in
 # the network to take and serve state machine snapshots. State sync is not attempted if the node
@@ -432,7 +432,7 @@ fetchers = "4"
 #######################################################
 ###         Consensus Configuration Options         ###
 #######################################################
-[ consensus ]
+[consensus]
 
 wal-file = "data/cs.wal/wal"
 # wal-skip-rounds-to-last set to true will skip replaying all non-committed rounds stored in
@@ -527,7 +527,7 @@ unsafe-bypass-commit-timeout-override = {{? it.platform.drive.tenderdash.consens
 #######################################################
 ###   Transaction Indexer Configuration Options     ###
 #######################################################
-[ tx-index ]
+[tx-index]
 
 # The backend database list to back the indexer.
 # If list contains "null" or "", meaning no indexer service will be used.
@@ -549,7 +549,7 @@ psql-conn = ""
 #######################################################
 ###       Instrumentation Configuration Options     ###
 #######################################################
-[ instrumentation ]
+[instrumentation]
 
 # When true, Prometheus metrics are served under /metrics on
 # PrometheusListenAddr.
