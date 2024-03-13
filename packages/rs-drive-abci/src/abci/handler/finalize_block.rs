@@ -2,9 +2,7 @@ use crate::abci::app::{BlockExecutionApplication, PlatformApplication, Transacti
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
-use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
 use crate::rpc::core::CoreRPCLike;
-use dpp::version::PlatformVersion;
 use tenderdash_abci::proto::abci as proto;
 
 pub fn finalize_block<'a, A, C>(
@@ -35,11 +33,9 @@ where
             "block execution context must be set in block begin handler for finalize block",
         )))?;
 
-    // Use current block protocol version
-    let protocol_version = block_execution_context
-        .block_state_info()
-        .protocol_version();
-    let platform_version = PlatformVersion::get(protocol_version)?;
+    let platform_version = block_execution_context
+        .block_platform_state()
+        .current_platform_version()?;
 
     let block_finalization_outcome = app.platform().finalize_block_proposal(
         request.try_into()?,

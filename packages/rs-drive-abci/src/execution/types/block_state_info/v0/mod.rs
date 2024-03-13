@@ -205,8 +205,6 @@ pub trait BlockStateInfoV0Getters {
 
     /// Gets the application hash.
     fn app_hash(&self) -> Option<[u8; 32]>;
-    /// Returns current block protocol version
-    fn protocol_version(&self) -> ProtocolVersion;
 }
 
 /// A trait for setting the properties of the `BlockStateInfoV0`.
@@ -234,9 +232,6 @@ pub trait BlockStateInfoV0Setters {
 
     /// Sets the application hash.
     fn set_app_hash(&mut self, app_hash: Option<[u8; 32]>);
-
-    /// Sets protocol version
-    fn set_protocol_version(&mut self, version: ProtocolVersion);
 }
 
 impl BlockStateInfoV0Getters for BlockStateInfoV0 {
@@ -271,10 +266,6 @@ impl BlockStateInfoV0Getters for BlockStateInfoV0 {
     fn app_hash(&self) -> Option<[u8; 32]> {
         self.app_hash
     }
-
-    fn protocol_version(&self) -> ProtocolVersion {
-        self.protocol_version
-    }
 }
 
 impl BlockStateInfoV0Setters for BlockStateInfoV0 {
@@ -308,9 +299,5 @@ impl BlockStateInfoV0Setters for BlockStateInfoV0 {
 
     fn set_app_hash(&mut self, app_hash: Option<[u8; 32]>) {
         self.app_hash = app_hash;
-    }
-
-    fn set_protocol_version(&mut self, version: ProtocolVersion) {
-        self.protocol_version = version;
     }
 }
