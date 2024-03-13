@@ -8,6 +8,7 @@ use dpp::consensus::basic::data_contract::{
 };
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
+use dpp::consensus::ConsensusError;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
@@ -15,6 +16,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::schema::{
     get_operation_and_property_name_json, validate_schema_compatibility,
 };
+use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::JsonValue;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
@@ -82,7 +84,12 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         )))?;
 
         let drive = platform.drive;
-        let mut validation_result = ConsensusValidationResult::default();
+
+        // Check previous data contract already exists in the state
+        // Failure (contract does not exist): Keep ST and transform it to a nonce bump action.
+        // How: A user pushed an update for a data contract that didn’t exist.
+        // Note: Existing in the state can also mean that it exists in the current block state, meaning that the contract was inserted in the same block with a previous transition.
+
         // Data contract should exist
         let add_to_cache_if_pulled = validation_mode.can_alter_cache();
         // Data contract should exist
@@ -96,10 +103,6 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             )?
             .1
         else {
-            validation_result.add_error(BasicError::DataContractNotPresentError(
-                DataContractNotPresentError::new(new_data_contract.id()),
-            ));
-
             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                 BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                     self,
@@ -108,18 +111,24 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
                 bump_action,
-                validation_result.errors,
+                vec![
+                    BasicError::DataContractNotPresentError(DataContractNotPresentError::new(
+                        new_data_contract.id(),
+                    ))
+                    .into(),
+                ],
             ));
         };
 
         let old_data_contract = &contract_fetch_info.contract;
 
+        // Check version is bumped
+        // Failure (version != previous version + 1): Keep ST and transform it to a nonce bump action.
+        // How: A user pushed an update that was not the next version.
+
         let new_version = new_data_contract.version();
         let old_version = old_data_contract.version();
         if new_version < old_version || new_version - old_version != 1 {
-            validation_result.add_error(BasicError::InvalidDataContractVersionError(
-                InvalidDataContractVersionError::new(old_version + 1, new_version),
-            ));
             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                 BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                     self,
@@ -128,9 +137,25 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
                 bump_action,
-                validation_result.errors,
+                vec![BasicError::InvalidDataContractVersionError(
+                    InvalidDataContractVersionError::new(old_version + 1, new_version),
+                )
+                .into()],
             ));
         }
+
+        // Validate that the config was not updated
+        // * Includes verifications that:
+        //     - Old contract is not read_only
+        //     - New contract is not read_only
+        //     - Keeps history did not change
+        //     - Can be deleted did not change
+        //     - Documents keep history did not change
+        //     - Documents mutable contract default did not change
+        //     - Requires identity encryption bounded key did not change
+        //     - Requires identity decryption bounded key did not change
+        // * Failure (contract does not exist): Keep ST and transform it to a nonce bump action.
+        // * How: A user pushed an update to a contract that changed its configuration.
 
         let config_validation_result = old_data_contract.config().validate_config_update(
             new_data_contract.config(),
@@ -181,33 +206,61 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 ));
             }
 
-            // If the new contract document type doesn't contain all previous indexes then
-            // there is a problem
-            if let Some(non_subset_path) = new_contract_document_type
-                .index_structure()
-                .contains_subset_first_non_subset_path(old_contract_document_type.index_structure())
+            // We currently don't allow indexes to change
+            if new_contract_document_type.index_structure()
+                != old_contract_document_type.index_structure()
             {
-                validation_result.add_error(
-                    BasicError::DataContractInvalidIndexDefinitionUpdateError(
-                        DataContractInvalidIndexDefinitionUpdateError::new(
-                            new_contract_document_type_name.clone(),
-                            non_subset_path,
-                        ),
-                    ),
-                )
-            }
+                // We want to figure out what changed, so we compare one way then the other
 
-            if !validation_result.is_valid() {
-                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
-                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
-                        self,
-                    )?,
-                );
+                // If the new contract document type doesn't contain all previous indexes
+                if let Some(non_subset_path) = new_contract_document_type
+                    .index_structure()
+                    .contains_subset_first_non_subset_path(
+                        old_contract_document_type.index_structure(),
+                    )
+                {
+                    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                            self,
+                        )?,
+                    );
 
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                    bump_action,
-                    validation_result.errors,
-                ));
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        bump_action,
+                        vec![BasicError::DataContractInvalidIndexDefinitionUpdateError(
+                            DataContractInvalidIndexDefinitionUpdateError::new(
+                                new_contract_document_type_name.clone(),
+                                non_subset_path,
+                            ),
+                        )
+                        .into()],
+                    ));
+                }
+
+                // If the old contract document type doesn't contain all new indexes
+                if let Some(non_subset_path) = old_contract_document_type
+                    .index_structure()
+                    .contains_subset_first_non_subset_path(
+                        new_contract_document_type.index_structure(),
+                    )
+                {
+                    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                            self,
+                        )?,
+                    );
+
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        bump_action,
+                        vec![BasicError::DataContractInvalidIndexDefinitionUpdateError(
+                            DataContractInvalidIndexDefinitionUpdateError::new(
+                                new_contract_document_type_name.clone(),
+                                non_subset_path,
+                            ),
+                        )
+                        .into()],
+                    ));
+                }
             }
         }
 
@@ -219,26 +272,52 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         //  as for document schema
         if let Some(old_defs) = old_data_contract.schema_defs() {
             let Some(new_defs) = self.data_contract().schema_defs() else {
-                validation_result.add_error(BasicError::IncompatibleDataContractSchemaError(
-                    IncompatibleDataContractSchemaError::new(
-                        self.data_contract().id(),
-                        "remove".to_string(),
-                        "$defs".to_string(),
-                        old_defs.into(),
-                        Value::Null,
-                    ),
-                ));
+                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                        self,
+                    )?,
+                );
 
-                return Ok(validation_result);
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    vec![BasicError::IncompatibleDataContractSchemaError(
+                        IncompatibleDataContractSchemaError::new(
+                            self.data_contract().id(),
+                            "remove".to_string(),
+                            "$defs".to_string(),
+                            old_defs.into(),
+                            Value::Null,
+                        ),
+                    )
+                    .into()],
+                ));
             };
 
+            // Old defs are in state so should be valid
             let old_defs_json: JsonValue = old_defs
                 .to_json_value()
                 .map_err(ProtocolError::ValueError)?;
 
-            let new_defs_json: JsonValue = new_defs
-                .to_json_value()
-                .map_err(ProtocolError::ValueError)?;
+            let new_defs_json: JsonValue = match new_defs.to_json_value() {
+                Ok(json_value) => json_value,
+                Err(e) => {
+                    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                            self,
+                        )?,
+                    );
+
+                    let data_contract_error: DataContractError =
+                        (e, "json schema new defs invalid").into();
+
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        bump_action,
+                        vec![ConsensusError::BasicError(BasicError::ContractError(
+                            data_contract_error,
+                        ))],
+                    ));
+                }
+            };
 
             let diffs =
                 validate_schema_compatibility(&old_defs_json, &new_defs_json, platform_version)?;
@@ -246,16 +325,6 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             if !diffs.is_empty() {
                 let (operation_name, property_name) =
                     get_operation_and_property_name_json(&diffs[0]);
-
-                validation_result.add_error(BasicError::IncompatibleDataContractSchemaError(
-                    IncompatibleDataContractSchemaError::new(
-                        self.data_contract().id(),
-                        operation_name.to_owned(),
-                        property_name.to_owned(),
-                        old_defs_json.into(),
-                        new_defs_json.into(),
-                    ),
-                ));
 
                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                     BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
@@ -265,12 +334,22 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
                 return Ok(ConsensusValidationResult::new_with_data_and_errors(
                     bump_action,
-                    validation_result.errors,
+                    vec![BasicError::IncompatibleDataContractSchemaError(
+                        IncompatibleDataContractSchemaError::new(
+                            self.data_contract().id(),
+                            operation_name.to_owned(),
+                            property_name.to_owned(),
+                            old_defs_json.into(),
+                            new_defs_json.into(),
+                        ),
+                    )
+                    .into()],
                 ));
             }
         }
 
         for (document_type_name, old_document_schema) in old_data_contract.document_schemas() {
+            // The old document schema is in the state already so we are guaranteed that it can be transformed into a JSON value
             let old_document_schema_json: JsonValue = old_document_schema
                 .clone()
                 .try_into()
@@ -281,10 +360,28 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 .map(|document_type| document_type.schema().clone())
                 .unwrap_or(ValueMap::new().into());
 
-            let new_document_schema_json: JsonValue = new_document_schema
-                .clone()
-                .try_into()
-                .map_err(ProtocolError::ValueError)?;
+            // The new document schema is not the state already so we are not guaranteed that it can be transformed into a JSON value
+            // If it can not we should throw a consensus validation error
+            let new_document_schema_json: JsonValue = match new_document_schema.clone().try_into() {
+                Ok(json_value) => json_value,
+                Err(e) => {
+                    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                            self,
+                        )?,
+                    );
+
+                    let data_contract_error: DataContractError =
+                        (e, "json schema new schema invalid").into();
+
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        bump_action,
+                        vec![ConsensusError::BasicError(BasicError::ContractError(
+                            data_contract_error,
+                        ))],
+                    ));
+                }
+            };
 
             let diffs = validate_schema_compatibility(
                 &old_document_schema_json,
@@ -296,16 +393,6 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 let (operation_name, property_name) =
                     get_operation_and_property_name_json(&diffs[0]);
 
-                validation_result.add_error(BasicError::IncompatibleDataContractSchemaError(
-                    IncompatibleDataContractSchemaError::new(
-                        self.data_contract().id(),
-                        operation_name.to_owned(),
-                        property_name.to_owned(),
-                        old_document_schema.clone(),
-                        new_document_schema,
-                    ),
-                ));
-
                 let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                     BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
                         self,
@@ -314,7 +401,16 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
                 return Ok(ConsensusValidationResult::new_with_data_and_errors(
                     bump_action,
-                    validation_result.errors,
+                    vec![BasicError::IncompatibleDataContractSchemaError(
+                        IncompatibleDataContractSchemaError::new(
+                            self.data_contract().id(),
+                            operation_name.to_owned(),
+                            property_name.to_owned(),
+                            old_document_schema.clone(),
+                            new_document_schema,
+                        ),
+                    )
+                    .into()],
                 ));
             }
         }

@@ -87,3 +87,9 @@ impl From<platform_value::Error> for DataContractError {
         DataContractError::ValueDecodingError(format!("{:?}", value))
     }
 }
+
+impl From<(platform_value::Error, &str)> for DataContractError {
+    fn from(value: (platform_value::Error, &str)) -> Self {
+        DataContractError::ValueDecodingError(format!("{}: {:?}", value.1, value.0))
+    }
+}

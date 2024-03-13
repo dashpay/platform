@@ -38,6 +38,73 @@ impl<'a> DocumentTypeRef<'a> {
             );
         }
 
+        if new_document_type.requires_identity_encryption_bounded_key()
+            != self.requires_identity_encryption_bounded_key()
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change whether it required an identity encryption bounded key: changing from {:?} to {:?}",
+                        self.requires_identity_encryption_bounded_key(),
+                        new_document_type.requires_identity_encryption_bounded_key()
+                    ),
+                )
+                    .into(),
+            );
+        }
+
+        if new_document_type.requires_identity_decryption_bounded_key()
+            != self.requires_identity_decryption_bounded_key()
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change whether it required an identity decryption bounded key: changing from {:?} to {:?}",
+                        self.requires_identity_decryption_bounded_key(),
+                        new_document_type.requires_identity_decryption_bounded_key()
+                    ),
+                )
+                    .into(),
+            );
+        }
+
+        if !new_document_type
+            .security_level_requirement()
+            .stronger_or_equal_security_than(self.security_level_requirement())
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not reduce the security level requirement for its updates: changing from {:?} to {:?}",
+                        self.security_level_requirement(),
+                        new_document_type.security_level_requirement()
+                    ),
+                )
+                    .into(),
+            );
+        }
+
+        if new_document_type.required_fields() != self.required_fields() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change required fields: changing from {:?} to {:?}",
+                        self.required_fields(),
+                        new_document_type.required_fields()
+                    ),
+                )
+                .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 }

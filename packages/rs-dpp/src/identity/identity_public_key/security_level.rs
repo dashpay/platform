@@ -74,6 +74,19 @@ impl SecurityLevel {
     pub fn highest_level() -> SecurityLevel {
         Self::MASTER
     }
+    pub fn stronger_security_than(self: SecurityLevel, rhs: SecurityLevel) -> bool {
+        // Example:
+        // self: High 2 rhs: Master 0
+        // Master has a stronger security level than high
+        // We expect False
+        // High < Master
+        // 2 < 0 <=> false
+        (self as u8) < (rhs as u8)
+    }
+
+    pub fn stronger_or_equal_security_than(self: SecurityLevel, rhs: SecurityLevel) -> bool {
+        (self as u8) <= (rhs as u8)
+    }
 }
 
 impl std::fmt::Display for SecurityLevel {
