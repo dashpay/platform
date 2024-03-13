@@ -9,6 +9,7 @@ use crate::execution::types::block_state_info::v0::{
 use derive_more::From;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::util::deserializer::ProtocolVersion;
 
 /// The versioned block state info
 #[derive(Debug, From, Clone, Eq, PartialEq)]
@@ -63,6 +64,12 @@ impl BlockStateInfoV0Getters for BlockStateInfo {
     fn app_hash(&self) -> Option<[u8; 32]> {
         match self {
             BlockStateInfo::V0(v0) => v0.app_hash(),
+        }
+    }
+
+    fn protocol_version(&self) -> ProtocolVersion {
+        match self {
+            BlockStateInfo::V0(v0) => v0.protocol_version(),
         }
     }
 }
@@ -129,6 +136,12 @@ impl BlockStateInfoV0Setters for BlockStateInfo {
             BlockStateInfo::V0(v0) => {
                 v0.set_app_hash(app_hash);
             }
+        }
+    }
+
+    fn set_protocol_version(&mut self, version: ProtocolVersion) {
+        match self {
+            BlockStateInfo::V0(v0) => v0.set_protocol_version(version),
         }
     }
 }

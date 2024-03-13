@@ -1,4 +1,5 @@
 use dpp::block::epoch::Epoch;
+use dpp::util::deserializer::ProtocolVersion;
 
 use dpp::validation::ValidationResult;
 use drive::error::Error::GroveDB;
@@ -86,6 +87,35 @@ where
 
         // Create a bock state from previous committed state
         let mut block_platform_state = last_committed_platform_state.clone();
+
+        // Set protocol version for this block
+        {
+            let current_block_protocol_version = platform_version.protocol_version;
+            let previous_block_protocol_version =
+                last_committed_platform_state.current_protocol_version_in_consensus();
+
+            // Set current protocol version from the block
+            block_platform_state
+                .set_current_protocol_version_in_consensus(current_block_protocol_version);
+
+            // Does this block has different protocol version comparing with the previous?
+            if previous_block_protocol_version != current_block_protocol_version {
+                tracing::info!(
+                    epoch_index = epoch_info.current_epoch_index(),
+                    "protocol version changed from {} to {}",
+                    previous_block_protocol_version,
+                    current_block_protocol_version,
+                );
+
+                // We need to persist new protocol version
+                // TODO: Must be a part of epoch trees?
+                self.drive.store_current_protocol_version(
+                    current_block_protocol_version,
+                    Some(transaction),
+                    &platform_version.drive,
+                )?;
+            }
+        }
 
         // Init block execution context
         let block_state_info = block_state_info::v0::BlockStateInfoV0::from_block_proposal(
@@ -229,6 +259,7 @@ where
             })?; // This is a system error
 
         // Determine a new protocol version if enough proposers voted
+        let mut next_block_protocol_version = None;
         if epoch_info.is_epoch_change_but_not_genesis() {
             tracing::info!(
                 epoch_index = epoch_info.current_epoch_index(),
@@ -239,41 +270,35 @@ where
                 epoch_info.current_epoch_index(),
             );
 
+            // Set next protocol version as a version for next block if changed
             if block_platform_state.current_protocol_version_in_consensus()
                 == block_platform_state.next_epoch_protocol_version()
             {
                 tracing::trace!(
                     epoch_index = epoch_info.current_epoch_index(),
-                    "protocol version remains the same {}",
+                    "protocol version for the next block remains the same {}",
                     block_platform_state.current_protocol_version_in_consensus(),
                 );
             } else {
-                tracing::info!(
+                next_block_protocol_version =
+                    Some(block_platform_state.next_epoch_protocol_version());
+
+                tracing::trace!(
                     epoch_index = epoch_info.current_epoch_index(),
-                    "protocol version changed from {} to {}",
-                    block_platform_state.current_protocol_version_in_consensus(),
+                    "set new protocol version for the next block {}",
                     block_platform_state.next_epoch_protocol_version(),
                 );
             }
 
-            // Set current protocol version to the version from upcoming epoch
-            block_platform_state.set_current_protocol_version_in_consensus(
-                block_platform_state.next_epoch_protocol_version(),
-            );
-
             // Determine new protocol version based on votes for the next epoch
-            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
+            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade_and_reset(
                 hpmn_list_len,
-                block_platform_state.current_protocol_version_in_consensus(),
                 transaction,
+                platform_version,
             )?;
 
             if let Some(new_protocol_version) = maybe_new_protocol_version {
                 block_platform_state.set_next_epoch_protocol_version(new_protocol_version);
-            } else {
-                block_platform_state.set_next_epoch_protocol_version(
-                    block_platform_state.current_protocol_version_in_consensus(),
-                );
             }
         }
 
@@ -379,8 +404,8 @@ where
                 app_hash: root_hash,
                 state_transitions_result,
                 validator_set_update,
-                // TODO: We already know the version outside sine we have state and platform version what pass here
                 protocol_version: platform_version.protocol_version,
+                next_block_protocol_version,
                 block_execution_context,
             },
         ))

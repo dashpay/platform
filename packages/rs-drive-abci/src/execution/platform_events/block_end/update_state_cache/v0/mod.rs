@@ -54,11 +54,6 @@ where
 
         block_platform_state.set_genesis_block_info(None);
 
-        //todo: verify this with an update
-        let version = PlatformVersion::get(platform_version.protocol_version)?;
-
-        PlatformVersion::set_current(version);
-
         // Persist block state
 
         self.store_platform_state(&block_platform_state, Some(transaction), platform_version)?;

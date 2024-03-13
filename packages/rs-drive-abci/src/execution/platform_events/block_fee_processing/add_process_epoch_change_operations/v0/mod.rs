@@ -215,6 +215,7 @@ mod tests {
                 core_chain_locked_height: 1,
                 block_hash: None,
                 app_hash: None,
+                protocol_version: 1,
             };
 
             let epoch_info = EpochInfoV0::from_genesis_time_and_block_info(

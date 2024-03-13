@@ -113,17 +113,22 @@ where
         return Err(run_result.errors.remove(0));
     }
 
+    let block_execution_outcome = run_result.into_data().map_err(Error::Protocol)?;
+
+    let platform_version = PlatformVersion::get(block_execution_outcome.protocol_version)
+        .expect("must be set in run block proposal from existing protocol version");
+
+    let consensus_param_updates = app
+        .platform()
+        .consensus_param_updates(&block_execution_outcome, platform_version)?;
+
     let block_execution_outcome::v0::BlockExecutionOutcome {
         app_hash,
         state_transitions_result,
         validator_set_update,
-        protocol_version,
         mut block_execution_context,
-    } = run_result.into_data().map_err(Error::Protocol)?;
-
-    // TODO: This is current protocol version and can be read from the state
-    let platform_version = PlatformVersion::get(protocol_version)
-        .expect("must be set in run block proposal from existing protocol version");
+        ..
+    } = block_execution_outcome;
 
     // We need to let Tenderdash know about the transactions we should remove from execution
     let valid_tx_count = state_transitions_result.valid_count();
@@ -188,8 +193,7 @@ where
             signature: chain_lock.signature.to_bytes().to_vec(),
         }),
         validator_set_update,
-        // TODO: implement consensus param updates
-        consensus_param_updates: None,
+        consensus_param_updates,
     };
 
     block_execution_context.set_proposer_results(Some(response.clone()));

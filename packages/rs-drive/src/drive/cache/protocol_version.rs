@@ -14,7 +14,6 @@ pub struct ProtocolVersionsCache {
     pub global_cache: IntMap<ProtocolVersion, u64>,
     block_cache: IntMap<ProtocolVersion, u64>,
     loaded: bool,
-    needs_wipe: bool,
 }
 
 #[cfg(feature = "full")]
@@ -56,13 +55,7 @@ impl ProtocolVersionsCache {
 
     /// Merge block cache to global cache
     pub fn merge_block_cache(&mut self) {
-        if self.needs_wipe {
-            self.global_cache.clear();
-            self.block_cache.clear();
-            self.needs_wipe = false;
-        } else {
-            self.global_cache.extend(self.block_cache.drain());
-        }
+        self.global_cache.extend(self.block_cache.drain());
     }
 
     /// Clear block cache
@@ -70,19 +63,20 @@ impl ProtocolVersionsCache {
         self.block_cache.clear()
     }
 
-    /// Versions passing threshold
-    pub fn versions_passing_threshold(
+    /// Collect versions passing threshold
+    /// and clear both global and block caches
+    pub fn aggregate_into_versions_passing_threshold(
         &mut self,
-        required_upgraded_hpns: u64,
+        required_upgraded_hpmns: u64,
     ) -> Vec<ProtocolVersion> {
-        self.needs_wipe = true;
         let mut cache = self.global_cache.clone();
+        self.global_cache.clear();
 
         cache.extend(self.block_cache.drain());
         cache
             .into_iter()
             .filter_map(|(protocol_version, count)| {
-                if count >= required_upgraded_hpns {
+                if count >= required_upgraded_hpmns {
                     Some(protocol_version)
                 } else {
                     None

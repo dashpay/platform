@@ -5,6 +5,7 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::{block_execution_outcome, block_proposal};
 use crate::rpc::core::CoreRPCLike;
 use dpp::validation::ValidationResult;
+use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
 mod v0;
@@ -45,7 +46,9 @@ where
         transaction: &Transaction,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
-        let platform_version = platform_state.current_platform_version()?;
+        // Get current protocol version from block header
+        let protocol_version = block_proposal.consensus_versions.app as u32;
+        let platform_version = PlatformVersion::get(protocol_version)?;
 
         let epoch_info = self.gather_epoch_info(
             &block_proposal,

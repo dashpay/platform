@@ -18,6 +18,8 @@ pub struct BlockExecutionOutcome {
     pub validator_set_update: Option<ValidatorSetUpdate>,
     /// Current block protocol version
     pub protocol_version: ProtocolVersion,
+    /// Next block protocol version
+    pub next_block_protocol_version: Option<ProtocolVersion>,
     /// Block execution context
     pub block_execution_context: BlockExecutionContext,
 }

@@ -32,6 +32,7 @@ use crate::error::Error;
 use crate::platform_types::block_proposal::v0::BlockProposal;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::util::deserializer::ProtocolVersion;
 
 /// Block info
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +53,8 @@ pub struct BlockStateInfoV0 {
     pub block_hash: Option<[u8; 32]>,
     /// Application hash
     pub app_hash: Option<[u8; 32]>,
+    /// Current block protocol version
+    pub protocol_version: ProtocolVersion,
 }
 
 impl BlockStateInfoV0 {
@@ -69,6 +72,7 @@ impl BlockStateInfoV0 {
             core_chain_locked_height: proposal.core_chain_locked_height,
             block_hash: proposal.block_hash,
             app_hash: None,
+            protocol_version: proposal.consensus_versions.app as u32,
         }
     }
 }
@@ -201,6 +205,8 @@ pub trait BlockStateInfoV0Getters {
 
     /// Gets the application hash.
     fn app_hash(&self) -> Option<[u8; 32]>;
+    /// Returns current block protocol version
+    fn protocol_version(&self) -> ProtocolVersion;
 }
 
 /// A trait for setting the properties of the `BlockStateInfoV0`.
@@ -228,6 +234,9 @@ pub trait BlockStateInfoV0Setters {
 
     /// Sets the application hash.
     fn set_app_hash(&mut self, app_hash: Option<[u8; 32]>);
+
+    /// Sets protocol version
+    fn set_protocol_version(&mut self, version: ProtocolVersion);
 }
 
 impl BlockStateInfoV0Getters for BlockStateInfoV0 {
@@ -262,6 +271,10 @@ impl BlockStateInfoV0Getters for BlockStateInfoV0 {
     fn app_hash(&self) -> Option<[u8; 32]> {
         self.app_hash
     }
+
+    fn protocol_version(&self) -> ProtocolVersion {
+        self.protocol_version
+    }
 }
 
 impl BlockStateInfoV0Setters for BlockStateInfoV0 {
@@ -295,5 +308,9 @@ impl BlockStateInfoV0Setters for BlockStateInfoV0 {
 
     fn set_app_hash(&mut self, app_hash: Option<[u8; 32]>) {
         self.app_hash = app_hash;
+    }
+
+    fn set_protocol_version(&mut self, version: ProtocolVersion) {
+        self.protocol_version = version;
     }
 }

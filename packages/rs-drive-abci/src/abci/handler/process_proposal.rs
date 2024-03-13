@@ -196,64 +196,70 @@ where
             request.round,
         );
 
-        Ok(response)
-    } else {
-        let block_execution_outcome::v0::BlockExecutionOutcome {
-            app_hash,
-            state_transitions_result: state_transition_results,
-            validator_set_update,
-            protocol_version,
-            block_execution_context,
-        } = run_result.into_data().map_err(Error::Protocol)?;
-
-        let platform_version = PlatformVersion::get(protocol_version)
-            .expect("must be set in run block proposer from existing platform version");
-
-        app.block_execution_context()
-            .write()
-            .unwrap()
-            .replace(block_execution_context);
-
-        let invalid_tx_count = state_transition_results.invalid_paid_count();
-        let valid_tx_count = state_transition_results.valid_count();
-
-        let tx_results = state_transition_results
-            .into_execution_results()
-            .into_iter()
-            // To prevent spam attacks we add to the block state transitions covered with fees only
-            .filter(|execution_result| {
-                matches!(
-                    execution_result,
-                    StateTransitionExecutionResult::SuccessfulExecution(..)
-                        | StateTransitionExecutionResult::PaidConsensusError(..)
-                )
-            })
-            .map(|execution_result| execution_result.try_into_platform_versioned(platform_version))
-            .collect::<Result<_, _>>()?;
-
-        let response = proto::ResponseProcessProposal {
-            app_hash: app_hash.to_vec(),
-            tx_results,
-            // TODO: Must be reject if results are different
-            status: proto::response_process_proposal::ProposalStatus::Accept.into(),
-            validator_set_update,
-            // TODO: Implement consensus param updates
-            consensus_param_updates: None,
-        };
-
-        let elapsed_time_ms = timer.elapsed().as_millis();
-
-        tracing::info!(
-            invalid_tx_count,
-            valid_tx_count,
-            elapsed_time_ms,
-            "Processed proposal with {} transactions for height: {}, round: {} in {} ms",
-            valid_tx_count + invalid_tx_count,
-            request.height,
-            request.round,
-            elapsed_time_ms,
-        );
-
-        Ok(response)
+        return Ok(response);
     }
+
+    let block_execution_outcome = run_result.into_data().map_err(Error::Protocol)?;
+
+    let platform_version = PlatformVersion::get(block_execution_outcome.protocol_version)
+        .expect("must be set in run block proposer from existing platform version");
+
+    let consensus_param_updates = app
+        .platform()
+        .consensus_param_updates(&block_execution_outcome, platform_version)?;
+
+    let block_execution_outcome::v0::BlockExecutionOutcome {
+        app_hash,
+        state_transitions_result: state_transition_results,
+        validator_set_update,
+        block_execution_context,
+        ..
+    } = block_execution_outcome;
+
+    app.block_execution_context()
+        .write()
+        .unwrap()
+        .replace(block_execution_context);
+
+    let invalid_tx_count = state_transition_results.invalid_paid_count();
+    let valid_tx_count = state_transition_results.valid_count();
+
+    let tx_results = state_transition_results
+        .into_execution_results()
+        .into_iter()
+        // To prevent spam attacks we add to the block state transitions covered with fees only
+        .filter(|execution_result| {
+            matches!(
+                execution_result,
+                StateTransitionExecutionResult::SuccessfulExecution(..)
+                    | StateTransitionExecutionResult::PaidConsensusError(..)
+            )
+        })
+        .map(|execution_result| execution_result.try_into_platform_versioned(platform_version))
+        .collect::<Result<_, _>>()?;
+
+    let response = proto::ResponseProcessProposal {
+        app_hash: app_hash.to_vec(),
+        tx_results,
+        // TODO: Must be reject if results are different
+        status: proto::response_process_proposal::ProposalStatus::Accept.into(),
+        validator_set_update,
+        // TODO: Implement consensus param updates
+        consensus_param_updates,
+    };
+
+    let elapsed_time_ms = timer.elapsed().as_millis();
+
+    tracing::info!(
+        invalid_tx_count,
+        valid_tx_count,
+        elapsed_time_ms,
+        "Processed proposal with {} transactions for height: {}, round: {} in {} ms",
+        valid_tx_count + invalid_tx_count,
+        request.height,
+        request.round,
+        elapsed_time_ms,
+    );
+
+    Ok(response)
 }

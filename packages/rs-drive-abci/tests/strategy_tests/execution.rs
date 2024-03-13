@@ -837,6 +837,8 @@ pub(crate) fn continue_chain_for_strategy(
     let mut state_transitions_per_block = BTreeMap::new();
     let mut state_transition_results_per_block = BTreeMap::new();
 
+    let mut protocol_version = config.initial_protocol_version;
+
     for block_height in block_start..(block_start + block_count) {
         let state = platform.state.load();
         let epoch_info = EpochInfoV0::calculate(
@@ -934,6 +936,7 @@ pub(crate) fn continue_chain_for_strategy(
                     .mimic_execute_block(
                         proposer.pro_tx_hash.into(),
                         current_quorum_with_test_info,
+                        protocol_version,
                         proposed_version,
                         block_info.clone(),
                         round,
@@ -963,8 +966,12 @@ pub(crate) fn continue_chain_for_strategy(
             state_id,
             block_id_hash: block_hash,
             signature,
-            app_version,
+            next_block_protocol_version,
         } = block_execution_outcome.unwrap();
+
+        if let Some(version) = next_block_protocol_version {
+            protocol_version = version;
+        }
 
         if let Some(validator_set_update) = validator_set_update {
             validator_set_updates.insert(block_height, validator_set_update);
@@ -1015,7 +1022,7 @@ pub(crate) fn continue_chain_for_strategy(
                 &ProofVerification {
                     quorum_hash: &current_quorum_with_test_info.quorum_hash.into(),
                     quorum_type: config.validator_set_quorum_type(),
-                    app_version,
+                    app_version: protocol_version as u64,
                     chain_id: drive_abci::mimic::CHAIN_ID.to_string(),
                     core_chain_locked_height: state_id.core_chain_locked_height,
                     height: state_id.height as i64,

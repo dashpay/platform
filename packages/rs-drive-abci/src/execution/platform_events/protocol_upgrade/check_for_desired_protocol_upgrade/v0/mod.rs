@@ -13,12 +13,12 @@ const PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED: u64 = 75;
 impl<C> Platform<C> {
     /// checks for a network upgrade and resets activation window
     /// this should only be called on epoch change
-    /// this will change backing state, but does not change drive cache
-    pub(super) fn check_for_desired_protocol_upgrade_v0(
+    /// this will change backing state and drive cache
+    pub(super) fn check_for_desired_protocol_upgrade_and_reset_v0(
         &self,
         total_hpmns: u32,
-        current_protocol_version_in_consensus: ProtocolVersion,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<ProtocolVersion>, Error> {
         let required_upgraded_hpns = 1
             + (total_hpmns as u64)
@@ -30,9 +30,10 @@ impl<C> Platform<C> {
 
         // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
         // were on the future version
+        // This also clears the cache
         let mut protocol_versions_counter = self.drive.cache.protocol_versions_counter.write();
-        let mut versions_passing_threshold =
-            protocol_versions_counter.versions_passing_threshold(required_upgraded_hpns);
+        let mut versions_passing_threshold = protocol_versions_counter
+            .aggregate_into_versions_passing_threshold(required_upgraded_hpns);
         drop(protocol_versions_counter);
 
         if versions_passing_threshold.len() > 1 {
@@ -43,28 +44,20 @@ impl<C> Platform<C> {
             ));
         }
 
+        // we need to drop all version information
+        self.drive
+            .clear_version_information(Some(transaction), &platform_version.drive)
+            .map_err(Error::Drive)?;
+
         if !versions_passing_threshold.is_empty() {
             // same as equals 1
-            let new_version = versions_passing_threshold.remove(0);
-            // Persist current and next epoch protocol versions
-            // we also drop all protocol version votes information
-            self.drive
-                .change_to_new_version_and_clear_version_information(
-                    current_protocol_version_in_consensus,
-                    new_version,
-                    Some(transaction),
-                )
-                .map_err(Error::Drive)?;
+            let next_version = versions_passing_threshold.remove(0);
 
-            Ok(Some(new_version))
+            // TODO: We stored next version here previously.
+            //  It was never used so we can temporary remove it from here and move it to Epoch trees in upcoming PR
+
+            Ok(Some(next_version))
         } else {
-            // we need to drop all version information
-            let current_platform_version =
-                PlatformVersion::get(current_protocol_version_in_consensus)?;
-            self.drive
-                .clear_version_information(Some(transaction), &current_platform_version.drive)
-                .map_err(Error::Drive)?;
-
             Ok(None)
         }
     }
