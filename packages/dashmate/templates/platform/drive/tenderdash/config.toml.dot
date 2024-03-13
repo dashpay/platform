@@ -83,7 +83,7 @@ filter-peers = false
 #######################################################
 ###       Priv Validator Configuration              ###
 #######################################################
-[ priv-validator ]
+[priv-validator]
 
 # Path to the JSON file containing the private key to use as a validator in the consensus protocol
 key-file = "data/priv_validator_key.json"
