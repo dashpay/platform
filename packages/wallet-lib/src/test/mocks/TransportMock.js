@@ -1,4 +1,5 @@
 const EventEmitter = require('events');
+const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
 const getStatus = require('../../transport/FixtureTransport/methods/getStatus');
 
 class TransportMock extends EventEmitter {
@@ -21,7 +22,8 @@ class TransportMock extends EventEmitter {
         nonce: 351770,
       });
     this.subscribeToBlocks = sinon.stub();
-    this.getIdentityByPublicKeyHash = sinon.stub().returns(Buffer.alloc(0));
+    this.getIdentityByPublicKeyHash = sinon.stub()
+      .rejects(new NotFoundError('Identity not found', {}, null));
     this.sendTransaction = sinon.stub();
     this.getTransaction = sinon.stub();
     this.getBlockHeaderByHash = sinon.stub();
