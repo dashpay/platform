@@ -3,7 +3,10 @@ use crate::data_contract::errors::DataContractError;
 
 use crate::document::property_names::{CREATED_AT, UPDATED_AT};
 
-use crate::prelude::{ConsensusValidationResult, Revision};
+#[cfg(feature = "state-transition-validation")]
+use crate::prelude::ConsensusValidationResult;
+
+use crate::prelude::Revision;
 
 use crate::ProtocolError;
 
@@ -446,6 +449,7 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
     }
 
     /// Reads a serialized document and creates a DocumentV0 from it.
+    #[cfg(feature = "state-transition-validation")]
     fn from_bytes_in_consensus(
         mut serialized_document: &[u8],
         document_type: DocumentTypeRef,

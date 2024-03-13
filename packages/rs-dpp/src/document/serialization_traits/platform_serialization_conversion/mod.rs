@@ -4,6 +4,7 @@ mod v0;
 
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
+#[cfg(feature = "state-transition-validation")]
 use crate::prelude::ConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::{FeatureVersion, PlatformVersion};
@@ -75,6 +76,7 @@ impl DocumentPlatformConversionMethodsV0 for Document {
         }
     }
 
+    #[cfg(feature = "state-transition-validation")]
     fn from_bytes_in_consensus(
         serialized_document: &[u8],
         document_type: DocumentTypeRef,

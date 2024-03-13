@@ -44,6 +44,7 @@ pub trait DocumentPlatformConversionMethodsV0: Clone {
     where
         Self: Sized;
 
+    #[cfg(feature = "state-transition-validation")]
     /// Reads a serialized document and creates a Document from it.
     /// This will return a ConsensusValidationResult instead when the error is happening
     /// in consensus (deserialization of a message from the network)
