@@ -1,8 +1,8 @@
 /* eslint-disable no-console */
-import {Listr} from 'listr2';
-import {NETWORK_LOCAL} from '../../constants.js';
+import { Listr } from 'listr2';
+import { NETWORK_LOCAL } from '../../constants.js';
 
-const MIN_BLOCKS_BEFORE_DKG = 6
+const MIN_BLOCKS_BEFORE_DKG = 6;
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -33,7 +33,7 @@ export default function stopNodeTaskFactory(
             profiles.push('platform');
           }
 
-          if (!await dockerCompose.isNodeRunning(config, {profiles})) {
+          if (!await dockerCompose.isNodeRunning(config, { profiles })) {
             throw new Error('Node is not running');
           }
         },
@@ -49,11 +49,11 @@ export default function stopNodeTaskFactory(
             host: await getConnectionHost(config, 'core', 'core.rpc.host'),
           });
 
-          const {result: dkgInfo} = await rpcClient.quorum('dkginfo');
+          const { result: dkgInfo } = await rpcClient.quorum('dkginfo');
 
-          const {active_dkgs, next_dkg} = dkgInfo
+          const { active_dkgs: activeDkgs, next_dkg: nextDkg } = dkgInfo;
 
-          if (active_dkgs !== 0 || next_dkg < MIN_BLOCKS_BEFORE_DKG) {
+          if (activeDkgs !== 0 || nextDkg < MIN_BLOCKS_BEFORE_DKG) {
             const agreement = await task.prompt({
               type: 'toggle',
               name: 'confirm',
@@ -82,7 +82,7 @@ export default function stopNodeTaskFactory(
             host: await getConnectionHost(config, 'core', 'core.rpc.host'),
           });
 
-          const {result: {mediantime}} = await rpcClient.getBlockchainInfo();
+          const { result: { mediantime } } = await rpcClient.getBlockchainInfo();
 
           config.set('core.miner.mediantime', mediantime);
         },
@@ -94,7 +94,7 @@ export default function stopNodeTaskFactory(
           if (ctx.platformOnly) {
             profiles.push('platform');
           }
-          await dockerCompose.stop(config, {profiles});
+          await dockerCompose.stop(config, { profiles });
         },
       },
     ]);
