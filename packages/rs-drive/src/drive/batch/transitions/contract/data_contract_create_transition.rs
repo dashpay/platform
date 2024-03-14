@@ -15,34 +15,24 @@ impl DriveHighLevelOperationConverter for DataContractCreateTransitionAction {
         _epoch: &Epoch,
         _platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
-        let mut operations = vec![];
-
-        operations.push(IdentityOperation(
-            IdentityOperationType::UpdateIdentityNonce {
+        let operations = vec![
+            IdentityOperation(IdentityOperationType::UpdateIdentityNonce {
                 identity_id: self.data_contract_ref().owner_id().into_buffer(),
                 nonce: self.identity_nonce(),
-            },
-        ));
-
-        if !self.data_contract_ref().config().readonly() {
-            // This means we can update the data contract, so we should add an identity contract
-            // nonce now to make it so there are no additional bytes used later for bumping the
-            // identity data contract nonce
-            operations.push(IdentityOperation(
-                IdentityOperationType::UpdateIdentityContractNonce {
-                    identity_id: self.data_contract_ref().owner_id().into_buffer(),
-                    contract_id: self.data_contract_ref().id().into_buffer(),
-                    nonce: 1,
-                },
-            ));
-        }
-
-        operations.push(DataContractOperation(
-            DataContractOperationType::ApplyContract {
+            }),
+            // We should add an identity contract nonce now to make it so there are no additional
+            // bytes used later for bumping the identity data contract nonce for updating the
+            // contract
+            IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
+                identity_id: self.data_contract_ref().owner_id().into_buffer(),
+                contract_id: self.data_contract_ref().id().into_buffer(),
+                nonce: 1,
+            }),
+            DataContractOperation(DataContractOperationType::ApplyContract {
                 contract: Cow::Owned(self.data_contract()),
                 storage_flags: None,
-            },
-        ));
+            }),
+        ];
 
         Ok(operations)
     }
