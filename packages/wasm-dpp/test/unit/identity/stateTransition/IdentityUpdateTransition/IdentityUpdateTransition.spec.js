@@ -109,7 +109,6 @@ describe('IdentityUpdateTransition', () => {
         signature: undefined,
         identityId: rawStateTransition.identityId,
         revision: rawStateTransition.revision,
-        publicKeysDisabledAt: rawStateTransition.publicKeysDisabledAt,
         addPublicKeys: rawStateTransition.addPublicKeys,
         disablePublicKeys: rawStateTransition.disablePublicKeys,
         signaturePublicKeyId: 0,
@@ -124,7 +123,6 @@ describe('IdentityUpdateTransition', () => {
         type: StateTransitionTypes.IdentityUpdate,
         identityId: rawStateTransition.identityId,
         revision: rawStateTransition.revision,
-        publicKeysDisabledAt: rawStateTransition.publicKeysDisabledAt,
         addPublicKeys: rawStateTransition.addPublicKeys,
         disablePublicKeys: rawStateTransition.disablePublicKeys,
       });
@@ -157,7 +155,6 @@ describe('IdentityUpdateTransition', () => {
         signature: undefined,
         identityId: stateTransition.getIdentityId().toString(),
         revision: rawStateTransition.revision,
-        publicKeysDisabledAt: rawStateTransition.publicKeysDisabledAt.getTime(),
         addPublicKeys: stateTransition.getPublicKeysToAdd().map((k) => k.toJSON()),
         disablePublicKeys: rawStateTransition.disablePublicKeys,
         signaturePublicKeyId: 0,

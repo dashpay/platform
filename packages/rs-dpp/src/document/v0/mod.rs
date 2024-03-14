@@ -12,7 +12,7 @@ pub(super) mod json_conversion;
 mod platform_value_conversion;
 pub mod serialize;
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::DateTime;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -77,13 +77,11 @@ impl fmt::Display for DocumentV0 {
         write!(f, "id:{} ", self.id)?;
         write!(f, "owner_id:{} ", self.owner_id)?;
         if let Some(created_at) = self.created_at {
-            let naive = NaiveDateTime::from_timestamp_millis(created_at as i64).unwrap_or_default();
-            let datetime: DateTime<Utc> = DateTime::from_naive_utc_and_offset(naive, Utc);
+            let datetime = DateTime::from_timestamp_millis(created_at as i64).unwrap_or_default();
             write!(f, "created_at:{} ", datetime.format("%Y-%m-%d %H:%M:%S"))?;
         }
         if let Some(updated_at) = self.updated_at {
-            let naive = NaiveDateTime::from_timestamp_millis(updated_at as i64).unwrap_or_default();
-            let datetime: DateTime<Utc> = DateTime::from_naive_utc_and_offset(naive, Utc);
+            let datetime = DateTime::from_timestamp_millis(updated_at as i64).unwrap_or_default();
             write!(f, "updated_at:{} ", datetime.format("%Y-%m-%d %H:%M:%S"))?;
         }
 

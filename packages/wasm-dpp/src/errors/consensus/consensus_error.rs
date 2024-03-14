@@ -91,10 +91,9 @@ use crate::errors::consensus::state::document::{
     DuplicateUniqueIndexErrorWasm, InvalidDocumentRevisionErrorWasm,
 };
 use crate::errors::consensus::state::identity::{
-    IdentityAlreadyExistsErrorWasm, IdentityPublicKeyDisabledAtWindowViolationErrorWasm,
-    IdentityPublicKeyIsDisabledErrorWasm, IdentityPublicKeyIsReadOnlyErrorWasm,
-    InvalidIdentityPublicKeyIdErrorWasm, InvalidIdentityRevisionErrorWasm,
-    MaxIdentityPublicKeyLimitReachedErrorWasm,
+    IdentityAlreadyExistsErrorWasm, IdentityPublicKeyIsDisabledErrorWasm,
+    IdentityPublicKeyIsReadOnlyErrorWasm, InvalidIdentityPublicKeyIdErrorWasm,
+    InvalidIdentityRevisionErrorWasm, MaxIdentityPublicKeyLimitReachedErrorWasm,
 };
 
 use crate::errors::consensus::basic::data_contract::{
@@ -169,9 +168,6 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::InvalidIdentityRevisionError(e) => {
             InvalidIdentityRevisionErrorWasm::from(e).into()
-        }
-        StateError::IdentityPublicKeyDisabledAtWindowViolationError(e) => {
-            IdentityPublicKeyDisabledAtWindowViolationErrorWasm::from(e).into()
         }
         StateError::IdentityPublicKeyIsReadOnlyError(e) => {
             IdentityPublicKeyIsReadOnlyErrorWasm::from(e).into()
