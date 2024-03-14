@@ -229,7 +229,8 @@ impl DocumentTypeV0 {
                 property_key.clone(),
                 property_value,
                 &root_schema,
-            )?;
+            )
+            .map_err(consensus_or_protocol_data_contract_error)?;
 
             insert_values_nested(
                 &mut document_properties,
@@ -237,12 +238,14 @@ impl DocumentTypeV0 {
                 property_key,
                 property_value,
                 &root_schema,
-            )?;
+            )
+            .map_err(consensus_or_protocol_data_contract_error)?;
         }
 
         // Initialize indices
         let index_values =
-            Value::inner_optional_array_slice_value(schema_map, property_names::INDICES)?;
+            Value::inner_optional_array_slice_value(schema_map, property_names::INDICES)
+                .map_err(consensus_or_protocol_value_error)?;
 
         #[cfg(feature = "validation")]
         let mut index_names: HashSet<String> = HashSet::new();
@@ -258,7 +261,8 @@ impl DocumentTypeV0 {
                             .to_map()
                             .map_err(consensus_or_protocol_value_error)?
                             .as_slice()
-                            .try_into()?;
+                            .try_into()
+                            .map_err(consensus_or_protocol_data_contract_error)?;
 
                         #[cfg(feature = "validation")]
                         if validate {
