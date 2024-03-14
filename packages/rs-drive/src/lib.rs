@@ -20,7 +20,7 @@ pub mod drive;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod error;
 /// Fee pools module
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod fee_pools;
 /// Query module
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -32,6 +32,15 @@ pub use dpp;
 /// GroveDB module
 #[cfg(feature = "full")]
 pub use grovedb;
+
+#[cfg(feature = "full")]
+pub use grovedb_path;
+
+#[cfg(feature = "full")]
+pub use grovedb_costs;
+
+#[cfg(feature = "full")]
+pub use grovedb_storage;
 #[cfg(feature = "full")]
 mod fee;
 /// State transition action module

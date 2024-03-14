@@ -32,21 +32,6 @@
 
 use ciborium::cbor;
 #[cfg(feature = "full")]
-use grovedb::TransactionArg;
-#[cfg(feature = "full")]
-use std::borrow::Cow;
-#[cfg(feature = "full")]
-use std::collections::HashMap;
-#[cfg(feature = "full")]
-use std::fs::File;
-#[cfg(feature = "full")]
-use std::io::{self, BufRead};
-#[cfg(feature = "full")]
-use std::option::Option::None;
-#[cfg(feature = "full")]
-use std::sync::Arc;
-
-#[cfg(feature = "full")]
 use dpp::data_contract::DataContractFactory;
 #[cfg(feature = "full")]
 use drive::common;
@@ -69,6 +54,8 @@ use drive::query::DriveQuery;
 #[cfg(feature = "full")]
 #[cfg(test)]
 use drive::tests::helpers::setup::setup_drive;
+#[cfg(feature = "full")]
+use grovedb::TransactionArg;
 use rand::random;
 #[cfg(feature = "full")]
 use rand::seq::SliceRandom;
@@ -78,6 +65,18 @@ use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "full")]
 use serde_json::json;
+#[cfg(feature = "full")]
+use std::borrow::Cow;
+#[cfg(feature = "full")]
+use std::collections::HashMap;
+#[cfg(feature = "full")]
+use std::fs::File;
+#[cfg(feature = "full")]
+use std::io::{self, BufRead};
+#[cfg(feature = "full")]
+use std::option::Option::None;
+#[cfg(feature = "full")]
+use std::sync::Arc;
 
 #[cfg(feature = "full")]
 use dpp::document::Document;
@@ -85,6 +84,8 @@ use dpp::document::Document;
 use dpp::platform_value::Value;
 use dpp::platform_value::{platform_value, Bytes32, Identifier};
 
+#[cfg(feature = "full")]
+use base64::Engine;
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -791,7 +792,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
 
     let file = File::open(path).expect("should read domains from file");
 
-    for domain_json in io::BufReader::new(file).lines().flatten() {
+    for domain_json in io::BufReader::new(file).lines().map_while(Result::ok) {
         let domain_json: serde_json::Value =
             serde_json::from_str(&domain_json).expect("should parse json");
 
@@ -2730,7 +2731,7 @@ fn test_family_sql_query() {
     .expect("should build query");
 
     let sql_string = "select * from person order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2754,7 +2755,7 @@ fn test_family_sql_query() {
     .expect("should build query");
 
     let sql_string = "select * from person where firstName = 'Chris'";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2783,7 +2784,7 @@ fn test_family_sql_query() {
 
     let sql_string =
         "select * from person where firstName < 'Chris' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2812,7 +2813,7 @@ fn test_family_sql_query() {
 
     let sql_string =
         "select * from person where firstName like 'C%' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2841,7 +2842,7 @@ fn test_family_sql_query() {
     .expect("should build query");
 
     let sql_string = "select * from person where firstName > 'Chris' and firstName <= 'Noellyn' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2871,7 +2872,7 @@ fn test_family_sql_query() {
 
     let sql_string =
         "select * from person where firstName in ('a', 'b') order by firstName limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
         .expect("should build query");
 
     assert_eq!(query1, query2);
@@ -2970,14 +2971,15 @@ fn test_family_with_nulls_query() {
             let document =
                 Document::from_bytes(result.as_slice(), person_document_type, platform_version)
                     .expect("we should be able to deserialize the document");
-            base64::encode(document.id().as_slice())
+            base64::engine::general_purpose::STANDARD.encode(document.id().as_slice())
         })
         .collect();
 
     for i in 0..10 {
         drive
             .delete_document_for_contract(
-                base64::decode(ids.get(i).unwrap())
+                base64::engine::general_purpose::STANDARD
+                    .decode(ids.get(i).unwrap())
                     .expect("expected to decode from base64")
                     .try_into()
                     .expect("expected to get 32 bytes"),
@@ -4855,11 +4857,11 @@ fn test_query_a_b_c_d_e_contract() {
       }
     });
 
-    let factory = DataContractFactory::new(platform_version.protocol_version, None)
-        .expect("should create factory");
+    let factory =
+        DataContractFactory::new(platform_version.protocol_version).expect("should create factory");
 
     let contract = factory
-        .create_with_value_config(owner_id, documents, None, None)
+        .create_with_value_config(owner_id, 0, documents, None, None)
         .expect("data in fixture should be correct")
         .data_contract_owned();
 

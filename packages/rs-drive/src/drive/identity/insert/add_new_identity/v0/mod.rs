@@ -244,9 +244,12 @@ impl Drive {
             .push(self.initialize_negative_identity_balance_operation_v0(id.to_buffer()));
 
         // We insert the revision
-        // todo: we might not need the revision
         batch_operations
             .push(self.initialize_identity_revision_operation_v0(id.to_buffer(), revision));
+
+        // We insert a nonce of 0, nonces are used to prevent replay attacks, and should not be confused
+        // revisions
+        batch_operations.push(self.initialize_identity_nonce_operation_v0(id.to_buffer(), 0));
 
         let mut create_tree_keys_operations = self.create_key_tree_with_keys_operations(
             id.to_buffer(),
@@ -274,9 +277,6 @@ mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
 
     use dpp::version::PlatformVersion;
-    use tempfile::TempDir;
-
-    use crate::drive::Drive;
 
     #[test]
     fn test_insert_and_fetch_identity_v0() {

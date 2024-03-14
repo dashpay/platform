@@ -45,7 +45,7 @@ pub trait DocumentReplaceTransitionActionAccessorsV0 {
 }
 
 /// document from replace transition v0
-pub trait DocumentFromReplaceTransitionV0 {
+pub trait DocumentFromReplaceTransitionActionV0 {
     /// Attempts to create a new `Document` from the given `DocumentReplaceTransitionAction` reference and `owner_id`.
     ///
     /// # Arguments
@@ -56,7 +56,7 @@ pub trait DocumentFromReplaceTransitionV0 {
     /// # Returns
     ///
     /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    fn try_from_replace_transition_v0(
+    fn try_from_replace_transition_action_v0(
         value: &DocumentReplaceTransitionActionV0,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
@@ -73,7 +73,7 @@ pub trait DocumentFromReplaceTransitionV0 {
     /// # Returns
     ///
     /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    fn try_from_owned_replace_transition_v0(
+    fn try_from_owned_replace_transition_action_v0(
         value: DocumentReplaceTransitionActionV0,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
@@ -82,18 +82,8 @@ pub trait DocumentFromReplaceTransitionV0 {
         Self: Sized;
 }
 
-impl DocumentFromReplaceTransitionV0 for Document {
-    /// Attempts to create a new `Document` from the given `DocumentReplaceTransitionAction` reference and `owner_id`.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - A reference to the `DocumentReplaceTransitionAction` containing information about the document being created.
-    /// * `owner_id` - The `Identifier` of the document's owner.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    fn try_from_replace_transition_v0(
+impl DocumentFromReplaceTransitionActionV0 for Document {
+    fn try_from_replace_transition_action_v0(
         value: &DocumentReplaceTransitionActionV0,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
@@ -130,17 +120,7 @@ impl DocumentFromReplaceTransitionV0 for Document {
         }
     }
 
-    /// Attempts to create a new `Document` from the given `DocumentReplaceTransitionAction` instance and `owner_id`.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - A `DocumentReplaceTransitionAction` instance containing information about the document being created.
-    /// * `owner_id` - The `Identifier` of the document's owner.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    fn try_from_owned_replace_transition_v0(
+    fn try_from_owned_replace_transition_action_v0(
         value: DocumentReplaceTransitionActionV0,
         owner_id: Identifier,
         platform_version: &PlatformVersion,

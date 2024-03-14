@@ -1,6 +1,7 @@
 /* eslint-disable no-param-reassign */
 import fs from 'fs';
 import path from 'path';
+import lodash from 'lodash';
 
 import {
   NETWORK_LOCAL,
@@ -22,6 +23,22 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
   function getConfigFileMigrations() {
     const base = defaultConfigs.get('base');
     const testnet = defaultConfigs.get('testnet');
+
+    /**
+     * @param {string} name
+     * @param {string} group
+     * @return {Config}
+     */
+    function getDefaultConfigByNameOrGroup(name, group) {
+      let baseConfigName = name;
+      if (group !== null && defaultConfigs.has(group)) {
+        baseConfigName = group;
+      } else if (!defaultConfigs.has(baseConfigName)) {
+        baseConfigName = 'base';
+      }
+
+      return defaultConfigs.get(baseConfigName);
+    }
 
     return {
       '0.24.0': (configFile) => {
@@ -170,7 +187,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             if (defaultConfigs.has(name) && !options.platform.drive.tenderdash.metrics) {
-              options.platform.drive.tenderdash.metrics = defaultConfigs.get(name).get('platform.drive.tenderdash.metrics');
+              options.platform.drive.tenderdash.metrics = defaultConfigs.get(name)
+                .get('platform.drive.tenderdash.metrics');
             }
           });
         return configFile;
@@ -399,9 +417,98 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.platform.drive.tenderdash.p2p.sendRate = defaultConfig.get('platform.drive.tenderdash.p2p.sendRate');
             options.platform.drive.tenderdash.p2p.recvRate = defaultConfig.get('platform.drive.tenderdash.p2p.recvRate');
 
-            options.platform.drive.tenderdash.mempool = base.get('platform.drive.tenderdash.mempool');
+            options.platform.drive.tenderdash.mempool = lodash.clone(base.get('platform.drive.tenderdash.mempool'));
             options.platform.drive.tenderdash.consensus.peer = base.get('platform.drive.tenderdash.consensus.peer');
             options.platform.drive.tenderdash.consensus.unsafeOverride = base.get('platform.drive.tenderdash.consensus.unsafeOverride');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.2': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (defaultConfigs.has(name)) {
+              options.platform.drive.tenderdash.genesis = defaultConfigs.get(name)
+                .get('platform.drive.tenderdash.genesis');
+            }
+            options.platform.dapi.api.docker.deploy = base.get('platform.dapi.api.docker.deploy');
+
+            let baseConfigName = name;
+            if (options.group !== null && defaultConfigs.has(options.group)) {
+              baseConfigName = options.group;
+            } else if (!defaultConfigs.has(baseConfigName)) {
+              baseConfigName = 'testnet';
+            }
+
+            options.platform.drive.abci.chainLock = defaultConfigs.get(baseConfigName)
+              .get('platform.drive.abci.chainLock');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.4': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            options.core.docker.image = defaultConfig.get('core.docker.image');
+
+            options.platform.drive.tenderdash.docker.image = defaultConfig.get('platform.drive.tenderdash.docker.image');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.5': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.mempool.cacheSize = base.get('platform.drive.tenderdash.mempool.cacheSize');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.6': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            options.platform.drive.abci.tokioConsole = base.get('platform.drive.abci.tokioConsole');
+
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            options.platform.drive.tenderdash.docker.image = defaultConfig.get('platform.drive.tenderdash.docker.image');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.7': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (options.network === NETWORK_TESTNET && name !== 'base') {
+              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+            }
+
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            options.core.docker.image = defaultConfig.get('core.docker.image');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.8': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            options.core.docker.image = defaultConfig.get('core.docker.image');
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.9': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            options.platform.drive.tenderdash.mempool.timeoutCheckTx = defaultConfig.get('platform.drive.tenderdash.mempool.timeoutCheckTx');
+            options.platform.drive.tenderdash.mempool.txEnqueueTimeout = defaultConfig.get('platform.drive.tenderdash.mempool.txEnqueueTimeout');
+            options.platform.drive.tenderdash.mempool.txSendRateLimit = defaultConfig.get('platform.drive.tenderdash.mempool.txSendRateLimit');
+            options.platform.drive.tenderdash.mempool.txRecvRateLimit = defaultConfig.get('platform.drive.tenderdash.mempool.txRecvRateLimit');
+            options.platform.drive.tenderdash.rpc.timeoutBroadcastTx = defaultConfig.get('platform.drive.tenderdash.rpc.timeoutBroadcastTx');
           });
 
         return configFile;

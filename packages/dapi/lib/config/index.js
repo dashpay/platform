@@ -92,6 +92,10 @@ module.exports = {
     host: config[OPTIONS.TENDERMINT_RPC_HOST],
     port: parseInt(config[OPTIONS.TENDERMINT_RPC_PORT], 10),
   },
+  driveRpc: {
+    host: config[OPTIONS.DRIVE_RPC_HOST],
+    port: parseInt(config[OPTIONS.DRIVE_RPC_PORT], 10),
+  },
   blockHeaders: {
     cache: {
       maxSize: Number(config[OPTIONS.BLOCK_HEADERS_CACHE_SIZE]),

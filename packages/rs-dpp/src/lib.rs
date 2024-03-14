@@ -39,7 +39,10 @@ pub mod balances;
 pub mod block;
 pub mod fee;
 pub mod serialization;
-#[cfg(feature = "validation")]
+#[cfg(any(
+    feature = "message-signing",
+    feature = "message-signature-verification"
+))]
 pub mod signing;
 #[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;
@@ -61,6 +64,11 @@ pub mod prelude {
     pub use crate::validation::ConsensusValidationResult;
     pub type TimestampMillis = u64;
     pub type Revision = u64;
+    pub type IdentityNonce = u64;
+
+    /// UserFeeIncrease is the additional percentage of the processing fee.
+    /// A 1 here means we pay 1% more in processing fees. A 100 means we pay 100% more.
+    pub type UserFeeIncrease = u16;
 }
 
 pub use bincode;

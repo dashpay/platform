@@ -2,11 +2,10 @@
 name = "platform-serialization"
 authors = ["Samuel Westrich <sam@dash.org>"]
 description = "Bincode based serialization and deserialization"
-version = "0.25.21"
+version = "1.0.0-dev.7"
 edition = "2021"
-rust-version = "1.73"
+rust-version = "1.76"
 license = "MIT"
-private = true
 
 [dependencies]
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }

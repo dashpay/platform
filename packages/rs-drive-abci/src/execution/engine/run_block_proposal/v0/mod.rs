@@ -1,6 +1,3 @@
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::Txid;
-
 use dpp::block::epoch::Epoch;
 
 use dpp::validation::ValidationResult;
@@ -8,7 +5,6 @@ use drive::error::Error::GroveDB;
 
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
-use std::collections::BTreeMap;
 
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
@@ -16,7 +12,6 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
-    BlockExecutionContextV0Setters,
 };
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::execution::types::block_fees::v0::BlockFeesV0;
@@ -31,6 +26,8 @@ use crate::platform_types::epoch_info::v0::{EpochInfoV0Getters, EpochInfoV0Metho
 use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::verify_chain_lock_result::v0::VerifyChainLockResult;
 use crate::rpc::core::CoreRPCLike;
 
 impl<C> Platform<C>
@@ -46,6 +43,7 @@ where
     /// # Arguments
     ///
     /// * `block_proposal` - The block proposal to be processed.
+    /// * `known_from_us` - Do we know that we made this block proposal?.
     /// * `transaction` - The transaction associated with the block proposal.
     ///
     /// # Returns
@@ -63,14 +61,13 @@ where
     pub(super) fn run_block_proposal_v0(
         &self,
         block_proposal: block_proposal::v0::BlockProposal,
+        known_from_us: bool,
         epoch_info: EpochInfo,
         transaction: &Transaction,
+        last_committed_platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
-        // Start by getting information from the state
-        let state = self.state.read().unwrap();
-
         tracing::trace!(
             method = "run_block_proposal_v0",
             ?block_proposal,
@@ -80,14 +77,15 @@ where
             block_proposal.round,
         );
 
-        let last_block_time_ms = state.last_block_time_ms();
-        let last_block_height =
-            state.known_height_or(self.config.abci.genesis_height.saturating_sub(1));
-        let last_block_core_height =
-            state.known_core_height_or(self.config.abci.genesis_core_height);
-        let hpmn_list_len = state.hpmn_list_len();
+        let last_block_time_ms = last_committed_platform_state.last_committed_block_time_ms();
+        let last_block_height = last_committed_platform_state
+            .last_committed_known_height_or(self.config.abci.genesis_height.saturating_sub(1));
+        let last_block_core_height = last_committed_platform_state
+            .last_committed_known_core_height_or(self.config.abci.genesis_core_height);
+        let hpmn_list_len = last_committed_platform_state.hpmn_list_len() as u32;
 
-        let mut block_platform_state = state.clone();
+        // Create a bock state from previous committed state
+        let mut block_platform_state = last_committed_platform_state.clone();
 
         // Init block execution context
         let block_state_info = block_state_info::v0::BlockStateInfoV0::from_block_proposal(
@@ -110,6 +108,7 @@ where
         // destructure the block proposal
         let block_proposal::v0::BlockProposal {
             core_chain_locked_height,
+            core_chain_lock_update,
             proposed_app_version,
             proposer_pro_tx_hash,
             validator_set_quorum_hash,
@@ -122,9 +121,93 @@ where
                 .expect("current epoch index should be in range"),
         );
 
+        // If there is a core chain lock update, we should start by verifying it
+        if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
+            if !known_from_us {
+                let verification_result = self.verify_chain_lock(
+                    block_state_info.round, // the round is to allow us to bypass local verification in case of chain stall
+                    &block_platform_state,
+                    core_chain_lock_update,
+                    true, // if it's not known from us, then we should try submitting it
+                    platform_version,
+                );
+
+                let VerifyChainLockResult {
+                    chain_lock_signature_is_deserializable,
+                    found_valid_locally,
+                    found_valid_by_core,
+                    core_is_synced,
+                } = match verification_result {
+                    Ok(verification_result) => verification_result,
+                    Err(Error::Execution(e)) => {
+                        // This will happen only if an internal version error
+                        return Err(Error::Execution(e));
+                    }
+                    Err(e) => {
+                        // This will happen only if a core rpc error
+                        return Ok(ValidationResult::new_with_error(
+                            AbciError::InvalidChainLock(e.to_string()).into(),
+                        ));
+                    }
+                };
+
+                if !chain_lock_signature_is_deserializable {
+                    return Ok(ValidationResult::new_with_error(
+                        AbciError::InvalidChainLock(format!(
+                            "received a chain lock for height {} that has a signature that can not be deserialized {:?}",
+                            block_info.height, core_chain_lock_update,
+                        ))
+                            .into(),
+                    ));
+                }
+
+                if let Some(found_valid_locally) = found_valid_locally {
+                    // This means we are able to check if the chain lock is valid
+                    if !found_valid_locally {
+                        // The signature was not valid
+                        return Ok(ValidationResult::new_with_error(
+                            AbciError::InvalidChainLock(format!(
+                                "received a chain lock for height {} that we figured out was invalid based on platform state {:?}",
+                                block_info.height, core_chain_lock_update,
+                            ))
+                                .into(),
+                        ));
+                    }
+                }
+
+                if let Some(found_valid_by_core) = found_valid_by_core {
+                    // This means we asked core if the chain lock was valid
+                    if !found_valid_by_core {
+                        // Core said it wasn't valid
+                        return Ok(ValidationResult::new_with_error(
+                            AbciError::InvalidChainLock(format!(
+                                "received a chain lock for height {} that is invalid based on a core request {:?}",
+                                block_info.height, core_chain_lock_update,
+                            ))
+                                .into(),
+                        ));
+                    }
+                }
+
+                if let Some(core_is_synced) = core_is_synced {
+                    // Core is just not synced
+                    if !core_is_synced {
+                        // The submission was not accepted by core
+                        return Ok(ValidationResult::new_with_error(
+                            AbciError::ChainLockedBlockNotKnownByCore(format!(
+                                "received a chain lock for height {} that we could not accept because core is not synced {:?}",
+                                block_info.height, core_chain_lock_update,
+                            ))
+                                .into(),
+                        ));
+                    }
+                }
+            }
+        }
+
         // Update the masternode list and create masternode identities and also update the active quorums
         self.update_core_info(
-            Some(&state),
+            Some(last_committed_platform_state),
             &mut block_platform_state,
             core_chain_locked_height,
             false,
@@ -132,7 +215,6 @@ where
             transaction,
             platform_version,
         )?;
-        drop(state);
 
         // Update the validator proposed app version
         self.drive
@@ -146,149 +228,113 @@ where
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
             })?; // This is a system error
 
-        let mut block_execution_context = block_execution_context::v0::BlockExecutionContextV0 {
-            block_state_info: block_state_info.into(),
-            epoch_info: epoch_info.clone(),
-            hpmn_count: hpmn_list_len as u32,
-            withdrawal_transactions: BTreeMap::new(),
-            block_platform_state,
-            proposer_results: None,
-        };
-
         // Determine a new protocol version if enough proposers voted
-        if block_execution_context
-            .epoch_info
-            .is_epoch_change_but_not_genesis()
-        {
+        if epoch_info.is_epoch_change_but_not_genesis() {
             tracing::info!(
-                epoch_index = block_execution_context.epoch_info.current_epoch_index(),
+                epoch_index = epoch_info.current_epoch_index(),
                 "epoch change occurring from epoch {} to epoch {}",
-                block_execution_context
-                    .epoch_info
+                epoch_info
                     .previous_epoch_index()
                     .expect("must be set since we aren't on genesis"),
-                block_execution_context.epoch_info.current_epoch_index(),
+                epoch_info.current_epoch_index(),
             );
 
-            if block_execution_context
-                .block_platform_state
-                .current_protocol_version_in_consensus()
-                == block_execution_context
-                    .block_platform_state
-                    .next_epoch_protocol_version()
+            if block_platform_state.current_protocol_version_in_consensus()
+                == block_platform_state.next_epoch_protocol_version()
             {
                 tracing::trace!(
-                    epoch_index = block_execution_context.epoch_info.current_epoch_index(),
+                    epoch_index = epoch_info.current_epoch_index(),
                     "protocol version remains the same {}",
-                    block_execution_context
-                        .block_platform_state
-                        .current_protocol_version_in_consensus(),
+                    block_platform_state.current_protocol_version_in_consensus(),
                 );
             } else {
                 tracing::info!(
-                    epoch_index = block_execution_context.epoch_info.current_epoch_index(),
+                    epoch_index = epoch_info.current_epoch_index(),
                     "protocol version changed from {} to {}",
-                    block_execution_context
-                        .block_platform_state
-                        .current_protocol_version_in_consensus(),
-                    block_execution_context
-                        .block_platform_state
-                        .next_epoch_protocol_version(),
+                    block_platform_state.current_protocol_version_in_consensus(),
+                    block_platform_state.next_epoch_protocol_version(),
                 );
             }
 
             // Set current protocol version to the version from upcoming epoch
-            block_execution_context
-                .block_platform_state
-                .set_current_protocol_version_in_consensus(
-                    block_execution_context
-                        .block_platform_state
-                        .next_epoch_protocol_version(),
-                );
+            block_platform_state.set_current_protocol_version_in_consensus(
+                block_platform_state.next_epoch_protocol_version(),
+            );
 
             // Determine new protocol version based on votes for the next epoch
             let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
-                block_execution_context.hpmn_count,
-                block_execution_context
-                    .block_platform_state
-                    .current_protocol_version_in_consensus(),
+                hpmn_list_len,
+                block_platform_state.current_protocol_version_in_consensus(),
                 transaction,
             )?;
 
             if let Some(new_protocol_version) = maybe_new_protocol_version {
-                block_execution_context
-                    .block_platform_state
-                    .set_next_epoch_protocol_version(new_protocol_version);
+                block_platform_state.set_next_epoch_protocol_version(new_protocol_version);
             } else {
-                block_execution_context
-                    .block_platform_state
-                    .set_next_epoch_protocol_version(
-                        block_execution_context
-                            .block_platform_state
-                            .current_protocol_version_in_consensus(),
-                    );
+                block_platform_state.set_next_epoch_protocol_version(
+                    block_platform_state.current_protocol_version_in_consensus(),
+                );
             }
         }
 
-        let mut block_execution_context: BlockExecutionContext = block_execution_context.into();
-
-        // >>>>>> Withdrawal Status Update <<<<<<<
-        // Only update the broadcasted withdrawal statuses if the core chain lock height has
-        // changed. If it hasn't changed there should be no way a status could update
-
-        if block_execution_context
-            .block_state_info()
-            .core_chain_locked_height()
-            != last_block_core_height
-        {
-            self.update_broadcasted_withdrawal_transaction_statuses(
-                &block_execution_context,
+        // Mark all previously broadcasted and chainlocked withdrawals as complete
+        // only when we are on a new core height
+        if block_state_info.core_chain_locked_height() != last_block_core_height {
+            self.update_broadcasted_withdrawal_statuses(
+                &block_info,
                 transaction,
                 platform_version,
             )?;
         }
 
-        // This takes withdrawals from the transaction queue
+        // Preparing withdrawal transactions for signing and broadcasting
+        // To process withdrawals we need to dequeue untiled transactions from the withdrawal transactions queue
+        // Untiled transactions then converted to unsigned transactions, appending current block information
+        // required for signature verification (core height and quorum hash)
+        // Then we save unsigned transaction bytes to block execution context
+        // to be signed (on extend_vote), verified (on verify_vote) and broadcasted (on finalize_block)
         let unsigned_withdrawal_transaction_bytes = self
-            .fetch_and_prepare_unsigned_withdrawal_transactions(
+            .dequeue_and_build_unsigned_withdrawal_transactions(
                 validator_set_quorum_hash,
-                &block_execution_context,
-                transaction,
+                &block_info,
+                Some(transaction),
                 platform_version,
             )?;
 
-        // Set the withdrawal transactions that were done in the previous block
-        block_execution_context.set_withdrawal_transactions(
-            unsigned_withdrawal_transaction_bytes
-                .into_iter()
-                .map(|withdrawal_transaction| {
-                    (
-                        Txid::hash(withdrawal_transaction.as_slice()),
-                        withdrawal_transaction,
-                    )
-                })
-                .collect(),
-        );
-
-        let (block_fees, state_transition_results) = self.process_raw_state_transitions(
+        // Process transactions
+        let state_transitions_result = self.process_raw_state_transitions(
             raw_state_transitions,
-            block_execution_context.block_platform_state(),
+            &block_platform_state,
             &block_info,
             transaction,
             platform_version,
         )?;
 
-        let mut block_execution_context: BlockExecutionContext = block_execution_context;
+        // Pool withdrawals into transactions queue
 
+        // Takes queued withdrawals, creates untiled withdrawal transaction payload, saves them to queue
+        // Corresponding withdrawal documents are changed from queued to pooled
         self.pool_withdrawals_into_transactions_queue(
-            &block_execution_context,
-            transaction,
+            &block_info,
+            Some(transaction),
             platform_version,
         )?;
 
-        // while we have the state transitions executed, we now need to process the block fees
+        // Create a new block execution context
 
-        let block_fees_v0: BlockFeesV0 = block_fees.into();
+        let mut block_execution_context: BlockExecutionContext =
+            block_execution_context::v0::BlockExecutionContextV0 {
+                block_state_info: block_state_info.into(),
+                epoch_info: epoch_info.clone(),
+                hpmn_count: hpmn_list_len,
+                unsigned_withdrawal_transactions: unsigned_withdrawal_transaction_bytes,
+                block_platform_state,
+                proposer_results: None,
+            }
+            .into();
+
+        // while we have the state transitions executed, we now need to process the block fees
+        let block_fees_v0: BlockFeesV0 = state_transitions_result.aggregated_fees().clone().into();
 
         // Process fees
         let processed_block_fees = self.process_block_fees(
@@ -312,9 +358,11 @@ where
             .block_state_info_mut()
             .set_app_hash(Some(root_hash));
 
-        let state = self.state.read().unwrap();
-        let validator_set_update =
-            self.validator_set_update(&state, &mut block_execution_context, platform_version)?;
+        let validator_set_update = self.validator_set_update(
+            last_committed_platform_state,
+            &mut block_execution_context,
+            platform_version,
+        )?;
 
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(
@@ -326,17 +374,14 @@ where
             );
         }
 
-        self.block_execution_context
-            .write()
-            .unwrap()
-            .replace(block_execution_context);
-
         Ok(ValidationResult::new_with_data(
             block_execution_outcome::v0::BlockExecutionOutcome {
                 app_hash: root_hash,
-                state_transition_results,
+                state_transitions_result,
                 validator_set_update,
+                // TODO: We already know the version outside sine we have state and platform version what pass here
                 protocol_version: platform_version.protocol_version,
+                block_execution_context,
             },
         ))
     }

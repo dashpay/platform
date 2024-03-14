@@ -389,7 +389,8 @@ describe('Dash - Client', function suite() {
       expect(await interceptedSt.verifySignature(
         identityFixture.getPublicKeyById(2),
       )).to.be.equal(true);
-      expect(interceptedSt.getEntropy()).to.be.deep.equal(dataContractFixture.getEntropy());
+      expect(interceptedSt.getIdentityNonce()).to.be
+        .deep.equal(dataContractFixture.getIdentityNonce());
       expect(interceptedSt.getDataContract().toObject())
         .to.be.deep.equal(dataContractFixture.toObject());
     });

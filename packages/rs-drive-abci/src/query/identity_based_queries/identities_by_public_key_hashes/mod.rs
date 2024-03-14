@@ -3,29 +3,23 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_request::Version;
-use dapi_grpc::platform::v0::GetIdentitiesByPublicKeyHashesRequest;
-use dpp::check_validation_result_with_data;
-use dpp::validation::ValidationResult;
+use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_request::Version as RequestVersion;
+use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_response::Version as ResponseVersion;
+use dapi_grpc::platform::v0::{
+    GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse,
+};
 use dpp::version::PlatformVersion;
-use prost::Message;
 
 mod v0;
 
 impl<C> Platform<C> {
     /// Querying of an identity by a public key hash
-    pub(in crate::query) fn query_identities_by_public_key_hashes(
+    pub fn query_identities_by_public_key_hashes(
         &self,
-        state: &PlatformState,
-        query_data: &[u8],
+        GetIdentitiesByPublicKeyHashesRequest { version }: GetIdentitiesByPublicKeyHashesRequest,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let GetIdentitiesByPublicKeyHashesRequest { version } = check_validation_result_with_data!(
-            GetIdentitiesByPublicKeyHashesRequest::decode(query_data).map_err(|e| {
-                QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
-            })
-        );
-
+    ) -> Result<QueryValidationResult<GetIdentitiesByPublicKeyHashesResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::DecodingError(
@@ -41,7 +35,7 @@ impl<C> Platform<C> {
             .identities_by_public_key_hashes;
 
         let feature_version = match &version {
-            Version::V0(_) => 0,
+            RequestVersion::V0(_) => 0,
         };
         if !feature_version_bounds.check_version(feature_version) {
             return Ok(QueryValidationResult::new_with_error(
@@ -55,11 +49,19 @@ impl<C> Platform<C> {
             ));
         }
         match version {
-            Version::V0(get_identity_request) => self.query_identities_by_public_key_hashes_v0(
-                state,
-                get_identity_request,
-                platform_version,
-            ),
+            RequestVersion::V0(request_v0) => {
+                let result = self.query_identities_by_public_key_hashes_v0(
+                    request_v0,
+                    platform_state,
+                    platform_version,
+                )?;
+
+                Ok(
+                    result.map(|response_v0| GetIdentitiesByPublicKeyHashesResponse {
+                        version: Some(ResponseVersion::V0(response_v0)),
+                    }),
+                )
+            }
         }
     }
 }

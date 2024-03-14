@@ -1,3 +1,4 @@
+use crate::consensus::basic::data_contract::DataContractEmptySchemaError;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DocumentName;
@@ -17,6 +18,12 @@ impl DocumentTypeV0 {
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
         let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
+
+        if document_schemas.is_empty() {
+            return Err(ProtocolError::ConsensusError(Box::new(
+                DataContractEmptySchemaError::new(data_contract_id).into(),
+            )));
+        }
 
         for (name, schema) in document_schemas.into_iter() {
             let document_type = match platform_version

@@ -3,8 +3,10 @@ pub mod v0_methods;
 
 use bincode::{Decode, Encode};
 
+#[cfg(feature = "state-transition-value-conversion")]
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::Value;
+use platform_value::{Identifier, Value};
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use std::collections::BTreeMap;
@@ -15,13 +17,20 @@ use crate::identity::TimestampMillis;
 
 use crate::{data_contract::DataContract, errors::ProtocolError};
 
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::{
-    DocumentBaseTransitionV0, DocumentTransitionObjectLike,
-};
+use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+use crate::document::{Document, DocumentV0};
+use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+#[cfg(feature = "state-transition-value-conversion")]
+use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use derive_more::Display;
+use platform_version::version::PlatformVersion;
 
-pub(self) mod property_names {
+#[cfg(feature = "state-transition-value-conversion")]
+use crate::state_transition::documents_batch_transition;
+
+mod property_names {
     pub const ENTROPY: &str = "$entropy";
     pub const CREATED_AT: &str = "$createdAt";
     pub const UPDATED_AT: &str = "$updatedAt";
@@ -132,10 +141,14 @@ impl DocumentCreateTransitionV0 {
         mut map: BTreeMap<String, Value>,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
+        let identity_contract_nonce = map
+            .remove_integer(documents_batch_transition::document_base_transition::property_names::IDENTITY_CONTRACT_NONCE)
+            .map_err(ProtocolError::ValueError)?;
         Ok(Self {
             base: DocumentBaseTransition::V0(DocumentBaseTransitionV0::from_value_map_consume(
                 &mut map,
                 data_contract,
+                identity_contract_nonce,
             )?),
             entropy: map
                 .remove_hash256_bytes(property_names::ENTROPY)
@@ -173,6 +186,152 @@ impl DocumentCreateTransitionV0 {
         transition_base_map.extend(self.data.clone());
 
         Ok(transition_base_map)
+    }
+}
+
+/// documents from create transition v0
+pub trait DocumentFromCreateTransitionV0 {
+    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` instance and `owner_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - A `DocumentCreateTransition` instance containing information about the document being created.
+    /// * `owner_id` - The `Identifier` of the document's owner.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
+    fn try_from_owned_create_transition_v0(
+        v0: DocumentCreateTransitionV0,
+        owner_id: Identifier,
+        data_contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
+    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` reference and `owner_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - A reference to the `DocumentCreateTransitionActionV0` containing information about the document being created.
+    /// * `owner_id` - The `Identifier` of the document's owner.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
+    fn try_from_create_transition_v0(
+        v0: &DocumentCreateTransitionV0,
+        owner_id: Identifier,
+        data_contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
+}
+
+impl DocumentFromCreateTransitionV0 for Document {
+    fn try_from_owned_create_transition_v0(
+        v0: DocumentCreateTransitionV0,
+        owner_id: Identifier,
+        data_contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let DocumentCreateTransitionV0 {
+            base,
+            created_at,
+            updated_at,
+            data,
+            ..
+        } = v0;
+
+        match base {
+            DocumentBaseTransition::V0(base_v0) => {
+                let DocumentBaseTransitionV0 {
+                    id,
+                    document_type_name,
+                    ..
+                } = base_v0;
+
+                let document_type =
+                    data_contract.document_type_for_name(document_type_name.as_str())?;
+
+                match platform_version
+                    .dpp
+                    .document_versions
+                    .document_structure_version
+                {
+                    0 => Ok(DocumentV0 {
+                        id,
+                        owner_id,
+                        properties: data,
+                        revision: document_type.initial_revision(),
+                        created_at,
+                        updated_at,
+                    }
+                    .into()),
+                    version => Err(ProtocolError::UnknownVersionMismatch {
+                        method: "Document::try_from_create_transition_v0".to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    }),
+                }
+            }
+        }
+    }
+
+    fn try_from_create_transition_v0(
+        v0: &DocumentCreateTransitionV0,
+        owner_id: Identifier,
+        data_contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let DocumentCreateTransitionV0 {
+            base,
+            created_at,
+            updated_at,
+            data,
+            ..
+        } = v0;
+
+        match base {
+            DocumentBaseTransition::V0(base_v0) => {
+                let DocumentBaseTransitionV0 {
+                    id,
+                    document_type_name,
+                    ..
+                } = base_v0;
+
+                let document_type =
+                    data_contract.document_type_for_name(document_type_name.as_str())?;
+
+                match platform_version
+                    .dpp
+                    .document_versions
+                    .document_structure_version
+                {
+                    0 => Ok(DocumentV0 {
+                        id: *id,
+                        owner_id,
+                        properties: data.clone(),
+                        revision: document_type.initial_revision(),
+                        created_at: *created_at,
+                        updated_at: *updated_at,
+                    }
+                    .into()),
+                    version => Err(ProtocolError::UnknownVersionMismatch {
+                        method: "Document::try_from_owned_create_transition_v0".to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    }),
+                }
+            }
+        }
     }
 }
 
@@ -280,6 +439,7 @@ mod test {
             "id" : id,
             "$type" : "test",
             "$dataContractId" : data_contract_id,
+            "$identityContractNonce": 0u64,
             "revision" : 1u32,
             "alphaBinary" : alpha_binary,
             "alphaIdentifier" : alpha_identifier,
@@ -311,7 +471,7 @@ mod test {
     }
 
     #[test]
-    fn covert_to_object_from_json_value_with_dynamic_binary_paths() {
+    fn convert_to_object_from_json_value_with_dynamic_binary_paths() {
         let data_contract = data_contract_with_dynamic_properties();
         let alpha_value = vec![10_u8; 32];
         let id = vec![11_u8; 32];
@@ -324,6 +484,7 @@ mod test {
             "$id" : id,
             "$type" : "test",
             "$dataContractId" : data_contract_id,
+            "$identityContractNonce": 0u64,
             "revision" : 1,
             "alphaBinary" : alpha_value,
             "alphaIdentifier" : alpha_value,
@@ -340,7 +501,6 @@ mod test {
             .into_btree_string_map()
             .unwrap();
 
-        println!("{:?}", object_transition);
         let v0 = object_transition.get("V0").expect("to get V0");
         let right_id = Identifier::from_bytes(&id).unwrap();
         let right_data_contract_id = Identifier::from_bytes(&data_contract_id).unwrap();

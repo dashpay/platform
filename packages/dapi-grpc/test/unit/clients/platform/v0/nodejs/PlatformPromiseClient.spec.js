@@ -18,6 +18,9 @@ describe('PlatformPromiseClient', () => {
       getEpochsInfo: this.sinon.stub().resolves(response),
       getProtocolVersionUpgradeVoteStatus: this.sinon.stub().resolves(response),
       getProtocolVersionUpgradeState: this.sinon.stub().resolves(response),
+      getIdentityContractNonce: this.sinon.stub().resolves(response),
+      getIdentityNonce: this.sinon.stub().resolves(response),
+      getIdentityKeys: this.sinon.stub().resolves(response),
     };
   });
 
@@ -113,6 +116,36 @@ describe('PlatformPromiseClient', () => {
 
       expect(result).to.equal(response);
       expect(platformPromiseClient.client.getProtocolVersionUpgradeState)
+        .to.be.calledOnceWith(request);
+    });
+  });
+
+  describe('#getIdentityContractNonce', () => {
+    it('should get identity contract nonce', async () => {
+      const result = await platformPromiseClient.getIdentityContractNonce(request);
+
+      expect(result).to.equal(response);
+      expect(platformPromiseClient.client.getIdentityContractNonce)
+        .to.be.calledOnceWith(request);
+    });
+  });
+
+  describe('#getIdentityNonce', () => {
+    it('should get identity nonce', async () => {
+      const result = await platformPromiseClient.getIdentityNonce(request);
+
+      expect(result).to.equal(response);
+      expect(platformPromiseClient.client.getIdentityNonce)
+        .to.be.calledOnceWith(request);
+    });
+  });
+
+  describe('#getIdentityKeys', () => {
+    it('should get identity keys', async () => {
+      const result = await platformPromiseClient.getIdentityKeys(request);
+
+      expect(result).to.equal(response);
+      expect(platformPromiseClient.client.getIdentityKeys)
         .to.be.calledOnceWith(request);
     });
   });

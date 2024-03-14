@@ -1,5 +1,4 @@
-use dpp::prelude::{DataContract, Identifier};
-use dpp::util::json_schema::JsonSchemaExt;
+use dpp::prelude::Identifier;
 
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
@@ -10,10 +9,10 @@ use crate::buffer::Buffer;
 
 use crate::data_contract::DataContractWasm;
 use crate::identifier::IdentifierWrapper;
-use crate::lodash::lodash_set;
+
 use crate::utils::WithJsError;
 use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
-use crate::with_js_error;
+
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::DocumentV0Getters;
 pub mod errors;
@@ -28,15 +27,11 @@ pub mod state_transition;
 
 // pub use document_batch_transition::DocumentsBatchTransitionWasm;
 
-use dpp::document::{
-    Document, DocumentV0Setters, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS, IDENTIFIER_FIELDS,
-};
+use dpp::document::{Document, DocumentV0Setters, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS};
 
 pub use extended_document::ExtendedDocumentWasm;
 
-use dpp::document::extended_document::property_names;
 use dpp::identity::TimestampMillis;
-use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::platform_value::Value;
@@ -55,6 +50,9 @@ pub(crate) struct ConversionOptions {
     pub skip_identifiers_conversion: bool,
 }
 
+#[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 pub(super) enum BinaryType {
     Identifier,
     Buffer,
@@ -86,6 +84,7 @@ impl DocumentWasm {
         let document_type = js_data_contract
             .inner()
             .document_type_for_name(document_type_name.as_str())
+            .map_err(ProtocolError::DataContractError)
             .with_js_error()?;
 
         let identifier_paths = document_type.identifier_paths().iter().map(|s| s.as_str());
@@ -300,6 +299,7 @@ impl DocumentWasm {
         let document_type = data_contract
             .inner()
             .document_type_for_name(document_type_name.as_str())
+            .map_err(ProtocolError::DataContractError)
             .with_js_error()?;
         let bytes = self
             .0
@@ -319,6 +319,9 @@ impl DocumentWasm {
 }
 
 impl DocumentWasm {
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     fn get_binary_type_of_path(
         &self,
         path: &String,
@@ -328,6 +331,7 @@ impl DocumentWasm {
         let document_type = data_contract
             .inner()
             .document_type_for_name(document_type_name.as_str())
+            .map_err(ProtocolError::DataContractError)
             .with_js_error()?;
 
         if document_type.binary_paths().contains(path) {

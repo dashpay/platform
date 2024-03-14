@@ -1,17 +1,26 @@
-const { DashPlatformProtocol, JsonSchemaError } = require('@dashevo/wasm-dpp');
+const {
+  DashPlatformProtocol,
+  JsonSchemaError,
+} = require('@dashevo/wasm-dpp');
 
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
 const { expect } = require('chai');
 const crypto = require('crypto');
-const withdrawalContractDocumentsSchema = require('../../schema/withdrawals-documents.json');
+const withdrawalContractDocumentsSchema = require('../../schema/v1/withdrawals-documents.json');
 
 const expectJsonSchemaError = (validationResult, errorCount = 1) => {
   const errors = validationResult.getErrors();
-  expect(errors).to.have.length(errorCount);
+  expect(errors)
+    .to
+    .have
+    .length(errorCount);
 
   const error = validationResult.getErrors()[0];
-  expect(error).to.be.instanceof(JsonSchemaError);
+  expect(error)
+    .to
+    .be
+    .instanceof(JsonSchemaError);
 
   return error;
 };
@@ -28,12 +37,18 @@ describe('Withdrawals contract', () => {
 
     identityId = await generateRandomIdentifier();
 
-    dataContract = dpp.dataContract.create(identityId, withdrawalContractDocumentsSchema);
+    dataContract = dpp.dataContract.create(
+      identityId,
+      BigInt(1),
+      withdrawalContractDocumentsSchema,
+    );
   });
 
   it('should have a valid contract definition', async () => {
-    expect(() => dpp.dataContract.create(identityId, withdrawalContractDocumentsSchema))
-      .to.not.throw();
+    expect(() => dpp.dataContract.create(identityId, BigInt(1), withdrawalContractDocumentsSchema))
+      .to
+      .not
+      .throw();
   });
 
   describe('documents', () => {
@@ -42,7 +57,6 @@ describe('Withdrawals contract', () => {
 
       beforeEach(() => {
         rawWithdrawalDocument = {
-          transactionId: Buffer.alloc(32, 1),
           transactionIndex: 42,
           amount: 1000,
           coreFeePerByte: 1,
@@ -50,63 +64,6 @@ describe('Withdrawals contract', () => {
           outputScript: Buffer.alloc(23, 2),
           status: 0,
         };
-      });
-
-      it('should have at least five properties', () => {
-        rawWithdrawalDocument = {};
-
-        const document = dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
-        const validationResult = document.validate(dpp.protocolVersion);
-        const error = expectJsonSchemaError(validationResult, 5);
-
-        expect(error.keyword).to.equal('required');
-        expect(error.params.missingProperty).to.equal('amount');
-      });
-
-      it('should not have additional properties', async () => {
-        rawWithdrawalDocument.someOtherProperty = 42;
-
-        const document = dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
-        const validationResult = document.validate(dpp.protocolVersion);
-        const error = expectJsonSchemaError(validationResult);
-
-        expect(error.keyword).to.equal('additionalProperties');
-        expect(error.params.additionalProperties).to.deep.equal(['someOtherProperty']);
-      });
-
-      describe('transactionId', () => {
-        it('should be byte array', () => {
-          rawWithdrawalDocument.transactionId = 1;
-
-          const document = dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
-          const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
-
-          expect(error.keyword).to.equal('type');
-          expect(error.params.type).to.equal('array');
-        });
-
-        it('should be not less then 32 bytes long', () => {
-          rawWithdrawalDocument.transactionId = [0];
-
-          const document = dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
-          const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
-
-          expect(error.keyword).to.equal('minItems');
-          expect(error.params.minItems).to.equal(32);
-        });
-
-        it('should be not more then 32 bytes long', () => {
-          rawWithdrawalDocument.transactionId = Buffer.alloc(33);
-
-          const document = dpp.document.create(dataContract, identityId, 'withdrawal', rawWithdrawalDocument);
-          const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
-
-          expect(error.keyword).to.equal('maxItems');
-          expect(error.params.maxItems).to.equal(32);
-        });
       });
 
       describe('amount', () => {
@@ -117,8 +74,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('amount');
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('amount');
         });
 
         it('should be integer', () => {
@@ -128,8 +89,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('type');
-          expect(error.params.type).to.equal('integer');
+          expect(error.keyword)
+            .to
+            .equal('type');
+          expect(error.params.type)
+            .to
+            .equal('integer');
         });
 
         it('should be at least 1000', () => {
@@ -139,8 +104,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minimum');
-          expect(error.params.minimum).to.equal(1000);
+          expect(error.keyword)
+            .to
+            .equal('minimum');
+          expect(error.params.minimum)
+            .to
+            .equal(1000);
         });
       });
 
@@ -152,8 +121,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('type');
-          expect(error.params.type).to.equal('integer');
+          expect(error.keyword)
+            .to
+            .equal('type');
+          expect(error.params.type)
+            .to
+            .equal('integer');
         });
 
         it('should be at least 1', () => {
@@ -163,8 +136,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minimum');
-          expect(error.params.minimum).to.equal(1);
+          expect(error.keyword)
+            .to
+            .equal('minimum');
+          expect(error.params.minimum)
+            .to
+            .equal(1);
         });
       });
 
@@ -176,8 +153,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('type');
-          expect(error.params.type).to.equal('integer');
+          expect(error.keyword)
+            .to
+            .equal('type');
+          expect(error.params.type)
+            .to
+            .equal('integer');
         });
 
         it('should be at least 1', () => {
@@ -187,8 +168,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minimum');
-          expect(error.params.minimum).to.equal(1);
+          expect(error.keyword)
+            .to
+            .equal('minimum');
+          expect(error.params.minimum)
+            .to
+            .equal(1);
         });
       });
 
@@ -200,8 +185,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('coreFeePerByte');
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('coreFeePerByte');
         });
 
         it('should be integer', () => {
@@ -211,8 +200,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('type');
-          expect(error.params.type).to.equal('integer');
+          expect(error.keyword)
+            .to
+            .equal('type');
+          expect(error.params.type)
+            .to
+            .equal('integer');
         });
 
         it('should be at least 1', () => {
@@ -222,8 +215,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minimum');
-          expect(error.params.minimum).to.equal(1);
+          expect(error.keyword)
+            .to
+            .equal('minimum');
+          expect(error.params.minimum)
+            .to
+            .equal(1);
         });
       });
 
@@ -235,8 +232,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('pooling');
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('pooling');
         });
 
         it('should be integer', () => {
@@ -246,8 +247,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult, 2);
 
-          expect(error.keyword).to.equal('type');
-          expect(error.params.type).to.equal('integer');
+          expect(error.keyword)
+            .to
+            .equal('type');
+          expect(error.params.type)
+            .to
+            .equal('integer');
         });
 
         it('should be within enum range', () => {
@@ -257,7 +262,9 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('enum');
+          expect(error.keyword)
+            .to
+            .equal('enum');
         });
       });
 
@@ -269,8 +276,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('outputScript');
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('outputScript');
         });
 
         it('should be byte array', () => {
@@ -280,8 +291,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('type');
-          expect(error.params.type).to.equal('array');
+          expect(error.keyword)
+            .to
+            .equal('type');
+          expect(error.params.type)
+            .to
+            .equal('array');
         });
 
         it('should be not less then 23 bytes long', () => {
@@ -291,8 +306,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('minItems');
-          expect(error.params.minItems).to.equal(23);
+          expect(error.keyword)
+            .to
+            .equal('minItems');
+          expect(error.params.minItems)
+            .to
+            .equal(23);
         });
 
         it('should be not more then 25 bytes long', () => {
@@ -302,8 +321,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('maxItems');
-          expect(error.params.maxItems).to.equal(25);
+          expect(error.keyword)
+            .to
+            .equal('maxItems');
+          expect(error.params.maxItems)
+            .to
+            .equal(25);
         });
       });
 
@@ -315,8 +338,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('status');
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('status');
         });
 
         it('should be integer', () => {
@@ -326,8 +353,12 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult, 2);
 
-          expect(error.keyword).to.equal('type');
-          expect(error.params.type).to.equal('integer');
+          expect(error.keyword)
+            .to
+            .equal('type');
+          expect(error.params.type)
+            .to
+            .equal('integer');
         });
 
         it('should be within enum range', () => {
@@ -337,7 +368,9 @@ describe('Withdrawals contract', () => {
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
-          expect(error.keyword).to.equal('enum');
+          expect(error.keyword)
+            .to
+            .equal('enum');
         });
       });
 
@@ -346,7 +379,10 @@ describe('Withdrawals contract', () => {
 
         const result = await withdrawal.validate(dpp.protocolVersion);
 
-        expect(result.isValid()).to.be.true();
+        expect(result.isValid())
+          .to
+          .be
+          .true();
       });
     });
   });

@@ -6,15 +6,20 @@ use crate::prelude::Revision;
 use bincode::{Decode, Encode};
 use derive_more::Display;
 
-use platform_value::Value;
+use platform_value::{Identifier, Value};
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+use crate::document::{Document, DocumentV0};
+use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
+use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 
-pub(self) mod property_names {
+mod property_names {
     pub const REVISION: &str = "$revision";
     pub const UPDATED_AT: &str = "$updatedAt";
 }
@@ -252,3 +257,121 @@ pub struct DocumentReplaceTransitionV0 {
 //         assert_eq!(cdt.to_json().unwrap().to_string(), json_no_whitespace);
 //     }
 // }
+
+/// document from replace transition v0
+pub trait DocumentFromReplaceTransitionV0 {
+    /// Attempts to create a new `Document` from the given `DocumentReplaceTransitionV0` reference and `owner_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - A reference to the `DocumentReplaceTransitionAction` containing information about the document being created.
+    /// * `owner_id` - The `Identifier` of the document's owner.
+    /// * `created_at` - The time if it exists that the original document was created.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
+    fn try_from_replace_transition_v0(
+        value: &DocumentReplaceTransitionV0,
+        owner_id: Identifier,
+        created_at: Option<u64>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
+    /// Attempts to create a new `Document` from the given `DocumentReplaceTransitionV0` instance and `owner_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - A `DocumentReplaceTransitionAction` instance containing information about the document being created.
+    /// * `owner_id` - The `Identifier` of the document's owner.
+    /// * `created_at` - The time if it exists that the original document was created.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
+    fn try_from_owned_replace_transition_v0(
+        value: DocumentReplaceTransitionV0,
+        owner_id: Identifier,
+        created_at: Option<u64>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
+}
+
+impl DocumentFromReplaceTransitionV0 for Document {
+    fn try_from_replace_transition_v0(
+        value: &DocumentReplaceTransitionV0,
+        owner_id: Identifier,
+        created_at: Option<u64>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        let DocumentReplaceTransitionV0 {
+            base,
+            revision,
+            updated_at,
+            data,
+        } = value;
+
+        let id = base.id();
+
+        match platform_version
+            .dpp
+            .document_versions
+            .document_structure_version
+        {
+            0 => Ok(DocumentV0 {
+                id,
+                owner_id,
+                properties: data.clone(),
+                revision: Some(*revision),
+                created_at,
+                updated_at: *updated_at,
+            }
+            .into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Document::try_from_replace_transition".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    fn try_from_owned_replace_transition_v0(
+        value: DocumentReplaceTransitionV0,
+        owner_id: Identifier,
+        created_at: Option<u64>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        let DocumentReplaceTransitionV0 {
+            base,
+            revision,
+            updated_at,
+            data,
+        } = value;
+
+        let id = base.id();
+
+        match platform_version
+            .dpp
+            .document_versions
+            .document_structure_version
+        {
+            0 => Ok(DocumentV0 {
+                id,
+                owner_id,
+                properties: data,
+                revision: Some(revision),
+                created_at,
+                updated_at,
+            }
+            .into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Document::try_from_replace_transition".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+}

@@ -1,49 +1,46 @@
-use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
-use dapi_grpc::platform::VersionedGrpcResponse;
-
 use dapi_grpc::platform::v0::get_proofs_request::{get_proofs_request_v0, GetProofsRequestV0};
-use dpp::block::block_info::BlockInfo;
+use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest};
+use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::Document;
-use dpp::identity::PartialIdentity;
-use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+
+use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
 use drive::drive::Drive;
 use drive::query::SingleDocumentDriveQuery;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
-use drive_abci::abci::AbciApplication;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use drive_abci::platform_types::platform::PlatformRef;
-use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::MockCoreRPCLike;
-use prost::Message;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransition;
-use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransition;
+use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransitionAction;
+use drive_abci::abci::app::FullAbciApplication;
+use drive_abci::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use drive_abci::execution::validation::state_transition::ValidationMode;
+use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
+use platform_version::DefaultForPlatformVersion;
 
 pub(crate) fn verify_state_transitions_were_or_were_not_executed(
-    abci_app: &AbciApplication<MockCoreRPCLike>,
+    abci_app: &FullAbciApplication<MockCoreRPCLike>,
     expected_root_hash: &[u8; 32],
     state_transitions: &[(StateTransition, ExecTxResult)],
-    block_info: &BlockInfo,
-    expected_validation_errors: &Vec<u32>,
+    expected_validation_errors: &[u32],
     platform_version: &PlatformVersion,
 ) -> bool {
-    let state = abci_app.platform.state.read().unwrap();
+    let state = abci_app.platform.state.load();
     let platform = PlatformRef {
         drive: &abci_app.platform.drive,
         state: &state,
         config: &abci_app.platform.config,
         core_rpc: &abci_app.platform.core_rpc,
-        block_info,
     };
 
     //actions are easier to transform to queries
@@ -57,17 +54,25 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 // dbg!(batch.transitions().len(), hex::encode(first.base().id()), state.height(), first.to_string());
             }
 
-            let consensus_validation_result =
-                match state_transition.transform_into_action(&platform, false, None) {
-                    Ok(consensus_validation_result) => consensus_validation_result,
-                    Err(e) => {
-                        if expected_validation_errors.contains(&result.code) {
-                            return (state_transition.clone(), None, false);
-                        } else {
-                            panic!("{}", e)
-                        }
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected to get an execution context");
+
+            let consensus_validation_result = match state_transition.transform_into_action(
+                &platform,
+                ValidationMode::CheckTx, //using check_tx so we don't validate state
+                &mut execution_context,
+                None,
+            ) {
+                Ok(consensus_validation_result) => consensus_validation_result,
+                Err(e) => {
+                    if expected_validation_errors.contains(&result.code) {
+                        return (state_transition.clone(), None, false);
+                    } else {
+                        panic!("{}", e)
                     }
-                };
+                }
+            };
 
             if !consensus_validation_result.is_valid() {
                 panic!(
@@ -85,7 +90,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
         })
         .collect::<Vec<_>>();
 
-    for (state_transition, action, was_executed) in &actions {
+    for (_state_transition, action, was_executed) in &actions {
         let mut proofs_request = GetProofsRequestV0 {
             identities: vec![],
             contracts: vec![],
@@ -100,25 +105,19 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         .push(get_proofs_request_v0::ContractRequest {
                             contract_id: data_contract_create.data_contract_ref().id().to_vec(),
                         });
+
                     let versioned_request = GetProofsRequest {
                         version: Some(get_proofs_request::Version::V0(proofs_request)),
                     };
+
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
 
-                    let response_proof =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response")
-                            .proof_owned()
-                            .expect("proof should be present");
+                    let response = result.into_data().expect("expected queries to be valid");
+
+                    let response_proof = response.proof_owned().expect("expected to get proof");
 
                     // let fetched_contract = abci_app
                     //     .platform.drive.fetch_contract(data_contract_create.data_contract_ref().id().into_buffer(), None, None, None, platform_version).unwrap().unwrap();
@@ -147,7 +146,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     } else {
                         //there is the possibility that the state transition was not executed because it already existed,
                         // we can discount that for now in tests
-                        assert!(contract.is_none(),)
+                        assert!(contract.is_none())
                     }
                 }
                 StateTransitionAction::DataContractUpdateAction(data_contract_update) => {
@@ -161,18 +160,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
-
-                    let response =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response");
+                    let response = result.into_data().expect("expected queries to be valid");
 
                     let response_proof = response.proof_owned().expect("expected to get proof");
 
@@ -214,18 +204,37 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             proofs_request
                                 .documents
                                 .push(get_proofs_request_v0::DocumentRequest {
-                                    contract_id: transition.base().data_contract_id().to_vec(),
-                                    document_type: transition.base().document_type_name().clone(),
+                                    contract_id: transition
+                                        .base()
+                                        .expect("expected a base for the document transition")
+                                        .data_contract_id()
+                                        .to_vec(),
+                                    document_type: transition
+                                        .base()
+                                        .expect("expected a base for the document transition")
+                                        .document_type_name()
+                                        .clone(),
                                     document_type_keeps_history: transition
                                         .base()
+                                        .expect("expected a base for the document transition")
                                         .data_contract_fetch_info()
                                         .contract
                                         .document_type_for_name(
-                                            transition.base().document_type_name().as_str(),
+                                            transition
+                                                .base()
+                                                .expect(
+                                                    "expected a base for the document transition",
+                                                )
+                                                .document_type_name()
+                                                .as_str(),
                                         )
                                         .expect("get document type")
                                         .documents_keep_history(),
-                                    document_id: transition.base().id().to_vec(),
+                                    document_id: transition
+                                        .base()
+                                        .expect("expected a base for the document transition")
+                                        .id()
+                                        .to_vec(),
                                 });
                         });
                     let versioned_request = GetProofsRequest {
@@ -233,32 +242,26 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
-
-                    let response =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response");
+                    let response = result.into_data().expect("expected queries to be valid");
 
                     let response_proof = response.proof_owned().expect("proof should be present");
 
                     for document_transition_action in
                         documents_batch_transition.transitions().iter()
                     {
-                        let contract_fetch_info =
-                            document_transition_action.base().data_contract_fetch_info();
+                        let contract_fetch_info = document_transition_action
+                            .base()
+                            .expect("expected a base for the document transition")
+                            .data_contract_fetch_info();
 
                         let document_type = contract_fetch_info
                             .contract
                             .document_type_for_name(
                                 document_transition_action
                                     .base()
+                                    .expect("expected a base for the document transition")
                                     .document_type_name()
                                     .as_str(),
                             )
@@ -266,14 +269,20 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         let query = SingleDocumentDriveQuery {
                             contract_id: document_transition_action
                                 .base()
+                                .expect("expected a base for the document transition")
                                 .data_contract_id()
                                 .into_buffer(),
                             document_type_name: document_transition_action
                                 .base()
+                                .expect("expected a base for the document transition")
                                 .document_type_name()
                                 .clone(),
                             document_type_keeps_history: document_type.documents_keep_history(),
-                            document_id: document_transition_action.base().id().into_buffer(),
+                            document_id: document_transition_action
+                                .base()
+                                .expect("expected a base for the document transition")
+                                .id()
+                                .into_buffer(),
                             block_time_ms: None, //None because we want latest
                         };
 
@@ -305,7 +314,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         match document_transition_action {
                             DocumentTransitionAction::CreateAction(creation_action) => {
                                 if *was_executed {
-                                    let document = document.expect("expected a document");
+                                    let document = document.unwrap_or_else(|| {
+                                        panic!(
+                                            "expected a document on block {}",
+                                            platform.state.last_committed_block_height()
+                                        )
+                                    });
                                     // dbg!(
                                     //     &document,
                                     //     Document::try_from_create_transition(
@@ -317,7 +331,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     // );
                                     assert_eq!(
                                         document,
-                                        Document::try_from_create_transition(
+                                        Document::try_from_create_transition_action(
                                             creation_action,
                                             documents_batch_transition.owner_id(),
                                             platform_version,
@@ -336,7 +350,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     if let Some(document) = document {
                                         assert_eq!(
                                             document,
-                                            Document::try_from_replace_transition(
+                                            Document::try_from_replace_transition_action(
                                                 replace_action,
                                                 documents_batch_transition.owner_id(),
                                                 platform_version,
@@ -350,7 +364,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     if let Some(document) = document {
                                         assert_ne!(
                                             document,
-                                            Document::try_from_replace_transition(
+                                            Document::try_from_replace_transition_action(
                                                 replace_action,
                                                 documents_batch_transition.owner_id(),
                                                 platform_version,
@@ -363,6 +377,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             DocumentTransitionAction::DeleteAction(_) => {
                                 // we expect no document
                                 assert!(document.is_none());
+                            }
+                            DocumentTransitionAction::BumpIdentityDataContractNonce(_) => {
+                                panic!("we should not have a bump identity data contract nonce");
                             }
                         }
                     }
@@ -380,18 +397,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
-
-                    let response =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response");
+                    let response = result.into_data().expect("expected queries to be valid");
 
                     let response_proof = response.proof_owned().expect("proof should be present");
 
@@ -410,22 +418,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         platform.state.last_committed_block_info()
                     );
                     if *was_executed {
-                        assert_eq!(
-                            identity
-                                .expect("expected an identity")
-                                .into_partial_identity_info_no_balance(),
-                            PartialIdentity {
-                                id: identity_create_transition.identity_id(),
-                                loaded_public_keys: identity_create_transition
-                                    .public_keys()
-                                    .iter()
-                                    .map(|key| (key.id(), key.clone()))
-                                    .collect(),
-                                balance: None,
-                                revision: Some(0),
-                                not_found_public_keys: Default::default(),
-                            }
-                        )
+                        // other state transitions might have happened in the same block the identity
+                        // was created
+                        let proved_identity = identity
+                            .expect("expected an identity")
+                            .into_partial_identity_info_no_balance();
+                        assert_eq!(proved_identity.id, identity_create_transition.identity_id());
                     } else {
                         //there is the possibility that the state transition was not executed because it already existed,
                         // we can discount that for now in tests
@@ -445,20 +443,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
+                    let response = result.into_data().expect("expected queries to be valid");
 
-                    let response_proof =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response")
-                            .proof_owned()
-                            .expect("proof should be present");
+                    let response_proof = response.proof_owned().expect("proof should be present");
 
                     // we expect to get an identity that matches the state transition
                     let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
@@ -508,21 +497,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
 
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
+                    let response = result.into_data().expect("expected queries to be valid");
 
-                    let response_proof =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response")
-                            .proof_owned()
-                            .expect("proof should be present");
+                    let response_proof = response.proof_owned().expect("proof should be present");
 
                     // we expect to get an identity that matches the state transition
                     let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
@@ -557,20 +537,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
+                    let response = result.into_data().expect("expected queries to be valid");
 
-                    let response_proof =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response")
-                            .proof_owned()
-                            .expect("proof should be present");
+                    let response_proof = response.proof_owned().expect("proof should be present");
 
                     // we expect to get an identity that matches the state transition
                     let (root_hash, identity) = Drive::verify_identity_keys_by_identity_id(
@@ -579,6 +550,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             &identity_update_transition.identity_id().into_buffer(),
                             None,
                         ),
+                        false,
+                        false,
                         false,
                         platform_version,
                     )
@@ -627,20 +600,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
+                    let response = result.into_data().expect("expected queries to be valid");
 
-                    let response_proof =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response")
-                            .proof_owned()
-                            .expect("proof should be present");
+                    let response_proof = response.proof_owned().expect("proof should be present");
 
                     // we expect to get an identity that matches the state transition
                     let (root_hash_identity, _balance_identity) =
@@ -683,6 +647,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         );
                     }
                 }
+                StateTransitionAction::BumpIdentityNonceAction(_) => {}
+                StateTransitionAction::BumpIdentityDataContractNonceAction(_) => {}
             }
         } else {
             // if we don't have an action this means there was a problem in the validation of the state transition

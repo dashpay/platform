@@ -219,7 +219,7 @@ impl LogDestinationWriter {
             }
             LogDestinationWriter::RotationWriter(w) => {
                 let paths = w.0.lock().unwrap().log_paths();
-                let path = paths.get(0).expect("exactly one path excepted");
+                let path = paths.first().expect("exactly one path excepted");
                 fs::read_to_string(path).unwrap()
             }
             _ => todo!(),
@@ -258,7 +258,6 @@ impl TryFrom<&LogConfig> for Reopen<File> {
         let open_fn = move || {
             OpenOptions::new()
                 .create(true)
-                .write(true)
                 .append(true)
                 .mode(mode)
                 .open(&opened_path)

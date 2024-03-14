@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
@@ -63,4 +63,11 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) security_level_requirement: SecurityLevel,
     #[cfg(feature = "validation")]
     pub(in crate::data_contract) json_schema_validator: StatelessJsonSchemaLazyValidator,
+}
+
+impl DocumentTypeV0 {
+    // Public method to set the data_contract_id
+    pub fn set_data_contract_id(&mut self, new_id: Identifier) {
+        self.data_contract_id = new_id;
+    }
 }

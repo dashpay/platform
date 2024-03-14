@@ -44,7 +44,7 @@
 //!
 //! ## Error handling
 //!
-//! Errors of type [Error] are returned by the rs-sdk. Note that missing objects ("not found") are not
+//! Errors of type [Error] are returned by the dash-platform-sdk. Note that missing objects ("not found") are not
 //! treated as errors; `Ok(None)` is returned instead.
 //!
 //! Mocking functions often panic instead of returning an error.
@@ -57,16 +57,20 @@
 //! To enable logging, you can use the `tracing_subscriber` crate which allows applications to customize how events are processed and recorded.
 //! An example can be found in `tests/common.rs:setup_logs()`.
 //!
-#![warn(missing_docs)]
+// TODO re-enable when docs are complete
+// #![warn(missing_docs)]
 #![allow(rustdoc::private_intra_doc_links)]
 
 pub mod core;
+mod core_client;
 pub mod error;
+mod internal_cache;
 pub mod mock;
 pub mod platform;
 pub mod sdk;
+
 pub use error::Error;
-pub use sdk::{Sdk, SdkBuilder};
+pub use sdk::{RequestSettings, Sdk, SdkBuilder};
 
 /// Version of the SDK
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

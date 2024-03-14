@@ -52,7 +52,7 @@ use sqlparser::ast::Value::Number;
 #[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::ast::{OrderByExpr, Select, Statement};
 #[cfg(any(feature = "full", feature = "verify"))]
-use sqlparser::dialect::GenericDialect;
+use sqlparser::dialect::MySqlDialect;
 #[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::parser::Parser;
 
@@ -127,6 +127,8 @@ mod test_index;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use single_document_drive_query::SingleDocumentDriveQuery;
 
+#[cfg(all(feature = "full", feature = "verify"))]
+use crate::drive::verify::RootHash;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::DocumentV0Getters;
@@ -214,7 +216,7 @@ impl InternalClauses {
             0 => Ok(None),
             1 => Ok(Some(
                 primary_key_equal_clauses_array
-                    .get(0)
+                    .first()
                     .expect("there must be a value")
                     .clone(),
             )),
@@ -229,7 +231,7 @@ impl InternalClauses {
             0 => Ok(None),
             1 => Ok(Some(
                 primary_key_in_clauses_array
-                    .get(0)
+                    .first()
                     .expect("there must be a value")
                     .clone(),
             )),
@@ -643,18 +645,18 @@ impl<'a> DriveQuery<'a> {
     pub fn from_sql_expr(
         sql_string: &str,
         contract: &'a DataContract,
-        config: &DriveConfig,
+        config: Option<&DriveConfig>,
     ) -> Result<Self, Error> {
-        let dialect: GenericDialect = sqlparser::dialect::GenericDialect {};
+        let dialect: MySqlDialect = MySqlDialect {};
         let statements: Vec<Statement> = Parser::parse_sql(&dialect, sql_string)
-            .map_err(|_| Error::Query(QuerySyntaxError::InvalidSQL("Issue parsing sql")))?;
+            .map_err(|e| Error::Query(QuerySyntaxError::SQLParsingError(e)))?;
 
         // Should ideally iterate over each statement
         let first_statement =
             statements
-                .get(0)
+                .first()
                 .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
-                    "Issue parsing sql",
+                    "Issue parsing sql getting first statement".to_string(),
                 )))?;
 
         let query: &ast::Query = match first_statement {
@@ -662,23 +664,42 @@ impl<'a> DriveQuery<'a> {
             _ => None,
         }
         .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
-            "Issue parsing sql",
+            "Issue parsing sql: not a query".to_string(),
         )))?;
+
+        let max_limit = config
+            .map(|config| config.max_query_limit)
+            .unwrap_or(DriveConfig::default().max_query_limit);
 
         let limit: u16 = if let Some(limit_expr) = &query.limit {
             match limit_expr {
                 ast::Expr::Value(Number(num_string, _)) => {
                     let cast_num_string: &String = num_string;
-                    cast_num_string.parse::<u16>().ok()
+                    let user_limit = cast_num_string.parse::<u16>().map_err(|e| {
+                        Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                            "limit could not be parsed {}",
+                            e
+                        )))
+                    })?;
+                    if user_limit > max_limit {
+                        return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                            "limit {} greater than max limit {}",
+                            user_limit, max_limit
+                        ))));
+                    }
+                    user_limit
                 }
-                _ => None,
+                result => {
+                    return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                        "expression not a limit {}",
+                        result
+                    ))));
+                }
             }
-            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                "limit greater than max limit {}",
-                config.max_query_limit
-            ))))?
         } else {
-            config.default_query_limit
+            config
+                .map(|config| config.default_query_limit)
+                .unwrap_or(DriveConfig::default().default_query_limit)
         };
 
         let order_by: IndexMap<String, OrderClause> = query
@@ -692,33 +713,28 @@ impl<'a> DriveQuery<'a> {
             .collect::<IndexMap<String, OrderClause>>();
 
         // Grab the select section of the query
-        let select: &Select = match &query.body {
+        let select: &Select = match &*query.body {
             ast::SetExpr::Select(select) => Some(select),
             _ => None,
         }
         .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
-            "Issue parsing sql",
+            "Issue parsing sql: Not a select".to_string(),
         )))?;
 
         // Get the document type from the 'from' section
         let document_type_name = match &select
             .from
-            .get(0)
+            .first()
             .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
-                "Invalid query: missing from section",
+                "Invalid query: missing from section".to_string(),
             )))?
             .relation
         {
-            Table {
-                name,
-                alias: _,
-                args: _,
-                with_hints: _,
-            } => name.0.get(0).as_ref().map(|identifier| &identifier.value),
+            Table { name, .. } => name.0.first().as_ref().map(|identifier| &identifier.value),
             _ => None,
         }
         .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
-            "Issue parsing sql: invalid from value",
+            "Issue parsing sql: invalid from value".to_string(),
         )))?;
 
         let document_type =
@@ -745,6 +761,7 @@ impl<'a> DriveQuery<'a> {
         if let Some(selection_tree) = selection_tree {
             WhereClause::build_where_clauses_from_operations(
                 selection_tree,
+                document_type,
                 &mut all_where_clauses,
             )?;
         }
@@ -1692,7 +1709,7 @@ impl<'a> DriveQuery<'a> {
         )
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(all(feature = "full", feature = "verify"))]
     /// Executes a query with proof and returns the root hash, items, and fee.
     pub fn execute_with_proof_only_get_elements(
         self,
@@ -1700,7 +1717,7 @@ impl<'a> DriveQuery<'a> {
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<([u8; 32], Vec<Vec<u8>>, u64), Error> {
+    ) -> Result<(RootHash, Vec<Vec<u8>>, u64), Error> {
         let mut drive_operations = vec![];
         let (root_hash, items) = self.execute_with_proof_only_get_elements_internal(
             drive,
@@ -1723,7 +1740,7 @@ impl<'a> DriveQuery<'a> {
         Ok((root_hash, items, cost))
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(all(feature = "full", feature = "verify"))]
     /// Executes an internal query with proof and returns the root hash and values.
     pub(crate) fn execute_with_proof_only_get_elements_internal(
         self,
@@ -1731,7 +1748,7 @@ impl<'a> DriveQuery<'a> {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<([u8; 32], Vec<Vec<u8>>), Error> {
+    ) -> Result<(RootHash, Vec<Vec<u8>>), Error> {
         let path_query = self.construct_path_query_operations(
             drive,
             true,
@@ -1945,10 +1962,9 @@ impl<'a> From<&DriveQuery<'a>> for BTreeMap<String, Value> {
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
-    use dpp::data_contract::data_contract::DataContractV0;
+
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-    use dpp::data_contract::document_type::v0::DocumentTypeV0;
-    use dpp::data_contract::document_type::DocumentType;
+
     use dpp::prelude::Identifier;
     use serde_json::json;
     use std::borrow::Cow;
@@ -1975,10 +1991,9 @@ mod tests {
     fn setup_family_contract() -> (Drive, DataContract) {
         let tmp_dir = TempDir::new().unwrap();
 
-        let platform_version = PlatformVersion::latest();
+        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
-        let drive: Drive = Drive::open(tmp_dir, None, platform_version)
-            .expect("expected to open Drive successfully");
+        let platform_version = PlatformVersion::latest();
 
         drive
             .create_initial_state_structure(None, platform_version)
@@ -2034,7 +2049,7 @@ mod tests {
     #[test]
     fn test_drive_query_from_to_cbor() {
         let config = DriveConfig::default();
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2070,7 +2085,7 @@ mod tests {
         assert_eq!(query, deserialized);
 
         assert_eq!(deserialized.start_at, Some(start_after.to_buffer()));
-        assert_eq!(deserialized.start_at_included, false);
+        assert!(!deserialized.start_at_included);
         assert_eq!(deserialized.block_time_ms, Some(13453432u64));
     }
 
@@ -2087,7 +2102,7 @@ mod tests {
                 ["lastName", "asc"],
             ]
         });
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2116,7 +2131,7 @@ mod tests {
             ],
             "invalid": 0,
         });
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2146,7 +2161,7 @@ mod tests {
             ],
         });
 
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2176,7 +2191,7 @@ mod tests {
             ],
         });
 
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2205,7 +2220,7 @@ mod tests {
                 ["lastName", "asc"],
             ],
         });
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2471,7 +2486,7 @@ mod tests {
             ],
         });
 
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2499,7 +2514,7 @@ mod tests {
             ],
         });
 
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2527,7 +2542,7 @@ mod tests {
             ],
         });
 
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
@@ -2555,7 +2570,7 @@ mod tests {
             ],
         });
 
-        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_data_contract_fixture(None, 0, 1).data_contract_owned();
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");

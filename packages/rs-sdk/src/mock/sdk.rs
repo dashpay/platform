@@ -1,15 +1,18 @@
 //! Mocking mechanisms for Dash Platform SDK.
 //!
 //! See [MockDashPlatformSdk] for more details.
-use dapi_grpc::platform::v0::{self as proto};
+use dapi_grpc::platform::v0::ResponseMetadata;
+use dapi_grpc::{
+    mock::Mockable,
+    platform::v0::{self as proto},
+};
 use dpp::version::PlatformVersion;
-use drive_proof_verifier::{FromProof, MockQuorumInfoProvider};
+use drive_proof_verifier::{error::ContextProviderError, FromProof, MockContextProvider};
 use rs_dapi_client::{
     mock::{Key, MockDapiClient},
     transport::TransportRequest,
     DapiClient, DumpData,
 };
-use serde::Deserialize;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -18,7 +21,7 @@ use crate::{
     Error,
 };
 
-use super::{MockRequest, MockResponse};
+use super::MockResponse;
 
 /// Mechanisms to mock Dash Platform SDK.
 ///
@@ -30,12 +33,13 @@ use super::{MockRequest, MockResponse};
 /// ## Panics
 ///
 /// Can panic on errors.
+#[derive(Debug)]
 pub struct MockDashPlatformSdk {
     from_proof_expectations: BTreeMap<Key, Vec<u8>>,
     platform_version: &'static PlatformVersion,
     dapi: Arc<Mutex<MockDapiClient>>,
     prove: bool,
-    quorum_provider: Option<MockQuorumInfoProvider>,
+    quorum_provider: Option<MockContextProvider>,
 }
 
 impl MockDashPlatformSdk {
@@ -61,7 +65,7 @@ impl MockDashPlatformSdk {
     /// This directory will be used to load quorum information from files.
     /// You can use [SdkBuilder::with_dump_dir()](crate::SdkBuilder::with_dump_dir()) to generate these files.
     pub fn quorum_info_dir<P: AsRef<std::path::Path>>(&mut self, dir: P) -> &mut Self {
-        let mut provider = MockQuorumInfoProvider::new();
+        let mut provider = MockContextProvider::new();
         provider.quorum_keys_dir(Some(dir.as_ref().to_path_buf()));
         self.quorum_provider = Some(provider);
 
@@ -125,6 +129,10 @@ impl MockDashPlatformSdk {
                     self.load_expectation::<proto::GetIdentityBalanceRequest>(filename)
                         .await?
                 }
+                "GetIdentityContractNonceRequest" => {
+                    self.load_expectation::<proto::GetIdentityContractNonceRequest>(filename)
+                        .await?
+                }
                 "GetIdentityBalanceAndRevisionRequest" => {
                     self.load_expectation::<proto::GetIdentityBalanceAndRevisionRequest>(filename)
                         .await?
@@ -156,19 +164,18 @@ impl MockDashPlatformSdk {
         Ok(self)
     }
 
-    async fn load_expectation<T: TransportRequest + for<'de> Deserialize<'de> + MockRequest>(
-        &mut self,
-        path: &PathBuf,
-    ) -> Result<(), Error> {
-        let data = DumpData::<T>::load(path).map_err(|e| {
-            Error::Config(format!(
-                "cannot load mock expectations from {}: {}",
-                path.display(),
-                e
-            ))
-        })?;
+    async fn load_expectation<T: TransportRequest>(&mut self, path: &PathBuf) -> Result<(), Error> {
+        let data = DumpData::<T>::load(path)
+            .map_err(|e| {
+                Error::Config(format!(
+                    "cannot load mock expectations from {}: {}",
+                    path.display(),
+                    e
+                ))
+            })?
+            .deserialize();
 
-        self.dapi.lock().await.expect(&data.request, &data.response);
+        self.dapi.lock().await.expect(&data.0, &data.1);
         Ok(())
     }
 
@@ -179,7 +186,7 @@ impl MockDashPlatformSdk {
     /// ## Generic Parameters
     ///
     /// - `O`: Type of the object that will be returned in response to the query. Must implement [Fetch] and [MockResponse].
-    /// - `Q`: Type of the query that will be sent to the platform. Must implement [Query] and [MockRequest].
+    /// - `Q`: Type of the query that will be sent to the platform. Must implement [Query] and [Mockable].
     ///
     /// ## Arguments
     ///
@@ -213,7 +220,7 @@ impl MockDashPlatformSdk {
     ///     api.mock().expect_fetch(query, Some(expected.clone())).await;
     ///
     ///     // Fetch the identity
-    ///     let retrieved = dpp::prelude::Identity::fetch(&mut api, query)
+    ///     let retrieved = dpp::prelude::Identity::fetch(&api, query)
     ///         .await
     ///         .unwrap()
     ///         .expect("object should exist");
@@ -222,16 +229,12 @@ impl MockDashPlatformSdk {
     ///     assert_eq!(retrieved, expected);
     /// # });
     /// ```
-    pub async fn expect_fetch<
-        O: Fetch + MockResponse,
-        Q: Query<<O as Fetch>::Request> + MockRequest,
-    >(
+    pub async fn expect_fetch<O: Fetch + MockResponse, Q: Query<<O as Fetch>::Request>>(
         &mut self,
         query: Q,
         object: Option<O>,
     ) -> &mut Self
     where
-        <O as Fetch>::Request: MockRequest,
         <<O as Fetch>::Request as TransportRequest>::Response: Default,
     {
         let grpc_request = query.query(self.prove).expect("query must be correct");
@@ -248,7 +251,7 @@ impl MockDashPlatformSdk {
     ///
     /// - `O`: Type of the object that will be returned in response to the query.
     /// Must implement [FetchMany]. `Vec<O>` must implement [MockResponse].
-    /// - `Q`: Type of the query that will be sent to the platform. Must implement [Query] and [MockRequest].
+    /// - `Q`: Type of the query that will be sent to the platform. Must implement [Query] and [Mockable].
     ///
     /// ## Arguments
     ///
@@ -272,7 +275,7 @@ impl MockDashPlatformSdk {
     pub async fn expect_fetch_many<
         K: Ord,
         O: FetchMany<K>,
-        Q: Query<<O as FetchMany<K>>::Request> + MockRequest,
+        Q: Query<<O as FetchMany<K>>::Request>,
     >(
         &mut self,
         query: Q,
@@ -280,7 +283,6 @@ impl MockDashPlatformSdk {
     ) -> &mut Self
     where
         BTreeMap<K, Option<O>>: MockResponse,
-        <O as FetchMany<K>>::Request: MockRequest,
         <<O as FetchMany<K>>::Request as TransportRequest>::Response: Default,
         BTreeMap<K, Option<O>>: FromProof<
                 <O as FetchMany<K>>::Request,
@@ -295,14 +297,14 @@ impl MockDashPlatformSdk {
     }
 
     /// Save expectations for a request.
-    async fn expect<I: TransportRequest + MockRequest, O: MockResponse>(
+    async fn expect<I: TransportRequest, O: MockResponse>(
         &mut self,
         grpc_request: I,
         returned_object: Option<O>,
     ) where
         I::Response: Default,
     {
-        let key = grpc_request.mock_key();
+        let key = Key::new(&grpc_request);
 
         // This expectation will work for from_proof
         self.from_proof_expectations
@@ -315,24 +317,60 @@ impl MockDashPlatformSdk {
     }
 
     /// Wrapper around [FromProof] that uses mock expectations instead of executing [FromProof] trait.
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
     pub(crate) fn parse_proof<I, O: FromProof<I>>(
         &self,
         request: O::Request,
         response: O::Response,
     ) -> Result<Option<O>, drive_proof_verifier::Error>
     where
-        O::Request: MockRequest,
+        O::Request: Mockable,
         Option<O>: MockResponse,
         // O: FromProof<<O as FromProof<I>>::Request>,
     {
-        let data = match self.from_proof_expectations.get(&request.mock_key()) {
+        let key = Key::new(&request);
+
+        let data = match self.from_proof_expectations.get(&key) {
             Some(d) => Option::<O>::mock_deserialize(self, d),
             None => {
+                let version = self.version();
                 let provider = self.quorum_provider.as_ref()
-                    .ok_or(drive_proof_verifier::Error::InvalidQuorum{
-                        error:"expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
-                    })?;
-                O::maybe_from_proof(request, response, self.version(), provider)?
+                    .ok_or(ContextProviderError::InvalidQuorum(
+                     "expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
+                    ))?;
+                O::maybe_from_proof(request, response, version, provider)?
+            }
+        };
+
+        Ok(data)
+    }
+
+    /// Wrapper around [FromProof] that uses mock expectations instead of executing [FromProof] trait.
+    pub(crate) fn parse_proof_with_metadata<I, O: FromProof<I>>(
+        &self,
+        request: O::Request,
+        response: O::Response,
+    ) -> Result<(Option<O>, ResponseMetadata), drive_proof_verifier::Error>
+    where
+        O::Request: Mockable,
+        Option<O>: MockResponse,
+        // O: FromProof<<O as FromProof<I>>::Request>,
+    {
+        let key = Key::new(&request);
+
+        let data = match self.from_proof_expectations.get(&key) {
+            Some(d) => (
+                Option::<O>::mock_deserialize(self, d),
+                ResponseMetadata::default(),
+            ),
+            None => {
+                let version = self.version();
+                let provider = self.quorum_provider.as_ref()
+                    .ok_or(ContextProviderError::InvalidQuorum(
+                        "expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
+                    ))?;
+                O::maybe_from_proof_with_metadata(request, response, version, provider)?
             }
         };
 

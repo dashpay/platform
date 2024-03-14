@@ -47,7 +47,6 @@ use dpp::prelude::IdentityPublicKey;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
 
-#[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::identity::identity_contract_info_group_path_key_purpose_vec;
 use crate::drive::identity::key::fetch::KeyRequestType::{
     ContractBoundKey, ContractDocumentTypeBoundKey,
@@ -868,7 +867,7 @@ impl IdentityKeysRequest {
                     query: SizedQuery {
                         query: Self::specific_keys_query(key_ids),
                         limit,
-                        offset,
+                        offset: None,
                     },
                 }
             }

@@ -3,30 +3,21 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_data_contracts_request::Version;
-use dapi_grpc::platform::v0::GetDataContractsRequest;
-use dpp::check_validation_result_with_data;
-use dpp::validation::ValidationResult;
+use dapi_grpc::platform::v0::get_data_contracts_request::Version as RequestVersion;
+use dapi_grpc::platform::v0::get_data_contracts_response::Version as ResponseVersion;
+use dapi_grpc::platform::v0::{GetDataContractsRequest, GetDataContractsResponse};
 use dpp::version::PlatformVersion;
-use prost::Message;
 
 mod v0;
 
 impl<C> Platform<C> {
     /// Querying of data contracts
-    pub(in crate::query) fn query_data_contracts(
+    pub fn query_data_contracts(
         &self,
-        state: &PlatformState,
-        query_data: &[u8],
+        GetDataContractsRequest { version }: GetDataContractsRequest,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let GetDataContractsRequest { version } =
-            check_validation_result_with_data!(GetDataContractsRequest::decode(query_data)
-                .map_err(|e| QueryError::InvalidArgument(format!(
-                    "invalid query proto message: {}",
-                    e
-                ))));
-
+    ) -> Result<QueryValidationResult<GetDataContractsResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::DecodingError("could not decode data contracts query".to_string()),
@@ -40,8 +31,9 @@ impl<C> Platform<C> {
             .data_contracts;
 
         let feature_version = match &version {
-            Version::V0(_) => 0,
+            RequestVersion::V0(_) => 0,
         };
+
         if !feature_version_bounds.check_version(feature_version) {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::UnsupportedQueryVersion(
@@ -53,9 +45,15 @@ impl<C> Platform<C> {
                 ),
             ));
         }
+
         match version {
-            Version::V0(get_data_contracts_request) => {
-                self.query_data_contracts_v0(state, get_data_contracts_request, platform_version)
+            RequestVersion::V0(request_v0) => {
+                let request =
+                    self.query_data_contracts_v0(request_v0, platform_state, platform_version)?;
+
+                Ok(request.map(|response_v0| GetDataContractsResponse {
+                    version: Some(ResponseVersion::V0(response_v0)),
+                }))
             }
         }
     }

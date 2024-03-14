@@ -7,7 +7,7 @@ use crate::data_contract::{DefinitionName, DocumentName};
 
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
-use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+
 use crate::metadata::Metadata;
 
 /// `DataContractV0` represents a data contract in a decentralized platform.
@@ -31,7 +31,7 @@ pub struct DataContractV0 {
     pub(crate) owner_id: Identifier,
 
     /// A mapping of document names to their corresponding document types.
-    pub(crate) document_types: BTreeMap<DocumentName, DocumentType>,
+    pub document_types: BTreeMap<DocumentName, DocumentType>,
 
     // TODO: Move metadata from here
     /// Optional metadata associated with the contract.

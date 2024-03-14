@@ -28,9 +28,6 @@
 //
 
 #[cfg(any(feature = "full", feature = "verify"))]
-use std::sync::RwLock;
-
-#[cfg(any(feature = "full", feature = "verify"))]
 use grovedb::GroveDb;
 
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -45,7 +42,7 @@ pub mod balances;
 #[cfg(feature = "full")]
 pub mod batch;
 /// Drive Cache
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "full")]
 pub mod cache;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod config;
@@ -53,7 +50,7 @@ pub mod config;
 #[cfg(any(feature = "full", feature = "verify", feature = "fixtures-and-mocks"))]
 pub mod contract;
 /// Fee pools module
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod credit_pools;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod defaults;
@@ -75,7 +72,7 @@ pub mod initialization;
 pub mod object_size_info;
 
 /// Protocol upgrade module
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod protocol_upgrade;
 #[cfg(feature = "full")]
 mod shared_estimation_costs;
@@ -93,18 +90,15 @@ mod open;
 #[cfg(feature = "full")]
 mod operations;
 #[cfg(feature = "full")]
-mod prove;
+mod platform_state;
 #[cfg(feature = "full")]
-mod system_contracts_cache;
+mod prove;
 /// Contains a set of useful grovedb proof verification functions
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "verify")]
 pub mod verify;
 
 #[cfg(feature = "full")]
 use crate::drive::cache::DriveCache;
-
-#[cfg(feature = "full")]
-use crate::drive::system_contracts_cache::SystemContracts;
 
 /// Drive struct
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -113,12 +107,9 @@ pub struct Drive {
     pub grove: GroveDb,
     /// Drive config
     pub config: DriveConfig,
-    /// Main contracts in the system
-    #[cfg(feature = "full")]
-    pub system_contracts: SystemContracts,
     /// Drive Cache
     #[cfg(feature = "full")]
-    pub cache: RwLock<DriveCache>,
+    pub cache: DriveCache,
 }
 
 // The root tree structure is very important!

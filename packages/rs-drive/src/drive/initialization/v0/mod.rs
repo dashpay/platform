@@ -194,13 +194,12 @@ impl Drive {
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
-    use crate::drive::{Drive, RootTree};
+    use crate::drive::RootTree;
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
     use grovedb::query_result_type::QueryResultType::QueryElementResultType;
     use grovedb::{PathQuery, Query, SizedQuery};
-    use tempfile::TempDir;
 
     #[test]
     fn test_create_initial_state_structure() {
@@ -235,7 +234,7 @@ mod tests {
     fn test_initial_state_structure_proper_heights() {
         let drive = setup_drive_with_initial_state_structure();
 
-        let db_transaction = drive.grove.start_transaction();
+        let _db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
         let drive_version = &platform_version.drive;

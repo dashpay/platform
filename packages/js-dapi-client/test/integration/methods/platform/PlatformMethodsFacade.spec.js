@@ -7,6 +7,9 @@ const {
     GetEpochsInfoResponse,
     GetProtocolVersionUpgradeVoteStatusResponse,
     GetProtocolVersionUpgradeStateResponse,
+    GetIdentityContractNonceResponse,
+    GetIdentityNonceResponse,
+    GetIdentityKeysResponse,
     BroadcastStateTransitionResponse,
     WaitForStateTransitionResultResponse,
   },
@@ -28,6 +31,9 @@ const {
   GetProtocolVersionUpgradeVoteStatusResponseV0,
 } = GetProtocolVersionUpgradeVoteStatusResponse;
 const { GetProtocolVersionUpgradeStateResponseV0 } = GetProtocolVersionUpgradeStateResponse;
+const { GetIdentityContractNonceResponseV0 } = GetIdentityContractNonceResponse;
+const { GetIdentityNonceResponseV0 } = GetIdentityNonceResponse;
+const { GetIdentityKeysResponseV0 } = GetIdentityKeysResponse;
 
 describe('PlatformMethodsFacade', () => {
   let grpcTransportMock;
@@ -197,6 +203,62 @@ describe('PlatformMethodsFacade', () => {
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.getProtocolVersionUpgradeState({});
+
+      expect(grpcTransportMock.request).to.be.calledOnce();
+    });
+  });
+
+  describe('#getIdentityContractNonce', () => {
+    it('should get nonce', async () => {
+      const response = new GetIdentityContractNonceResponse();
+
+      response.setV0(
+        new GetIdentityContractNonceResponseV0()
+          .setIdentityContractNonce(1)
+          .setMetadata(new ResponseMetadata()),
+      );
+
+      grpcTransportMock.request.resolves(response);
+
+      await platformMethods.getIdentityContractNonce(Buffer.alloc(32), Buffer.alloc(32));
+
+      expect(grpcTransportMock.request).to.be.calledOnce();
+    });
+  });
+
+  describe('#getIdentityNonce', () => {
+    it('should get nonce', async () => {
+      const response = new GetIdentityNonceResponse();
+
+      response.setV0(
+        new GetIdentityNonceResponseV0()
+          .setIdentityNonce(1)
+          .setMetadata(new ResponseMetadata()),
+      );
+
+      grpcTransportMock.request.resolves(response);
+
+      await platformMethods.getIdentityNonce(Buffer.alloc(32), Buffer.alloc(32));
+
+      expect(grpcTransportMock.request).to.be.calledOnce();
+    });
+  });
+
+  describe('#getIdentityKeys', () => {
+    it('should get keys', async () => {
+      const response = new GetIdentityKeysResponse();
+
+      const { Keys } = GetIdentityKeysResponseV0;
+
+      response.setV0(
+        new GetIdentityKeysResponseV0()
+          .setKeys(new Keys().setKeysBytesList([Buffer.alloc(41), Buffer.alloc(46)]))
+          .setMetadata(new ResponseMetadata()),
+      );
+
+      grpcTransportMock.request.resolves(response);
+
+      await platformMethods.getIdentityKeys(Buffer.alloc(32), [0, 1], 100, {});
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });

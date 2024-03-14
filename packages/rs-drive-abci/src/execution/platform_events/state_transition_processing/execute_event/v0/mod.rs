@@ -1,10 +1,11 @@
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
-use crate::platform_types::platform::Platform;
-use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult;
-use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult::{
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::platform_types::event_execution_result::EventExecutionResult;
+use crate::platform_types::event_execution_result::EventExecutionResult::{
     ConsensusExecutionError, SuccessfulFreeExecution, SuccessfulPaidExecution,
 };
+use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -44,25 +45,30 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-    ) -> Result<StateTransitionExecutionResult, Error> {
+    ) -> Result<EventExecutionResult, Error> {
         //todo: we need to split out errors
         //  between failed execution and internal errors
-        let validation_result =
+        let fee_validation_result =
             self.validate_fees_of_event(&event, block_info, Some(transaction), platform_version)?;
 
         match event {
-            ExecutionEvent::PaidFromAssetLockDriveEvent {
+            ExecutionEvent::PaidFromAssetLock {
                 identity,
                 operations,
+                execution_operations,
+                user_fee_increase,
                 ..
             }
-            | ExecutionEvent::PaidDriveEvent {
+            | ExecutionEvent::Paid {
                 identity,
                 operations,
+                execution_operations,
+                user_fee_increase,
+                ..
             } => {
-                if validation_result.is_valid_with_data() {
+                if fee_validation_result.is_valid_with_data() {
                     //todo: make this into an atomic event with partial batches
-                    let individual_fee_result = self
+                    let mut individual_fee_result = self
                         .drive
                         .apply_drive_operations(
                             operations,
@@ -73,6 +79,15 @@ where
                         )
                         .map_err(Error::Drive)?;
 
+                    ValidationOperation::add_many_to_fee_result(
+                        &execution_operations,
+                        &mut individual_fee_result,
+                        &block_info.epoch,
+                        platform_version,
+                    )?;
+
+                    individual_fee_result.apply_user_fee_increase(user_fee_increase);
+
                     let balance_change = individual_fee_result.into_balance_change(identity.id);
 
                     let outcome = self.drive.apply_balance_change_from_fee_to_identity(
@@ -82,16 +97,18 @@ where
                     )?;
 
                     Ok(SuccessfulPaidExecution(
-                        validation_result.into_data()?,
+                        fee_validation_result.into_data()?,
                         outcome.actual_fee_paid_owned(),
                     ))
                 } else {
                     Ok(ConsensusExecutionError(
-                        SimpleConsensusValidationResult::new_with_errors(validation_result.errors),
+                        SimpleConsensusValidationResult::new_with_errors(
+                            fee_validation_result.errors,
+                        ),
                     ))
                 }
             }
-            ExecutionEvent::FreeDriveEvent { operations } => {
+            ExecutionEvent::Free { operations } => {
                 self.drive
                     .apply_drive_operations(
                         operations,

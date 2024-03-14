@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/platform-test-suite",
   "private": true,
-  "version": "0.25.21",
+  "version": "1.0.0-dev.7",
   "description": "Dash Network end-to-end tests",
   "scripts": {
     "test": "yarn exec bin/test.sh",
@@ -24,13 +24,14 @@
   "homepage": "https://github.com/dashevo/platform-test-suite#readme",
   "dependencies": {
     "@dashevo/dapi-client": "workspace:*",
-    "@dashevo/dashcore-lib": "~0.21.0",
+    "@dashevo/dashcore-lib": "~0.21.1",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/feature-flags-contract": "workspace:*",
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/masternode-reward-shares-contract": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
+    "@dashevo/withdrawals-contract": "workspace:*",
     "assert": "^2.0.0",
     "assert-browserify": "^2.0.0",
     "browserify-zlib": "^0.2.0",

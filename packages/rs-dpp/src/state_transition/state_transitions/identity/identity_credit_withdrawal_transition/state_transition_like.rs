@@ -1,3 +1,4 @@
+use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
@@ -39,6 +40,21 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
         }
     }
 
+    /// returns the fee multiplier
+    fn user_fee_increase(&self) -> UserFeeIncrease {
+        match self {
+            IdentityCreditWithdrawalTransition::V0(transition) => transition.user_fee_increase(),
+        }
+    }
+    /// set a fee multiplier
+    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
+        match self {
+            IdentityCreditWithdrawalTransition::V0(transition) => {
+                transition.set_user_fee_increase(fee_multiplier)
+            }
+        }
+    }
+
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => {
@@ -50,6 +66,12 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
     fn owner_id(&self) -> Identifier {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => transition.owner_id(),
+        }
+    }
+
+    fn unique_identifiers(&self) -> Vec<String> {
+        match self {
+            IdentityCreditWithdrawalTransition::V0(transition) => transition.unique_identifiers(),
         }
     }
 }

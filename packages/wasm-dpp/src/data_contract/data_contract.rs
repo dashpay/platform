@@ -7,8 +7,8 @@ pub use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
-use dpp::data_contract::{DataContract, DocumentName, JsonValue};
-use dpp::platform_value::{platform_value, Bytes32, Value};
+use dpp::data_contract::DataContract;
+use dpp::platform_value::{platform_value, Value};
 
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::DataContractConfig;
@@ -17,23 +17,24 @@ use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethod
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
-use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+use dpp::prelude::IdentityNonce;
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
-use dpp::{platform_value, ProtocolError};
+use dpp::ProtocolError;
 
 use crate::identifier::identifier_from_js_value;
 use crate::metadata::MetadataWasm;
 use crate::utils::get_bool_from_options;
 use crate::utils::SKIP_VALIDATION_PROPERTY_NAME;
 use crate::utils::{Inner, IntoWasm, ToSerdeJSONExt, WithJsError};
-use crate::{bail_js, console_log, with_js_error};
+use crate::with_js_error;
 use crate::{buffer::Buffer, identifier::IdentifierWrapper};
 
 #[wasm_bindgen(js_name=DataContract)]
 #[derive(Debug, Clone)]
 pub struct DataContractWasm {
     inner: DataContract,
-    entropy_used: Option<Vec<u8>>,
+    identity_nonce: Option<IdentityNonce>,
 }
 
 /// CreatedDataContract contains entropy and is used to create
@@ -42,7 +43,7 @@ impl From<CreatedDataContract> for DataContractWasm {
     fn from(v: CreatedDataContract) -> Self {
         DataContractWasm {
             inner: v.data_contract().clone(),
-            entropy_used: Some(v.entropy_used().to_vec()),
+            identity_nonce: Some(v.identity_nonce()),
         }
     }
 }
@@ -53,7 +54,7 @@ impl From<DataContract> for DataContractWasm {
     fn from(v: DataContract) -> Self {
         DataContractWasm {
             inner: v,
-            entropy_used: None,
+            identity_nonce: None,
         }
     }
 }
@@ -67,17 +68,13 @@ impl From<&DataContractWasm> for DataContract {
 impl TryFrom<&DataContractWasm> for CreatedDataContract {
     type Error = ProtocolError;
     fn try_from(v: &DataContractWasm) -> Result<Self, Self::Error> {
-        let entropy = if let Some(entropy_used) = &v.entropy_used {
-            Bytes32::from_vec(entropy_used.to_owned())?
-        } else {
-            Bytes32::default()
-        };
+        let identity_nonce = v.identity_nonce.unwrap_or_default();
 
         let platform_version = PlatformVersion::first();
 
-        CreatedDataContract::from_contract_and_entropy(
+        CreatedDataContract::from_contract_and_identity_nonce(
             v.to_owned().into(),
-            entropy,
+            identity_nonce,
             platform_version,
         )
     }
@@ -154,28 +151,23 @@ impl DataContractWasm {
         let document_type = self
             .inner
             .document_type_for_name(doc_type)
+            .map_err(ProtocolError::DataContractError)
             .with_js_error()?;
-
-        let binary_paths_o = document_type.binary_paths();
 
         let mut binary_paths = BTreeMap::new();
 
-        document_type.binary_paths().iter().for_each(
-            (|path| {
-                binary_paths.insert(path.to_owned(), platform_value!({}));
-            }),
-        );
+        document_type.binary_paths().iter().for_each(|path| {
+            binary_paths.insert(path.to_owned(), platform_value!({}));
+        });
 
-        document_type.identifier_paths().iter().for_each(
-            (|path| {
-                binary_paths.insert(
-                    path.to_owned(),
-                    platform_value!({
-                        "contentMediaType": "application/x.dash.dpp.identifier"
-                    }),
-                );
-            }),
-        );
+        document_type.identifier_paths().iter().for_each(|path| {
+            binary_paths.insert(
+                path.to_owned(),
+                platform_value!({
+                    "contentMediaType": "application/x.dash.dpp.identifier"
+                }),
+            );
+        });
 
         with_js_error!(binary_paths.serialize(&serializer))
     }
@@ -214,7 +206,7 @@ impl DataContractWasm {
                 document_schemas_map,
                 defs,
                 !skip_validation,
-                &platform_version,
+                platform_version,
             )
             .with_js_error()
     }
@@ -226,7 +218,7 @@ impl DataContractWasm {
         schema: JsValue,
         options: Option<js_sys::Object>,
     ) -> Result<(), JsValue> {
-        let (skip_validation) = if let Some(options) = options {
+        let skip_validation = if let Some(options) = options {
             get_bool_from_options(options.into(), SKIP_VALIDATION_PROPERTY_NAME, false)?
         } else {
             false
@@ -237,13 +229,17 @@ impl DataContractWasm {
         let platform_version = PlatformVersion::first();
 
         self.inner
-            .set_document_schema(name, schema_value, !skip_validation, &platform_version)
+            .set_document_schema(name, schema_value, !skip_validation, platform_version)
             .with_js_error()
     }
 
     #[wasm_bindgen(js_name=getDocumentSchema)]
     pub fn document_schema(&mut self, name: &str) -> Result<JsValue, JsValue> {
-        let document_type = self.inner.document_type_for_name(name).with_js_error()?;
+        let document_type = self
+            .inner
+            .document_type_for_name(name)
+            .map_err(ProtocolError::DataContractError)
+            .with_js_error()?;
 
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 
@@ -280,7 +276,7 @@ impl DataContractWasm {
         defs: Option<js_sys::Object>,
         options: Option<js_sys::Object>,
     ) -> Result<(), JsValue> {
-        let (skip_validation) = if let Some(options) = options {
+        let skip_validation = if let Some(options) = options {
             get_bool_from_options(options.into(), SKIP_VALIDATION_PROPERTY_NAME, false)?
         } else {
             false
@@ -304,18 +300,15 @@ impl DataContractWasm {
         self.inner.has_document_type_for_name(&doc_type)
     }
 
-    #[wasm_bindgen(js_name=setEntropy)]
-    pub fn set_entropy(&mut self, e: Vec<u8>) -> Result<(), JsValue> {
-        self.entropy_used = Some(e);
+    #[wasm_bindgen(js_name=setIdentityNonce)]
+    pub fn set_identity_nonce(&mut self, e: u64) -> Result<(), JsValue> {
+        self.identity_nonce = Some(e);
         Ok(())
     }
 
-    #[wasm_bindgen(js_name=getEntropy)]
-    pub fn entropy(&mut self) -> JsValue {
-        self.entropy_used
-            .as_ref()
-            .map(|e| Buffer::from_bytes(e.as_slice()).into())
-            .unwrap_or(JsValue::undefined())
+    #[wasm_bindgen(js_name=getIdentityNonce)]
+    pub fn identity_nonce(&mut self) -> u64 {
+        self.identity_nonce.unwrap_or_default()
     }
 
     #[wasm_bindgen(js_name=getMetadata)]

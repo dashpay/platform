@@ -3,7 +3,7 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
-use dpp::serialization::PlatformSerializable;
+
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
 use wasm_bindgen::prelude::*;

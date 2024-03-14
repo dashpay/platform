@@ -1,17 +1,16 @@
 use dpp::identity::KeyID;
 
 use dpp::{
-    prelude::{DataContract, Identifier},
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    util::json_value::JsonValueExt,
+    prelude::Identifier,
+    state_transition::{StateTransitionLike, StateTransitionType},
     ProtocolError,
 };
-use js_sys::{Array, Reflect};
+use js_sys::Array;
 use serde::{Deserialize, Serialize};
 
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
-use dpp::platform_value::{BinaryData, ReplacementType};
+use dpp::platform_value::BinaryData;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransition;
@@ -23,8 +22,7 @@ use crate::{
     bls_adapter::{BlsAdapter, JsBlsAdapter},
     buffer::Buffer,
     identifier::IdentifierWrapper,
-    lodash::lodash_set,
-    utils::{Inner, IntoWasm, ToSerdeJSONExt, WithJsError},
+    utils::{IntoWasm, WithJsError},
     IdentityPublicKeyWasm,
 };
 
@@ -127,6 +125,11 @@ impl DocumentsBatchTransitionWasm {
         self.0.set_transitions(transitions);
 
         Ok(())
+    }
+
+    #[wasm_bindgen(js_name=setIdentityContractNonce)]
+    pub fn set_identity_contract_nonce(&mut self, nonce: u32) {
+        self.0.set_identity_contract_nonce(nonce as u64);
     }
 
     // #[wasm_bindgen(js_name=toJSON)]
@@ -277,7 +280,7 @@ impl DocumentsBatchTransitionWasm {
         state_transition
             .sign(
                 &identity_public_key.to_owned().into(),
-                &private_key,
+                private_key,
                 &bls_adapter,
             )
             .with_js_error()?;

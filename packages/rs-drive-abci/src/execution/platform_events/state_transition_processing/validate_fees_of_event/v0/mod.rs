@@ -1,14 +1,17 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::execution_operation::ValidationOperation;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::fee::fee_result::FeeResult;
+
 use dpp::prelude::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
+
 use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C>
@@ -40,16 +43,18 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
         match event {
-            ExecutionEvent::PaidFromAssetLockDriveEvent {
+            ExecutionEvent::PaidFromAssetLock {
                 identity,
                 added_balance,
                 operations,
+                execution_operations,
+                user_fee_increase,
             } => {
                 let previous_balance = identity.balance.ok_or(Error::Execution(
                     ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
                 ))?;
                 let previous_balance_with_top_up = previous_balance + added_balance;
-                let estimated_fee_result = self
+                let mut estimated_fee_result = self
                     .drive
                     .apply_drive_operations(
                         operations.clone(),
@@ -59,6 +64,15 @@ where
                         platform_version,
                     )
                     .map_err(Error::Drive)?;
+
+                ValidationOperation::add_many_to_fee_result(
+                    execution_operations,
+                    &mut estimated_fee_result,
+                    &block_info.epoch,
+                    platform_version,
+                )?;
+
+                estimated_fee_result.apply_user_fee_increase(*user_fee_increase);
 
                 // TODO: Should take into account refunds as well
                 let total_fee = estimated_fee_result.total_base_fee();
@@ -80,14 +94,19 @@ where
                     ))
                 }
             }
-            ExecutionEvent::PaidDriveEvent {
+            ExecutionEvent::Paid {
                 identity,
+                removed_balance,
                 operations,
+                execution_operations,
+                user_fee_increase,
             } => {
                 let balance = identity.balance.ok_or(Error::Execution(
                     ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
                 ))?;
-                let estimated_fee_result = self
+                let balance_after_principal_operation =
+                    balance.saturating_sub(removed_balance.unwrap_or_default());
+                let mut estimated_fee_result = self
                     .drive
                     .apply_drive_operations(
                         operations.clone(),
@@ -98,9 +117,18 @@ where
                     )
                     .map_err(Error::Drive)?;
 
+                ValidationOperation::add_many_to_fee_result(
+                    execution_operations,
+                    &mut estimated_fee_result,
+                    &block_info.epoch,
+                    platform_version,
+                )?;
+
+                estimated_fee_result.apply_user_fee_increase(*user_fee_increase);
+
                 // TODO: Should take into account refunds as well
                 let required_balance = estimated_fee_result.total_base_fee();
-                if balance >= required_balance {
+                if balance_after_principal_operation >= required_balance {
                     Ok(ConsensusValidationResult::new_with_data(
                         estimated_fee_result,
                     ))
@@ -118,7 +146,7 @@ where
                     ))
                 }
             }
-            ExecutionEvent::FreeDriveEvent { .. } => Ok(ConsensusValidationResult::new_with_data(
+            ExecutionEvent::Free { .. } => Ok(ConsensusValidationResult::new_with_data(
                 FeeResult::default(),
             )),
         }

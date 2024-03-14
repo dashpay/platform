@@ -6,7 +6,6 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::validation::DataContractValidationMethodsV0;
-use dpp::document::{DocumentV0Getters};
 use dpp::document::extended_document::property_names;
 use dpp::identity::TimestampMillis;
 use dpp::ProtocolError;
@@ -58,7 +57,7 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
         // Validate timestamps against block time
         // we do validation here but not in validate state because it's a cheap validation
         // and validate state implements expensive validation only
-        let latest_block_time_ms = platform.state.last_block_time_ms();
+        let latest_block_time_ms = platform.state.last_committed_block_time_ms();
         let average_block_spacing_ms = platform.config.block_spacing_ms;
 
         if let Some(latest_block_time_ms) = latest_block_time_ms {

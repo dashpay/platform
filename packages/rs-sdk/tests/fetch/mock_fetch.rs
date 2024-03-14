@@ -21,14 +21,14 @@ use rs_sdk::{
 #[tokio::test]
 /// Given some identity, when I fetch it using mock API, then I get the same identity
 async fn test_mock_fetch_identity() {
-    let mut sdk = Sdk::new_mock();
+    let sdk = Sdk::new_mock();
 
     let expected: Identity = Identity::from(IdentityV0::default());
     let query = expected.id();
 
     sdk.mock().expect_fetch(query, Some(expected.clone())).await;
 
-    let retrieved = Identity::fetch(&mut sdk, query)
+    let retrieved = Identity::fetch(&sdk, query)
         .await
         .unwrap()
         .expect("object should exist");
@@ -39,13 +39,13 @@ async fn test_mock_fetch_identity() {
 #[tokio::test]
 /// Given some random identity ID, when I fetch it using mock API, then I get None
 async fn test_mock_fetch_identity_not_found() {
-    let mut sdk = Sdk::new_mock();
+    let sdk = Sdk::new_mock();
 
     let id = Identifier::random();
 
     sdk.mock().expect_fetch(id, None as Option<Identity>).await;
 
-    let retrieved = Identity::fetch(&mut sdk, id)
+    let retrieved = Identity::fetch(&sdk, id)
         .await
         .expect("fetch should succeed");
 
@@ -55,14 +55,15 @@ async fn test_mock_fetch_identity_not_found() {
 /// Given some data contract, when I fetch it by ID, I get it.
 #[tokio::test]
 async fn test_mock_fetch_data_contract() {
-    let mut sdk = Sdk::new_mock();
+    let sdk = Sdk::new_mock();
 
-    let expected = mock_data_contract(None);
+    let document_type: DocumentType = mock_document_type();
+    let expected = mock_data_contract(Some(&document_type));
     let id = expected.id();
 
     sdk.mock().expect_fetch(id, Some(expected.clone())).await;
 
-    let retrieved = DataContract::fetch(&mut sdk, id)
+    let retrieved = DataContract::fetch(&sdk, id)
         .await
         .unwrap()
         .expect("object should exist");
@@ -74,7 +75,7 @@ async fn test_mock_fetch_data_contract() {
 async fn test_mock_fetch_document() {
     use dpp::document::DocumentV0Getters;
 
-    let mut sdk = Sdk::new_mock();
+    let sdk = Sdk::new_mock();
     let document_type: DocumentType = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
 
@@ -90,7 +91,7 @@ async fn test_mock_fetch_document() {
         .await;
 
     let query =
-        DocumentQuery::new_with_data_contract_id(&mut sdk, data_contract.id(), document_type_name)
+        DocumentQuery::new_with_data_contract_id(&sdk, data_contract.id(), document_type_name)
             .await
             .expect("create document query")
             .with_document_id(&document_id);
@@ -99,7 +100,7 @@ async fn test_mock_fetch_document() {
         .expect_fetch(query.clone(), Some(expected.clone()))
         .await;
 
-    let retrieved = Document::fetch(&mut sdk, query)
+    let retrieved = Document::fetch(&sdk, query)
         .await
         .unwrap()
         .expect("identity should exist");

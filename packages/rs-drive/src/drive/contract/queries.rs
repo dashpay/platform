@@ -1,6 +1,6 @@
 use crate::common::encode::encode_u64;
 use crate::drive::contract::paths::{
-    contract_keeping_history_storage_path_vec, contract_root_path_vec,
+    contract_keeping_history_root_path_vec, contract_root_path_vec,
 };
 use crate::drive::contract::{paths, MAX_CONTRACT_HISTORY_FETCH_LIMIT};
 use crate::drive::{Drive, RootTree};
@@ -56,7 +56,7 @@ impl Drive {
         contract_id: [u8; 32],
         with_limit: bool,
     ) -> PathQuery {
-        let contract_path = contract_keeping_history_storage_path_vec(contract_id.as_slice());
+        let contract_path = contract_keeping_history_root_path_vec(contract_id.as_slice());
         let mut query = PathQuery::new_single_key(contract_path, vec![0]);
 
         if with_limit {
@@ -214,7 +214,7 @@ impl Drive {
         );
 
         Ok(PathQuery::new(
-            paths::contract_keeping_history_storage_path_vec(&contract_id),
+            paths::contract_keeping_history_root_path_vec(&contract_id),
             SizedQuery::new(query, Some(limit), offset),
         ))
     }

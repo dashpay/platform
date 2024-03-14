@@ -22,6 +22,7 @@ use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -67,6 +68,23 @@ impl IdentityTopUpTransition {
             }),
         }
     }
+
+    pub fn get_minimal_asset_lock_value(
+        platform_version: &PlatformVersion,
+    ) -> Result<u64, ProtocolError> {
+        match platform_version
+            .dpp
+            .state_transitions
+            .identities
+            .asset_locks
+            .minimal_asset_lock_value
+        {
+            0 => Ok(MinimalAssetLockValue::V0 as u64),
+            v => Err(ProtocolError::UnknownVersionError(format!(
+                "Unknown IdentityTopUpTransition version for minimal_asset_lock_value {v}"
+            ))),
+        }
+    }
 }
 
 impl StateTransitionFieldTypes for IdentityTopUpTransition {
@@ -81,4 +99,9 @@ impl StateTransitionFieldTypes for IdentityTopUpTransition {
     fn binary_property_paths() -> Vec<&'static str> {
         vec![]
     }
+}
+
+#[repr(u64)]
+enum MinimalAssetLockValue {
+    V0 = 1000,
 }

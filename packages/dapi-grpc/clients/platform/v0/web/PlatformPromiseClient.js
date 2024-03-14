@@ -177,6 +177,48 @@ class PlatformPromiseClient {
   }
 
   /**
+   * @param {!GetIdentityContractNonceRequest} getIdentityContractNonceRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetIdentityContractNonceResponse>}
+   */
+  getIdentityContractNonce(getIdentityContractNonceRequest, metadata = {}) {
+    return promisify(
+      this.client.getIdentityContractNonce.bind(this.client),
+    )(
+      getIdentityContractNonceRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetIdentityNonceRequest} getIdentityNonceRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetIdentityNonceResponse>}
+   */
+  getIdentityNonce(getIdentityNonceRequest, metadata = {}) {
+    return promisify(
+      this.client.getIdentityNonce.bind(this.client),
+    )(
+      getIdentityNonceRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetIdentityKeysRequest} getIdentityKeysRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetIdentityKeysResponse>}
+   */
+  getIdentityKeys(getIdentityKeysRequest, metadata = {}) {
+    return promisify(
+      this.client.getIdentityKeys.bind(this.client),
+    )(
+      getIdentityKeysRequest,
+      metadata,
+    );
+  }
+
+  /**
    * @param {string} protocolVersion
    */
   setProtocolVersion(protocolVersion) {

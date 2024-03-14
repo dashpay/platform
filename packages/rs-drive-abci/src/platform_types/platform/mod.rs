@@ -7,21 +7,17 @@ use std::fmt::{Debug, Formatter};
 
 #[cfg(any(feature = "mocks", test))]
 use crate::rpc::core::MockCoreRPCLike;
-use dashcore_rpc::dashcore::hashes::hex::FromHex;
-use drive::drive::defaults::PROTOCOL_VERSION;
+use arc_swap::ArcSwap;
+use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::RwLock;
+use std::sync::Arc;
 
 use dashcore_rpc::dashcore::BlockHash;
 
-use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
-use dpp::block::block_info::BlockInfo;
-use dpp::serialization::PlatformDeserializable;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
-use drive::error::Error::GroveDB;
 use serde_json::json;
 
 /// Platform is not versioned as it holds the main logic, we could not switch from one structure
@@ -33,11 +29,13 @@ pub struct Platform<C> {
     /// Drive
     pub drive: Drive,
     /// State
-    pub state: RwLock<PlatformState>,
+    // We use ArcSwap that provide very fast and consistent reads
+    // and atomic write (swap). This is important as we want read state
+    // for query and check tx and we don't want to block affect the
+    // state update on finalize block, and vise versa.
+    pub state: ArcSwap<PlatformState>,
     /// Configuration
     pub config: PlatformConfig,
-    /// Block execution context
-    pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
     /// Core RPC Client
     pub core_rpc: C,
 }
@@ -53,8 +51,6 @@ pub struct PlatformRef<'a, C> {
     pub config: &'a PlatformConfig,
     /// Core RPC Client
     pub core_rpc: &'a C,
-    /// Block info
-    pub block_info: &'a BlockInfo,
 }
 
 // @append_only
@@ -94,8 +90,8 @@ impl<'a, C> From<&PlatformRef<'a, C>> for PlatformStateRef<'a> {
     }
 }
 
-impl<C> std::fmt::Debug for Platform<C> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<C> Debug for Platform<C> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Platform").finish()
     }
 }
@@ -106,7 +102,7 @@ impl Platform<DefaultCoreRPC> {
         path: P,
         config: Option<PlatformConfig>,
     ) -> Result<Platform<DefaultCoreRPC>, Error> {
-        let config = config.unwrap_or_default();
+        let config = config.unwrap_or(PlatformConfig::default_testnet());
         let core_rpc = DefaultCoreRPC::open(
             config.core.rpc.url().as_str(),
             config.core.rpc.username.clone(),
@@ -145,27 +141,23 @@ impl Platform<MockCoreRPCLike> {
         Self::open_with_client(path, config, core_rpc_mock)
     }
 
-    /// Recreate the state from the backing store
-    pub fn recreate_state(&self, _platform_version: &PlatformVersion) -> Result<bool, Error> {
-        let Some(serialized_platform_state) = self
-            .drive
-            .grove
-            .get_aux(b"saved_state", None)
-            .unwrap()
-            .map_err(|e| Error::Drive(GroveDB(e)))?
+    /// Fetch and reload the state from the backing store
+    pub fn reload_state_from_storage(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        let Some(persisted_state) =
+            Platform::<MockCoreRPCLike>::fetch_platform_state(&self.drive, None, platform_version)?
         else {
             return Ok(false);
         };
 
-        let recreated_state =
-            PlatformState::deserialize_from_bytes_no_limit(&serialized_platform_state)?;
-
         PlatformVersion::set_current(PlatformVersion::get(
-            recreated_state.current_protocol_version_in_consensus(),
+            persisted_state.current_protocol_version_in_consensus(),
         )?);
 
-        let mut state_cache = self.state.write().unwrap();
-        *state_cache = recreated_state;
+        self.state.store(Arc::new(persisted_state));
+
         Ok(true)
     }
 }
@@ -180,37 +172,37 @@ impl<C> Platform<C> {
     where
         C: CoreRPCLike,
     {
-        let config = config.unwrap_or_default();
+        let config = config.unwrap_or(PlatformConfig::default_testnet());
 
-        // TODO: Replace with version from the disk if present or latest?
-        let platform_version = PlatformVersion::latest();
+        let (drive, current_protocol_version) =
+            Drive::open(path, Some(config.drive.clone())).map_err(Error::Drive)?;
 
-        let drive = Drive::open(path, Some(config.drive.clone()), platform_version)
-            .map_err(Error::Drive)?;
+        if let Some(protocol_version) = current_protocol_version {
+            let platform_version = PlatformVersion::get(protocol_version)?;
 
-        // TODO: factor out key so we don't duplicate
-        let maybe_serialized_platform_state = drive
-            .grove
-            .get_aux(b"saved_state", None)
-            .unwrap()
-            .map_err(|e| Error::Drive(GroveDB(e)))?;
+            let Some(execution_state) =
+                Platform::<C>::fetch_platform_state(&drive, None, platform_version)?
+            else {
+                return Err(Error::Execution(ExecutionError::CorruptedCachedState(
+                    "execution state should be stored as well as protocol version",
+                )));
+            };
 
-        if let Some(serialized_platform_state) = maybe_serialized_platform_state {
-            Platform::open_with_client_saved_state::<P>(
+            return Platform::open_with_client_saved_state::<P>(
                 drive,
                 core_rpc,
                 config,
-                serialized_platform_state,
-            )
-        } else {
-            Platform::open_with_client_no_saved_state::<P>(
-                drive,
-                core_rpc,
-                config,
-                PROTOCOL_VERSION,
-                PROTOCOL_VERSION,
-            )
+                execution_state,
+            );
         }
+
+        Platform::open_with_client_no_saved_state::<P>(
+            drive,
+            core_rpc,
+            config,
+            INITIAL_PROTOCOL_VERSION,
+            INITIAL_PROTOCOL_VERSION,
+        )
     }
 
     /// Open Platform with Drive and block execution context from saved state.
@@ -218,23 +210,19 @@ impl<C> Platform<C> {
         drive: Drive,
         core_rpc: C,
         config: PlatformConfig,
-        serialized_platform_state: Vec<u8>,
+        platform_state: PlatformState,
     ) -> Result<Platform<C>, Error>
     where
         C: CoreRPCLike,
     {
-        let platform_state =
-            PlatformState::deserialize_from_bytes_no_limit(&serialized_platform_state)?;
-
         PlatformVersion::set_current(PlatformVersion::get(
             platform_state.current_protocol_version_in_consensus(),
         )?);
 
         let platform: Platform<C> = Platform {
             drive,
-            state: RwLock::new(platform_state),
+            state: ArcSwap::new(Arc::new(platform_state)),
             config,
-            block_execution_context: RwLock::new(None),
             core_rpc,
         };
 
@@ -261,9 +249,8 @@ impl<C> Platform<C> {
 
         Ok(Platform {
             drive,
-            state: RwLock::new(platform_state),
+            state: ArcSwap::new(Arc::new(platform_state)),
             config,
-            block_execution_context: RwLock::new(None),
             core_rpc,
         })
     }

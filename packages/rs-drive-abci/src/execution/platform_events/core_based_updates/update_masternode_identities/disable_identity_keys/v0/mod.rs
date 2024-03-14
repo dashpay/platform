@@ -97,7 +97,6 @@ where
         drive_operations.push(IdentityOperation(DisableIdentityKeys {
             identity_id: operator_identifier,
             keys_ids: operator_identity_keys,
-            disable_at: block_info.time_ms,
         }));
 
         tracing::trace!(
@@ -111,7 +110,6 @@ where
         drive_operations.push(IdentityOperation(DisableIdentityKeys {
             identity_id: voter_identifier,
             keys_ids: voter_identity_keys,
-            disable_at: block_info.time_ms,
         }));
 
         Ok(())

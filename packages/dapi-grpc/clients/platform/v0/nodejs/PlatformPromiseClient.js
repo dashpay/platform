@@ -48,6 +48,14 @@ const {
               PBJSGetProtocolVersionUpgradeVoteStatusResponse,
             GetProtocolVersionUpgradeStateRequest: PBJSGetProtocolVersionUpgradeStateRequest,
             GetProtocolVersionUpgradeStateResponse: PBJSGetProtocolVersionUpgradeStateResponse,
+            GetProofsRequest: PBJSGetProofsRequest,
+            GetProofsResponse: PBJSGetProofsResponse,
+            GetIdentityContractNonceRequest: PBJSGetIdentityContractNonceRequest,
+            GetIdentityContractNonceResponse: PBJSGetIdentityContractNonceResponse,
+            GetIdentityNonceRequest: PBJSGetIdentityNonceRequest,
+            GetIdentityNonceResponse: PBJSGetIdentityNonceResponse,
+            GetIdentityKeysRequest: PBJSGetIdentityKeysRequest,
+            GetIdentityKeysResponse: PBJSGetIdentityKeysResponse,
           },
         },
       },
@@ -67,6 +75,10 @@ const {
   GetEpochsInfoResponse: ProtocGetEpochsInfoResponse,
   GetProtocolVersionUpgradeVoteStatusResponse: ProtocGetProtocolVersionUpgradeVoteStatusResponse,
   GetProtocolVersionUpgradeStateResponse: ProtocGetProtocolVersionUpgradeStateResponse,
+  GetProofsResponse: ProtocGetProofsResponse,
+  GetIdentityContractNonceResponse: ProtocGetIdentityContractNonceResponse,
+  GetIdentityNonceResponse: ProtocGetIdentityNonceResponse,
+  GetIdentityKeysResponse: ProtocGetIdentityKeysResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -135,6 +147,22 @@ class PlatformPromiseClient {
 
     this.client.getProtocolVersionUpgradeState = promisify(
       this.client.getProtocolVersionUpgradeState.bind(this.client),
+    );
+
+    this.client.getProofs = promisify(
+      this.client.getProofs.bind(this.client),
+    );
+
+    this.client.getIdentityContractNonce = promisify(
+      this.client.getIdentityContractNonce.bind(this.client),
+    );
+
+    this.client.getIdentityNonce = promisify(
+      this.client.getIdentityNonce.bind(this.client),
+    );
+
+    this.client.getIdentityKeys = promisify(
+      this.client.getIdentityKeys.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -488,6 +516,131 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetProtocolVersionUpgradeStateRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   *
+   * @param {!GetProofsRequest} request
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @returns {Promise<!GetProofsResponse>}
+   */
+  getProofs(request, metadata = {}, options = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getProofs(
+      request,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetProofsResponse,
+              PBJSGetProofsResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetProofsRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!PBJSGetIdentityContractNonceRequest} getIdentityContractNonceRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetIdentityContractNonceResponse>}
+   */
+  getIdentityContractNonce(
+    getIdentityContractNonceRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getIdentityContractNonce(
+      getIdentityContractNonceRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetIdentityContractNonceResponse,
+              PBJSGetIdentityContractNonceResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetIdentityContractNonceRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  getIdentityNonce(
+    getIdentityNonceRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getIdentityNonce(
+      getIdentityNonceRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetIdentityNonceResponse,
+              PBJSGetIdentityNonceResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetIdentityNonceRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  getIdentityKeys(
+    getIdentityKeysRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getIdentityKeys(
+      getIdentityKeysRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetIdentityKeysResponse,
+              PBJSGetIdentityKeysResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetIdentityKeysRequest,
             ),
           ),
         ],

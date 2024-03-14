@@ -1,8 +1,8 @@
 [package]
 name = "drive-proof-verifier"
-version = "0.25.21"
+version = "1.0.0-dev.7"
 edition = "2021"
-rust-version = "1.73"
+rust-version = "1.76"
 
 crate-type = ["cdylib"]
 
@@ -17,15 +17,15 @@ json = ["dep:serde_json"]
 thiserror = { version = "1.0.39" }
 dapi-grpc = { path = "../dapi-grpc" }
 drive = { path = "../rs-drive", default-features = false, features = [
-    "verify",
+  "verify",
 ] }
 dpp = { path = "../rs-dpp" }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci" }
-# tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci" }
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "0.14.0-dev.8", features = [
+  "grpc",
+] }
 tracing = { version = "0.1.37" }
 serde = { version = "1.0.171", default-features = false, optional = true }
 serde_json = { version = "1.0.103", features = [
-    "preserve_order",
+  "preserve_order",
 ], optional = true }
-lazy_static = { version = "1.4.0" }
 hex = { version = "0.4.3" }

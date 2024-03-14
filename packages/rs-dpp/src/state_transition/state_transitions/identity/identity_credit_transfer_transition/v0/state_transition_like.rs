@@ -1,5 +1,6 @@
 use platform_value::BinaryData;
 
+use crate::prelude::UserFeeIncrease;
 use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
@@ -48,5 +49,22 @@ impl StateTransitionLike for IdentityCreditTransferTransitionV0 {
     /// Get owner ID
     fn owner_id(&self) -> Identifier {
         self.identity_id
+    }
+
+    /// We want things to be unique based on the nonce, so we don't add the transition type
+    fn unique_identifiers(&self) -> Vec<String> {
+        vec![format!(
+            "{}-{:x}",
+            base64::encode(self.identity_id),
+            self.nonce
+        )]
+    }
+
+    fn user_fee_increase(&self) -> UserFeeIncrease {
+        self.user_fee_increase
+    }
+
+    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
+        self.user_fee_increase = fee_multiplier
     }
 }

@@ -1,12 +1,10 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_proofs_request::GetProofsRequestV0;
-use dapi_grpc::platform::v0::get_proofs_response::GetProofsResponseV0;
-use dapi_grpc::platform::v0::{get_proofs_response, GetProofsResponse, Proof};
+use dapi_grpc::platform::v0::get_proofs_response::{get_proofs_response_v0, GetProofsResponseV0};
 use dpp::check_validation_result_with_data;
 use dpp::platform_value::Bytes32;
 use dpp::prelude::Identifier;
@@ -14,22 +12,18 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
 use drive::query::SingleDocumentDriveQuery;
-use prost::Message;
 
 impl<C> Platform<C> {
     pub(super) fn query_proofs_v0(
         &self,
-        state: &PlatformState,
-        request: GetProofsRequestV0,
-        platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let metadata = self.response_metadata_v0(state);
-        let quorum_type = self.config.quorum_type() as u32;
-        let GetProofsRequestV0 {
+        GetProofsRequestV0 {
             identities,
             contracts,
             documents,
-        } = request;
+        }: GetProofsRequestV0,
+        platform_state: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> Result<QueryValidationResult<GetProofsResponseV0>, Error> {
         let contract_ids = check_validation_result_with_data!(contracts
             .into_iter()
             .map(|contract_request| {
@@ -104,23 +98,158 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        let response_data = GetProofsResponse {
-            version: Some(get_proofs_response::Version::V0(GetProofsResponseV0 {
-                result: Some(get_proofs_response::get_proofs_response_v0::Result::Proof(
-                    Proof {
-                        grovedb_proof: proof,
-                        quorum_hash: state.last_quorum_hash().to_vec(),
-                        quorum_type,
-                        block_id_hash: state.last_block_id_hash().to_vec(),
-                        signature: state.last_block_signature().to_vec(),
-                        round: state.last_block_round(),
-                    },
-                )),
-                metadata: Some(metadata),
-            })),
-        }
-        .encode_to_vec();
+        let response = GetProofsResponseV0 {
+            result: Some(get_proofs_response_v0::Result::Proof(
+                self.response_proof_v0(platform_state, proof),
+            )),
+            metadata: Some(self.response_metadata_v0(platform_state)),
+        };
 
-        Ok(QueryValidationResult::new_with_data(response_data))
+        Ok(QueryValidationResult::new_with_data(response))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::{assert_invalid_identifier, setup_platform};
+    use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::{
+        ContractRequest, DocumentRequest, IdentityRequest,
+    };
+
+    #[test]
+    fn test_invalid_identity_ids() {
+        let (platform, state, version) = setup_platform();
+
+        let request = GetProofsRequestV0 {
+            identities: vec![IdentityRequest {
+                identity_id: vec![0; 8],
+                request_type: 0,
+            }],
+            contracts: vec![],
+            documents: vec![],
+        };
+
+        let result = platform
+            .query_proofs_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert_invalid_identifier(result);
+    }
+
+    #[test]
+    fn test_invalid_identity_prove_request_type() {
+        let (platform, state, version) = setup_platform();
+
+        let request_type = 10;
+
+        let request = GetProofsRequestV0 {
+            identities: vec![IdentityRequest {
+                identity_id: vec![0; 32],
+                request_type,
+            }],
+            contracts: vec![],
+            documents: vec![],
+        };
+
+        let result = platform
+            .query_proofs_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg == &format!(
+                "invalid prove request type '{}'",
+                request_type
+            )
+        ))
+    }
+
+    #[test]
+    fn test_invalid_contract_ids() {
+        let (platform, state, version) = setup_platform();
+
+        let request = GetProofsRequestV0 {
+            identities: vec![],
+            contracts: vec![ContractRequest {
+                contract_id: vec![0; 8],
+            }],
+            documents: vec![],
+        };
+
+        let result = platform
+            .query_proofs_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert_invalid_identifier(result);
+    }
+
+    #[test]
+    fn test_invalid_contract_id_for_documents_proof() {
+        let (platform, state, version) = setup_platform();
+
+        let request = GetProofsRequestV0 {
+            identities: vec![],
+            contracts: vec![],
+            documents: vec![DocumentRequest {
+                contract_id: vec![0; 8],
+                document_type: "niceDocument".to_string(),
+                document_type_keeps_history: false,
+                document_id: vec![0; 32],
+            }],
+        };
+
+        let result = platform
+            .query_proofs_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert_invalid_identifier(result);
+    }
+
+    #[test]
+    fn test_invalid_document_id() {
+        let (platform, state, version) = setup_platform();
+
+        let request = GetProofsRequestV0 {
+            identities: vec![],
+            contracts: vec![],
+            documents: vec![DocumentRequest {
+                contract_id: vec![0; 32],
+                document_type: "niceDocument".to_string(),
+                document_type_keeps_history: false,
+                document_id: vec![0; 8],
+            }],
+        };
+
+        let result = platform
+            .query_proofs_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert_invalid_identifier(result);
+    }
+
+    #[test]
+    fn test_proof_of_absence() {
+        let (platform, state, version) = setup_platform();
+
+        let request = GetProofsRequestV0 {
+            identities: vec![],
+            contracts: vec![],
+            documents: vec![DocumentRequest {
+                contract_id: vec![0; 32],
+                document_type: "niceDocument".to_string(),
+                document_type_keeps_history: false,
+                document_id: vec![0; 32],
+            }],
+        };
+
+        let validation_result = platform
+            .query_proofs_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(validation_result.data, Some(GetProofsResponseV0 {
+            result: Some(get_proofs_response_v0::Result::Proof(proof)),
+            metadata: Some(_),
+        }) if !proof.grovedb_proof.is_empty()));
     }
 }

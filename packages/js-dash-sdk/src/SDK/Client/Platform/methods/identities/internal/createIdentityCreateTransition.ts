@@ -40,6 +40,7 @@ export async function createIdentityCreateTransition(
 
   const keyOne = new IdentityPublicKey(1);
   keyOne.setData(identityMasterPublicKey.toBuffer());
+  keyOne.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
 
   const keyTwo = new IdentityPublicKey(1);
   keyTwo.setId(1);

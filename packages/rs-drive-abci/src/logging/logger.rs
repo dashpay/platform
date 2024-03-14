@@ -2,8 +2,6 @@ use crate::logging::config::LogConfig;
 use crate::logging::destination::{LogDestinationWriter, Writer};
 use crate::logging::error::Error;
 use crate::logging::{LogConfigs, LogFormat, LogLevel};
-
-use itertools::Itertools;
 use lazy_static::__Deref;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -14,7 +12,6 @@ use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
 use tracing_subscriber::registry;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::util::TryInitError;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 use tracing_subscriber::Registry;
@@ -180,17 +177,22 @@ impl Loggers {
     /// drive_abci::logging::Loggers::default().try_install().ok();
     /// ```
     pub fn try_install(&self) -> Result<(), Error> {
-        // Based on examples from https://docs.rs/tracing-subscriber/0.3.17/tracing_subscriber/layer/index.html
-        let loggers = self
-            .0
-            .values()
-            .map(|l| Ok(Box::new(l.layer()?)))
-            .collect::<Result<Vec<_>, _>>()?;
+        let layers = self.tracing_subscriber_layers()?;
 
         registry()
-            .with(loggers)
+            .with(layers)
             .try_init()
             .map_err(Error::TryInitError)
+    }
+
+    /// Returns tracing subscriber layers
+    pub fn tracing_subscriber_layers(&self) -> Result<Vec<Box<impl Layer<Registry>>>, Error> {
+        // Based on examples from https://docs.rs/tracing-subscriber/0.3.17/tracing_subscriber/layer/index.html
+
+        self.0
+            .values()
+            .map(|l| Ok(Box::new(l.layer()?)))
+            .collect::<Result<Vec<_>, _>>()
     }
 
     /// Flushes all loggers.
@@ -316,7 +318,9 @@ impl Logger {
 
         let formatter = fmt::layer::<Registry>()
             .with_writer(make_writer)
-            .with_ansi(ansi);
+            .with_ansi(ansi)
+            .with_thread_names(true)
+            .with_thread_ids(true);
 
         let formatter = match self.format {
             LogFormat::Full => formatter.with_filter(filter).boxed(),

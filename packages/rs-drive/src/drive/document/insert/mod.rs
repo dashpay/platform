@@ -35,42 +35,34 @@
 // Module: add_document
 // This module contains functionality for adding a document
 mod add_document;
-pub use add_document::*;
 
 // Module: add_document_for_contract
 // This module contains functionality for adding a document for a given contract
 mod add_document_for_contract;
-pub use add_document_for_contract::*;
 
 // Module: add_document_for_contract_apply_and_add_to_operations
 // This module contains functionality for applying and adding operations for a contract document
 mod add_document_for_contract_apply_and_add_to_operations;
-pub use add_document_for_contract_apply_and_add_to_operations::*;
 
 // Module: add_document_for_contract_operations
 // This module contains functionality for adding a document for contract operations
 mod add_document_for_contract_operations;
-pub use add_document_for_contract_operations::*;
 
 // Module: add_document_to_primary_storage
 // This module contains functionality for adding a document to primary storage
 mod add_document_to_primary_storage;
-pub use add_document_to_primary_storage::*;
 
 // Module: add_indices_for_index_level_for_contract_operations
 // This module contains functionality for adding indices for an index level for contract operations
 mod add_indices_for_index_level_for_contract_operations;
-pub use add_indices_for_index_level_for_contract_operations::*;
 
 // Module: add_indices_for_top_index_level_for_contract_operations
 // This module contains functionality for adding indices for the top index level for contract operations
 mod add_indices_for_top_index_level_for_contract_operations;
-pub use add_indices_for_top_index_level_for_contract_operations::*;
 
 // Module: add_reference_for_index_level_for_contract_operations
 // This module contains functionality for adding a reference for an index level for contract operations
 mod add_reference_for_index_level_for_contract_operations;
-pub use add_reference_for_index_level_for_contract_operations::*;
 
 #[cfg(all(
     feature = "fixtures-and-mocks",
@@ -889,7 +881,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let created_contract =
-            get_dpns_data_contract_fixture(None, platform_version.protocol_version);
+            get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
 
         drive
             .apply_contract(

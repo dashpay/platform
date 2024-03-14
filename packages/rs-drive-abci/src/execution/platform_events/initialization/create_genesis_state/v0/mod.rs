@@ -44,7 +44,7 @@ use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::IdentityV0;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
-use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+use drive::dpp::system_data_contracts::SystemDataContract;
 use drive::drive::batch::{
     DataContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
 };
@@ -81,24 +81,22 @@ impl<C> Platform<C> {
 
         // Create system identities and contracts
 
-        let dpns_contract =
-            load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)?;
+        let system_data_contracts = &self.drive.cache.system_data_contracts;
+
+        let dpns_data_contract = system_data_contracts.load_dpns();
 
         let system_data_contract_types = BTreeMap::from_iter([
             (
                 SystemDataContract::DPNS,
                 (
-                    dpns_contract.clone(),
+                    system_data_contracts.load_dpns(),
                     system_identity_public_keys.dpns_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::Withdrawals,
                 (
-                    load_system_data_contract(
-                        SystemDataContract::Withdrawals,
-                        platform_version.protocol_version,
-                    )?,
+                    system_data_contracts.load_withdrawals(),
                     system_identity_public_keys.withdrawals_contract_owner(),
                 ),
             ),
@@ -116,26 +114,20 @@ impl<C> Platform<C> {
             (
                 SystemDataContract::Dashpay,
                 (
-                    load_system_data_contract(
-                        SystemDataContract::Dashpay,
-                        platform_version.protocol_version,
-                    )?,
+                    system_data_contracts.load_dashpay(),
                     system_identity_public_keys.dashpay_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::MasternodeRewards,
                 (
-                    load_system_data_contract(
-                        SystemDataContract::MasternodeRewards,
-                        platform_version.protocol_version,
-                    )?,
+                    system_data_contracts.load_masternode_reward_shares(),
                     system_identity_public_keys.masternode_reward_shares_contract_owner(),
                 ),
             ),
         ]);
 
-        for (_, (data_contract, identity_public_keys_set)) in system_data_contract_types {
+        for (data_contract, identity_public_keys_set) in system_data_contract_types.values() {
             let public_keys = [
                 (
                     0,
@@ -184,7 +176,7 @@ impl<C> Platform<C> {
             self.register_system_identity_operations(identity, &mut operations);
         }
 
-        self.register_dpns_top_level_domain_operations(&dpns_contract, &mut operations)?;
+        self.register_dpns_top_level_domain_operations(&dpns_data_contract, &mut operations)?;
 
         let block_info = BlockInfo::default_with_time(genesis_time);
 
@@ -199,10 +191,10 @@ impl<C> Platform<C> {
         Ok(())
     }
 
-    fn register_system_data_contract_operations(
+    fn register_system_data_contract_operations<'a>(
         &self,
-        data_contract: DataContract,
-        operations: &mut Vec<DriveOperation>,
+        data_contract: &'a DataContract,
+        operations: &mut Vec<DriveOperation<'a>>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let serialization =
@@ -210,7 +202,7 @@ impl<C> Platform<C> {
         operations.push(DriveOperation::DataContractOperation(
             //todo: remove cbor
             DataContractOperationType::ApplyContractWithSerialization {
-                contract: Cow::Owned(data_contract),
+                contract: Cow::Borrowed(data_contract),
                 serialized_contract: serialization,
                 storage_flags: None,
             },
@@ -317,8 +309,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    148, 196, 101, 163, 1, 56, 137, 50, 117, 196, 107, 103, 222, 55, 110, 59, 11,
-                    177, 172, 37, 17, 234, 56, 154, 232, 24, 208, 220, 27, 128, 201, 97
+                    48, 165, 165, 234, 103, 120, 205, 238, 156, 93, 195, 194, 17, 242, 245, 101,
+                    176, 129, 137, 59, 185, 249, 76, 104, 217, 226, 66, 115, 67, 226, 235, 180
                 ]
             )
         }

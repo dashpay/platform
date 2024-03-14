@@ -74,7 +74,7 @@ export default {
     },
     duration: {
       type: 'string',
-      pattern: '^[0-9]+(\\.[0-9]+)?(ms|m|s|h)$',
+      pattern: '^0|([0-9]+(\\.[0-9]+)?(ms|m|s|h))$',
     },
     optionalDuration: {
       type: ['null', 'string'],
@@ -440,7 +440,29 @@ export default {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/dockerWithBuild',
+                  type: 'object',
+                  properties: {
+                    image: {
+                      type: 'string',
+                      minLength: 1,
+                    },
+                    deploy: {
+                      type: 'object',
+                      properties: {
+                        replicas: {
+                          type: 'integer',
+                          minimum: 0,
+                        },
+                      },
+                      additionalProperties: false,
+                      required: ['replicas'],
+                    },
+                    build: {
+                      $ref: '#/definitions/dockerBuild',
+                    },
+                  },
+                  required: ['image', 'build', 'deploy'],
+                  additionalProperties: false,
                 },
               },
               required: ['docker'],
@@ -491,6 +513,28 @@ export default {
                     additionalProperties: false,
                   },
                 },
+                tokioConsole: {
+                  type: 'object',
+                  properties: {
+                    enabled: {
+                      type: 'boolean',
+                    },
+                    host: {
+                      type: 'string',
+                      minLength: 1,
+                      format: 'ipv4',
+                    },
+                    port: {
+                      $ref: '#/definitions/port',
+                    },
+                    retention_secs: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                  },
+                  required: ['enabled', 'host', 'port', 'retention_secs'],
+                  additionalProperties: false,
+                },
                 validatorSet: {
                   type: 'object',
                   properties: {
@@ -503,13 +547,33 @@ export default {
                   additionalProperties: false,
                   required: ['llmqType'],
                 },
+                chainLock: {
+                  type: 'object',
+                  properties: {
+                    llmqType: {
+                      type: 'number',
+                      // https://github.com/dashpay/dashcore-lib/blob/843176fed9fc81feae43ccf319d99e2dd942fe1f/lib/constants/index.js#L50-L99
+                      enum: [1, 2, 3, 4, 5, 6, 100, 101, 102, 103, 104, 105, 106, 107],
+                    },
+                    llmqSize: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    dkgInterval: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['llmqType', 'llmqSize', 'dkgInterval'],
+                },
                 epochTime: {
                   type: 'integer',
                   minimum: 180,
                 },
               },
               additionalProperties: false,
-              required: ['docker', 'logs', 'validatorSet', 'epochTime'],
+              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime'],
             },
             tenderdash: {
               type: 'object',
@@ -566,6 +630,10 @@ export default {
                 mempool: {
                   type: 'object',
                   properties: {
+                    cacheSize: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
                     size: {
                       type: 'integer',
                       minimum: 0,
@@ -574,9 +642,23 @@ export default {
                       type: 'integer',
                       minimum: 0,
                     },
+                    timeoutCheckTx: {
+                      $ref: '#/definitions/duration',
+                    },
+                    txEnqueueTimeout: {
+                      $ref: '#/definitions/duration',
+                    },
+                    txSendRateLimit: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    txRecvRateLimit: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
                   },
                   additionalProperties: false,
-                  required: ['size', 'maxTxsBytes'],
+                  required: ['size', 'maxTxsBytes', 'cacheSize', 'timeoutCheckTx', 'txEnqueueTimeout', 'txSendRateLimit', 'txRecvRateLimit'],
                 },
                 consensus: {
                   type: 'object',
@@ -684,8 +766,11 @@ export default {
                       type: 'integer',
                       minimum: 0,
                     },
+                    timeoutBroadcastTx: {
+                      $ref: '#/definitions/duration',
+                    },
                   },
-                  required: ['host', 'port', 'maxOpenConnections'],
+                  required: ['host', 'port', 'maxOpenConnections', 'timeoutBroadcastTx'],
                   additionalProperties: false,
                 },
                 pprof: {

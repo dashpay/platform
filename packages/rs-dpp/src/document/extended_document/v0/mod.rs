@@ -6,18 +6,25 @@ mod serialize;
 
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
+#[cfg(any(
+    feature = "document-value-conversion",
+    feature = "document-json-conversion"
+))]
 use crate::document::extended_document::fields::property_names;
 use crate::document::{Document, DocumentV0Getters, ExtendedDocument};
 use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::Revision;
 
-use crate::util::hash::hash_to_vec;
+use crate::util::hash::hash_double_to_vec;
 use crate::ProtocolError;
 
 use platform_value::btreemap_extensions::{
-    BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
-    BTreeValueRemoveFromMapHelper,
+    BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper,
+};
+#[cfg(feature = "document-value-conversion")]
+use platform_value::btreemap_extensions::{
+    BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper,
 };
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -34,6 +41,7 @@ use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
+#[cfg(feature = "document-json-conversion")]
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "document-json-conversion")]
@@ -145,6 +153,7 @@ impl ExtendedDocumentV0 {
         // We can unwrap because the Document can not be created without a valid Document Type
         self.data_contract
             .document_type_for_name(self.document_type_name.as_str())
+            .map_err(ProtocolError::DataContractError)
     }
 
     pub fn can_be_modified(&self) -> Result<bool, ProtocolError> {
@@ -415,7 +424,7 @@ impl ExtendedDocumentV0 {
     }
 
     pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(
+        Ok(hash_double_to_vec(
             ExtendedDocumentPlatformConversionMethodsV0::serialize_to_bytes(
                 self,
                 platform_version,

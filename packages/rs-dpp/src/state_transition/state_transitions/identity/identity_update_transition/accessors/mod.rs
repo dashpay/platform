@@ -1,7 +1,7 @@
 mod v0;
 
-use crate::identity::{KeyID, TimestampMillis};
-use crate::prelude::Revision;
+use crate::identity::KeyID;
+use crate::prelude::{IdentityNonce, Revision};
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_value::Identifier;
@@ -29,6 +29,18 @@ impl IdentityUpdateTransitionAccessorsV0 for IdentityUpdateTransition {
     fn revision(&self) -> Revision {
         match self {
             IdentityUpdateTransition::V0(transition) => transition.revision(),
+        }
+    }
+
+    fn set_nonce(&mut self, nonce: IdentityNonce) {
+        match self {
+            IdentityUpdateTransition::V0(transition) => transition.set_nonce(nonce),
+        }
+    }
+
+    fn nonce(&self) -> IdentityNonce {
+        match self {
+            IdentityUpdateTransition::V0(transition) => transition.nonce(),
         }
     }
 
@@ -63,20 +75,6 @@ impl IdentityUpdateTransitionAccessorsV0 for IdentityUpdateTransition {
     fn public_key_ids_to_disable(&self) -> &[KeyID] {
         match self {
             IdentityUpdateTransition::V0(transition) => transition.public_key_ids_to_disable(),
-        }
-    }
-
-    fn set_public_keys_disabled_at(&mut self, public_keys_disabled_at: Option<TimestampMillis>) {
-        match self {
-            IdentityUpdateTransition::V0(transition) => {
-                transition.set_public_keys_disabled_at(public_keys_disabled_at)
-            }
-        }
-    }
-
-    fn public_keys_disabled_at(&self) -> Option<TimestampMillis> {
-        match self {
-            IdentityUpdateTransition::V0(transition) => transition.public_keys_disabled_at(),
         }
     }
 

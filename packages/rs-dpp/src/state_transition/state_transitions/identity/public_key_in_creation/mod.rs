@@ -7,6 +7,7 @@ use derive_more::From;
 use platform_serialization_derive::PlatformSignable;
 
 use platform_version::version::PlatformVersion;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 pub mod accessors;

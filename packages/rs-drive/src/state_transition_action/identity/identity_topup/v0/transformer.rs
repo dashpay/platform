@@ -1,7 +1,7 @@
 use crate::state_transition_action::identity::identity_topup::v0::IdentityTopUpTransitionActionV0;
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
-use dpp::consensus::basic::BasicError;
+
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
@@ -17,6 +17,7 @@ impl IdentityTopUpTransitionActionV0 {
         let IdentityTopUpTransitionV0 {
             identity_id,
             asset_lock_proof,
+            user_fee_increase,
             ..
         } = value;
 
@@ -34,6 +35,7 @@ impl IdentityTopUpTransitionActionV0 {
             top_up_balance_amount,
             identity_id,
             asset_lock_outpoint: Bytes36::new(outpoint_bytes),
+            user_fee_increase,
         })
     }
 
@@ -45,6 +47,7 @@ impl IdentityTopUpTransitionActionV0 {
         let IdentityTopUpTransitionV0 {
             identity_id,
             asset_lock_proof,
+            user_fee_increase,
             ..
         } = value;
 
@@ -62,6 +65,7 @@ impl IdentityTopUpTransitionActionV0 {
             top_up_balance_amount,
             identity_id: *identity_id,
             asset_lock_outpoint: Bytes36::new(outpoint_bytes),
+            user_fee_increase: *user_fee_increase,
         })
     }
 }

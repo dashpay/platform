@@ -106,6 +106,10 @@ jobs:
   detect_structure_changes:
     name: Detect immutable structure changes
     runs-on: ubuntu-22.04
+    # FIXME: as we use `gh pr view` below, this check can only
+    # run on pull requests. We should find a way to run it
+    # when manual triggers are used.
+    if: github.event_name == 'pull_request'
     steps:
       - name: Checkout base commit
         uses: actions/checkout@v4

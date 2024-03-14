@@ -1,35 +1,44 @@
-use crate::abci::server::AbciApplication;
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use bytes::Buf;
+use std::collections::BTreeMap;
 
+use crate::abci::app::FullAbciApplication;
+use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
+use crate::mimic::test_quorum::TestQuorumInfo;
+use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::{
+    make_extend_vote_request_id, UnsignedWithdrawalTxs,
+};
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
-use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo;
-use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::AssetUnlockBaseTransactionInfo;
-use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
-use dashcore_rpc::dashcore::bls_sig_utils::BLSSignature;
-use dashcore_rpc::dashcore::consensus::Decodable;
-use dashcore_rpc::dashcore;
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
-use dpp::dashcore::hashes::Hash;
+use ciborium::Value as CborValue;
 use dpp::block::block_info::BlockInfo;
-use dpp::serialization::PlatformSerializable;
+use dpp::consensus::ConsensusError;
+use dpp::dashcore::hashes::Hash;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::platform_value::string_encoding::{decode, Encoding};
+use dpp::platform_value::Value;
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
+use dpp::ProtocolError;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
-use tenderdash_abci::proto::abci::{CommitInfo, ExecTxResult, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal, ValidatorSetUpdate};
+use tenderdash_abci::proto::abci::tx_record::TxAction;
+use tenderdash_abci::proto::abci::{
+    CommitInfo, ExecTxResult, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal,
+    RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal,
+    ValidatorSetUpdate,
+};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use tenderdash_abci::proto::types::{
-    Block, BlockId, Data, EvidenceList, Header, PartSetHeader, VoteExtension, VoteExtensionType, StateId, CanonicalVote, SignedMsgType,
+    Block, BlockId, CanonicalVote, Data, EvidenceList, Header, PartSetHeader, SignedMsgType,
+    StateId, VoteExtension, VoteExtensionType,
 };
-use tenderdash_abci::signatures::SignBytes;
-use tenderdash_abci::{signatures::SignDigest, proto::version::Consensus, Application};
-use tenderdash_abci::proto::abci::tx_record::TxAction;
-use crate::mimic::test_quorum::TestQuorumInfo;
+use tenderdash_abci::signatures::Hashable;
+use tenderdash_abci::{proto::version::Consensus, signatures::Signable, Application};
 
 /// Test quorum for mimic block execution
 pub mod test_quorum;
@@ -42,7 +51,7 @@ pub struct MimicExecuteBlockOutcome {
     /// state transaction results
     pub state_transaction_results: Vec<(StateTransition, ExecTxResult)>,
     /// withdrawal transactions
-    pub withdrawal_transactions: Vec<dashcore_rpc::dashcore::Transaction>,
+    pub withdrawal_transactions: UnsignedWithdrawalTxs,
     /// The next validators
     pub validator_set_update: Option<ValidatorSetUpdate>,
     /// The next validators hash
@@ -65,9 +74,13 @@ pub struct MimicExecuteBlockOptions {
     pub dont_finalize_block: bool,
     /// rounds before finalization
     pub rounds_before_finalization: Option<u32>,
+    /// max tx bytes per block
+    pub max_tx_bytes_per_block: u64,
+    /// run process proposal independently
+    pub independent_process_proposal_verification: bool,
 }
 
-impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
+impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
     /// Execute a block with various state transitions
     /// Returns the withdrawal transactions that were signed in the block
     pub fn mimic_execute_block(
@@ -80,9 +93,30 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         expect_validation_errors: &[u32],
         expect_vote_extension_errors: bool,
         state_transitions: Vec<StateTransition>,
-        max_tx_bytes_per_block: i64,
         options: MimicExecuteBlockOptions,
     ) -> Result<MimicExecuteBlockOutcome, Error> {
+        // This will be NONE, except on init chain
+        let original_block_execution_context = self
+            .block_execution_context
+            .read()
+            .unwrap()
+            .as_ref()
+            .cloned();
+
+        let init_chain_root_hash = self
+            .transaction
+            .read()
+            .unwrap()
+            .as_ref()
+            .map(|transaction| {
+                self.platform
+                    .drive
+                    .grove
+                    .root_hash(Some(transaction))
+                    .unwrap()
+                    .unwrap()
+            });
+
         const APP_VERSION: u64 = 0;
 
         let mut rng = StdRng::seed_from_u64(block_info.height);
@@ -106,7 +140,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         // PREPARE (also processes internally)
 
         let request_prepare_proposal = RequestPrepareProposal {
-            max_tx_bytes: max_tx_bytes_per_block,
+            max_tx_bytes: options.max_tx_bytes_per_block as i64,
             txs: serialized_state_transitions.clone(),
             local_last_commit: None,
             misbehavior: vec![],
@@ -147,7 +181,32 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         tx_results.iter().try_for_each(|tx_result| {
             if tx_result.code > 0 && !expect_validation_errors.contains(&tx_result.code) {
-                Err(Error::Abci(AbciError::GenericWithCode(tx_result.code)))
+                // Deserialize the tx result info that contains
+                // encoded consensus error if error code is greater than 0
+                let info_bytes = decode(&tx_result.info, Encoding::Base64)
+                    .expect("can't decode tx result info from base64 to bytes");
+
+                let info_cbor_map: BTreeMap<String, CborValue> =
+                    ciborium::de::from_reader(info_bytes.as_slice()).map_err(|_| {
+                        ProtocolError::InvalidCBOR(
+                            "unable to decode document for document call".to_string(),
+                        )
+                    })?;
+                let info_map: BTreeMap<String, Value> = Value::convert_from_cbor_map(info_cbor_map)
+                    .map_err(ProtocolError::ValueError)?;
+
+                let data_map: BTreeMap<String, &Value> = info_map
+                    .get_optional_str_value_map("data")
+                    .expect("expected data map")
+                    .unwrap();
+
+                let serialized_error = data_map.get_bytes("serializedError").unwrap();
+
+                // Deserialize the consensus error
+                let error = ConsensusError::deserialize_from_bytes(&serialized_error)
+                    .expect("expected to deserialize consensus error");
+
+                Err(Error::Abci(AbciError::InvalidStateTransition(error)))
             } else {
                 Ok(())
             }
@@ -178,7 +237,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             time: time.to_milis(),
         };
         let state_id_hash = state_id
-            .sha256(CHAIN_ID, height as i64, round as i32)
+            .calculate_msg_hash(CHAIN_ID, height as i64, round as i32)
             .expect("cannot hash state id");
 
         let block_header_hash: [u8; 32] = rng.gen();
@@ -191,7 +250,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             state_id: state_id_hash,
         };
         let block_id_hash = block_id
-            .sha256(CHAIN_ID, height as i64, round as i32)
+            .calculate_msg_hash(CHAIN_ID, height as i64, round as i32)
             .expect("cannot hash block id");
 
         let request_process_proposal = RequestProcessProposal {
@@ -217,14 +276,112 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             quorum_hash: current_quorum.quorum_hash.to_byte_array().to_vec(),
         };
 
-        //we must call process proposal so the app hash is set
-        self.process_proposal(request_process_proposal)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "should skip processing (because we prepared it) block #{} at time #{} : {:?}",
-                    block_info.height, block_info.time_ms, e
-                )
-            });
+        if !options.independent_process_proposal_verification {
+            //we just check as if we were the proposer
+            //we must call process proposal so the app hash is set
+            self.process_proposal(request_process_proposal)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "should skip processing (because we prepared it) block #{} at time #{} : {:?}",
+                        block_info.height, block_info.time_ms, e
+                    )
+                });
+        } else {
+            //we first call process proposal as the proposer
+            //we must call process proposal so the app hash is set
+            self.process_proposal(request_process_proposal.clone())
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "should skip processing (because we prepared it) block #{} at time #{} : {:?}",
+                        block_info.height, block_info.time_ms, e
+                    )
+                });
+
+            let application_hash = self
+                .block_execution_context
+                .read()
+                .unwrap()
+                .as_ref()
+                .expect("expected a block execution context")
+                .block_state_info()
+                .app_hash()
+                .expect("expected an application hash after process proposal");
+
+            let mut block_execution_context_guard = self.block_execution_context.write().unwrap();
+            *block_execution_context_guard = original_block_execution_context;
+            drop(block_execution_context_guard);
+
+            if let Some(init_chain_root_hash) = init_chain_root_hash
+            //we are in init chain
+            {
+                // special logic on init chain
+                let transaction_guard = self.transaction.read().unwrap();
+                let transaction = transaction_guard.as_ref().ok_or(Error::Execution(
+                    ExecutionError::NotInTransaction(
+                        "trying to finalize block without a current transaction",
+                    ),
+                ))?;
+
+                transaction
+                    .rollback_to_savepoint()
+                    .expect("expected to rollback to savepoint");
+
+                let start_root_hash = self
+                    .platform
+                    .drive
+                    .grove
+                    .root_hash(Some(transaction))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(start_root_hash, init_chain_root_hash);
+                // this is just to verify that the rollback worked.
+            };
+
+            //we call process proposal as if we are a processor
+            self.process_proposal(request_process_proposal)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "should skip processing (because we prepared it) block #{} at time #{} : {:?}",
+                        block_info.height, block_info.time_ms, e
+                    )
+                });
+
+            let process_proposal_application_hash = self
+                .block_execution_context
+                .read()
+                .unwrap()
+                .as_ref()
+                .expect("expected a block execution context")
+                .block_state_info()
+                .app_hash()
+                .expect("expected an application hash after process proposal");
+
+            assert_eq!(
+                application_hash, process_proposal_application_hash,
+                "the application hashed are not valid for height {}",
+                block_info.height
+            );
+
+            let transaction_guard = self.transaction.read().unwrap();
+            let transaction = transaction_guard.as_ref().ok_or(Error::Execution(
+                ExecutionError::NotInTransaction(
+                    "trying to finalize block without a current transaction",
+                ),
+            ))?;
+
+            let direct_root_hash = self
+                .platform
+                .drive
+                .grove
+                .root_hash(Some(transaction))
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                application_hash, direct_root_hash,
+                "the application hashed are not valid for height {}",
+                block_info.height
+            );
+        }
 
         let request_extend_vote = RequestExtendVote {
             hash: block_header_hash.to_vec(),
@@ -262,68 +419,46 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             if !expect_vote_extension_errors
                 && response_validate_vote_extension.status != VerifyStatus::Accept as i32
             {
-                return Err(Error::Abci(AbciError::GenericWithCode(1)));
+                return Err(Error::Abci(AbciError::InvalidVoteExtensionsVerification));
             }
         }
 
         //FixMe: This is not correct for the threshold vote extension (we need to sign and do
         // things differently
 
-        let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
+        let block_execution_context_ref = self.block_execution_context.read().unwrap();
         let block_execution_context =
-            guarded_block_execution_context
-                .as_ref()
+            block_execution_context_ref.as_ref()
                 .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "block execution context must be set in block begin handler for mimic block execution",
                 )))?.v0()?;
 
         let extensions = block_execution_context
-            .withdrawal_transactions
-            .keys()
-            .map(|tx_id| {
+            .unsigned_withdrawal_transactions
+            .iter()
+            .map(|tx| {
+                let sign_request_id = Some(make_extend_vote_request_id(tx));
+
                 VoteExtension {
-                    r#type: VoteExtensionType::ThresholdRecover as i32,
-                    extension: tx_id.to_byte_array().to_vec(),
-                    signature: vec![], //todo: signature
+                    r#type: VoteExtensionType::ThresholdRecoverRaw as i32,
+                    extension: tx.txid().to_byte_array().to_vec(),
+                    sign_request_id,
+                    signature: vec![0; 96], //todo: signature
                 }
             })
             .collect();
 
-        //todo: tidy up and fix
-        let withdrawals = block_execution_context
-            .withdrawal_transactions
-            .values()
-            .map(|transaction| {
-                let AssetUnlockBaseTransactionInfo {
-                    version,
-                    lock_time,
-                    output,
-                    base_payload,
-                } = Decodable::consensus_decode(&mut transaction.reader()).expect("a");
-                dashcore::Transaction {
-                    version,
-                    lock_time,
-                    input: vec![],
-                    output,
-                    special_transaction_payload: Some(AssetUnlockPayloadType(AssetUnlockPayload {
-                        base: base_payload,
-                        request_info: AssetUnlockRequestInfo {
-                            request_height: core_height,
-                            quorum_hash: current_quorum.quorum_hash,
-                        },
-                        quorum_sig: BLSSignature::from([0; 96]),
-                    })),
-                }
-            })
-            .collect();
+        let withdrawal_transactions = block_execution_context
+            .unsigned_withdrawal_transactions
+            .clone();
 
-        drop(guarded_block_execution_context);
+        drop(block_execution_context_ref);
 
         // We need to sign the block
 
-        let quorum_type = self.platform.config.quorum_type();
+        let quorum_type = self.platform.config.validator_set_quorum_type();
         let state_id_hash = state_id
-            .sha256(CHAIN_ID, height as i64, round as i32)
+            .calculate_msg_hash(CHAIN_ID, height as i64, round as i32)
             .expect("cannot calculate state id hash");
 
         let commit = CanonicalVote {
@@ -347,7 +482,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         if self.platform.config.testing_configs.block_signing {
             let quorum_hash: [u8; 32] = quorum_hash.try_into().expect("wrong quorum hash len");
             let digest = commit
-                .sign_digest(
+                .calculate_sign_hash(
                     CHAIN_ID,
                     quorum_type as u8,
                     &quorum_hash,
@@ -422,7 +557,6 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         };
 
         let transaction_guard = self.transaction.read().unwrap();
-
         let transaction = transaction_guard.as_ref().ok_or(Error::Execution(
             ExecutionError::NotInTransaction(
                 "trying to finalize block without a current transaction",
@@ -457,7 +591,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         Ok(MimicExecuteBlockOutcome {
             state_transaction_results,
             app_version: APP_VERSION,
-            withdrawal_transactions: withdrawals,
+            withdrawal_transactions,
             validator_set_update,
             next_validator_set_hash,
             root_app_hash: app_hash

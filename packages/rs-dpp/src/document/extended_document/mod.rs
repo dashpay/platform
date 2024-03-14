@@ -7,6 +7,10 @@ pub(crate) mod v0;
 
 pub use fields::{property_names, IDENTIFIER_FIELDS};
 
+#[cfg(any(
+    feature = "document-json-conversion",
+    feature = "document-value-conversion"
+))]
 use crate::data_contract::DataContract;
 use crate::ProtocolError;
 
@@ -14,11 +18,14 @@ use crate::document::extended_document::v0::ExtendedDocumentV0;
 
 #[cfg(feature = "document-json-conversion")]
 use crate::document::serialization_traits::DocumentJsonMethodsV0;
+#[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
+#[cfg(feature = "document-json-conversion")]
 use serde_json::Value as JsonValue;
+#[cfg(feature = "document-value-conversion")]
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PlatformVersioned)]
@@ -410,8 +417,7 @@ mod test {
     fn test_document_json_deserialize() -> Result<()> {
         init();
         let platform_version = PlatformVersion::latest();
-        let dpns_contract =
-            load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)?;
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
         let doc =
             ExtendedDocument::from_json_string(&document_json, dpns_contract, platform_version)?;
@@ -489,11 +495,8 @@ mod test {
     #[test]
     fn test_to_object() {
         init();
-        let dpns_contract = load_system_data_contract(
-            SystemDataContract::DPNS,
-            LATEST_PLATFORM_VERSION.protocol_version,
-        )
-        .unwrap();
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, LATEST_PLATFORM_VERSION).unwrap();
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
         let document = ExtendedDocument::from_json_string(
             &document_json,
@@ -517,10 +520,8 @@ mod test {
     fn test_json_serialize() -> Result<()> {
         init();
 
-        let dpns_contract = load_system_data_contract(
-            SystemDataContract::DPNS,
-            LATEST_PLATFORM_VERSION.protocol_version,
-        )?;
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, LATEST_PLATFORM_VERSION)?;
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
         let document = ExtendedDocument::from_json_string(
             &document_json,
@@ -542,11 +543,8 @@ mod test {
         init();
 
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        let dpns_contract = load_system_data_contract(
-            SystemDataContract::DPNS,
-            LATEST_PLATFORM_VERSION.protocol_version,
-        )
-        .unwrap();
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, LATEST_PLATFORM_VERSION).unwrap();
         ExtendedDocument::from_json_string(&document_json, dpns_contract, LATEST_PLATFORM_VERSION)
             .expect("expected extended document");
         Ok(())
@@ -613,7 +611,7 @@ mod test {
 
     fn new_example_document() -> ExtendedDocument {
         let data_contract =
-            get_dashpay_contract_fixture(None, LATEST_PLATFORM_VERSION.protocol_version)
+            get_dashpay_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version)
                 .data_contract_owned();
         let document_type = data_contract
             .document_type_for_name("profile")

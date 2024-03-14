@@ -30,7 +30,7 @@
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
 
 ARG ALPINE_VERSION=3.18
-
+ARG PROTOC_VERSION=25.2
 ARG RUSTC_WRAPPER
 
 #
@@ -73,13 +73,14 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
     --profile minimal \
     -y \
     # Rust version the same as in /README.md
-    --default-toolchain stable \
+    --default-toolchain 1.76 \
     --target wasm32-unknown-unknown
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
+ARG PROTOC_VERSION
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else export PROTOC_ARCH=x86_64; fi; \
-    curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v22.4/protoc-22.4-linux-${PROTOC_ARCH}.zip \
+    curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip \
         -o /tmp/protoc.zip && \
     unzip -qd /opt/protoc /tmp/protoc.zip && \
     rm /tmp/protoc.zip && \
@@ -236,7 +237,7 @@ RUN mkdir -p /var/log/dash \
     /var/lib/dash/rs-drive-abci/db
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
-COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.example /var/lib/dash/rs-drive-abci/.env
+COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
 
 # Create a volume
 VOLUME /var/lib/dash/rs-drive-abci/db
@@ -264,6 +265,7 @@ CMD ["start"]
 
 # ABCI interface
 EXPOSE 26658
+EXPOSE 26659
 # Prometheus port
 EXPOSE 29090
 
@@ -295,7 +297,6 @@ COPY --from=build-dashmate-helper /platform/package.json /platform/yarn.lock /pl
 COPY --from=build-dashmate-helper /platform/packages/dashmate packages/dashmate
 COPY --from=build-dashmate-helper /platform/packages/dashpay-contract packages/dashpay-contract
 COPY --from=build-dashmate-helper /platform/packages/wallet-lib packages/wallet-lib
-COPY --from=build-dashmate-helper /platform/packages/js-dash-sdk packages/js-dash-sdk
 COPY --from=build-dashmate-helper /platform/packages/js-dapi-client packages/js-dapi-client
 COPY --from=build-dashmate-helper /platform/packages/js-grpc-common packages/js-grpc-common
 COPY --from=build-dashmate-helper /platform/packages/dapi-grpc packages/dapi-grpc
@@ -392,9 +393,6 @@ LABEL description="DAPI Node.JS"
 # Install ZMQ shared library
 RUN apk add --no-cache zeromq-dev
 
-# Install pm2
-RUN npm install -g pm2
-
 WORKDIR /platform/packages/dapi
 
 COPY --from=build-dapi /platform/.yarn /platform/.yarn
@@ -411,5 +409,3 @@ RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 
 EXPOSE 2500 2501 2510
 USER node
-
-ENTRYPOINT ["yarn", "node", "/usr/local/bin/pm2-runtime", "pm2.yml"]

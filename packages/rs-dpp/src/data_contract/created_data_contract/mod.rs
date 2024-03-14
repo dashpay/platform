@@ -4,7 +4,7 @@ pub mod v0;
 use crate::data_contract::created_data_contract::v0::{
     CreatedDataContractInSerializationFormatV0, CreatedDataContractV0,
 };
-use crate::prelude::DataContract;
+use crate::prelude::{DataContract, IdentityNonce};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -16,7 +16,7 @@ use crate::serialization::{
     PlatformSerializableWithPlatformVersion,
 };
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
-use platform_value::{Bytes32, Value};
+use platform_value::Value;
 use platform_version::TryIntoPlatformVersioned;
 
 /// The created data contract is a intermediate structure that can be consumed by a
@@ -49,7 +49,7 @@ impl PlatformSerializableWithPlatformVersion for CreatedDataContract {
         self,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
-        let (data_contract, entropy) = self.data_contract_and_entropy_owned();
+        let (data_contract, identity_nonce) = self.data_contract_and_identity_nonce();
         let data_contract_serialization_format: DataContractInSerializationFormat =
             data_contract.try_into_platform_versioned(platform_version)?;
         let created_data_contract_in_serialization_format = match platform_version
@@ -60,7 +60,7 @@ impl PlatformSerializableWithPlatformVersion for CreatedDataContract {
             0 => Ok(CreatedDataContractInSerializationFormat::V0(
                 CreatedDataContractInSerializationFormatV0 {
                     data_contract: data_contract_serialization_format,
-                    entropy_used: entropy,
+                    identity_nonce,
                 },
             )),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -99,8 +99,8 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Cre
                     ))
                 })?
                 .0;
-        let (data_contract_in_serialization_format, entropy) =
-            created_data_contract_in_serialization_format.data_contract_and_entropy_owned();
+        let (data_contract_in_serialization_format, identity_nonce) =
+            created_data_contract_in_serialization_format.data_contract_and_identity_nonce_owned();
         let data_contract = DataContract::try_from_platform_versioned(
             data_contract_in_serialization_format,
             validate,
@@ -113,7 +113,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Cre
         {
             0 => Ok(CreatedDataContract::V0(CreatedDataContractV0 {
                 data_contract,
-                entropy_used: entropy,
+                identity_nonce,
             })),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "CreatedDataContract::versioned_deserialize".to_string(),
@@ -139,9 +139,9 @@ impl CreatedDataContract {
         }
     }
 
-    pub fn data_contract_and_entropy_owned(self) -> (DataContract, Bytes32) {
+    pub fn data_contract_and_identity_nonce(self) -> (DataContract, IdentityNonce) {
         match self {
-            CreatedDataContract::V0(v0) => (v0.data_contract, v0.entropy_used),
+            CreatedDataContract::V0(v0) => (v0.data_contract, v0.identity_nonce),
         }
     }
 
@@ -157,28 +157,22 @@ impl CreatedDataContract {
         }
     }
 
-    pub fn entropy_used_owned(self) -> Bytes32 {
+    pub fn identity_nonce(&self) -> IdentityNonce {
         match self {
-            CreatedDataContract::V0(v0) => v0.entropy_used,
-        }
-    }
-
-    pub fn entropy_used(&self) -> &Bytes32 {
-        match self {
-            CreatedDataContract::V0(v0) => &v0.entropy_used,
+            CreatedDataContract::V0(v0) => v0.identity_nonce,
         }
     }
 
     #[cfg(test)]
-    pub fn set_entropy_used(&mut self, entropy_used: Bytes32) {
+    pub fn set_identity_nonce(&mut self, identity_nonce: IdentityNonce) {
         match self {
-            CreatedDataContract::V0(v0) => v0.entropy_used = entropy_used,
+            CreatedDataContract::V0(v0) => v0.identity_nonce = identity_nonce,
         }
     }
 
-    pub fn from_contract_and_entropy(
+    pub fn from_contract_and_identity_nonce(
         data_contract: DataContract,
-        entropy: Bytes32,
+        identity_nonce: IdentityNonce,
         platform_version: &PlatformVersion,
     ) -> Result<CreatedDataContract, ProtocolError> {
         match platform_version
@@ -188,7 +182,7 @@ impl CreatedDataContract {
         {
             0 => Ok(CreatedDataContractV0 {
                 data_contract,
-                entropy_used: entropy,
+                identity_nonce,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -223,9 +217,13 @@ impl CreatedDataContract {
 }
 
 impl CreatedDataContractInSerializationFormat {
-    pub fn data_contract_and_entropy_owned(self) -> (DataContractInSerializationFormat, Bytes32) {
+    pub fn data_contract_and_identity_nonce_owned(
+        self,
+    ) -> (DataContractInSerializationFormat, IdentityNonce) {
         match self {
-            CreatedDataContractInSerializationFormat::V0(v0) => (v0.data_contract, v0.entropy_used),
+            CreatedDataContractInSerializationFormat::V0(v0) => {
+                (v0.data_contract, v0.identity_nonce)
+            }
         }
     }
 }

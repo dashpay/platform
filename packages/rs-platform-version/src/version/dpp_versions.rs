@@ -29,6 +29,7 @@ pub struct IdentityTransitionVersions {
 pub struct IdentityTransitionAssetLockVersions {
     pub validate_asset_lock_transaction_structure: FeatureVersion,
     pub validate_instant_asset_lock_proof_structure: FeatureVersion,
+    pub minimal_asset_lock_value: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -57,6 +58,7 @@ pub struct DPPValidationVersions {
     pub validate_time_in_block_time_window: FeatureVersion,
     pub json_schema_validator: JsonSchemaValidatorVersions,
     pub data_contract: DataContractValidationVersions,
+    pub document_type: DocumentTypeValidationVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -67,6 +69,11 @@ pub struct DataContractValidationVersions {
     pub validate_index_naming_duplicates: FeatureVersion,
     pub validate_not_defined_properties: FeatureVersion,
     pub validate_property_definition: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DocumentTypeValidationVersions {
+    pub validate_update: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -94,6 +101,8 @@ pub struct PublicKeyInCreationMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct StateTransitionConversionVersions {
     pub identity_to_identity_create_transition: FeatureVersion,
+    pub identity_to_identity_top_up_transition: FeatureVersion,
+    pub identity_to_identity_withdrawal_transition: FeatureVersion,
     pub identity_to_identity_create_transition_with_signer: FeatureVersion,
 }
 
