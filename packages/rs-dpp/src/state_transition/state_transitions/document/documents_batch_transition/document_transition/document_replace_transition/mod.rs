@@ -38,6 +38,7 @@ pub trait DocumentFromReplaceTransition {
         document_replace_transition_action: &DocumentReplaceTransition,
         owner_id: Identifier,
         created_at: Option<u64>,
+        block_time: Option<u64>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -56,6 +57,7 @@ pub trait DocumentFromReplaceTransition {
         document_replace_transition_action: DocumentReplaceTransition,
         owner_id: Identifier,
         created_at: Option<u64>,
+        block_time: Option<u64>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -67,11 +69,12 @@ impl DocumentFromReplaceTransition for Document {
         document_replace_transition: &DocumentReplaceTransition,
         owner_id: Identifier,
         created_at: Option<u64>,
+        block_time: Option<u64>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match document_replace_transition {
             DocumentReplaceTransition::V0(v0) => {
-                Self::try_from_replace_transition_v0(v0, owner_id, created_at, platform_version)
+                Self::try_from_replace_transition_v0(v0, owner_id, created_at, block_time, platform_version)
             }
         }
     }
@@ -80,6 +83,7 @@ impl DocumentFromReplaceTransition for Document {
         document_replace_transition: DocumentReplaceTransition,
         owner_id: Identifier,
         created_at: Option<u64>,
+        block_time: Option<u64>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match document_replace_transition {
@@ -87,6 +91,7 @@ impl DocumentFromReplaceTransition for Document {
                 v0,
                 owner_id,
                 created_at,
+                block_time,
                 platform_version,
             ),
         }

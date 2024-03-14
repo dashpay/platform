@@ -1,5 +1,6 @@
 pub(crate) mod v0;
 
+use dpp::block::block_info::BlockInfo;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
@@ -25,6 +26,7 @@ use drive::grovedb::TransactionArg;
 ///
 pub(in crate::execution) fn process_state_transition<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
+    block_info: &BlockInfo,
     state_transition: StateTransition,
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
@@ -36,6 +38,7 @@ pub(in crate::execution) fn process_state_transition<'a, C: CoreRPCLike>(
     {
         0 => v0::process_state_transition_v0(
             platform,
+            block_info,
             state_transition,
             transaction,
             platform_version,

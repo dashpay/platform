@@ -1,5 +1,6 @@
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
+use dpp::block::block_info::BlockInfo;
 
 use dpp::ProtocolError;
 use dpp::state_transition::documents_batch_transition::document_create_transition::v0::DocumentCreateTransitionV0;
@@ -11,12 +12,11 @@ impl DocumentCreateTransitionActionV0 {
     /// try from document create transition with contract lookup
     pub fn try_from_document_create_transition_with_contract_lookup(
         value: DocumentCreateTransitionV0,
+        block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
         let DocumentCreateTransitionV0 {
             base,
-            created_at,
-            updated_at,
             data,
             ..
         } = value;
@@ -25,8 +25,7 @@ impl DocumentCreateTransitionActionV0 {
                 base,
                 get_data_contract,
             )?,
-            created_at,
-            updated_at,
+            created_at: Some(block_info.time_ms),
             data,
         })
     }
@@ -34,12 +33,11 @@ impl DocumentCreateTransitionActionV0 {
     /// try from ...
     pub fn try_from_borrowed_document_create_transition_with_contract_lookup(
         value: &DocumentCreateTransitionV0,
+        block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
         let DocumentCreateTransitionV0 {
             base,
-            created_at,
-            updated_at,
             data,
             ..
         } = value;
@@ -48,8 +46,7 @@ impl DocumentCreateTransitionActionV0 {
                 base,
                 get_data_contract,
             )?,
-            created_at: *created_at,
-            updated_at: *updated_at,
+            created_at: Some(block_info.time_ms),
             //todo: get rid of clone
             data: data.clone(),
         })

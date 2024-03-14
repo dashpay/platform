@@ -14,6 +14,7 @@ use platform_version::version::PlatformVersion;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 pub use v0::DocumentCreateTransitionV0;
+use crate::identity::TimestampMillis;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
 #[cfg_attr(
@@ -46,6 +47,7 @@ pub trait DocumentFromCreateTransition {
     fn try_from_create_transition(
         document_create_transition: &DocumentCreateTransition,
         owner_id: Identifier,
+        block_time: Option<TimestampMillis>,
         data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -64,6 +66,7 @@ pub trait DocumentFromCreateTransition {
     fn try_from_owned_create_transition(
         document_create_transition: DocumentCreateTransition,
         owner_id: Identifier,
+        block_time: Option<TimestampMillis>,
         data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -75,6 +78,7 @@ impl DocumentFromCreateTransition for Document {
     fn try_from_create_transition(
         document_create_transition: &DocumentCreateTransition,
         owner_id: Identifier,
+        block_time: Option<TimestampMillis>,
         data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -83,7 +87,7 @@ impl DocumentFromCreateTransition for Document {
     {
         match document_create_transition {
             DocumentCreateTransition::V0(v0) => {
-                Self::try_from_create_transition_v0(v0, owner_id, data_contract, platform_version)
+                Self::try_from_create_transition_v0(v0, owner_id, block_time, data_contract, platform_version)
             }
         }
     }
@@ -91,6 +95,7 @@ impl DocumentFromCreateTransition for Document {
     fn try_from_owned_create_transition(
         document_create_transition: DocumentCreateTransition,
         owner_id: Identifier,
+        block_time: Option<TimestampMillis>,
         data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -101,6 +106,7 @@ impl DocumentFromCreateTransition for Document {
             DocumentCreateTransition::V0(v0) => Self::try_from_owned_create_transition_v0(
                 v0,
                 owner_id,
+                block_time,
                 data_contract,
                 platform_version,
             ),

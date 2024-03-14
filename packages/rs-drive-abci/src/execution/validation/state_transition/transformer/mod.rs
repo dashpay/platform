@@ -1,3 +1,4 @@
+use dpp::block::block_info::BlockInfo;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::ValidationMode;
@@ -29,6 +30,7 @@ pub trait StateTransitionActionTransformerV0 {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
@@ -39,6 +41,7 @@ impl StateTransitionActionTransformerV0 for StateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,

@@ -26,6 +26,7 @@ use crate::execution::validation::state_transition::ValidationMode;
 
 pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
+    block_info: &BlockInfo,
     state_transition: StateTransition,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,

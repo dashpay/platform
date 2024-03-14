@@ -32,8 +32,6 @@ use crate::state_transition::documents_batch_transition;
 
 mod property_names {
     pub const ENTROPY: &str = "$entropy";
-    pub const CREATED_AT: &str = "$createdAt";
-    pub const UPDATED_AT: &str = "$updatedAt";
 }
 
 /// The Binary fields in [`DocumentCreateTransition`]
@@ -48,11 +46,9 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
     serde(rename_all = "camelCase")
 )]
 #[display(
-    fmt = "Base: {}, Entropy: {:?}, Created At: {:?}, Updated At: {:?}, Data: {:?}",
+    fmt = "Base: {}, Entropy: {:?}, Data: {:?}",
     "base",
     "entropy",
-    "created_at",
-    "updated_at",
     "data"
 )]
 pub struct DocumentCreateTransitionV0 {
@@ -66,18 +62,6 @@ pub struct DocumentCreateTransitionV0 {
         serde(rename = "$entropy")
     )]
     pub entropy: [u8; 32],
-
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")
-    )]
-    pub created_at: Option<TimestampMillis>,
-    // TODO: It should be moved to update transition
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")
-    )]
-    pub updated_at: Option<TimestampMillis>,
 
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub data: BTreeMap<String, Value>,
@@ -153,12 +137,6 @@ impl DocumentCreateTransitionV0 {
             entropy: map
                 .remove_hash256_bytes(property_names::ENTROPY)
                 .map_err(ProtocolError::ValueError)?,
-            created_at: map
-                .remove_optional_integer(property_names::CREATED_AT)
-                .map_err(ProtocolError::ValueError)?,
-            updated_at: map
-                .remove_optional_integer(property_names::UPDATED_AT)
-                .map_err(ProtocolError::ValueError)?,
             data: map,
         })
     }
@@ -170,18 +148,6 @@ impl DocumentCreateTransitionV0 {
             property_names::ENTROPY.to_string(),
             Value::Bytes(self.entropy.to_vec()),
         );
-        if let Some(created_at) = self.created_at {
-            transition_base_map.insert(
-                property_names::CREATED_AT.to_string(),
-                Value::U64(created_at),
-            );
-        }
-        if let Some(updated_at) = self.updated_at {
-            transition_base_map.insert(
-                property_names::UPDATED_AT.to_string(),
-                Value::U64(updated_at),
-            );
-        }
 
         transition_base_map.extend(self.data.clone());
 
@@ -204,6 +170,7 @@ pub trait DocumentFromCreateTransitionV0 {
     fn try_from_owned_create_transition_v0(
         v0: DocumentCreateTransitionV0,
         owner_id: Identifier,
+        block_time: Option<TimestampMillis>,
         data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -222,6 +189,7 @@ pub trait DocumentFromCreateTransitionV0 {
     fn try_from_create_transition_v0(
         v0: &DocumentCreateTransitionV0,
         owner_id: Identifier,
+        block_time: Option<TimestampMillis>,
         data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -233,6 +201,7 @@ impl DocumentFromCreateTransitionV0 for Document {
     fn try_from_owned_create_transition_v0(
         v0: DocumentCreateTransitionV0,
         owner_id: Identifier,
+        block_time: Option<TimestampMillis>,
         data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -241,8 +210,6 @@ impl DocumentFromCreateTransitionV0 for Document {
     {
         let DocumentCreateTransitionV0 {
             base,
-            created_at,
-            updated_at,
             data,
             ..
         } = v0;
@@ -268,8 +235,8 @@ impl DocumentFromCreateTransitionV0 for Document {
                         owner_id,
                         properties: data,
                         revision: document_type.initial_revision(),
-                        created_at,
-                        updated_at,
+                        created_at: block_time,
+                        updated_at: block_time,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {
@@ -285,6 +252,7 @@ impl DocumentFromCreateTransitionV0 for Document {
     fn try_from_create_transition_v0(
         v0: &DocumentCreateTransitionV0,
         owner_id: Identifier,
+        block_time: Option<TimestampMillis>,
         data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -293,8 +261,6 @@ impl DocumentFromCreateTransitionV0 for Document {
     {
         let DocumentCreateTransitionV0 {
             base,
-            created_at,
-            updated_at,
             data,
             ..
         } = v0;
@@ -320,8 +286,8 @@ impl DocumentFromCreateTransitionV0 for Document {
                         owner_id,
                         properties: data.clone(),
                         revision: document_type.initial_revision(),
-                        created_at: *created_at,
-                        updated_at: *updated_at,
+                        created_at: block_time,
+                        updated_at: block_time,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {

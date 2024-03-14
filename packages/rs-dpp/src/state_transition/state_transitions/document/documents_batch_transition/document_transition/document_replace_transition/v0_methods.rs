@@ -37,18 +37,6 @@ impl DocumentReplaceTransitionV0Methods for DocumentReplaceTransition {
         }
     }
 
-    fn updated_at(&self) -> Option<TimestampMillis> {
-        match self {
-            DocumentReplaceTransition::V0(v0) => v0.updated_at,
-        }
-    }
-
-    fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>) {
-        match self {
-            DocumentReplaceTransition::V0(v0) => v0.updated_at = updated_at,
-        }
-    }
-
     fn data(&self) -> &BTreeMap<String, Value> {
         match self {
             DocumentReplaceTransition::V0(v0) => &v0.data,

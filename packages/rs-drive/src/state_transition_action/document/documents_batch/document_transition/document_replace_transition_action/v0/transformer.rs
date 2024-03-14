@@ -13,12 +13,12 @@ impl DocumentReplaceTransitionActionV0 {
     pub fn try_from_borrowed_document_replace_transition(
         document_replace_transition: &DocumentReplaceTransitionV0,
         originally_created_at: Option<TimestampMillis>,
+        block_time_ms: TimestampMillis,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
         let DocumentReplaceTransitionV0 {
             base,
             revision,
-            updated_at,
             data,
             ..
         } = document_replace_transition;
@@ -29,8 +29,7 @@ impl DocumentReplaceTransitionActionV0 {
             )?,
             revision: *revision,
             created_at: originally_created_at,
-            updated_at: *updated_at,
-            //todo: remove clone
+            updated_at: Some(block_time_ms),
             data: data.clone(),
         })
     }

@@ -21,7 +21,6 @@ use crate::state_transition::documents_batch_transition::document_base_transitio
 
 mod property_names {
     pub const REVISION: &str = "$revision";
-    pub const UPDATED_AT: &str = "$updatedAt";
 }
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
@@ -31,10 +30,9 @@ mod property_names {
     serde(rename_all = "camelCase")
 )]
 #[display(
-    fmt = "Base: {}, Revision: {}, Updated At: {:?}, Data: {:?}",
+    fmt = "Base: {}, Revision: {}, Data: {:?}",
     "base",
     "revision",
-    "updated_at",
     "data"
 )]
 pub struct DocumentReplaceTransitionV0 {
@@ -45,11 +43,6 @@ pub struct DocumentReplaceTransitionV0 {
         serde(rename = "$revision")
     )]
     pub revision: Revision,
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(skip_serializing_if = "Option::is_none", rename = "$updatedAt")
-    )]
-    pub updated_at: Option<TimestampMillis>,
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub data: BTreeMap<String, Value>,
 }
@@ -275,6 +268,7 @@ pub trait DocumentFromReplaceTransitionV0 {
         value: &DocumentReplaceTransitionV0,
         owner_id: Identifier,
         created_at: Option<u64>,
+        block_time: Option<u64>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -294,6 +288,7 @@ pub trait DocumentFromReplaceTransitionV0 {
         value: DocumentReplaceTransitionV0,
         owner_id: Identifier,
         created_at: Option<u64>,
+        block_time: Option<u64>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -305,12 +300,12 @@ impl DocumentFromReplaceTransitionV0 for Document {
         value: &DocumentReplaceTransitionV0,
         owner_id: Identifier,
         created_at: Option<u64>,
+        block_time: Option<u64>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let DocumentReplaceTransitionV0 {
             base,
             revision,
-            updated_at,
             data,
         } = value;
 
@@ -327,7 +322,7 @@ impl DocumentFromReplaceTransitionV0 for Document {
                 properties: data.clone(),
                 revision: Some(*revision),
                 created_at,
-                updated_at: *updated_at,
+                updated_at: block_time,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -342,12 +337,12 @@ impl DocumentFromReplaceTransitionV0 for Document {
         value: DocumentReplaceTransitionV0,
         owner_id: Identifier,
         created_at: Option<u64>,
+        block_time: Option<u64>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let DocumentReplaceTransitionV0 {
             base,
             revision,
-            updated_at,
             data,
         } = value;
 
@@ -364,7 +359,7 @@ impl DocumentFromReplaceTransitionV0 for Document {
                 properties: data,
                 revision: Some(revision),
                 created_at,
-                updated_at,
+                updated_at: block_time,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

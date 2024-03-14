@@ -72,6 +72,8 @@ impl WithdrawFromIdentity for Identity {
 
         let proof = response.proof_owned()?;
 
+        let metadata = response.metadata()?;
+
         let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
             proof.grovedb_proof.as_slice(),
