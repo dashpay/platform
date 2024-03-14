@@ -35,6 +35,12 @@ export default class UpdateCommand extends ConfigBaseCommand {
   ) {
     const updateInfo = await updateNode(config);
 
+    const colors = {
+      updated: chalk.yellow,
+      'up to date': chalk.green,
+      error: chalk.red,
+    };
+
     // Draw table or show json
     printArrayOfObjects(updateInfo
       .reduce(
@@ -43,7 +49,7 @@ export default class UpdateCommand extends ConfigBaseCommand {
         }) => ([
           ...acc,
           format === OUTPUT_FORMATS.PLAIN
-            ? { Service: title, Image: image, Updated: updated ? chalk.yellow('updated') : chalk.green('up to date') }
+            ? { Service: title, Image: image, Updated: colors[updated](updated) }
             : {
               name, title, updated, image,
             },

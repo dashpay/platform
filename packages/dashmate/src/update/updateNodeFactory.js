@@ -28,7 +28,7 @@ export default function updateNodeFactory(getServiceList, docker) {
               }
 
               resolve({
-                name, title, image, updated: false,
+                name, title, image, updated: 'error',
               });
             } else {
               let updated = null;
@@ -43,9 +43,9 @@ export default function updateNodeFactory(getServiceList, docker) {
                   .filter((obj) => obj.status.startsWith('Status: '));
 
                 if (status?.status.includes('Image is up to date for')) {
-                  updated = false;
+                  updated = 'up to date';
                 } else if (status?.status.includes('Downloaded newer image for')) {
-                  updated = true;
+                  updated = 'updated';
                 }
               });
               stream.on('error', () => {
@@ -55,7 +55,7 @@ export default function updateNodeFactory(getServiceList, docker) {
                 }
 
                 resolve({
-                  name, title, image, updated: false,
+                  name, title, image, updated: 'error',
                 });
               });
               stream.on('end', () => resolve({
