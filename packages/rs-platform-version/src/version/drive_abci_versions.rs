@@ -11,7 +11,6 @@ pub struct DriveAbciVersion {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciQueryVersions {
     pub response_metadata: FeatureVersion,
-    pub base_query_structure: FeatureVersion,
     pub proofs_query: FeatureVersionBounds,
     pub document_query: FeatureVersionBounds,
     pub identity_based_queries: DriveAbciQueryIdentityVersions,
@@ -122,7 +121,7 @@ pub struct DriveAbciValidationDataTriggerVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciStateTransitionValidationVersion {
-    pub base_structure: FeatureVersion,
+    pub basic_structure: OptionalFeatureVersion,
     pub advanced_structure: OptionalFeatureVersion,
     pub identity_signatures: OptionalFeatureVersion,
     pub balance: OptionalFeatureVersion,

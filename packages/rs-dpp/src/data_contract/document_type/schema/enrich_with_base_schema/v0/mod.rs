@@ -1,3 +1,5 @@
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::serialized_version::v0::property_names as contract_property_names;
@@ -16,17 +18,25 @@ pub fn enrich_with_base_schema_v0(
     schema_defs: Option<Value>,
 ) -> Result<Value, ProtocolError> {
     let schema_map = schema.to_map_mut().map_err(|err| {
-        ProtocolError::DataContractError(DataContractError::InvalidContractStructure(format!(
-            "document schema must be an object: {err}"
-        )))
+        ProtocolError::ConsensusError(
+            ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::InvalidContractStructure(format!(
+                    "document schema must be an object: {err}"
+                )),
+            ))
+            .into(),
+        )
     })?;
 
     // Add $schema
     if schema_map.get_optional_key(PROPERTY_SCHEMA).is_some() {
-        return Err(ProtocolError::DataContractError(
-            DataContractError::InvalidContractStructure(
-                "document schema shouldn't contain '$schema' property".to_string(),
-            ),
+        return Err(ProtocolError::ConsensusError(
+            ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::InvalidContractStructure(
+                    "document schema shouldn't contain '$schema' property".to_string(),
+                ),
+            ))
+            .into(),
         ));
     }
 
@@ -40,10 +50,13 @@ pub fn enrich_with_base_schema_v0(
         .get_optional_key(contract_property_names::DEFINITIONS)
         .is_some()
     {
-        return Err(ProtocolError::DataContractError(
-            DataContractError::InvalidContractStructure(
-                "document schema shouldn't contain '$schema' property".to_string(),
-            ),
+        return Err(ProtocolError::ConsensusError(
+            ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::InvalidContractStructure(
+                    "document schema shouldn't contain '$defs' property".to_string(),
+                ),
+            ))
+            .into(),
         ));
     }
 

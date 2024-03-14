@@ -1,12 +1,12 @@
 use crate::error::Error;
 use dpp::consensus::basic::identity::{
-    DuplicatedIdentityPublicKeyIdBasicError, InvalidIdentityUpdateTransitionDisableKeysError,
-    InvalidIdentityUpdateTransitionEmptyError,
+    DisablingKeyIdAlsoBeingAddedInSameTransitionError, DuplicatedIdentityPublicKeyIdBasicError, InvalidIdentityUpdateTransitionEmptyError,
 };
 use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -59,20 +59,19 @@ impl IdentityUpdateStateTransitionStructureValidationV0 for IdentityUpdateTransi
                     break;
                 }
 
+                if self
+                    .public_keys_to_add()
+                    .iter()
+                    .any(|public_key_in_creation| public_key_in_creation.id() == *key_id)
+                {
+                    result.add_error(ConsensusError::from(
+                        DisablingKeyIdAlsoBeingAddedInSameTransitionError::new(*key_id),
+                    ));
+                    break;
+                }
+
                 ids.insert(key_id);
             }
-
-            // Ensure disable at timestamp is present
-            if self.public_keys_disabled_at().is_none() {
-                result.add_error(ConsensusError::from(
-                    InvalidIdentityUpdateTransitionDisableKeysError::new(),
-                ))
-            }
-        } else if self.public_keys_disabled_at().is_some() {
-            // Ensure there are public keys to disable when disable at timestamp is present
-            result.add_error(ConsensusError::from(
-                InvalidIdentityUpdateTransitionDisableKeysError::new(),
-            ))
         }
 
         if !result.is_valid() {

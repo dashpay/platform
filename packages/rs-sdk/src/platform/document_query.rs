@@ -8,7 +8,7 @@ use dapi_grpc::platform::v0::get_documents_request::Version::V0;
 use dapi_grpc::platform::v0::{
     self as platform_proto,
     get_documents_request::{get_documents_request_v0::Start, GetDocumentsRequestV0},
-    GetDocumentsRequest,
+    GetDocumentsRequest, ResponseMetadata,
 };
 use dpp::{
     data_contract::{
@@ -17,6 +17,7 @@ use dpp::{
     document::Document,
     platform_value::{platform_value, Value},
     prelude::{DataContract, Identifier},
+    ProtocolError,
 };
 use drive::query::{DriveQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use drive_proof_verifier::{types::Documents, FromProof};
@@ -58,7 +59,9 @@ impl DocumentQuery {
     ) -> Result<Self, Error> {
         let contract = contract.into();
         // ensure document type name is correct
-        contract.document_type_for_name(document_type_name)?;
+        contract
+            .document_type_for_name(document_type_name)
+            .map_err(ProtocolError::DataContractError)?;
 
         Ok(Self {
             data_contract: Arc::clone(&contract),
@@ -153,26 +156,26 @@ impl TransportRequest for DocumentQuery {
 impl FromProof<DocumentQuery> for Document {
     type Request = DocumentQuery;
     type Response = platform_proto::GetDocumentsResponse;
-    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
         version: &dpp::version::PlatformVersion,
         provider: &'a dyn drive_proof_verifier::ContextProvider,
-    ) -> Result<Option<Self>, drive_proof_verifier::Error>
+    ) -> Result<(Option<Self>, ResponseMetadata), drive_proof_verifier::Error>
     where
         Self: Sized + 'a,
     {
         let request: Self::Request = request.into();
 
-        let documents: Option<Documents> =
-            <Documents as FromProof<Self::Request>>::maybe_from_proof(
+        let (documents, metadata): (Option<Documents>, ResponseMetadata) =
+            <Documents as FromProof<Self::Request>>::maybe_from_proof_with_metadata(
                 request, response, version, provider,
             )?;
 
         match documents {
-            None => Ok(None),
+            None => Ok((None, metadata)),
             Some(docs) => match docs.len() {
-                0 | 1 => Ok(docs.into_iter().next().and_then(|(_, v)| v)),
+                0 | 1 => Ok((docs.into_iter().next().and_then(|(_, v)| v), metadata)),
                 n => Err(drive_proof_verifier::Error::ResponseDecodeError {
                     error: format!("expected 1 element, got {}", n),
                 }),
@@ -184,12 +187,12 @@ impl FromProof<DocumentQuery> for Document {
 impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
     type Request = DocumentQuery;
     type Response = platform_proto::GetDocumentsResponse;
-    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
         version: &dpp::version::PlatformVersion,
         provider: &'a dyn drive_proof_verifier::ContextProvider,
-    ) -> Result<Option<Self>, drive_proof_verifier::Error>
+    ) -> Result<(Option<Self>, ResponseMetadata), drive_proof_verifier::Error>
     where
         Self: Sized + 'a,
     {
@@ -201,7 +204,7 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
                     error: format!("Failed to convert DocumentQuery to DriveQuery: {}", e),
                 })?;
 
-        <drive_proof_verifier::types::Documents as FromProof<DriveQuery>>::maybe_from_proof(
+        <drive_proof_verifier::types::Documents as FromProof<DriveQuery>>::maybe_from_proof_with_metadata(
             drive_query,
             response,
             version,
@@ -298,7 +301,8 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveQuery<'a> {
         // let data_contract = request.data_contract.clone();
         let document_type = request
             .data_contract
-            .document_type_for_name(&request.document_type_name)?;
+            .document_type_for_name(&request.document_type_name)
+            .map_err(ProtocolError::DataContractError)?;
 
         let internal_clauses = InternalClauses::extract_from_clauses(request.where_clauses.clone())
             .map_err(Error::Drive)?;

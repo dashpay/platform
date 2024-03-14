@@ -121,10 +121,8 @@ impl Drive {
                 "contract should exist",
             )))?;
 
-        let mut drive_cache = self.cache.write().unwrap();
-
-        drive_cache
-            .cached_contracts
+        self.cache
+            .data_contracts
             .insert(updated_contract_fetch_info, transaction.is_some());
 
         Drive::calculate_fee(

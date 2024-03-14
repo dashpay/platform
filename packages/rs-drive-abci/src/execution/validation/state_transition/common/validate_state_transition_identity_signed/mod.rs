@@ -1,12 +1,7 @@
-use std::sync::Arc;
-
-use dpp::identifier::Identifier;
 use dpp::identity::PartialIdentity;
-use dpp::ProtocolError;
 use dpp::state_transition::StateTransition;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::{PlatformVersion};
-use drive::drive::contract::DataContractFetchInfo;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
@@ -16,8 +11,6 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::v0::ValidateStateTransitionIdentitySignatureV0;
 
 pub mod v0;
-
-pub type GetDataContractFn = fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>;
 
 pub trait ValidateStateTransitionIdentitySignature {
     fn validate_state_transition_identity_signed(

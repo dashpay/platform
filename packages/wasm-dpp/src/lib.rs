@@ -19,7 +19,7 @@ mod identifier;
 mod identity;
 mod metadata;
 // mod state_repository;
-mod state_transition;
+pub mod state_transition;
 // mod version;
 
 mod utils;

@@ -9,7 +9,9 @@ use crate::state_transition::identity_update_transition::v0::{
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionValueConvert;
 
-use crate::state_transition::state_transitions::common_fields::property_names::NONCE;
+use crate::state_transition::state_transitions::common_fields::property_names::{
+    NONCE, USER_FEE_INCREASE,
+};
 use platform_version::version::PlatformVersion;
 
 impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
@@ -33,6 +35,10 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
         let nonce = raw_object
             .get_integer(NONCE)
             .map_err(ProtocolError::ValueError)?;
+        let user_fee_increase = raw_object
+            .get_optional_integer(USER_FEE_INCREASE)
+            .map_err(ProtocolError::ValueError)?
+            .unwrap_or_default();
         let add_public_keys = raw_object
             .remove_optional_array(property_names::ADD_PUBLIC_KEYS)
             .map_err(ProtocolError::ValueError)?
@@ -42,9 +48,6 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
             .collect::<Result<Vec<_>, ProtocolError>>()?;
         let disable_public_keys =
             remove_integer_list_or_default(&mut raw_object, property_names::DISABLE_PUBLIC_KEYS)?;
-        let public_keys_disabled_at = raw_object
-            .remove_optional_integer(property_names::PUBLIC_KEYS_DISABLED_AT)
-            .map_err(ProtocolError::ValueError)?;
 
         Ok(IdentityUpdateTransitionV0 {
             signature,
@@ -54,7 +57,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
             nonce,
             add_public_keys,
             disable_public_keys,
-            public_keys_disabled_at,
+            user_fee_increase,
         })
     }
 
@@ -112,8 +115,6 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
         value.remove_optional_value_if_empty_array(property_names::ADD_PUBLIC_KEYS)?;
 
         value.remove_optional_value_if_empty_array(property_names::DISABLE_PUBLIC_KEYS)?;
-
-        value.remove_optional_value_if_null(property_names::PUBLIC_KEYS_DISABLED_AT)?;
 
         Ok(value)
     }

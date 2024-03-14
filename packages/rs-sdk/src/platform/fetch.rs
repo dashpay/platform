@@ -10,7 +10,7 @@
 
 use crate::mock::MockResponse;
 use crate::{error::Error, platform::query::Query, Sdk};
-use dapi_grpc::platform::v0::{self as platform_proto};
+use dapi_grpc::platform::v0::{self as platform_proto, ResponseMetadata};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::platform_value::Identifier;
 use dpp::{document::Document, prelude::Identity};
@@ -85,21 +85,50 @@ where
         sdk: &Sdk,
         query: Q,
     ) -> Result<Option<Self>, Error> {
+        Self::fetch_with_settings(sdk, query, RequestSettings::default()).await
+    }
+
+    /// Fetch single object from the Platfom.
+    ///
+    /// Fetch object from the platform that satisfies provided [Query].
+    /// Most often, the Query is an [Identifier] of the object to be fetched.
+    ///
+    /// ## Parameters
+    ///
+    /// - `sdk`: An instance of [Sdk].
+    /// - `query`: A query parameter implementing [`crate::platform::query::Query`] to specify the data to be fetched.
+    ///
+    /// ## Returns
+    ///
+    /// Returns:
+    /// * `Ok(Some(Self))` when object is found
+    /// * `Ok(None)` when object is not found
+    /// * [`Err(Error)`](Error) when an error occurs
+    ///
+    /// ## Error Handling
+    ///
+    /// Any errors encountered during the execution are returned as [Error] instances.
+    async fn fetch_with_metadata<Q: Query<<Self as Fetch>::Request>>(
+        sdk: &Sdk,
+        query: Q,
+        settings: Option<RequestSettings>,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error> {
         let request = query.query(sdk.prove())?;
 
         let response = request
             .clone()
-            .execute(sdk, RequestSettings::default())
+            .execute(sdk, settings.unwrap_or_default())
             .await?;
 
         let object_type = std::any::type_name::<Self>().to_string();
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
 
-        let object: Option<Self> = sdk.parse_proof(request, response)?;
+        let (object, response_metadata): (Option<Self>, ResponseMetadata) =
+            sdk.parse_proof_with_metadata(request, response)?;
 
         match object {
-            Some(item) => Ok(item.into()),
-            None => Ok(None),
+            Some(item) => Ok((item.into(), response_metadata)),
+            None => Ok((None, response_metadata)),
         }
     }
 

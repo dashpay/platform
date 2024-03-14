@@ -3,10 +3,11 @@ use crate::version::dpp_versions::{
     ContractVersions, CostVersions, DPPValidationVersions, DPPVersion, DataContractMethodVersions,
     DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions,
     DocumentTransitionVersions, DocumentTypeClassMethodVersions, DocumentTypeIndexVersions,
-    DocumentTypeMethodVersions, DocumentTypeSchemaVersions, DocumentTypeVersions, DocumentVersions,
-    DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
-    IdentityKeyTypeMethodVersions, IdentityTransitionAssetLockVersions, IdentityTransitionVersions,
-    IdentityVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
+    DocumentTypeMethodVersions, DocumentTypeSchemaVersions, DocumentTypeValidationVersions,
+    DocumentTypeVersions, DocumentVersions, DocumentsBatchTransitionValidationVersions,
+    DocumentsBatchTransitionVersions, IdentityKeyTypeMethodVersions,
+    IdentityTransitionAssetLockVersions, IdentityTransitionVersions, IdentityVersions,
+    JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
     RecursiveSchemaValidatorVersions, StateTransitionConversionVersions,
     StateTransitionMethodVersions, StateTransitionSerializationVersions, StateTransitionVersions,
 };
@@ -466,9 +467,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             apply: DriveGroveApplyMethodVersions {
                 grove_apply_operation: 0,
                 grove_apply_batch: 0,
-                grove_apply_batch_with_add_costs: 0,
                 grove_apply_partial_batch: 0,
-                grove_apply_partial_batch_with_add_costs: 0,
             },
             costs: DriveGroveCostMethodVersions {
                 grove_batch_operations_costs: 0,
@@ -597,7 +596,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     validate_unique_identity_public_key_hashes_in_state: 0,
                 },
                 identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
-                    base_structure: 0,
+                    basic_structure: Some(0),
                     advanced_structure: None,
                     identity_signatures: Some(0),
                     balance: None,
@@ -606,16 +605,16 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     transform_into_action: 0,
                 },
                 identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
-                    base_structure: 0,
+                    basic_structure: Some(0),
                     advanced_structure: None,
                     identity_signatures: Some(0),
                     balance: None,
-                    nonce: None,
+                    nonce: Some(0),
                     state: 0,
                     transform_into_action: 0,
                 },
                 identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion {
-                    base_structure: 0,
+                    basic_structure: Some(0),
                     advanced_structure: None,
                     identity_signatures: Some(0),
                     balance: None,
@@ -625,36 +624,36 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 },
                 identity_credit_withdrawal_state_transition:
                     DriveAbciStateTransitionValidationVersion {
-                        base_structure: 0,
+                        basic_structure: Some(0),
                         advanced_structure: None,
                         identity_signatures: None,
                         balance: Some(0),
-                        nonce: None,
+                        nonce: Some(0),
                         state: 0,
                         transform_into_action: 0,
                     },
                 identity_credit_transfer_state_transition:
                     DriveAbciStateTransitionValidationVersion {
-                        base_structure: 0,
+                        basic_structure: Some(0),
                         advanced_structure: None,
                         identity_signatures: None,
                         balance: Some(0),
-                        nonce: None,
+                        nonce: Some(0),
                         state: 0,
                         transform_into_action: 0,
                     },
                 contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
-                    base_structure: 0,
-                    advanced_structure: None,
+                    basic_structure: Some(0),
+                    advanced_structure: Some(0),
                     identity_signatures: None,
                     balance: None,
-                    nonce: None,
+                    nonce: Some(0),
                     state: 0,
                     transform_into_action: 0,
                 },
                 contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
-                    base_structure: 0,
-                    advanced_structure: None,
+                    basic_structure: None,
+                    advanced_structure: Some(0),
                     identity_signatures: None,
                     balance: None,
                     nonce: Some(0),
@@ -693,7 +692,6 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         },
         query: DriveAbciQueryVersions {
             response_metadata: 0,
-            base_query_structure: 0,
             proofs_query: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,
@@ -806,6 +804,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 validate_not_defined_properties: 0,
                 validate_property_definition: 0,
             },
+            document_type: DocumentTypeValidationVersions { validate_update: 0 },
         },
         state_transition_serialization_versions: StateTransitionSerializationVersions {
             identity_public_key_in_creation: FeatureVersionBounds {

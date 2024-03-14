@@ -15,6 +15,7 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::execution::validation::state_transition::processor::v0::{StateTransitionBalanceValidationV0, StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0, StateTransitionSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0};
+use crate::execution::validation::state_transition::ValidationMode;
 
 /// A trait for validating state transitions within a blockchain.
 pub(crate) trait StateTransitionCheckTxValidationV0 {
@@ -48,52 +49,24 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         platform_version,
                     )?;
 
-                // First we validate the basic structure
-                let result = state_transition.validate_basic_structure(platform_version)?;
+                if state_transition.has_basic_structure_validation() {
+                    // First we validate the basic structure
+                    let result = state_transition.validate_basic_structure(platform_version)?;
 
-                if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
-                }
-
-                let result = state_transition.validate_nonces(
-                    &platform.into(),
-                    platform.block_info,
-                    None,
-                    platform_version,
-                )?;
-
-                if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
-                }
-
-                let action = if state_transition.requires_advance_structure_validation() {
-                    let state_transition_action_result = state_transition.transform_into_action(
-                        platform,
-                        true,
-                        &mut state_transition_execution_context,
-                        None,
-                    )?;
-                    if !state_transition_action_result.is_valid_with_data() {
+                    if !result.is_valid() {
                         return Ok(
                             ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                                state_transition_action_result.errors,
+                                result.errors,
                             ),
                         );
                     }
-                    let action = Some(state_transition_action_result.into_data()?);
+                }
 
-                    // Validating structure
-                    let result = state_transition.validate_advanced_structure_from_state(
+                if state_transition.has_nonces_validation() {
+                    let result = state_transition.validate_nonces(
                         &platform.into(),
-                        action.as_ref(),
+                        platform.state.last_block_info(),
+                        None,
                         platform_version,
                     )?;
 
@@ -104,7 +77,40 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                             ),
                         );
                     }
-                    action
+                }
+
+                let action = if state_transition.requires_advance_structure_validation_from_state()
+                {
+                    let state_transition_action_result = state_transition.transform_into_action(
+                        platform,
+                        ValidationMode::CheckTx,
+                        &mut state_transition_execution_context,
+                        None,
+                    )?;
+                    if !state_transition_action_result.is_valid_with_data() {
+                        return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                state_transition_action_result.errors,
+                            ),
+                        );
+                    }
+                    let action = state_transition_action_result.into_data()?;
+
+                    // Validating structure
+                    let result = state_transition.validate_advanced_structure_from_state(
+                        &platform.into(),
+                        &action,
+                        platform_version,
+                    )?;
+
+                    if !result.is_valid() {
+                        return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                result.errors,
+                            ),
+                        );
+                    }
+                    Some(action)
                 } else {
                     None
                 };
@@ -120,7 +126,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         let state_transition_action_result = state_transition
                             .transform_into_action(
                                 platform,
-                                true,
+                                ValidationMode::CheckTx,
                                 &mut state_transition_execution_context,
                                 None,
                             )?;
@@ -155,20 +161,22 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
                 let mut maybe_identity = result.into_data()?;
 
-                let result = state_transition.validate_balance(
-                    maybe_identity.as_mut(),
-                    &platform.into(),
-                    platform.block_info,
-                    None,
-                    platform_version,
-                )?;
+                if state_transition.has_balance_validation() {
+                    let result = state_transition.validate_balance(
+                        maybe_identity.as_mut(),
+                        &platform.into(),
+                        platform.state.last_block_info(),
+                        None,
+                        platform_version,
+                    )?;
 
-                if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
+                    if !result.is_valid() {
+                        return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                result.errors,
+                            ),
+                        );
+                    }
                 }
 
                 let action = if let Some(action) = action {
@@ -176,7 +184,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 } else {
                     let state_transition_action_result = state_transition.transform_into_action(
                         platform,
-                        true,
+                        ValidationMode::CheckTx,
                         &mut state_transition_execution_context,
                         None,
                     )?;
@@ -221,6 +229,23 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     )
                 }
             } else {
+                if state_transition.has_nonces_validation() {
+                    let result = state_transition.validate_nonces(
+                        &platform.into(),
+                        platform.state.last_block_info(),
+                        None,
+                        platform_version,
+                    )?;
+
+                    if !result.is_valid() {
+                        return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                result.errors,
+                            ),
+                        );
+                    }
+                }
+
                 // TODO: We aren't calculating processing fees atm. We probably should reconsider this
 
                 let mut state_transition_execution_context =
@@ -230,7 +255,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
 
                 let state_transition_action_result = state_transition.transform_into_action(
                     platform,
-                    true,
+                    ValidationMode::RecheckTx,
                     &mut state_transition_execution_context,
                     None,
                 )?;
@@ -265,10 +290,8 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 )
             }
         }
-        _ => {
-            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "CheckTxLevel must be first time check or recheck",
-            )))
-        }
+        _ => Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "CheckTxLevel must be first time check or recheck",
+        ))),
     }
 }

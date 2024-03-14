@@ -14,22 +14,17 @@ impl DriveHighLevelOperationConverter for DataContractUpdateTransitionAction {
         _epoch: &Epoch,
         _platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
-        let mut drive_operations = vec![];
-        // We must create the contract
-        drive_operations.push(IdentityOperation(
-            IdentityOperationType::UpdateIdentityContractNonce {
+        Ok(vec![
+            // We must create the contract
+            IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
                 identity_id: self.data_contract_ref().owner_id().into_buffer(),
                 contract_id: self.data_contract_ref().id().into_buffer(),
                 nonce: self.identity_contract_nonce(),
-            },
-        ));
-        drive_operations.push(DataContractOperation(
-            DataContractOperationType::ApplyContract {
+            }),
+            DataContractOperation(DataContractOperationType::ApplyContract {
                 contract: Cow::Owned(self.data_contract()),
                 storage_flags: None,
-            },
-        ));
-
-        Ok(drive_operations)
+            }),
+        ])
     }
 }

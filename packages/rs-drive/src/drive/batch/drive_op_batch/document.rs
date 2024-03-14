@@ -17,6 +17,7 @@ use dpp::prelude::Identifier;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
@@ -179,7 +180,9 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 override_document,
                 storage_flags,
             } => {
-                let document_type = contract.document_type_for_name(document_type_name)?;
+                let document_type = contract
+                    .document_type_for_name(document_type_name)
+                    .map_err(ProtocolError::DataContractError)?;
 
                 let document =
                     Document::from_bytes(serialized_document, document_type, platform_version)?;
@@ -225,7 +228,9 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
 
                 let contract = &contract_fetch_info.contract;
 
-                let document_type = contract.document_type_for_name(document_type_name.as_str())?;
+                let document_type = contract
+                    .document_type_for_name(document_type_name.as_str())
+                    .map_err(ProtocolError::DataContractError)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,
@@ -247,15 +252,15 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
             DocumentOperationType::AddWithdrawalDocument {
                 owned_document_info,
             } => {
-                let cache = drive.cache.read().expect("should get cache lock");
+                let contract = drive.cache.system_data_contracts.load_withdrawals();
 
-                let contract = &cache.system_data_contracts.withdrawals;
-
-                let document_type = contract.document_type_for_name(withdrawal::NAME)?;
+                let document_type = contract
+                    .document_type_for_name(withdrawal::NAME)
+                    .map_err(ProtocolError::DataContractError)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,
-                    contract,
+                    contract: &contract,
                     document_type,
                 };
                 drive.add_document_for_contract_operations(
@@ -327,7 +332,9 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 owner_id,
                 storage_flags,
             } => {
-                let document_type = contract.document_type_for_name(document_type_name)?;
+                let document_type = contract
+                    .document_type_for_name(document_type_name)
+                    .map_err(ProtocolError::DataContractError)?;
 
                 let document =
                     Document::from_bytes(serialized_document, document_type, platform_version)?;
@@ -363,7 +370,9 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 let document_info =
                     DocumentRefAndSerialization((document, serialized_document, storage_flags));
 
-                let document_type = contract.document_type_for_name(document_type_name)?;
+                let document_type = contract
+                    .document_type_for_name(document_type_name)
+                    .map_err(ProtocolError::DataContractError)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
@@ -473,7 +482,9 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
 
                 let contract = &contract_fetch_info.contract;
 
-                let document_type = contract.document_type_for_name(document_type_name.as_str())?;
+                let document_type = contract
+                    .document_type_for_name(document_type_name.as_str())
+                    .map_err(ProtocolError::DataContractError)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,

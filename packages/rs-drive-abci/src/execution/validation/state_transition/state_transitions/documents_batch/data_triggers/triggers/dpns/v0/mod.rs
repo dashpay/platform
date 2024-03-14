@@ -1,7 +1,7 @@
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contracts::dpns_contract::v1::document_types::domain::properties::PARENT_DOMAIN_NAME;
-///! The `dpns_triggers` module contains data triggers specific to the DPNS data contract.
+/// The `dpns_triggers` module contains data triggers specific to the DPNS data contract.
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 
@@ -444,15 +444,15 @@ mod test {
 
         let mut nonce_counter = BTreeMap::new();
 
-        let state_read_guard = platform.state.read().unwrap();
+        let state = platform.state.load();
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_read_guard,
+            state: &state,
             config: &platform.config,
         };
 
-        let platform_version = state_read_guard
+        let platform_version = state
             .current_platform_version()
             .expect("should return a platform version");
 
@@ -465,11 +465,12 @@ mod test {
                 owner_id,
                 ..Default::default()
             },
-            state_read_guard.current_protocol_version_in_consensus(),
+            state.current_protocol_version_in_consensus(),
         );
         let data_contract = get_dpns_data_contract_fixture(
             Some(owner_id),
-            state_read_guard.current_protocol_version_in_consensus(),
+            0,
+            state.current_protocol_version_in_consensus(),
         )
         .data_contract_owned();
         let document_type = data_contract

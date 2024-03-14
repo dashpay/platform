@@ -6,6 +6,7 @@ use crate::error::Error;
 use crate::platform_types::block_proposal;
 use crate::platform_types::epoch_info::v0::EpochInfoV0;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::PlatformState;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
@@ -28,10 +29,16 @@ impl<C> Platform<C> {
         &self,
         block_proposal: &block_proposal::v0::BlockProposal,
         transaction: &Transaction,
+        platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<EpochInfoV0, Error> {
         match platform_version.drive_abci.methods.epoch.gather_epoch_info {
-            0 => self.gather_epoch_info_v0(block_proposal, transaction, platform_version),
+            0 => self.gather_epoch_info_v0(
+                block_proposal,
+                transaction,
+                platform_state,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "gather_epoch_info".to_string(),
                 known_versions: vec![0],

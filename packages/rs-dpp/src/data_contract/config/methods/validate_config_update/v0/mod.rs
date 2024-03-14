@@ -11,11 +11,15 @@ impl DataContractConfig {
         new_config: &DataContractConfig,
         contract_id: Identifier,
     ) -> SimpleConsensusValidationResult {
+        // Validate: Old contract is not read_only
+
         if self.readonly() {
             return SimpleConsensusValidationResult::new_with_error(
                 DataContractIsReadonlyError::new(contract_id).into(),
             );
         }
+
+        // Validate: New contract is not read_only
 
         if new_config.readonly() {
             return SimpleConsensusValidationResult::new_with_error(
@@ -26,6 +30,8 @@ impl DataContractConfig {
                 .into(),
             );
         }
+
+        // Validate: Keeps history did not change
 
         if new_config.keeps_history() != self.keeps_history() {
             return SimpleConsensusValidationResult::new_with_error(
@@ -41,6 +47,8 @@ impl DataContractConfig {
             );
         }
 
+        // Validate: Can be deleted did not change
+
         if new_config.can_be_deleted() != self.can_be_deleted() {
             return SimpleConsensusValidationResult::new_with_error(
                 DataContractConfigUpdateError::new(
@@ -55,6 +63,8 @@ impl DataContractConfig {
             );
         }
 
+        // Validate: Documents keep history did not change
+
         if new_config.documents_keep_history_contract_default()
             != self.documents_keep_history_contract_default()
         {
@@ -66,6 +76,8 @@ impl DataContractConfig {
                 .into(),
             );
         }
+
+        // Validate: Documents mutable contract default did not change
 
         if new_config.documents_mutable_contract_default()
             != self.documents_mutable_contract_default()
@@ -79,6 +91,8 @@ impl DataContractConfig {
             );
         }
 
+        // Validate: Requires identity encryption bounded key did not change
+
         if new_config.requires_identity_encryption_bounded_key()
             != self.requires_identity_encryption_bounded_key()
         {
@@ -90,6 +104,8 @@ impl DataContractConfig {
                     .into(),
             );
         }
+
+        // Validate: Requires identity decryption bounded key did not change
 
         if new_config.requires_identity_decryption_bounded_key()
             != self.requires_identity_decryption_bounded_key()

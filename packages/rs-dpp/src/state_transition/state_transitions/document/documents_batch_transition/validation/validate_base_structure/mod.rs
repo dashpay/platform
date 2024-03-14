@@ -6,7 +6,7 @@ use platform_version::version::PlatformVersion;
 mod v0;
 
 impl DocumentsBatchTransition {
-    pub fn validate_base_structure<'d>(
+    pub fn validate_base_structure(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {

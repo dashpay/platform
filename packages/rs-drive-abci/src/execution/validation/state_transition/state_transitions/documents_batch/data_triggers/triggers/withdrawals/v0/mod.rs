@@ -1,4 +1,4 @@
-///! The `withdrawals_data_triggers` module contains data triggers related to withdrawals.
+//! The `withdrawals_data_triggers` module contains data triggers related to withdrawals.
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
@@ -158,7 +158,7 @@ mod tests {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
-        let state_read_guard = platform.state.read().unwrap();
+        let state_read_guard = platform.state.load();
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_read_guard,
@@ -167,7 +167,7 @@ mod tests {
         let platform_version = state_read_guard.current_platform_version().unwrap();
 
         let transition_execution_context = StateTransitionExecutionContextV0::default();
-        let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
+        let data_contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
         let owner_id = data_contract.owner_id();
 
@@ -248,7 +248,7 @@ mod tests {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_genesis_state();
-        let state_read_guard = platform.state.read().unwrap();
+        let state_read_guard = platform.state.load();
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,

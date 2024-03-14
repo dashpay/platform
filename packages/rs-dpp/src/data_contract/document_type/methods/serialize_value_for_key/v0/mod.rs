@@ -21,7 +21,7 @@ impl DocumentTypeV0 {
                 if bytes.len() != DEFAULT_HASH_SIZE {
                     Err(ProtocolError::DataContractError(
                         DataContractError::FieldRequirementUnmet(
-                            "expected system value to be 32 bytes long",
+                            "expected system value to be 32 bytes long".to_string(),
                         ),
                     ))
                 } else {
@@ -39,7 +39,7 @@ impl DocumentTypeV0 {
                 if bytes.len() > MAX_INDEX_SIZE {
                     Err(ProtocolError::DataContractError(
                         DataContractError::FieldRequirementUnmet(
-                            "value must be less than 256 bytes long",
+                            "value must be less than 256 bytes long".to_string(),
                         ),
                     ))
                 } else {

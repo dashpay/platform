@@ -21,7 +21,7 @@ impl DocumentTypeV0 {
 
         if document_schemas.is_empty() {
             return Err(ProtocolError::ConsensusError(Box::new(
-                DataContractEmptySchemaError::new(data_contract_id.clone()).into(),
+                DataContractEmptySchemaError::new(data_contract_id).into(),
             )));
         }
 
