@@ -1,7 +1,6 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::schema::enrich_with_base_schema;
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 
 use crate::consensus::basic::document::{InvalidDocumentTypeError, MissingDocumentTypeError};
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
@@ -48,7 +47,7 @@ impl DataContract {
 
         // Compile json schema validator if it's not yet compiled
         if !validator.is_compiled(platform_version)? {
-            let root_schema = enrich_with_base_schema(
+            let root_schema = DocumentType::enrich_with_base_schema(
                 // TODO: I just wondering if we could you references here
                 //  instead of cloning
                 document_type.schema().clone(),

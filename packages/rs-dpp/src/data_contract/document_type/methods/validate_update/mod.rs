@@ -1,25 +1,23 @@
-use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
-use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
 mod v0;
 
-impl DataContractConfig {
-    pub fn validate_config_update(
+impl<'a> DocumentTypeRef<'a> {
+    pub fn validate_update(
         &self,
-        new_config: &DataContractConfig,
-        contract_id: Identifier,
+        new_document_type: &DocumentType,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version
             .dpp
             .validation
-            .data_contract
-            .validate_config_update
+            .document_type
+            .validate_update
         {
-            0 => Ok(self.validate_config_update_v0(new_config, contract_id)),
+            0 => Ok(self.validate_update_v0(new_document_type)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "validate_config_update".to_string(),
                 known_versions: vec![0],

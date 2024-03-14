@@ -89,9 +89,6 @@ pub enum ProtocolError {
     #[error("Invalid key contract bounds error {0}")]
     InvalidKeyContractBoundsError(String),
 
-    #[error("unknown storage key requirements {0}")]
-    UnknownStorageKeyRequirements(String),
-
     #[error(transparent)]
     DataContractError(#[from] DataContractError),
 
@@ -101,9 +98,6 @@ pub enum ProtocolError {
 
     #[error("Invalid State Transition Type: {0}")]
     InvalidStateTransitionType(String),
-
-    #[error(transparent)]
-    StructureError(#[from] StructureError),
 
     #[error(transparent)]
     PlatformVersionError(#[from] PlatformVersionError),
@@ -149,13 +143,6 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     CompatibleProtocolVersionIsNotDefinedError(#[from] CompatibleProtocolVersionIsNotDefinedError),
-
-    // Data Contract
-    #[error("Data Contract already exists")]
-    DataContractAlreadyExistsError,
-
-    #[error(transparent)]
-    InvalidDataContractError(InvalidDataContractError),
 
     #[error(transparent)]
     InvalidDocumentTypeError(InvalidDocumentTypeError),
@@ -219,6 +206,10 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     InvalidVectorSizeError(InvalidVectorSizeError),
+
+    /// Invalid CBOR error
+    #[error("invalid cbor error: {0}")]
+    InvalidCBOR(String),
 }
 
 impl From<&str> for ProtocolError {

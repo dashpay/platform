@@ -84,6 +84,7 @@ impl DocumentWasm {
         let document_type = js_data_contract
             .inner()
             .document_type_for_name(document_type_name.as_str())
+            .map_err(ProtocolError::DataContractError)
             .with_js_error()?;
 
         let identifier_paths = document_type.identifier_paths().iter().map(|s| s.as_str());
@@ -298,6 +299,7 @@ impl DocumentWasm {
         let document_type = data_contract
             .inner()
             .document_type_for_name(document_type_name.as_str())
+            .map_err(ProtocolError::DataContractError)
             .with_js_error()?;
         let bytes = self
             .0
@@ -329,6 +331,7 @@ impl DocumentWasm {
         let document_type = data_contract
             .inner()
             .document_type_for_name(document_type_name.as_str())
+            .map_err(ProtocolError::DataContractError)
             .with_js_error()?;
 
         if document_type.binary_paths().contains(path) {

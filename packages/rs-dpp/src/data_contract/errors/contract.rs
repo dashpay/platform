@@ -1,22 +1,20 @@
+use crate::consensus::basic::decode::DecodingError;
+use bincode::{Decode, Encode};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
-
-use crate::data_contract::DataContract;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::errors::json_schema_error::JsonSchemaError;
-use crate::errors::consensus::ConsensusError;
+use crate::ProtocolError;
 
 // @append_only
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone)]
 pub enum DataContractError {
-    #[error("Data Contract already exists")]
-    DataContractAlreadyExistsError,
+    #[error(transparent)]
+    DecodingContractError(DecodingError),
 
-    #[error("Invalid Data Contract: {errors:?}")]
-    InvalidDataContractError {
-        errors: Vec<ConsensusError>,
-        raw_data_contract: DataContract,
-    },
+    #[error(transparent)]
+    DecodingDocumentError(DecodingError),
 
     #[error(transparent)]
     InvalidDocumentTypeError(InvalidDocumentTypeError),
@@ -25,47 +23,67 @@ pub enum DataContractError {
     MissingRequiredKey(String),
 
     #[error("field requirement unmet: {0}")]
-    FieldRequirementUnmet(&'static str),
+    FieldRequirementUnmet(String),
 
     #[error("key wrong type error: {0}")]
-    KeyWrongType(&'static str),
+    KeyWrongType(String),
 
     #[error("value wrong type error: {0}")]
-    ValueWrongType(&'static str),
+    ValueWrongType(String),
+
+    #[error("invalid uri error: {0}")]
+    InvalidURI(String),
+
+    /// Key wrong bounds error
+    #[error("key out of bounds error: {0}")]
+    KeyWrongBounds(String),
+
+    /// A key value pair must exist
+    #[error("key value must exist: {0}")]
+    KeyValueMustExist(String),
 
     #[error("value decoding error: {0}")]
-    ValueDecodingError(&'static str),
+    ValueDecodingError(String),
 
     #[error("encoding data structure not supported error: {0}")]
-    EncodingDataStructureNotSupported(&'static str),
+    EncodingDataStructureNotSupported(String),
 
     #[error("invalid contract structure: {0}")]
     InvalidContractStructure(String),
 
     #[error("document type not found: {0}")]
-    DocumentTypeNotFound(&'static str),
+    DocumentTypeNotFound(String),
 
     #[error("document type field not found: {0}")]
     DocumentTypeFieldNotFound(String),
 
     #[error("reference definition not found error: {0}")]
-    ReferenceDefinitionNotFound(&'static str),
+    ReferenceDefinitionNotFound(String),
 
     #[error("document owner id missing error: {0}")]
-    DocumentOwnerIdMissing(&'static str),
+    DocumentOwnerIdMissing(String),
 
     #[error("document id missing error: {0}")]
-    DocumentIdMissing(&'static str),
+    DocumentIdMissing(String),
 
     #[error("Operation not supported: {0}")]
-    Unsupported(&'static str),
+    Unsupported(String),
 
     #[error("Corrupted Serialization: {0}")]
-    CorruptedSerialization(&'static str),
-
-    #[error("Corrupted Code Execution: {0}")]
-    CorruptedCodeExecution(&'static str),
+    CorruptedSerialization(String),
 
     #[error("Corrupted Code Execution: {0}")]
     JsonSchema(JsonSchemaError),
+}
+
+impl From<platform_value::Error> for DataContractError {
+    fn from(value: platform_value::Error) -> Self {
+        DataContractError::ValueDecodingError(format!("{:?}", value))
+    }
+}
+
+impl From<(platform_value::Error, &str)> for DataContractError {
+    fn from(value: (platform_value::Error, &str)) -> Self {
+        DataContractError::ValueDecodingError(format!("{}: {:?}", value.1, value.0))
+    }
 }
