@@ -5,7 +5,7 @@ pub mod v0;
 
 use crate::state_transition_action::identity::identity_update::v0::IdentityUpdateTransitionActionV0;
 use derive_more::From;
-use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
+use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::platform_value::Identifier;
 use dpp::prelude::{Revision, UserFeeIncrease};
 

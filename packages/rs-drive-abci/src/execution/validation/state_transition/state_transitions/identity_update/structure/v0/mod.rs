@@ -1,7 +1,6 @@
 use crate::error::Error;
 use dpp::consensus::basic::identity::{
-    DuplicatedIdentityPublicKeyIdBasicError, InvalidIdentityUpdateTransitionDisableKeysError,
-    InvalidIdentityUpdateTransitionEmptyError,
+    DuplicatedIdentityPublicKeyIdBasicError, InvalidIdentityUpdateTransitionEmptyError,
 };
 use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 use dpp::consensus::ConsensusError;

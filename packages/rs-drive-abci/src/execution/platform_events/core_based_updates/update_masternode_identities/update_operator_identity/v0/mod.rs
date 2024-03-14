@@ -35,7 +35,7 @@ where
     pub(super) fn update_operator_identity_v0(
         &self,
         masternode: &(ProTxHash, DMNStateDiff),
-        block_info: &BlockInfo,
+        _block_info: &BlockInfo,
         platform_state: &PlatformState,
         transaction: &Transaction,
         drive_operations: &mut Vec<DriveOperation>,

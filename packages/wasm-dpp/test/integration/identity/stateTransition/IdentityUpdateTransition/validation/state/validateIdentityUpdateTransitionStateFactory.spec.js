@@ -24,7 +24,6 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
   let IdentityPublicKeyIsDisabledError;
   let InvalidIdentityPublicKeyIdError;
   let MissingMasterPublicKeyError;
-  let IdentityPublicKeyDisabledAtWindowViolationError;
   let MaxIdentityPublicKeyLimitReachedError;
   let StateTransitionExecutionContext;
   let IdentityUpdateTransitionStateValidator;
@@ -37,7 +36,6 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
       IdentityPublicKeyIsReadOnlyError,
       IdentityPublicKeyIsDisabledError,
       InvalidIdentityPublicKeyIdError,
-      IdentityPublicKeyDisabledAtWindowViolationError,
       MaxIdentityPublicKeyLimitReachedError,
       StateTransitionExecutionContext,
       IdentityUpdateTransitionStateValidator,

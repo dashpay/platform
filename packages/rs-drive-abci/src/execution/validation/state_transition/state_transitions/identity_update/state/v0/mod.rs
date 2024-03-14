@@ -1,19 +1,13 @@
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
-use dpp::consensus::state::identity::identity_public_key_disabled_at_window_violation_error::IdentityPublicKeyDisabledAtWindowViolationError;
-use dpp::consensus::state::state_error::StateError;
-
 use dpp::prelude::ConsensusValidationResult;
 
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-use dpp::validation::block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window;
 use dpp::version::PlatformVersion;
-use dpp::ProtocolError;
 use drive::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 
@@ -25,7 +19,6 @@ use crate::execution::validation::state_transition::common::validate_identity_pu
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_dont_exist_in_state::validate_identity_public_key_ids_dont_exist_in_state;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_exist_in_state::validate_identity_public_key_ids_exist_in_state;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_not_in_state;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_update) trait IdentityUpdateStateTransitionStateValidationV0
 {
