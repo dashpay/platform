@@ -132,7 +132,9 @@ where
         }
 
         let last_committed_state = self.state.load();
-        let current_quorum_hash = last_committed_state.current_validator_set_quorum_hash().into();
+        let current_quorum_hash = last_committed_state
+            .current_validator_set_quorum_hash()
+            .into();
 
         if current_quorum_hash != commit_info.quorum_hash {
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
@@ -168,7 +170,9 @@ where
         {
             // Verify commit
 
-            let quorum_public_key = last_committed_state.current_validator_set()?.threshold_public_key();
+            let quorum_public_key = last_committed_state
+                .current_validator_set()?
+                .threshold_public_key();
             let quorum_type = self.config.validator_set_quorum_type();
             // TODO: We already had commit in the function above, why do we need to create it again with clone?
             let commit = Commit::new_from_cleaned(
