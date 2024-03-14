@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
 import lodash from 'lodash';
-import { Listr } from 'listr2';
-import { NETWORK_LOCAL } from '../../constants.js';
+import {Listr} from 'listr2';
+import {NETWORK_LOCAL} from '../../constants.js';
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -32,7 +32,7 @@ export default function stopNodeTaskFactory(
             profiles.push('platform');
           }
 
-          if (!await dockerCompose.isNodeRunning(config, { profiles })) {
+          if (!await dockerCompose.isNodeRunning(config, {profiles})) {
             throw new Error('Node is not running');
           }
         },
@@ -48,24 +48,11 @@ export default function stopNodeTaskFactory(
             host: await getConnectionHost(config, 'core', 'core.rpc.host'),
           });
 
-          const { result: dkgInfo } = await rpcClient.quorum('dkginfo');
+          const {result: dkgInfo} = await rpcClient.quorum('dkginfo');
 
-          const firstWindow = [Math.floor(blockCount / 24) * 24,
-            Math.floor(blockCount / 24) * 24 + 10];
-          const secondWindow = [Math.floor(blockCount / 288) * 288,
-            Math.floor(blockCount / 288) * 288 + 42];
+          const {active_dkgs, next_dkg} = dkgInfo
 
-          console.log('BlockCount', blockCount);
-          console.log(`First window [${firstWindow[0]}, ${firstWindow[1]}]`);
-          console.log(`Second window [${secondWindow[0]}, ${secondWindow[1]}]`);
-
-          const isInFirstWindow = lodash.inRange(blockCount, firstWindow[0], firstWindow[1]);
-          const isInSecondWindow = lodash.inRange(blockCount, secondWindow[0], secondWindow[1]);
-
-          if (isInFirstWindow || isInSecondWindow) {
-            console.log(`Is in first window = ${isInFirstWindow}`);
-            console.log(`Is in second window = ${isInSecondWindow}`);
-
+          if (active_dkgs !== 0 || next_dkg < 6) {
             const agreement = await task.prompt({
               type: 'toggle',
               name: 'confirm',
@@ -94,7 +81,7 @@ export default function stopNodeTaskFactory(
             host: await getConnectionHost(config, 'core', 'core.rpc.host'),
           });
 
-          const { result: { mediantime } } = await rpcClient.getBlockchainInfo();
+          const {result: {mediantime}} = await rpcClient.getBlockchainInfo();
 
           config.set('core.miner.mediantime', mediantime);
         },
@@ -106,8 +93,7 @@ export default function stopNodeTaskFactory(
           if (ctx.platformOnly) {
             profiles.push('platform');
           }
-
-          // await dockerCompose.stop(config, { profiles });
+          await dockerCompose.stop(config, {profiles});
         },
       },
     ]);
