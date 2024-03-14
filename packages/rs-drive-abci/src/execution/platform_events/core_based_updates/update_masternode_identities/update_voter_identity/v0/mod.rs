@@ -47,9 +47,10 @@ where
             .full_masternode_list()
             .get(pro_tx_hash)
             .ok_or_else(|| {
-                Error::Execution(ExecutionError::CorruptedCachedState(
-                    "expected masternode to be in state",
-                ))
+                Error::Execution(ExecutionError::CorruptedCachedState(format!(
+                    "expected masternode {} to be in state",
+                    pro_tx_hash
+                )))
             })?;
 
         let old_voter_identifier =
