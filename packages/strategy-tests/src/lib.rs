@@ -404,6 +404,7 @@ impl Strategy {
         self.contracts_with_updates
             .iter_mut()
             .map(|(created_contract, contract_updates)| {
+                // Select a random identity from current_identities to be the contract owner
                 let identity_num = rng.gen_range(0..current_identities.len());
                 let identity = current_identities
                     .get(identity_num)
@@ -413,9 +414,11 @@ impl Strategy {
 
                 let contract = created_contract.data_contract_mut();
 
+                // Get and bump the identity nonce
                 let identity_nonce = identity_nonce_counter.entry(identity.id).or_default();
                 *identity_nonce += 1;
 
+                // Set the contract ID and owner ID with the random identity
                 contract.set_owner_id(identity.id);
                 let old_id = contract.id();
                 let new_id =
@@ -424,6 +427,7 @@ impl Strategy {
 
                 id_mapping.insert(old_id, new_id); // Store the mapping
 
+                // If there are contract updates, use the mapping to update their ID and owner ID too
                 if let Some(contract_updates) = contract_updates {
                     for (_, updated_contract) in contract_updates.iter_mut() {
                         let updated_contract_data = updated_contract.data_contract_mut();
@@ -449,7 +453,7 @@ impl Strategy {
                     contract.clone(),
                     *identity_nonce,
                     &identity,
-                    2, // key id 1 should always be a high or critical auth key in these tests
+                    2,
                     signer,
                     platform_version,
                     None,
@@ -663,7 +667,7 @@ impl Strategy {
 
                                 let identity_contract_nonce = contract_nonce_counter
                                     .entry((identity.id(), contract.id()))
-                                    .or_default();
+                                    .or_insert(1);
                                 let gap = self
                                     .identity_contract_nonce_gaps
                                     .as_ref()
