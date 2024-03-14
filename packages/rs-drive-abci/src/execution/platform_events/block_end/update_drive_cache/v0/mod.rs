@@ -1,6 +1,6 @@
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
-use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
+use crate::platform_types::epoch_info::v0::EpochInfoV0Methods;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
@@ -20,7 +20,10 @@ where
 
         let mut protocol_versions_counter = self.drive.cache.protocol_versions_counter.write();
 
-        if block_execution_context.epoch_info().is_epoch_change() {
+        if block_execution_context
+            .epoch_info()
+            .is_epoch_change_but_not_genesis()
+        {
             // Clear previously proposed versions since we started a new epoch
             protocol_versions_counter.clear();
         } else {
