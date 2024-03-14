@@ -3,7 +3,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
+use dpp::identity::{Identity, IdentityPublicKey, KeyID};
 use dpp::prelude::{IdentityNonce, Revision};
 
 use crate::drive::identity::update::methods::merge_identity_nonce::MergeIdentityContractNonceResultToResult;
@@ -56,8 +56,6 @@ pub enum IdentityOperationType {
         identity_id: [u8; 32],
         /// The keys to be added
         keys_ids: Vec<KeyID>,
-        /// The time at which they were disabled
-        disable_at: TimestampMillis,
     },
 
     /// Re-Enable Identity Keys
@@ -157,11 +155,10 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
             IdentityOperationType::DisableIdentityKeys {
                 identity_id,
                 keys_ids,
-                disable_at,
             } => drive.disable_identity_keys_operations(
                 identity_id,
                 keys_ids,
-                disable_at,
+                block_info.time_ms,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

@@ -184,7 +184,7 @@ impl<C> Platform<C> {
                 Platform::<C>::fetch_platform_state(&drive, None, platform_version)?
             else {
                 return Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                    "execution state should be stored as well as protocol version",
+                    "execution state should be stored as well as protocol version".to_string(),
                 )));
             };
 

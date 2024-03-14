@@ -9,6 +9,7 @@ use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use js_sys::Reflect::delete_property;
 pub use serde::{Deserialize, Serialize};
 
+use dpp::ProtocolError;
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
@@ -96,7 +97,7 @@ impl IdentityPublicKeyWithWitnessWasm {
         self.0.set_security_level(
             security_level
                 .try_into()
-                .map_err(|e: anyhow::Error| e.to_string())?,
+                .map_err(|e: ProtocolError| e.to_string())?,
         );
         Ok(())
     }

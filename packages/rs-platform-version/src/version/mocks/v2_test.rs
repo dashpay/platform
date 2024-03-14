@@ -3,10 +3,11 @@ use crate::version::dpp_versions::{
     ContractVersions, CostVersions, DPPValidationVersions, DPPVersion, DataContractMethodVersions,
     DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions,
     DocumentTransitionVersions, DocumentTypeClassMethodVersions, DocumentTypeIndexVersions,
-    DocumentTypeMethodVersions, DocumentTypeSchemaVersions, DocumentTypeVersions, DocumentVersions,
-    DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
-    IdentityKeyTypeMethodVersions, IdentityTransitionAssetLockVersions, IdentityTransitionVersions,
-    IdentityVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
+    DocumentTypeMethodVersions, DocumentTypeSchemaVersions, DocumentTypeValidationVersions,
+    DocumentTypeVersions, DocumentVersions, DocumentsBatchTransitionValidationVersions,
+    DocumentsBatchTransitionVersions, IdentityKeyTypeMethodVersions,
+    IdentityTransitionAssetLockVersions, IdentityTransitionVersions, IdentityVersions,
+    JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
     RecursiveSchemaValidatorVersions, StateTransitionConversionVersions,
     StateTransitionMethodVersions, StateTransitionSerializationVersions, StateTransitionVersions,
 };
@@ -803,6 +804,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 validate_not_defined_properties: 0,
                 validate_property_definition: 0,
             },
+            document_type: DocumentTypeValidationVersions { validate_update: 0 },
         },
         state_transition_serialization_versions: StateTransitionSerializationVersions {
             identity_public_key_in_creation: FeatureVersionBounds {

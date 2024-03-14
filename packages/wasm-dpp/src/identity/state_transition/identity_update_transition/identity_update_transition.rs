@@ -144,23 +144,6 @@ impl IdentityUpdateTransitionWasm {
         self.0.set_public_key_ids_to_disable(keys);
     }
 
-    #[wasm_bindgen(js_name=getPublicKeysDisabledAt)]
-    pub fn get_public_keys_disabled_at(&self) -> Option<js_sys::Date> {
-        self.0
-            .public_keys_disabled_at()
-            .map(|timestamp| js_sys::Date::new(&JsValue::from_f64(timestamp as f64)))
-    }
-
-    #[wasm_bindgen(js_name=setPublicKeysDisabledAt)]
-    pub fn set_public_keys_disabled_at(&mut self, timestamp: Option<js_sys::Date>) {
-        if let Some(timestamp) = timestamp {
-            self.0
-                .set_public_keys_disabled_at(Some(timestamp.get_time() as TimestampMillis));
-        } else {
-            self.0.set_public_keys_disabled_at(None);
-        }
-    }
-
     #[wasm_bindgen(js_name=getType)]
     pub fn get_type(&self) -> u8 {
         self.0.state_transition_type() as u8
@@ -228,14 +211,6 @@ impl IdentityUpdateTransitionWasm {
                 &js_object,
                 &"signaturePublicKeyId".to_owned().into(),
                 &JsValue::from(object.signature_public_key_id),
-            )?;
-        }
-
-        if let Some(timestamp) = object.public_keys_disabled_at {
-            js_sys::Reflect::set(
-                &js_object,
-                &"publicKeysDisabledAt".to_owned().into(),
-                &js_sys::Date::new(&JsValue::from_f64(timestamp as f64)).into(),
             )?;
         }
 
@@ -322,14 +297,6 @@ impl IdentityUpdateTransitionWasm {
                 &js_object,
                 &"signaturePublicKeyId".to_owned().into(),
                 &object.signature_public_key_id.into(),
-            )?;
-        }
-
-        if let Some(timestamp) = object.public_keys_disabled_at {
-            js_sys::Reflect::set(
-                &js_object,
-                &"publicKeysDisabledAt".to_owned().into(),
-                &JsValue::from_f64(timestamp as f64),
             )?;
         }
 

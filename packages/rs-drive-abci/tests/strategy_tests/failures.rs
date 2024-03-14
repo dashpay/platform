@@ -1,32 +1,22 @@
 #[cfg(test)]
 mod tests {
     use crate::execution::run_chain_for_strategy;
-    use rand::rngs::StdRng;
-    use rand::SeedableRng;
+
     use std::collections::{BTreeMap, HashMap};
     use strategy_tests::frequency::Frequency;
 
     use crate::strategy::{FailureStrategy, NetworkStrategy};
-    use strategy_tests::Strategy;
+    use strategy_tests::{StartIdentities, Strategy};
 
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
 
-    use crate::strategy::CoreHeightIncrease::KnownCoreHeightIncreases;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-    use dpp::data_contract::document_type::random_document::{
-        DocumentFieldFillSize, DocumentFieldFillType,
-    };
 
-    use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::platform_value::Value;
-    use dpp::prelude::Identity;
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::version::PlatformVersion;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
-    use simple_signer::signer::SimpleSigner;
-    use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
 
     #[test]
     fn run_chain_insert_one_new_identity_and_a_contract_with_bad_update() {
@@ -57,7 +47,7 @@ mod tests {
                     Some(BTreeMap::from([(3, contract_update_1)])),
                 )],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -134,7 +124,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,

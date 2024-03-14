@@ -62,53 +62,74 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     )?;
 
     if !result.is_valid() {
+        // If the signature is not valid we do not have the user pay for the state transition
+        // Since it is most likely not from them
+        // Proposers should remove such transactions from the block
+        // Other validators should reject blocks with such transactions
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
     }
 
     let mut maybe_identity = result.into_data()?;
 
-    // Validating identity contract nonce, this must happen after validating the signature
-    let result = state_transition.validate_nonces(
-        &platform.into(),
-        platform.state.last_block_info(),
-        transaction,
-        platform_version,
-    )?;
+    if state_transition.has_nonces_validation() {
+        // Validating identity contract nonce, this must happen after validating the signature
+        let result = state_transition.validate_nonces(
+            &platform.into(),
+            platform.state.last_block_info(),
+            transaction,
+            platform_version,
+        )?;
 
-    if !result.is_valid() {
-        return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+        if !result.is_valid() {
+            // If the nonce is not valid the state transition is not paid for, most likely because
+            // this is just a replayed block
+            // Proposers should remove such transactions from the block
+            // Other validators should reject blocks with such transactions
+            return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+        }
     }
 
-    // We validate basic structure validation after verifying the identity,
-    // this is structure validation that does not require state and is already checked on check_tx
-    let consensus_result = state_transition.validate_basic_structure(platform_version)?;
+    if state_transition.has_basic_structure_validation() {
+        // We validate basic structure validation after verifying the identity,
+        // this is structure validation that does not require state and is already checked on check_tx
+        let consensus_result = state_transition.validate_basic_structure(platform_version)?;
 
-    if !consensus_result.is_valid() {
-        return Ok(
-            ConsensusValidationResult::<ExecutionEvent>::new_with_errors(consensus_result.errors),
-        );
+        if !consensus_result.is_valid() {
+            // Basic structure validation is extremely cheap to process, because of this attacks are
+            // not likely.
+            // Often the basic structure validation is necessary for estimated costs
+            // Proposers should remove such transactions from the block
+            // Other validators should reject blocks with such transactions
+            return Ok(
+                ConsensusValidationResult::<ExecutionEvent>::new_with_errors(
+                    consensus_result.errors,
+                ),
+            );
+        }
     }
 
-    // Next we have advanced structure validation, this is structure validation that does not require
-    // state but isn't checked on check_tx. If advanced structure fails identity nonces or identity
-    // contract nonces will be bumped
-    let consensus_result = state_transition.validate_advanced_structure(platform_version)?;
+    if state_transition.has_advanced_structure_validation() {
+        // Next we have advanced structure validation, this is structure validation that does not require
+        // state but isn't checked on check_tx. If advanced structure fails identity nonces or identity
+        // contract nonces will be bumped
+        let consensus_result = state_transition.validate_advanced_structure(platform_version)?;
 
-    if !consensus_result.is_valid() {
-        return consensus_result.map_result(|action| {
-            ExecutionEvent::create_from_state_transition_action(
-                action,
-                maybe_identity,
-                platform.state.last_committed_block_epoch_ref(),
-                state_transition_execution_context,
-                platform_version,
-            )
-        });
+        if !consensus_result.is_valid() {
+            return consensus_result.map_result(|action| {
+                ExecutionEvent::create_from_state_transition_action(
+                    action,
+                    maybe_identity,
+                    platform.state.last_committed_block_epoch_ref(),
+                    state_transition_execution_context,
+                    platform_version,
+                )
+            });
+        }
     }
 
     let action = if state_transition.requires_advance_structure_validation_from_state() {
-        if let Some(action) = action {
-            Some(action)
+        let action = if let Some(action) = action {
+            action
         } else {
             let state_transition_action_result = state_transition.transform_into_action(
                 platform,
@@ -123,34 +144,38 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
                     ),
                 );
             }
-            Some(state_transition_action_result.into_data()?)
+            state_transition_action_result.into_data()?
+        };
+
+        // Validating structure
+        let result = state_transition.validate_advanced_structure_from_state(
+            &platform.into(),
+            &action,
+            platform_version,
+        )?;
+        if !result.is_valid() {
+            return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
         }
+
+        Some(action)
     } else {
         None
     };
 
-    // Validating structure
-    let result = state_transition.validate_advanced_structure_from_state(
-        &platform.into(),
-        action.as_ref(),
-        platform_version,
-    )?;
-    if !result.is_valid() {
-        return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
-    }
+    if state_transition.has_balance_validation() {
+        // Validating that we have sufficient balance for a transfer or withdrawal,
+        // this must happen after validating the signature
+        let result = state_transition.validate_balance(
+            maybe_identity.as_mut(),
+            &platform.into(),
+            platform.state.last_block_info(),
+            transaction,
+            platform_version,
+        )?;
 
-    // Validating that we have sufficient balance for a transfer or withdrawal,
-    // this must happen after validating the signature
-    let result = state_transition.validate_balance(
-        maybe_identity.as_mut(),
-        &platform.into(),
-        platform.state.last_block_info(),
-        transaction,
-        platform_version,
-    )?;
-
-    if !result.is_valid() {
-        return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+        if !result.is_valid() {
+            return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+        }
     }
 
     // Validating state
@@ -221,6 +246,12 @@ pub(crate) trait StateTransitionBasicStructureValidationV0 {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
+
+    /// True if the state transition has basic structure validation.
+    /// Currently only data contract update does not
+    fn has_basic_structure_validation(&self) -> bool {
+        true
+    }
 }
 
 /// A trait for validating state transitions within a blockchain.
@@ -241,6 +272,10 @@ pub(crate) trait StateTransitionAdvancedStructureValidationV0 {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+
+    /// True if the state transition has advanced structure validation.
+    /// This structure validation makes users pay if there is a failure
+    fn has_advanced_structure_validation(&self) -> bool;
 }
 
 /// A trait for validating state transitions within a blockchain.
@@ -261,6 +296,12 @@ pub(crate) trait StateTransitionNonceValidationV0 {
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
+
+    /// True if the state transition validates nonces, either identity nonces or identity contract
+    /// nonces
+    fn has_nonces_validation(&self) -> bool {
+        true
+    }
 }
 
 /// A trait for validating state transitions within a blockchain.
@@ -279,7 +320,7 @@ pub(crate) trait StateTransitionStructureKnownInStateValidationV0 {
     fn validate_advanced_structure_from_state(
         &self,
         platform: &PlatformStateRef,
-        action: Option<&StateTransitionAction>,
+        action: &StateTransitionAction,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
@@ -313,6 +354,13 @@ pub(crate) trait StateTransitionBalanceValidationV0 {
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
+
+    /// True if the state transition has a balance validation.
+    /// This balance validation is not for the operations of the state transition, but more as a
+    /// quick early verification that the user has the balance they want to transfer or withdraw.
+    fn has_balance_validation(&self) -> bool {
+        true
+    }
 }
 
 /// A trait for validating state transitions within a blockchain.
@@ -368,6 +416,9 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
             }
         }
     }
+    fn has_basic_structure_validation(&self) -> bool {
+        !matches!(self, StateTransition::DataContractUpdate(_))
+    }
 }
 
 impl StateTransitionNonceValidationV0 for StateTransition {
@@ -400,6 +451,18 @@ impl StateTransitionNonceValidationV0 for StateTransition {
             _ => Ok(SimpleConsensusValidationResult::new()),
         }
     }
+
+    fn has_nonces_validation(&self) -> bool {
+        matches!(
+            self,
+            StateTransition::DocumentsBatch(_)
+                | StateTransition::DataContractCreate(_)
+                | StateTransition::DataContractUpdate(_)
+                | StateTransition::IdentityUpdate(_)
+                | StateTransition::IdentityCreditTransfer(_)
+                | StateTransition::IdentityCreditWithdrawal(_)
+        )
+    }
 }
 
 impl StateTransitionBalanceValidationV0 for StateTransition {
@@ -421,22 +484,26 @@ impl StateTransitionBalanceValidationV0 for StateTransition {
             _ => Ok(SimpleConsensusValidationResult::new()),
         }
     }
+
+    fn has_balance_validation(&self) -> bool {
+        matches!(
+            self,
+            StateTransition::IdentityCreditTransfer(_)
+                | StateTransition::IdentityCreditWithdrawal(_)
+        )
+    }
 }
 
 impl StateTransitionAdvancedStructureValidationV0 for StateTransition {
+    fn has_advanced_structure_validation(&self) -> bool {
+        false
+    }
+
     fn validate_advanced_structure(
         &self,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        match self {
-            StateTransition::DataContractCreate(st) => {
-                st.validate_advanced_structure(platform_version)
-            }
-            StateTransition::DataContractUpdate(st) => {
-                st.validate_advanced_structure(platform_version)
-            }
-            _ => Ok(ConsensusValidationResult::<StateTransitionAction>::new()),
-        }
+        Ok(ConsensusValidationResult::<StateTransitionAction>::new())
     }
 }
 
@@ -444,7 +511,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
     fn validate_advanced_structure_from_state(
         &self,
         platform: &PlatformStateRef,
-        action: Option<&StateTransitionAction>,
+        action: &StateTransitionAction,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {

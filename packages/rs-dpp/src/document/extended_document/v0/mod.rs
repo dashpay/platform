@@ -153,6 +153,7 @@ impl ExtendedDocumentV0 {
         // We can unwrap because the Document can not be created without a valid Document Type
         self.data_contract
             .document_type_for_name(self.document_type_name.as_str())
+            .map_err(ProtocolError::DataContractError)
     }
 
     pub fn can_be_modified(&self) -> Result<bool, ProtocolError> {

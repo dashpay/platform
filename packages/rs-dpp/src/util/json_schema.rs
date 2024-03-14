@@ -2,7 +2,8 @@ use anyhow::{anyhow, bail};
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 
-use crate::{identifier, ProtocolError};
+use crate::data_contract::errors::DataContractError;
+use crate::identifier;
 
 pub trait JsonSchemaExt {
     /// returns true if json value contains property 'type`, and it equals 'object'
@@ -25,17 +26,15 @@ pub trait JsonSchemaExt {
     fn is_type_of_identifier(&self) -> bool;
 }
 
-pub fn resolve_uri<'a>(value: &'a Value, uri: &str) -> Result<&'a Value, ProtocolError> {
+pub fn resolve_uri<'a>(value: &'a Value, uri: &str) -> Result<&'a Value, DataContractError> {
     if !uri.starts_with("#/") {
-        return Err(ProtocolError::Generic(
-            "only local references are allowed".to_string(),
+        return Err(DataContractError::InvalidURI(
+            "only local uri references are allowed".to_string(),
         ));
     }
 
     let string_path = uri.strip_prefix("#/").unwrap().replace('/', ".");
-    value
-        .get_value_at_path(&string_path)
-        .map_err(ProtocolError::ValueError)
+    value.get_value_at_path(&string_path).map_err(|e| e.into())
 }
 
 impl JsonSchemaExt for JsonValue {

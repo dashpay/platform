@@ -3,6 +3,9 @@ use crate::data_contract::errors::DataContractError;
 
 use crate::document::property_names::{CREATED_AT, UPDATED_AT};
 
+#[cfg(feature = "validation")]
+use crate::prelude::ConsensusValidationResult;
+
 use crate::prelude::Revision;
 
 use crate::ProtocolError;
@@ -22,6 +25,9 @@ use platform_version::version::FeatureVersion;
 
 use std::collections::BTreeMap;
 
+use crate::consensus::basic::decode::DecodingError;
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use std::io::{BufReader, Read};
 
 impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
@@ -247,37 +253,39 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
         serialized_document: &[u8],
         document_type: DocumentTypeRef,
         _platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<Self, DataContractError> {
         let mut buf = BufReader::new(serialized_document);
         if serialized_document.len() < 64 {
-            return Err(ProtocolError::DecodingError(
-                "serialized document is too small, must have id and owner id".to_string(),
+            return Err(DataContractError::DecodingDocumentError(
+                DecodingError::new(
+                    "serialized document is too small, must have id and owner id".to_string(),
+                ),
             ));
         }
 
         // $id
         let mut id = [0; 32];
         buf.read_exact(&mut id).map_err(|_| {
-            ProtocolError::DecodingError(
+            DataContractError::DecodingDocumentError(DecodingError::new(
                 "error reading from serialized document for id".to_string(),
-            )
+            ))
         })?;
 
         // $ownerId
         let mut owner_id = [0; 32];
         buf.read_exact(&mut owner_id).map_err(|_| {
-            ProtocolError::DecodingError(
+            DataContractError::DecodingDocumentError(DecodingError::new(
                 "error reading from serialized document for owner id".to_string(),
-            )
+            ))
         })?;
 
         // $revision
         // if the document type is mutable then we should deserialize the revision
         let revision: Option<Revision> = if document_type.requires_revision() {
             let revision = buf.read_varint().map_err(|_| {
-                ProtocolError::DecodingError(
+                DataContractError::DecodingDocumentError(DecodingError::new(
                     "error reading revision from serialized document for revision".to_string(),
-                )
+                ))
             })?;
             Some(revision)
         } else {
@@ -296,10 +304,8 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             .filter_map(|(key, property)| {
                 if finished_buffer {
                     return if property.required {
-                        Some(Err(ProtocolError::DataContractError(
-                            DataContractError::CorruptedSerialization(
-                                "required field after finished buffer",
-                            ),
+                        Some(Err(DataContractError::CorruptedSerialization(
+                            "required field after finished buffer".to_string(),
                         )))
                     } else {
                         None
@@ -317,7 +323,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                     Err(e) => Some(Err(e)),
                 }
             })
-            .collect::<Result<BTreeMap<String, Value>, ProtocolError>>()?;
+            .collect::<Result<BTreeMap<String, Value>, DataContractError>>()?;
 
         Ok(DocumentV0 {
             id: Identifier::new(id),
@@ -334,12 +340,12 @@ fn read_timestamp(
     buf: &mut BufReader<&[u8]>,
     document_type: DocumentTypeRef,
     property_name: &str,
-) -> Result<Option<u64>, ProtocolError> {
+) -> Result<Option<u64>, DataContractError> {
     if !document_type.required_fields().contains(property_name) {
         let marker = buf.read_u8().map_err(|_| {
-            ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                "error reading created at optional byte from serialized document",
-            ))
+            DataContractError::CorruptedSerialization(
+                "error reading created at optional byte from serialized document".to_string(),
+            )
         })?;
 
         if marker == 0 {
@@ -348,9 +354,9 @@ fn read_timestamp(
     }
 
     let timestamp = buf.read_u64::<BigEndian>().map_err(|_| {
-        ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-            "error reading created at from serialized document",
-        ))
+        DataContractError::CorruptedSerialization(
+            "error reading created at from serialized document".to_string(),
+        )
     })?;
 
     Ok(Some(timestamp))
@@ -427,12 +433,46 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let serialized_version = serialized_document.read_varint().map_err(|_| {
-            ProtocolError::DecodingError(
+            DataContractError::DecodingDocumentError(DecodingError::new(
                 "error reading revision from serialized document for revision".to_string(),
-            )
+            ))
         })?;
         match serialized_version {
-            0 => DocumentV0::from_bytes_v0(serialized_document, document_type, platform_version),
+            0 => DocumentV0::from_bytes_v0(serialized_document, document_type, platform_version)
+                .map_err(ProtocolError::DataContractError),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Document::from_bytes (deserialization)".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Reads a serialized document and creates a DocumentV0 from it.
+    #[cfg(feature = "validation")]
+    fn from_bytes_in_consensus(
+        mut serialized_document: &[u8],
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<Self>, ProtocolError> {
+        let serialized_version = serialized_document.read_varint().map_err(|_| {
+            DataContractError::DecodingDocumentError(DecodingError::new(
+                "error reading revision from serialized document for revision".to_string(),
+            ))
+        })?;
+        match serialized_version {
+            0 => {
+                match DocumentV0::from_bytes_v0(
+                    serialized_document,
+                    document_type,
+                    platform_version,
+                ) {
+                    Ok(document) => Ok(ConsensusValidationResult::new_with_data(document)),
+                    Err(err) => Ok(ConsensusValidationResult::new_with_error(
+                        ConsensusError::BasicError(BasicError::ContractError(err)),
+                    )),
+                }
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "Document::from_bytes (deserialization)".to_string(),
                 known_versions: vec![0],

@@ -40,11 +40,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version
-            .grove_methods
-            .apply
-            .grove_apply_partial_batch
-        {
+        match drive_version.grove_methods.apply.grove_apply_partial_batch {
             0 => self.grove_apply_partial_batch_with_add_costs_v0(
                 ops,
                 validate,
