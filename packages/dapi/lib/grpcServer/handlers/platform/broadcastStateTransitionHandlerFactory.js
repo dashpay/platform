@@ -44,7 +44,7 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
     let response;
 
     try {
-      response = await rpcClient.request('broadcast_tx_sync', { tx });
+      response = await rpcClient.request('broadcast_tx', { tx });
     } catch (e) {
       if (e.message === 'socket hang up') {
         throw new UnavailableGrpcError('Tenderdash is not available');
