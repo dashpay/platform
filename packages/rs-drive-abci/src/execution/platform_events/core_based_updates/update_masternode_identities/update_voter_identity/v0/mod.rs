@@ -49,7 +49,7 @@ where
             .ok_or_else(|| {
                 Error::Execution(ExecutionError::CorruptedCachedState(format!(
                     "expected masternode {} to be in state",
-                    pro_tx_hash.to_string()
+                    pro_tx_hash
                 )))
             })?;
 

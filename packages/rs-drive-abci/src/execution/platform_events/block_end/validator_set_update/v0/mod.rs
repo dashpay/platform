@@ -65,8 +65,8 @@ where
                 .validator_sets()
                 .get_index_of(&platform_state.current_validator_set_quorum_hash())
                 .ok_or(Error::Execution(ExecutionError::CorruptedCachedState(
-                    format!("perform_rotation: current validator set quorum hash {} not in current known validator sets [{}] processing block {}", platform_state.current_validator_set_quorum_hash().to_string(), platform_state
-                        .validator_sets().keys().into_iter().map(|quorum_hash| quorum_hash.to_string()).join(" | "),
+                    format!("perform_rotation: current validator set quorum hash {} not in current known validator sets [{}] processing block {}", platform_state.current_validator_set_quorum_hash(), platform_state
+                        .validator_sets().keys().map(|quorum_hash| quorum_hash.to_string()).join(" | "),
                             platform_state.last_committed_block_height() + 1,
                 ))))?;
             // we should rotate the quorum
