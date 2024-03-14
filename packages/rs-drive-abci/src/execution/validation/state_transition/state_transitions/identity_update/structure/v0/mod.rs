@@ -1,7 +1,6 @@
 use crate::error::Error;
 use dpp::consensus::basic::identity::{
-    DuplicatedIdentityPublicKeyIdBasicError, InvalidIdentityUpdateTransitionDisableKeysError,
-    InvalidIdentityUpdateTransitionEmptyError,
+    DuplicatedIdentityPublicKeyIdBasicError, InvalidIdentityUpdateTransitionEmptyError,
 };
 use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 use dpp::consensus::ConsensusError;
@@ -61,18 +60,6 @@ impl IdentityUpdateStateTransitionStructureValidationV0 for IdentityUpdateTransi
 
                 ids.insert(key_id);
             }
-
-            // Ensure disable at timestamp is present
-            if self.public_keys_disabled_at().is_none() {
-                result.add_error(ConsensusError::from(
-                    InvalidIdentityUpdateTransitionDisableKeysError::new(),
-                ))
-            }
-        } else if self.public_keys_disabled_at().is_some() {
-            // Ensure there are public keys to disable when disable at timestamp is present
-            result.add_error(ConsensusError::from(
-                InvalidIdentityUpdateTransitionDisableKeysError::new(),
-            ))
         }
 
         if !result.is_valid() {

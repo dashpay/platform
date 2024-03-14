@@ -17,7 +17,6 @@ use crate::consensus::state::document::duplicate_unique_index_error::DuplicateUn
 use crate::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 use crate::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
 use crate::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
-use crate::consensus::state::identity::identity_public_key_disabled_at_window_violation_error::IdentityPublicKeyDisabledAtWindowViolationError;
 use crate::consensus::state::identity::identity_public_key_is_disabled_error::IdentityPublicKeyIsDisabledError;
 use crate::consensus::state::identity::identity_public_key_is_read_only_error::IdentityPublicKeyIsReadOnlyError;
 use crate::consensus::state::identity::invalid_identity_public_key_id_error::InvalidIdentityPublicKeyIdError;
@@ -78,11 +77,6 @@ pub enum StateError {
     #[error(transparent)]
     IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(
         IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError,
-    ),
-
-    #[error(transparent)]
-    IdentityPublicKeyDisabledAtWindowViolationError(
-        IdentityPublicKeyDisabledAtWindowViolationError,
     ),
 
     #[error(transparent)]

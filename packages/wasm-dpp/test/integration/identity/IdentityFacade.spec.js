@@ -192,7 +192,6 @@ describe('IdentityFacade', () => {
         stateTransition.getPublicKeysToAdd().map((pk) => pk.toObject()),
       ).to.deep.equal(publicKeys.add.map((k) => k.toObject()));
       expect(stateTransition.getPublicKeyIdsToDisable()).to.deep.equal([]);
-      expect(stateTransition.getPublicKeysDisabledAt()).to.equal(undefined);
     });
   });
 

@@ -21,7 +21,6 @@ pub trait IdentityUpdateTransitionMethodsV0 {
         master_public_key_id: &KeyID,
         add_public_keys: Vec<IdentityPublicKey>,
         disable_public_keys: Vec<KeyID>,
-        public_keys_disabled_at: Option<u64>,
         nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         signer: &S,

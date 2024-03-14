@@ -193,7 +193,6 @@ impl ErrorWithCode for StateError {
 
             // Identity
             Self::IdentityAlreadyExistsError(_) => 4011,
-            Self::IdentityPublicKeyDisabledAtWindowViolationError { .. } => 4012,
             Self::IdentityPublicKeyIsReadOnlyError { .. } => 4017,
             Self::InvalidIdentityPublicKeyIdError { .. } => 4018,
             Self::InvalidIdentityRevisionError { .. } => 4019,

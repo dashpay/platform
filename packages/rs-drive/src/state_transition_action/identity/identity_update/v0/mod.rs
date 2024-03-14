@@ -1,7 +1,7 @@
 mod transformer;
 
 use dpp::identifier::Identifier;
-use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
+use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{IdentityNonce, Revision, UserFeeIncrease};
 use serde::{Deserialize, Serialize};
 
@@ -13,8 +13,6 @@ pub struct IdentityUpdateTransitionActionV0 {
     pub add_public_keys: Vec<IdentityPublicKey>,
     /// disable public keys
     pub disable_public_keys: Vec<KeyID>,
-    /// public keys disabled at
-    pub public_keys_disabled_at: Option<TimestampMillis>,
     /// identity id
     pub identity_id: Identifier,
     /// revision
