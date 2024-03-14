@@ -28,9 +28,6 @@
 //
 
 #[cfg(any(feature = "full", feature = "verify"))]
-use std::sync::RwLock;
-
-#[cfg(any(feature = "full", feature = "verify"))]
 use grovedb::GroveDb;
 
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -45,7 +42,7 @@ pub mod balances;
 #[cfg(feature = "full")]
 pub mod batch;
 /// Drive Cache
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "full")]
 pub mod cache;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod config;
@@ -112,7 +109,7 @@ pub struct Drive {
     pub config: DriveConfig,
     /// Drive Cache
     #[cfg(feature = "full")]
-    pub cache: RwLock<DriveCache>,
+    pub cache: DriveCache,
 }
 
 // The root tree structure is very important!

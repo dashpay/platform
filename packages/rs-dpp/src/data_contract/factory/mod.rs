@@ -3,7 +3,6 @@ mod v0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::DataContract;
 
-use crate::util::entropy_generator::EntropyGenerator;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use derive_more::From;
@@ -37,16 +36,13 @@ pub enum DataContractFactory {
 
 impl DataContractFactory {
     /// Create a new data contract factory knowing versions
-    pub fn new(
-        protocol_version: u32,
-        entropy_generator: Option<Box<dyn EntropyGenerator>>,
-    ) -> Result<Self, ProtocolError> {
+    pub fn new(protocol_version: u32) -> Result<Self, ProtocolError> {
         let platform_version = PlatformVersion::get(protocol_version)?;
         match platform_version
             .platform_architecture
             .data_contract_factory_structure_version
         {
-            0 => Ok(DataContractFactoryV0::new(protocol_version, entropy_generator).into()),
+            0 => Ok(DataContractFactoryV0::new(protocol_version).into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractFactory::new".to_string(),
                 known_versions: vec![0],
@@ -59,14 +55,19 @@ impl DataContractFactory {
     pub fn create_with_value_config(
         &self,
         owner_id: Identifier,
+        identity_nonce: IdentityNonce,
         documents: Value,
         config: Option<Value>,
         definitions: Option<Value>,
     ) -> Result<CreatedDataContract, ProtocolError> {
         match self {
-            DataContractFactory::V0(v0) => {
-                v0.create_with_value_config(owner_id, documents, config, definitions)
-            }
+            DataContractFactory::V0(v0) => v0.create_with_value_config(
+                owner_id,
+                identity_nonce,
+                documents,
+                config,
+                definitions,
+            ),
         }
     }
 
@@ -74,12 +75,15 @@ impl DataContractFactory {
     pub fn create(
         &self,
         owner_id: Identifier,
+        identity_nonce: IdentityNonce,
         documents: Value,
         config: Option<DataContractConfig>,
         definitions: Option<Value>,
     ) -> Result<CreatedDataContract, ProtocolError> {
         match self {
-            DataContractFactory::V0(v0) => v0.create(owner_id, documents, config, definitions),
+            DataContractFactory::V0(v0) => {
+                v0.create(owner_id, identity_nonce, documents, config, definitions)
+            }
         }
     }
 

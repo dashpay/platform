@@ -122,7 +122,7 @@ where
 
             document.set_u8(withdrawal::properties::STATUS, status.into());
 
-            document.set_u64(withdrawal::properties::UPDATED_AT, block_info.time_ms);
+            document.set_updated_at(Some(block_info.time_ms));
 
             document.increment_revision().map_err(Error::Protocol)?;
 
@@ -133,14 +133,12 @@ where
             return Ok(());
         }
 
-        let cache = self.drive.cache.read().unwrap();
+        let withdrawals_contract = self.drive.cache.system_data_contracts.load_withdrawals();
 
         self.drive.add_update_multiple_documents_operations(
             &documents_to_update,
-            &cache.system_data_contracts.withdrawals,
-            cache
-                .system_data_contracts
-                .withdrawals
+            &withdrawals_contract,
+            withdrawals_contract
                 .document_type_for_name(withdrawal::NAME)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(

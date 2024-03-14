@@ -85,7 +85,6 @@ where
         drive_operations.push(IdentityOperation(DisableIdentityKeys {
             identity_id: old_voter_identifier,
             keys_ids: old_voter_identity_key_ids,
-            disable_at: block_info.time_ms,
         }));
 
         // Part 2 : Create or Update Voting identity based on new key

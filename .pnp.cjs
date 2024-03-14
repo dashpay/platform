@@ -8416,6 +8416,7 @@ const RAW_RUNTIME_STATE =
           ["ajv-formats", "virtual:e822c5b02ef2b3c5fb9c8d88d5e0ca208365bff76f80510f4ccf9b1de44e2078264bcb00d3cdd5e193c256e9ab81e27c34fcfb1ad3a0e8c1dc8fa0066c78c468#npm:2.1.1"],\
           ["awilix", "npm:4.3.4"],\
           ["begoo", "npm:2.0.2"],\
+          ["bs58", "npm:4.0.1"],\
           ["chai", "npm:4.3.10"],\
           ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
           ["chalk", "npm:4.1.2"],\
@@ -17214,10 +17215,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["socks", [\
-      ["npm:2.8.0", {\
-        "packageLocation": "./.yarn/cache/socks-npm-2.8.0-9be534eccc-ed0224ce2c.zip/node_modules/socks/",\
+      ["npm:2.8.1", {\
+        "packageLocation": "./.yarn/cache/socks-npm-2.8.1-3b253d7256-a3cc38e071.zip/node_modules/socks/",\
         "packageDependencies": [\
-          ["socks", "npm:2.8.0"],\
+          ["socks", "npm:2.8.1"],\
           ["ip-address", "npm:9.0.5"],\
           ["smart-buffer", "npm:4.2.0"]\
         ],\
@@ -17231,7 +17232,7 @@ const RAW_RUNTIME_STATE =
           ["socks-proxy-agent", "npm:6.1.1"],\
           ["agent-base", "npm:6.0.2"],\
           ["debug", "virtual:4b12ba5111caf7e8338099bdbc7cb046a9f8e079a44e74d0c03dca469876e3071ebbe671c5e90ae6b78ae33e22c205fa5ed32169a4aabd1404b13c56d09986e1#npm:4.3.4"],\
-          ["socks", "npm:2.8.0"]\
+          ["socks", "npm:2.8.1"]\
         ],\
         "linkType": "HARD"\
       }],\
@@ -17241,7 +17242,7 @@ const RAW_RUNTIME_STATE =
           ["socks-proxy-agent", "npm:7.0.0"],\
           ["agent-base", "npm:6.0.2"],\
           ["debug", "virtual:4b12ba5111caf7e8338099bdbc7cb046a9f8e079a44e74d0c03dca469876e3071ebbe671c5e90ae6b78ae33e22c205fa5ed32169a4aabd1404b13c56d09986e1#npm:4.3.4"],\
-          ["socks", "npm:2.8.0"]\
+          ["socks", "npm:2.8.1"]\
         ],\
         "linkType": "HARD"\
       }],\
@@ -17251,7 +17252,7 @@ const RAW_RUNTIME_STATE =
           ["socks-proxy-agent", "npm:8.0.2"],\
           ["agent-base", "npm:7.1.0"],\
           ["debug", "virtual:4b12ba5111caf7e8338099bdbc7cb046a9f8e079a44e74d0c03dca469876e3071ebbe671c5e90ae6b78ae33e22c205fa5ed32169a4aabd1404b13c56d09986e1#npm:4.3.4"],\
-          ["socks", "npm:2.8.0"]\
+          ["socks", "npm:2.8.1"]\
         ],\
         "linkType": "HARD"\
       }]\

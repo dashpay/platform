@@ -154,7 +154,7 @@ export class Platform {
 
   protected fetcher: Fetcher;
 
-  protected nonceManager: NonceManager;
+  public nonceManager: NonceManager;
 
   /**
      * Construct some instance of Platform

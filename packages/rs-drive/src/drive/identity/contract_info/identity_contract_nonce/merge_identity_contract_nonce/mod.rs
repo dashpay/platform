@@ -1,6 +1,6 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
-use crate::error::identity::IdentityError;
+
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;

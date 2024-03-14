@@ -4,7 +4,7 @@ use crate::identity::core_script::CoreScript;
 use platform_value::Identifier;
 pub use v0::*;
 
-use crate::prelude::{IdentityNonce, Revision};
+use crate::prelude::IdentityNonce;
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
 use crate::withdrawal::Pooling;

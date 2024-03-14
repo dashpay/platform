@@ -59,9 +59,9 @@ pub fn mock_data_contract(
         document_types.insert(doc.name().to_string(), schema.clone());
     }
 
-    DataContractFactory::new(protocol_version, None)
+    DataContractFactory::new(protocol_version)
         .unwrap()
-        .create(owner_id, platform_value!(document_types), None, None)
+        .create(owner_id, 0, platform_value!(document_types), None, None)
         .expect("create data contract")
         .data_contract_owned()
 }

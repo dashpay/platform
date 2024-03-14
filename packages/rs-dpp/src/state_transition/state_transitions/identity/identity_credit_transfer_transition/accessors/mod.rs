@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::prelude::{IdentityNonce, Revision};
+use crate::prelude::IdentityNonce;
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use platform_value::Identifier;
 pub use v0::*;

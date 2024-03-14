@@ -26,9 +26,9 @@ impl Drive {
     /// or an `Error` if the function fails.
     pub(super) fn prove_multiple_v0(
         &self,
-        identity_queries: &Vec<IdentityDriveQuery>,
+        identity_queries: &[IdentityDriveQuery],
         contract_ids: &[([u8; 32], Option<bool>)], //bool is history
-        document_queries: &Vec<SingleDocumentDriveQuery>,
+        document_queries: &[SingleDocumentDriveQuery],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {

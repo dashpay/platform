@@ -1,6 +1,4 @@
-use crate::drive::identity::{
-    identity_contract_info_group_keys_path_vec, identity_contract_info_group_path_vec,
-};
+use crate::drive::identity::identity_contract_info_group_keys_path_vec;
 use crate::drive::Drive;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::ApproximateElements;

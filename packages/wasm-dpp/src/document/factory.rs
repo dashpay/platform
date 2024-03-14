@@ -118,15 +118,15 @@ impl DocumentFactoryWASM {
             js_sys::Object::entries(nonce_counter_value)
                 .iter()
                 .for_each(|entry| {
-                    let key_value = js_sys::Array::try_from(entry.clone()).unwrap();
+                    let key_value = js_sys::Array::from(&entry);
                     let identity_id = identifier_from_js_value(&key_value.get(0)).unwrap();
                     let contract_ids = key_value.get(1);
                     let contract_ids = js_sys::Object::try_from(&contract_ids).unwrap();
 
-                    js_sys::Object::entries(&contract_ids)
+                    js_sys::Object::entries(contract_ids)
                         .iter()
                         .for_each(|entry| {
-                            let key_value = js_sys::Array::try_from(entry.clone()).unwrap();
+                            let key_value = js_sys::Array::from(&entry);
                             let contract_id = identifier_from_js_value(&key_value.get(0)).unwrap();
                             let nonce = key_value.get(1).as_f64().unwrap() as u64;
                             nonce_counter.insert((identity_id, contract_id), nonce);
@@ -312,33 +312,29 @@ fn extract_documents_of_action(
     documents: &JsValue,
     action: &str,
 ) -> Result<Vec<ExtendedDocument>, anyhow::Error> {
-    let mut extracted_documents: Vec<ExtendedDocument> = vec![];
-
     let documents_with_action =
         js_sys::Reflect::get(documents, &action.to_string().into()).unwrap_or(JsValue::NULL);
 
     if documents_with_action.is_null() || documents_with_action.is_undefined() {
-        return Ok(extracted_documents);
+        return Ok(vec![]);
     }
 
     let documents_array = js_sys::Array::try_from(documents_with_action)
         .map_err(|e| anyhow!("property '{}' isn't an array: {}", action, e))?;
 
-    for js_document in documents_array.iter() {
-        let document: ExtendedDocument = js_document
-            .to_wasm::<ExtendedDocumentWasm>("ExtendedDocument")
-            .map_err(|e| {
-                anyhow!(
-                    "Element in '{}' isn't an Extended Document instance: {:#?}",
-                    action,
-                    e
-                )
-            })?
-            .clone()
-            .into();
-
-        extracted_documents.push(document)
-    }
-
-    Ok(extracted_documents)
+    documents_array
+        .iter()
+        .map(|js_document| {
+            js_document
+                .to_wasm::<ExtendedDocumentWasm>("ExtendedDocument")
+                .map_err(|e| {
+                    anyhow!(
+                        "Element in '{}' isn't an Extended Document instance: {:#?}",
+                        action,
+                        e
+                    )
+                })
+                .map(|wasm_doc| wasm_doc.clone().into())
+        })
+        .collect()
 }

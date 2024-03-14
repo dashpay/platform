@@ -1,3 +1,86 @@
+## [1.0.0-dev.7](https://github.com/dashpay/platform/compare/v1.0.0-dev.6...v1.0.0-dev.7) (2024-03-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** addded fee increase field to state transitions (#1750)
+
+### Features
+
+* enable random contract creation in strategies ([#1729](https://github.com/dashpay/platform/issues/1729))
+* **platform:** state transition fee increase and priorities ([#1750](https://github.com/dashpay/platform/issues/1750))
+
+
+### Bug Fixes
+
+* **drive:** inconsistent platform state and version during ABCI calls ([#1733](https://github.com/dashpay/platform/issues/1733))
+* **drive:** internal error on querying specific identity keys ([#1728](https://github.com/dashpay/platform/issues/1728))
+* resolve strategy-tests test failures ([#1743](https://github.com/dashpay/platform/issues/1743))
+
+
+### Documentation
+
+* update and expand mkdocs redirects ([#1740](https://github.com/dashpay/platform/issues/1740))
+
+
+### Code Refactoring
+
+* **drive:** expose more groveDB internals ([#1739](https://github.com/dashpay/platform/issues/1739))
+* reduce cargo clippy warnings ([#1738](https://github.com/dashpay/platform/issues/1738))
+* reduce cargo clippy warnings ([#1741](https://github.com/dashpay/platform/issues/1741))
+* reduce cargo clippy warnings in rs-dpp ([#1742](https://github.com/dashpay/platform/issues/1742))
+* resolve a few clippy warnings in dapi-grpc, rs-drive-proof-verifier, rs-platform-serialization, rs-platform-serialization-derive, rs-platform-value, rs-sdk, strategy-tests ([#1756](https://github.com/dashpay/platform/issues/1756))
+* resolve a few clippy warnings in rs-platform-serializaation and rs-platform-value ([#1744](https://github.com/dashpay/platform/issues/1744))
+* resolve clippy warnings in rs-dpp ([#1754](https://github.com/dashpay/platform/issues/1754))
+* resolve clippy warnings in rs-drive ([#1752](https://github.com/dashpay/platform/issues/1752))
+* resolve clippy warnings in rs-drive-abci ([#1755](https://github.com/dashpay/platform/issues/1755))
+* resolve clippy warnings in wasm-dpp ([#1753](https://github.com/dashpay/platform/issues/1753))
+
+
+### Miscellaneous Chores
+
+* fmt ([#1751](https://github.com/dashpay/platform/issues/1751))
+* update testnet genesis and core nightly ([#1758](https://github.com/dashpay/platform/issues/1758))
+
+## [1.0.0-dev.6](https://github.com/dashpay/platform/compare/v1.0.0-dev.5...v1.0.0-dev.6) (2024-03-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** identity nonce for Data Contract Create (#1724)
+
+### Features
+
+* add ContractUpdate to used_contract_ids function
+* **platform:** identity nonce for Data Contract Create ([#1724](https://github.com/dashpay/platform/issues/1724))
+* **sdk:** add fetch_current_with_metadata to ExtendedEpochInfo ([#1708](https://github.com/dashpay/platform/issues/1708))
+* **sdk:** fetch with metadata ([#1707](https://github.com/dashpay/platform/issues/1707))
+* **sdk:** re-fetch nonce on interval ([#1706](https://github.com/dashpay/platform/issues/1706))
+
+
+### Bug Fixes
+
+* **drive-abci:** reject reward shares operations ([#1722](https://github.com/dashpay/platform/issues/1722))
+* make strategy tests compatible with all networks and platform tui ([#1705](https://github.com/dashpay/platform/issues/1705))
+* **sdk:** nonce manager caching bug ([#1711](https://github.com/dashpay/platform/issues/1711))
+* **test-suite:** masternode identities ([#1709](https://github.com/dashpay/platform/issues/1709))
+
+
+### Performance Improvements
+
+* query and check tx parallel processing ([#1694](https://github.com/dashpay/platform/issues/1694))
+
+
+### Miscellaneous Chores
+
+* fix npm audit warning ([#1723](https://github.com/dashpay/platform/issues/1723))
+
+
+### Tests
+
+* **test-suite:** restore dpns tests ([#1725](https://github.com/dashpay/platform/issues/1725))
+* **test-suite:** withdrawals identityRecent index ([#1716](https://github.com/dashpay/platform/issues/1716))
+
 ## [1.0.0-dev.5](https://github.com/dashpay/platform/compare/v1.0.0-dev.4...v1.0.0-dev.5) (2024-02-20)
 
 ### ⚠ BREAKING CHANGES

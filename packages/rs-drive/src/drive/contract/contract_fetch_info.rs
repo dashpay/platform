@@ -32,7 +32,7 @@ pub struct DataContractFetchInfo {
 impl DataContractFetchInfo {
     /// This should ONLY be used for tests
     pub fn dpns_contract_fixture(protocol_version: u32) -> Self {
-        let dpns = get_dpns_data_contract_fixture(None, protocol_version);
+        let dpns = get_dpns_data_contract_fixture(None, 0, protocol_version);
         DataContractFetchInfo {
             contract: dpns.data_contract_owned(),
             storage_flags: None,
@@ -43,7 +43,7 @@ impl DataContractFetchInfo {
 
     /// This should ONLY be used for tests
     pub fn dashpay_contract_fixture(protocol_version: u32) -> Self {
-        let dashpay = get_dashpay_contract_fixture(None, protocol_version);
+        let dashpay = get_dashpay_contract_fixture(None, 0, protocol_version);
         DataContractFetchInfo {
             contract: dashpay.data_contract_owned(),
             storage_flags: None,

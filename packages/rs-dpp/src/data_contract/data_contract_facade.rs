@@ -6,7 +6,6 @@ use crate::prelude::{Identifier, IdentityNonce};
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use crate::util::entropy_generator::EntropyGenerator;
 
 use crate::ProtocolError;
 use platform_value::Value;
@@ -29,12 +28,9 @@ pub struct DataContractFacade {
 }
 
 impl DataContractFacade {
-    pub fn new(
-        protocol_version: u32,
-        entropy_generator: Option<Box<dyn EntropyGenerator>>,
-    ) -> Result<Self, ProtocolError> {
+    pub fn new(protocol_version: u32) -> Result<Self, ProtocolError> {
         Ok(Self {
-            factory: DataContractFactory::new(protocol_version, entropy_generator)?,
+            factory: DataContractFactory::new(protocol_version)?,
         })
     }
 
@@ -42,12 +38,18 @@ impl DataContractFacade {
     pub fn create(
         &self,
         owner_id: Identifier,
+        identity_nonce: IdentityNonce,
         documents: Value,
         config: Option<Value>,
         definitions: Option<Value>,
     ) -> Result<CreatedDataContract, ProtocolError> {
-        self.factory
-            .create_with_value_config(owner_id, documents, config, definitions)
+        self.factory.create_with_value_config(
+            owner_id,
+            identity_nonce,
+            documents,
+            config,
+            definitions,
+        )
     }
 
     /// Create Data Contract from plain object

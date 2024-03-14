@@ -1,8 +1,7 @@
 //! [Sdk] entrypoint to Dash Platform.
 
 use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::{fmt::Debug, num::NonZeroUsize, ops::DerefMut};
 
 use crate::error::Error;
@@ -10,22 +9,17 @@ use crate::internal_cache::InternalSdkCache;
 use crate::mock::MockResponse;
 #[cfg(feature = "mocks")]
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
-use crate::platform::transition::put_document::PutSettings;
+use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Fetch, Identifier};
 use dapi_grpc::mock::Mockable;
-use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0;
-use dapi_grpc::platform::v0::get_identity_contract_nonce_response::Version;
-use dapi_grpc::platform::v0::{
-    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, Proof,
-};
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
-use dpp::prelude;
 use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive_proof_verifier::types::{IdentityContractNonceFetcher, IdentityNonceFetcher};
 #[cfg(feature = "mocks")]
 use drive_proof_verifier::MockContextProvider;
-use drive_proof_verifier::{types, ContextProvider, FromProof};
+use drive_proof_verifier::{ContextProvider, FromProof};
 pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
@@ -174,6 +168,26 @@ impl Sdk {
     where
         O::Request: Mockable,
     {
+        self.parse_proof_with_metadata(request, response)
+            .map(|result| result.0)
+    }
+
+    /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
+    ///
+    /// This method is used to retrieve objects from proofs returned by Dash Platform.
+    ///
+    /// ## Generic Parameters
+    ///
+    /// - `R`: Type of the request that was used to fetch the proof.
+    /// - `O`: Type of the object to be retrieved from the proof.
+    pub(crate) fn parse_proof_with_metadata<R, O: FromProof<R> + MockResponse>(
+        &self,
+        request: O::Request,
+        response: O::Response,
+    ) -> Result<(Option<O>, ResponseMetadata), drive_proof_verifier::Error>
+    where
+        O::Request: Mockable,
+    {
         let guard = self
             .context_provider
             .lock()
@@ -184,10 +198,10 @@ impl Sdk {
 
         match self.inner {
             SdkInstance::Dapi { .. } => {
-                O::maybe_from_proof(request, response, self.version(), &provider)
+                O::maybe_from_proof_with_metadata(request, response, self.version(), &provider)
             }
             #[cfg(feature = "mocks")]
-            SdkInstance::Mock { .. } => self.mock().parse_proof(request, response),
+            SdkInstance::Mock { .. } => self.mock().parse_proof_with_metadata(request, response),
         }
     }
 
@@ -231,7 +245,7 @@ impl Sdk {
         let entry = identity_nonce_counter.entry(identity_id);
 
         let should_query_platform = match &entry {
-            Entry::Vacant(e) => true,
+            Entry::Vacant(_) => true,
             Entry::Occupied(e) => {
                 let (_, last_query_time) = e.get();
                 *last_query_time
@@ -245,7 +259,7 @@ impl Sdk {
 
         if should_query_platform {
             let platform_nonce = IdentityNonceFetcher::fetch_with_settings(
-                &self,
+                self,
                 identity_id,
                 settings.request_settings,
             )
@@ -270,12 +284,10 @@ impl Sdk {
                         } else {
                             platform_nonce
                         }
+                    } else if bump_first {
+                        *current_nonce + 1
                     } else {
-                        if bump_first {
-                            *current_nonce + 1
-                        } else {
-                            *current_nonce
-                        }
+                        *current_nonce
                     };
                     e.insert((insert_nonce, current_time_s));
                     Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
@@ -325,7 +337,7 @@ impl Sdk {
         let entry = identity_contract_nonce_counter.entry((identity_id, contract_id));
 
         let should_query_platform = match &entry {
-            Entry::Vacant(e) => true,
+            Entry::Vacant(_) => true,
             Entry::Occupied(e) => {
                 let (_, last_query_time) = e.get();
                 *last_query_time
@@ -339,7 +351,7 @@ impl Sdk {
 
         if should_query_platform {
             let platform_nonce = IdentityContractNonceFetcher::fetch_with_settings(
-                &self,
+                self,
                 (identity_id, contract_id),
                 settings.request_settings,
             )
@@ -364,12 +376,10 @@ impl Sdk {
                         } else {
                             platform_nonce
                         }
+                    } else if bump_first {
+                        *current_nonce + 1
                     } else {
-                        if bump_first {
-                            *current_nonce + 1
-                        } else {
-                            *current_nonce
-                        }
+                        *current_nonce
                     };
                     e.insert((insert_nonce, current_time_s));
                     Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)

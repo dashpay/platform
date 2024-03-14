@@ -1,18 +1,17 @@
 [package]
 name = "rs-sdk"
-version = "1.0.0-dev.5"
+version = "1.0.0-dev.7"
 edition = "2021"
 
 [dependencies]
 dpp = { path = "../rs-dpp", features = ["all_features"] }
-dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
+dapi-grpc = { path = "../dapi-grpc" }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
-    "verify",
+  "verify",
 ] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
-
 bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
 thiserror = "1.0.47"
 tokio = { version = "1.32.0", features = ["macros"] }
@@ -39,9 +38,9 @@ rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks"] }
 base64 = { version = "0.21.0" }
 tracing-subscriber = { version = "0.3.16" }
 dpp = { path = "../rs-dpp", features = [
-    "client",
-    "validation",
-    "random-documents",
+  "client",
+  "validation",
+  "random-documents",
 ] }
 data-contracts = { path = "../data-contracts" }
 tokio-test = { version = "0.4.3" }
@@ -50,18 +49,18 @@ clap = { version = "4.4.18", features = ["derive"] }
 [features]
 default = ["mocks", "offline-testing"]
 mocks = [
-    "dep:serde_json",
-    "rs-dapi-client/mocks",
-    "rs-dapi-client/dump",
-    "dpp/document-cbor-conversion",
-    "dpp/identity-value-conversion",
-    "dpp/random-identities",
-    "drive-proof-verifier/mocks",
-    "dep:bincode",
-    "dep:hex",
-    "dep:dotenvy",
-    "dep:envy",
-    "dep:lru",
+  "dep:serde_json",
+  "rs-dapi-client/mocks",
+  "rs-dapi-client/dump",
+  "dpp/document-cbor-conversion",
+  "dpp/identity-value-conversion",
+  "dpp/random-identities",
+  "drive-proof-verifier/mocks",
+  "dep:bincode",
+  "dep:hex",
+  "dep:dotenvy",
+  "dep:envy",
+  "dep:lru",
 ]
 
 # Run integration tests using test vectors from `tests/vectors/` instead of connecting to live Dash Platform.

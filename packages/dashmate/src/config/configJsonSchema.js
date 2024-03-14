@@ -74,7 +74,7 @@ export default {
     },
     duration: {
       type: 'string',
-      pattern: '^[0-9]+(\\.[0-9]+)?(ms|m|s|h)$',
+      pattern: '^0|([0-9]+(\\.[0-9]+)?(ms|m|s|h))$',
     },
     optionalDuration: {
       type: ['null', 'string'],
@@ -513,6 +513,28 @@ export default {
                     additionalProperties: false,
                   },
                 },
+                tokioConsole: {
+                  type: 'object',
+                  properties: {
+                    enabled: {
+                      type: 'boolean',
+                    },
+                    host: {
+                      type: 'string',
+                      minLength: 1,
+                      format: 'ipv4',
+                    },
+                    port: {
+                      $ref: '#/definitions/port',
+                    },
+                    retention_secs: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                  },
+                  required: ['enabled', 'host', 'port', 'retention_secs'],
+                  additionalProperties: false,
+                },
                 validatorSet: {
                   type: 'object',
                   properties: {
@@ -551,7 +573,7 @@ export default {
                 },
               },
               additionalProperties: false,
-              required: ['docker', 'logs', 'validatorSet', 'chainLock', 'epochTime'],
+              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime'],
             },
             tenderdash: {
               type: 'object',
@@ -620,9 +642,23 @@ export default {
                       type: 'integer',
                       minimum: 0,
                     },
+                    timeoutCheckTx: {
+                      $ref: '#/definitions/duration',
+                    },
+                    txEnqueueTimeout: {
+                      $ref: '#/definitions/duration',
+                    },
+                    txSendRateLimit: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    txRecvRateLimit: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
                   },
                   additionalProperties: false,
-                  required: ['size', 'maxTxsBytes', 'cacheSize'],
+                  required: ['size', 'maxTxsBytes', 'cacheSize', 'timeoutCheckTx', 'txEnqueueTimeout', 'txSendRateLimit', 'txRecvRateLimit'],
                 },
                 consensus: {
                   type: 'object',
@@ -730,8 +766,11 @@ export default {
                       type: 'integer',
                       minimum: 0,
                     },
+                    timeoutBroadcastTx: {
+                      $ref: '#/definitions/duration',
+                    },
                   },
-                  required: ['host', 'port', 'maxOpenConnections'],
+                  required: ['host', 'port', 'maxOpenConnections', 'timeoutBroadcastTx'],
                   additionalProperties: false,
                 },
                 pprof: {

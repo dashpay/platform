@@ -5,19 +5,23 @@
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
 use drive_abci::core::wait_for_core_to_sync::v0::wait_for_core_to_sync_v0;
-use drive_abci::logging;
 use drive_abci::logging::{LogBuilder, LogConfig, LogDestination, Loggers};
 use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
+use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::DefaultCoreRPC;
+use drive_abci::{logging, server};
 use itertools::Itertools;
 use std::fs::remove_file;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
-use tokio::runtime::Builder;
+use std::sync::Arc;
+use tokio::runtime::{Builder, Runtime};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
-use tracing::warn;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 const SHUTDOWN_TIMEOUT_MILIS: u64 = 5000; // 5s; Docker defaults to 10s
 
@@ -60,7 +64,7 @@ struct Cli {
     command: Commands,
     /// Path to the config (.env) file.
     #[arg(short, long, value_hint = clap::ValueHint::FilePath) ]
-    config: Option<std::path::PathBuf>,
+    config: Option<PathBuf>,
 
     /// Enable verbose logging. Use multiple times for even more logs.
     ///
@@ -82,7 +86,12 @@ struct Cli {
 }
 
 impl Cli {
-    fn run(self, config: PlatformConfig, cancel: CancellationToken) -> Result<(), String> {
+    fn run(
+        self,
+        runtime: &Runtime,
+        config: PlatformConfig,
+        cancel: CancellationToken,
+    ) -> Result<(), String> {
         match self.command {
             Commands::Start => {
                 verify_grovedb(&config.db_path, false)?;
@@ -99,9 +108,21 @@ impl Cli {
                 // Drive and Tenderdash rely on Core. Various functions will fail if Core is not synced.
                 // We need to make sure that Core is ready before we start Drive ABCI app
                 // Tenderdash won't start too until ABCI port is open.
-                wait_for_core_to_sync_v0(&core_rpc, cancel.clone()).unwrap();
+                wait_for_core_to_sync_v0(&core_rpc, cancel.clone()).map_err(|e| e.to_string())?;
 
-                drive_abci::abci::start(&config, core_rpc, cancel).map_err(|e| e.to_string())?;
+                if cancel.is_cancelled() {
+                    return Ok(());
+                }
+
+                let platform: Platform<DefaultCoreRPC> = Platform::open_with_client(
+                    config.db_path.clone(),
+                    Some(config.clone()),
+                    core_rpc,
+                )
+                .expect("Failed to open platform");
+
+                server::start(runtime, Arc::new(platform), config, cancel);
+
                 return Ok(());
             }
             Commands::Config => dump_config(&config)?,
@@ -116,46 +137,84 @@ impl Cli {
 fn main() -> Result<(), ExitCode> {
     let cli = Cli::parse();
     let config = load_config(&cli.config);
-    // We use `cancel` to notify other subsystems that the server is shutting down
-    let cancel = tokio_util::sync::CancellationToken::new();
-
-    let loggers = configure_logging(&cli, &config).expect("failed to configure logging");
-
-    install_panic_hook(cancel.clone());
 
     // Start tokio runtime and thread listening for signals.
     // The runtime will be reused by Prometheus and rs-tenderdash-abci.
-
-    // TODO: 8 MB stack threads as some recursions in GroveDB can be pretty deep
-    //  We could remove such a stack stack size once deletion of a node doesn't recurse in grovedb
-
     let runtime = Builder::new_multi_thread()
-        .enable_all()
+        // TODO: 8 MB stack threads as some recursions in GroveDB can be pretty deep
+        //  We could remove such a stack stack size once deletion of a node doesn't recurse in grovedb
         .thread_stack_size(8 * 1024 * 1024)
+        .enable_all()
         .build()
         .expect("cannot initialize tokio runtime");
-    let rt_guard = runtime.enter();
+
+    // We use `cancel` to notify other subsystems that the server is shutting down
+    let cancel = CancellationToken::new();
+
+    let loggers = configure_logging(&cli, &config).expect("failed to configure logging");
+
+    // If tokio console is enabled, we install loggers together with tokio console
+    // due to type compatibility issue
+
+    #[cfg(not(feature = "console"))]
+    loggers.install();
+
+    #[cfg(feature = "console")]
+    if config.tokio_console_enabled {
+        #[cfg(not(tokio_unstable))]
+        panic!("tokio_unstable flag should be set");
+
+        // Initialize Tokio console subscriber
+
+        let socket_addr: SocketAddr = config
+            .tokio_console_address
+            .parse()
+            .expect("cannot parse tokio console address");
+
+        let console_layer = console_subscriber::ConsoleLayer::builder()
+            .retention(Duration::from_secs(config.tokio_console_retention_secs))
+            .server_addr(socket_addr)
+            .spawn();
+
+        tracing_subscriber::registry()
+            .with(
+                loggers
+                    .tracing_subscriber_layers()
+                    .expect("should return layers"),
+            )
+            .with(console_layer)
+            .try_init()
+            .expect("can't init tracing subscribers");
+    } else {
+        loggers.install();
+    }
+
+    // Log panics
+
+    install_panic_hook(cancel.clone());
+
+    // Start runtime in the main thread
+
+    let runtime_guard = runtime.enter();
 
     runtime.spawn(handle_signals(cancel.clone(), loggers));
 
-    // Main thread is not started in runtime, as it is synchronous and we don't want to run into
-    // potential, hard to debug, issues.
-    let status = match cli.run(config, cancel) {
+    let result = match cli.run(&runtime, config, cancel) {
         Ok(()) => {
             tracing::debug!("shutdown complete");
-            ExitCode::SUCCESS
+            Ok(())
         }
         Err(e) => {
             tracing::error!(error = e, "drive-abci failed");
-            ExitCode::FAILURE
+            Err(ExitCode::FAILURE)
         }
     };
 
-    drop(rt_guard);
+    drop(runtime_guard);
     runtime.shutdown_timeout(Duration::from_millis(SHUTDOWN_TIMEOUT_MILIS));
     tracing::info!("drive-abci server is stopped");
 
-    Err(status)
+    result
 }
 
 /// Handle signals received from operating system
@@ -193,16 +252,13 @@ async fn handle_signals(cancel: CancellationToken, logs: Loggers) -> Result<(), 
 /// Start prometheus exporter if it's configured.
 fn start_prometheus(config: &PlatformConfig) -> Result<Option<Prometheus>, String> {
     let prometheus_addr = config
-        .abci
         .prometheus_bind_address
         .clone()
         .filter(|s| !s.is_empty());
 
     if let Some(addr) = prometheus_addr {
         let addr = url::Url::parse(&addr).map_err(|e| e.to_string())?;
-        Ok(Some(
-            drive_abci::metrics::Prometheus::new(addr).map_err(|e| e.to_string())?,
-        ))
+        Ok(Some(Prometheus::new(addr).map_err(|e| e.to_string())?))
     } else {
         Ok(None)
     }
@@ -219,7 +275,7 @@ fn dump_config(config: &PlatformConfig) -> Result<(), String> {
 
 /// Check status of ABCI server.
 fn check_status(config: &PlatformConfig) -> Result<(), String> {
-    if let Some(prometheus_addr) = &config.abci.prometheus_bind_address {
+    if let Some(prometheus_addr) = &config.prometheus_bind_address {
         let url =
             url::Url::parse(prometheus_addr).expect("cannot parse ABCI_PROMETHEUS_BIND_ADDRESS");
 
@@ -302,7 +358,7 @@ fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
         }
     } else if let Err(e) = dotenvy::dotenv() {
         if e.not_found() {
-            warn!("cannot find any matching .env file");
+            tracing::warn!("cannot find any matching .env file");
         } else {
             panic!("cannot load config file: {}", e);
         }
@@ -333,7 +389,6 @@ fn configure_logging(cli: &Cli, config: &PlatformConfig) -> Result<Loggers, logg
     }
 
     let loggers = LogBuilder::new().with_configs(&configs)?.build();
-    loggers.install();
 
     tracing::info!("Configured log destinations: {}", configs.keys().join(","));
 

@@ -23,9 +23,8 @@ use crate::with_js_error;
 use dpp::dashcore::{consensus, InstantLock, Transaction};
 
 use crate::identity::IdentityWasm;
-use dpp::fee::Credits;
 use dpp::identity::core_script::CoreScript;
-use dpp::prelude::{IdentityNonce, Revision};
+use dpp::prelude::IdentityNonce;
 use dpp::withdrawal::Pooling;
 use dpp::NonConsensusError;
 use serde::Deserialize;
@@ -258,7 +257,6 @@ impl IdentityFacadeWasm {
     ) -> Result<IdentityUpdateTransitionWasm, JsValue> {
         let (add_public_keys, disable_public_keys) =
             super::factory_utils::parse_create_identity_update_transition_keys(public_keys)?;
-        let now = js_sys::Date::now() as u64;
 
         self.0
             .create_identity_update_transition(
@@ -266,7 +264,6 @@ impl IdentityFacadeWasm {
                 identity_nonce,
                 add_public_keys,
                 disable_public_keys,
-                Some(now),
             )
             .map(Into::into)
             .with_js_error()

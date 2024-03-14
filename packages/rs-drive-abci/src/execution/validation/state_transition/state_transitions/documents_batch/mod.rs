@@ -30,18 +30,29 @@ use crate::execution::validation::state_transition::processor::v0::{
     StateTransitionStateValidationV0, StateTransitionStructureKnownInStateValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::execution::validation::state_transition::ValidationMode;
+
+impl ValidationMode {
+    /// Returns a bool on whether we should validate that documents are valid against the state
+    pub fn should_validate_document_valid_against_state(&self) -> bool {
+        match self {
+            ValidationMode::CheckTx => false,
+            ValidationMode::RecheckTx => false,
+            ValidationMode::Validator => true,
+        }
+    }
+}
 
 impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        validate: bool,
+        validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        let platform_version = platform.state.current_platform_version()?;
+
         match platform_version
             .drive_abci
             .validation_and_processing
@@ -49,7 +60,7 @@ impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
             .documents_batch_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(&platform.into(), validate, tx),
+            0 => self.transform_into_action_v0(&platform.into(), validation_mode, tx),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -117,7 +128,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
     fn validate_advanced_structure_from_state(
         &self,
         platform: &PlatformStateRef,
-        action: Option<&StateTransitionAction>,
+        action: &StateTransitionAction,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
@@ -128,10 +139,6 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
             .advanced_structure
         {
             0 => {
-                let action =
-                    action.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "documents batch structure validation should have an action",
-                    )))?;
                 let StateTransitionAction::DocumentsBatchAction(documents_batch_transition_action) =
                     action
                 else {
@@ -146,14 +153,14 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
                 )
             }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "documents batch transition: base structure".to_string(),
+                method: "documents batch transition: advanced structure from state".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
         }
     }
 
-    fn requires_advance_structure_validation(&self) -> bool {
+    fn requires_advance_structure_validation_from_state(&self) -> bool {
         true
     }
 }
@@ -163,11 +170,11 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
         &self,
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
+        _validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        let platform_version = platform.state.current_platform_version()?;
 
         match platform_version
             .drive_abci

@@ -1,4 +1,4 @@
-use crate::drive::identity::{identity_path, identity_path_vec, IdentityRootStructure};
+use crate::drive::identity::identity_path;
 use crate::drive::Drive;
 
 use crate::error::Error;
@@ -13,7 +13,6 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use crate::drive::identity::IdentityRootStructure::IdentityTreeNonce;
 use crate::drive::object_size_info::PathKeyElementInfo;
-use crate::error::identity::IdentityError;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::identity_nonce::MergeIdentityNonceResult::{
     MergeIdentityNonceSuccess, NonceAlreadyPresentAtTip, NonceAlreadyPresentInPast,
@@ -21,8 +20,7 @@ use dpp::identity::identity_nonce::MergeIdentityNonceResult::{
 };
 use dpp::identity::identity_nonce::{
     MergeIdentityNonceResult, IDENTITY_NONCE_VALUE_FILTER, IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES,
-    MAX_MISSING_IDENTITY_REVISIONS, MISSING_IDENTITY_REVISIONS_FILTER,
-    MISSING_IDENTITY_REVISIONS_MAX_BYTES,
+    MISSING_IDENTITY_REVISIONS_FILTER, MISSING_IDENTITY_REVISIONS_MAX_BYTES,
 };
 use std::collections::HashMap;
 
@@ -58,7 +56,7 @@ impl Drive {
             )?;
         }
 
-        let (existing_nonce, fees) = self.fetch_identity_nonce_with_fees(
+        let (existing_nonce, _unused_fees) = self.fetch_identity_nonce_with_fees(
             identity_id,
             block_info,
             estimated_costs_only_with_layer_info.is_none(),
@@ -71,53 +69,62 @@ impl Drive {
             revision_nonce
         } else if let Some(existing_nonce) = existing_nonce {
             let actual_existing_revision = existing_nonce & IDENTITY_NONCE_VALUE_FILTER;
-            if actual_existing_revision == revision_nonce {
-                // we were not able to update the revision as it is the same as we already had
-                return Ok((NonceAlreadyPresentAtTip, drive_operations));
-            } else if actual_existing_revision < revision_nonce {
-                if revision_nonce - actual_existing_revision > MISSING_IDENTITY_REVISIONS_MAX_BYTES
-                {
-                    // we are too far away from the actual revision
-                    return Ok((NonceTooFarInFuture, drive_operations));
-                } else {
-                    let missing_amount_of_revisions = revision_nonce - actual_existing_revision - 1;
-                    let new_previous_missing_revisions = (existing_nonce
-                        & MISSING_IDENTITY_REVISIONS_FILTER)
-                        << (missing_amount_of_revisions + 1);
-                    // the missing_revisions_bytes are the amount of bytes to put in the missing area
-                    let missing_revisions_bytes = if missing_amount_of_revisions > 0 {
-                        ((1 << missing_amount_of_revisions) - 1)
-                            << IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES
-                    } else {
-                        0
-                    };
-                    new_previous_missing_revisions | revision_nonce | missing_revisions_bytes
+            // equal
+            match actual_existing_revision.cmp(&revision_nonce) {
+                std::cmp::Ordering::Equal => {
+                    // we were not able to update the revision as it is the same as we already had
+                    return Ok((NonceAlreadyPresentAtTip, drive_operations));
                 }
-            } else {
-                let previous_revision_position_from_top = actual_existing_revision - revision_nonce;
-                if previous_revision_position_from_top >= MISSING_IDENTITY_REVISIONS_MAX_BYTES {
-                    // we are too far away from the actual revision
-                    return Ok((NonceTooFarInPast, drive_operations));
-                } else {
-                    let old_missing_revisions = existing_nonce & MISSING_IDENTITY_REVISIONS_FILTER;
-                    if old_missing_revisions == 0 {
-                        return Ok((
-                            NonceAlreadyPresentInPast(previous_revision_position_from_top),
-                            drive_operations,
-                        ));
+                std::cmp::Ordering::Less => {
+                    if revision_nonce - actual_existing_revision
+                        > MISSING_IDENTITY_REVISIONS_MAX_BYTES
+                    {
+                        // we are too far away from the actual revision
+                        return Ok((NonceTooFarInFuture, drive_operations));
                     } else {
-                        let byte_to_unset = 1
-                            << (previous_revision_position_from_top - 1
-                                + IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES);
-                        let old_revision_already_set =
-                            old_missing_revisions | byte_to_unset != old_missing_revisions;
-                        if old_revision_already_set {
+                        let missing_amount_of_revisions =
+                            revision_nonce - actual_existing_revision - 1;
+                        let new_previous_missing_revisions = (existing_nonce
+                            & MISSING_IDENTITY_REVISIONS_FILTER)
+                            << (missing_amount_of_revisions + 1);
+                        // the missing_revisions_bytes are the amount of bytes to put in the missing area
+                        let missing_revisions_bytes = if missing_amount_of_revisions > 0 {
+                            ((1 << missing_amount_of_revisions) - 1)
+                                << IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES
+                        } else {
+                            0
+                        };
+                        new_previous_missing_revisions | revision_nonce | missing_revisions_bytes
+                    }
+                }
+                std::cmp::Ordering::Greater => {
+                    let previous_revision_position_from_top =
+                        actual_existing_revision - revision_nonce;
+                    if previous_revision_position_from_top >= MISSING_IDENTITY_REVISIONS_MAX_BYTES {
+                        // we are too far away from the actual revision
+                        return Ok((NonceTooFarInPast, drive_operations));
+                    } else {
+                        let old_missing_revisions =
+                            existing_nonce & MISSING_IDENTITY_REVISIONS_FILTER;
+                        if old_missing_revisions == 0 {
                             return Ok((
                                 NonceAlreadyPresentInPast(previous_revision_position_from_top),
                                 drive_operations,
                             ));
                         } else {
-                            existing_nonce & !byte_to_unset
+                            let byte_to_unset = 1
+                                << (previous_revision_position_from_top - 1
+                                    + IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES);
+                            let old_revision_already_set =
+                                old_missing_revisions | byte_to_unset != old_missing_revisions;
+                            if old_revision_already_set {
+                                return Ok((
+                                    NonceAlreadyPresentInPast(previous_revision_position_from_top),
+                                    drive_operations,
+                                ));
+                            } else {
+                                existing_nonce & !byte_to_unset
+                            }
                         }
                     }
                 }

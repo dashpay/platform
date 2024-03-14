@@ -1,6 +1,6 @@
 #![allow(clippy::from_over_into)]
 
-pub use serde::{Deserialize, Serialize};
+pub use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::utils::ToSerdeJSONExt;

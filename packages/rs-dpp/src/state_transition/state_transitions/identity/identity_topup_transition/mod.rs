@@ -22,6 +22,7 @@ use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(

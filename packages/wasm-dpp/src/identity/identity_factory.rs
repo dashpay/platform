@@ -18,7 +18,7 @@ use crate::{
 };
 use dpp::dashcore::{consensus, InstantLock, Transaction};
 
-use dpp::prelude::{Identity, IdentityNonce, Revision};
+use dpp::prelude::{Identity, IdentityNonce};
 
 use serde::Deserialize;
 use std::convert::TryInto;
@@ -243,15 +243,12 @@ impl IdentityFactoryWasm {
         let (add_public_keys, disable_public_keys) =
             super::factory_utils::parse_create_identity_update_transition_keys(public_keys)?;
 
-        let now = js_sys::Date::now() as u64;
-
         self.0
             .create_identity_update_transition(
                 identity.to_owned().into(),
                 identity_nonce,
                 add_public_keys,
                 disable_public_keys,
-                Some(now),
             )
             .map(Into::into)
             .with_js_error()

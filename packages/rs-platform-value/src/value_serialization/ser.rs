@@ -253,9 +253,10 @@ impl serde::Serializer for Serializer {
     where
         T: ?Sized + Serialize,
     {
-        let mut values = ValueMap::new();
-        values.push((Value::Text(String::from(variant)), tri!(to_value(value))));
-        Ok(Value::Map(values))
+        Ok(Value::Map(vec![(
+            Value::Text(String::from(variant)),
+            tri!(to_value(value)),
+        )]))
     }
 
     #[inline]
@@ -445,11 +446,10 @@ impl serde::ser::SerializeTupleVariant for SerializeTupleVariant {
     }
 
     fn end(self) -> Result<Value, Error> {
-        let mut object = Vec::new();
-
-        object.push((Value::Text(self.name), Value::Array(self.vec)));
-
-        Ok(Value::Map(object))
+        Ok(Value::Map(vec![(
+            Value::Text(self.name),
+            Value::Array(self.vec),
+        )]))
     }
 }
 
@@ -712,10 +712,9 @@ impl serde::ser::SerializeStructVariant for SerializeStructVariant {
     }
 
     fn end(self) -> Result<Value, Error> {
-        let mut object = Vec::new();
-
-        object.push((Value::Text(self.name), Value::Map(self.map)));
-
-        Ok(Value::Map(object))
+        Ok(Value::Map(vec![(
+            Value::Text(self.name),
+            Value::Map(self.map),
+        )]))
     }
 }

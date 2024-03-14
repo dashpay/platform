@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "1.0.0-dev.5",
+  "version": "1.0.0-dev.7",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -89,7 +89,7 @@
     "cacache": "18.0.0",
     "node-gyp": "10.0.1",
     "follow-redirects": "^1.15.4",
-    "socks": "^2.7.3"
+    "socks": "^2.8.1"
   },
   "dependencies": {
     "node-gyp": "^10.0.1"
