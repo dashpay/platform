@@ -1,3 +1,42 @@
+## [1.0.0-dev.8](https://github.com/dashpay/platform/compare/v1.0.0-dev.7...v1.0.0-dev.8) (2024-03-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** identity update can not disable a key it is also adding (#1772)
+* **platform:** key disabled at based on state transition block time (#1771)
+* **platform:** data contract validation improvements (#1768)
+* update tenderdash to 0.14-dev.4 (#1770)
+* **platform:** advanced data contract structure validation position (#1763)
+
+### Features
+
+* **platform:** identity update can not disable a key it is also adding ([#1772](https://github.com/dashpay/platform/issues/1772))
+* **platform:** key disabled at based on state transition block time ([#1771](https://github.com/dashpay/platform/issues/1771))
+
+
+### Bug Fixes
+
+* **platform:** advanced data contract structure validation position ([#1763](https://github.com/dashpay/platform/issues/1763))
+* **platform:** data contract validation improvements ([#1768](https://github.com/dashpay/platform/issues/1768))
+* **platform:** wrong state used to get current validator set ([#1773](https://github.com/dashpay/platform/issues/1773))
+* remove unnecessary clone
+* update strategy test document transitions with initial contract ids
+
+
+### Code Refactoring
+
+* **drive:** relax versioning of calls with fees ([#1762](https://github.com/dashpay/platform/issues/1762))
+* drop unused includes; use calculate_sign_hash ([#1767](https://github.com/dashpay/platform/issues/1767))
+* resolve various warnings during build or by clippy ([#1761](https://github.com/dashpay/platform/issues/1761))
+* strategy test start identities ([#1749](https://github.com/dashpay/platform/issues/1749))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** upgrade to Core 20.1 ([#1760](https://github.com/dashpay/platform/issues/1760))
+* update tenderdash to 0.14-dev.4 ([#1770](https://github.com/dashpay/platform/issues/1770))
+
 ## [1.0.0-dev.7](https://github.com/dashpay/platform/compare/v1.0.0-dev.6...v1.0.0-dev.7) (2024-03-08)
 
 
