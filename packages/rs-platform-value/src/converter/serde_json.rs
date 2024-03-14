@@ -421,7 +421,6 @@ mod tests {
           "revision": 0,
           "signature": "HxtcTSpRdACokorvpx/f4ezM40e0WtgW2GUvjiwNkHPwKDppkIoS2cirhqpZURlhDuYdu+E0KllbHNlYghcK9Bg=",
           "signaturePublicKeyId": 1,
-          "publicKeysDisabledAt": 1234567,
           "addPublicKeys": [
             {
               "id": 0,
