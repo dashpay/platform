@@ -16,7 +16,7 @@ license = "MIT"
 arc-swap = "1.7.0"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
-chrono = "0.4.20"
+chrono = "0.4.35"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_with = { version = "3.1.0", features = [
@@ -55,8 +55,8 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
   "tracing-log",
 ], optional = false }
 atty = { version = "0.2.14", optional = false }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "81d28aa0b15fc0844dfa7f7251f6949f6c6c405a", features = [
-  "grpc-server",
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "0.14.0-dev.8", features = [
+  "grpc",
 ] }
 lazy_static = "1.4.0"
 itertools = { version = "0.10.5" }

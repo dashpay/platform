@@ -194,6 +194,13 @@ event-log-max-items = 0
 # See https://github.com/tendermint/tendermint/issues/3435
 timeout-broadcast-tx-commit = "10s"
 
+# Timeout of transaction broadcast to mempool; 0 to disable.
+#
+# This setting affects timeout of CheckTX operations used before
+# adding transaction to the mempool. If the operation takes longer,
+# the transaction is rejected with an error.
+timeout-broadcast-tx = "{{=it.platform.drive.tenderdash.rpc.timeoutBroadcastTx}}"
+
 # Maximum size of request body, in bytes
 max-body-bytes = 1000000
 
@@ -322,6 +329,36 @@ cache-size = {{= it.platform.drive.tenderdash.mempool.cacheSize }}
 # Set to true if it's not possible for any invalid transaction to become valid
 # again in the future.
 keep-invalid-txs-in-cache = true
+
+# Timeout of check TX operations received from other nodes, using p2p protocol.
+# Use 0 to disable.
+timeout-check-tx = "{{=it.platform.drive.tenderdash.mempool.timeoutCheckTx}}"
+
+# TxEnqueueTimeout defines how many nanoseconds new mempool transaction (received
+# from other nodes) will wait when internal processing queue is full
+# (most likely due to busy CheckTx execution).Once the timeout is reached, the transaction
+# will be silently dropped.
+#
+# If set to 0, the timeout is disabled and transactions will wait indefinitely.
+tx-enqueue-timeout = "{{=it.platform.drive.tenderdash.mempool.txEnqueueTimeout}}"
+
+# tx-send-rate-limit is the rate limit for sending transactions to peers, in transactions per second.
+# If zero, the rate limiter is disabled.
+#
+# Default: 0
+tx-send-rate-limit = {{=it.platform.drive.tenderdash.mempool.txSendRateLimit}}
+
+# tx-recv-rate-limit is the rate limit for receiving transactions from peers, in transactions per second.
+# If zero, the rate limiter is disabled.
+#
+# Default: 0
+tx-recv-rate-limit = {{=it.platform.drive.tenderdash.mempool.txRecvRateLimit}}
+
+# tx-recv-rate-punish-peer set to true means that when tx-recv-rate-limit is reached, the peer will be punished
+# (disconnected). If set to false, the peer will be throttled (messages will be dropped).
+#
+# Default: false
+tx-recv-rate-punish-peer = false
 
 # Maximum size of a single transaction.
 # NOTE: the max size of a tx transmitted over the network is {max-tx-bytes}.

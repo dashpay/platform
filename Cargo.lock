@@ -651,9 +651,9 @@ checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
 
 [[package]]
 name = "chrono"
-version = "0.4.32"
+version = "0.4.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41daef31d7a747c5c847246f36de49ced6f7403b4cdabc807a97b5cc184cda7a"
+checksum = "8eaf5903dcbc0a39312feb77df2ff4c76387d591b9fc7b04a238dcf8bb62639a"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
@@ -4264,8 +4264,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "0.14.0-dev.6"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=81d28aa0b15fc0844dfa7f7251f6949f6c6c405a#81d28aa0b15fc0844dfa7f7251f6949f6c6c405a"
+version = "0.14.0-dev.8"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#86ba24b8f6d92e6eb24c7d6aff39f9f733d307ba"
 dependencies = [
  "bytes",
  "futures",
@@ -4285,8 +4285,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "0.14.0-dev.6"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=81d28aa0b15fc0844dfa7f7251f6949f6c6c405a#81d28aa0b15fc0844dfa7f7251f6949f6c6c405a"
+version = "0.14.0-dev.8"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#86ba24b8f6d92e6eb24c7d6aff39f9f733d307ba"
 dependencies = [
  "bytes",
  "chrono",
@@ -4305,8 +4305,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto-compiler"
-version = "0.14.0-dev.6"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=81d28aa0b15fc0844dfa7f7251f6949f6c6c405a#81d28aa0b15fc0844dfa7f7251f6949f6c6c405a"
+version = "0.14.0-dev.8"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#86ba24b8f6d92e6eb24c7d6aff39f9f733d307ba"
 dependencies = [
  "fs_extra",
  "prost-build 0.12.3",
