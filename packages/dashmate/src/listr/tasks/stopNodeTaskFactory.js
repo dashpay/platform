@@ -1,7 +1,8 @@
 /* eslint-disable no-console */
-import lodash from 'lodash';
 import {Listr} from 'listr2';
 import {NETWORK_LOCAL} from '../../constants.js';
+
+const MIN_BLOCKS_BEFORE_DKG = 6
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -39,7 +40,7 @@ export default function stopNodeTaskFactory(
       },
       {
         title: 'Check node is participating in DKG',
-        skip: (ctx) => ctx.isForce || config.get('network') === NETWORK_LOCAL,
+        enable: (ctx) => !ctx.isForce && config.get('network') !== NETWORK_LOCAL,
         task: async (ctx, task) => {
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
@@ -52,7 +53,7 @@ export default function stopNodeTaskFactory(
 
           const {active_dkgs, next_dkg} = dkgInfo
 
-          if (active_dkgs !== 0 || next_dkg < 6) {
+          if (active_dkgs !== 0 || next_dkg < MIN_BLOCKS_BEFORE_DKG) {
             const agreement = await task.prompt({
               type: 'toggle',
               name: 'confirm',
