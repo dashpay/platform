@@ -48,7 +48,7 @@ export default function stopNodeTaskFactory(
             host: await getConnectionHost(config, 'core', 'core.rpc.host'),
           });
 
-          const { result: blockCount } = await rpcClient.getBlockCount();
+          const { result: dkgInfo } = await rpcClient.quorum('dkginfo');
 
           const firstWindow = [Math.floor(blockCount / 24) * 24,
             Math.floor(blockCount / 24) * 24 + 10];
@@ -107,7 +107,7 @@ export default function stopNodeTaskFactory(
             profiles.push('platform');
           }
 
-          await dockerCompose.stop(config, { profiles });
+          // await dockerCompose.stop(config, { profiles });
         },
       },
     ]);
