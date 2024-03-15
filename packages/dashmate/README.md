@@ -62,7 +62,7 @@ Example usage:
 
 ```bash
 $ dashmate stop
-$ npm update -g dashmate
+$ npm install -g dashmate
 $ dashmate update
 ╔══════════════════╤══════════════════════════════╤════════════╗
 ║ Service          │ Image                        │ Updated    ║
@@ -87,7 +87,7 @@ In some cases, you must also additionally reset platform data:
 
 ```bash
 $ dashmate stop
-$ npm update -g dashmate
+$ npm install -g dashmate
 $ dashmate reset --platform-only --hard
 $ dashmate update
 $ dashmate setup
