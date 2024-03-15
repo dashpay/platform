@@ -80,6 +80,7 @@ mod tests {
     use dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, ExtendedQuorumDetails};
     use dashcore_rpc::json::AssetUnlockStatusResult;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+    use strategy_tests::StartIdentities;
     use std::sync::{Arc, Mutex};
     use strategy_tests::operations::DocumentAction::DocumentActionReplace;
     use strategy_tests::operations::{
@@ -145,7 +146,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -191,7 +192,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -238,7 +239,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -366,7 +367,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -501,7 +502,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -562,7 +563,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -612,7 +613,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -670,7 +671,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -733,7 +734,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -809,7 +810,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -874,7 +875,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -942,7 +943,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -1037,7 +1038,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1091,7 +1092,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1169,7 +1170,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![(contract, None)],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1276,7 +1277,7 @@ mod tests {
                     ])),
                 )],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1376,7 +1377,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1452,7 +1453,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1556,7 +1557,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1660,7 +1661,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1721,7 +1722,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "2352bb30e448da578f4492a9a8e9fca18c086c517e73e4ca7e55b24ecc24b6ca".to_string()
+            "2200b6da58af74075a6280091d94ad13773e3f7847e4e230b5d5398ede9cf8a5".to_string()
         )
     }
 
@@ -1779,7 +1780,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -1842,7 +1843,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "9083614aa799b0942271e33c2f3f5b14bdfd5068570b79b3fbd58d906916be12".to_string()
+            "87ea052870576604c828f0675517942942f577dcc6fe51d2aff57b062682c899".to_string()
         )
     }
 
@@ -1900,7 +1901,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -2010,7 +2011,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -2120,7 +2121,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..30,
                     chance_per_block: None,
@@ -2244,7 +2245,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..6,
                     chance_per_block: None,
@@ -2312,7 +2313,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -2386,7 +2387,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -2467,7 +2468,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -2556,7 +2557,7 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -3112,7 +3113,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     //we do this to create some paying transactions
                     times_per_block_range: 1..2,
@@ -3272,7 +3273,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     //we do this to create some paying transactions
                     times_per_block_range: 1..2,
@@ -3403,7 +3404,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     //we do this to create some paying transactions
                     times_per_block_range: 1..2,
@@ -3535,7 +3536,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,
@@ -3668,7 +3669,7 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 6..10,
                     chance_per_block: None,

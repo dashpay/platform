@@ -5,7 +5,7 @@ mod tests {
     use strategy_tests::frequency::Frequency;
 
     use crate::strategy::{FailureStrategy, NetworkStrategy};
-    use strategy_tests::Strategy;
+    use strategy_tests::{StartIdentities, Strategy};
 
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
 
@@ -46,7 +46,7 @@ mod tests {
                     Some(BTreeMap::from([(3, contract_update_1)])),
                 )],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
@@ -123,7 +123,7 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
+                start_identities: StartIdentities::default(),
                 identities_inserts: Frequency {
                     times_per_block_range: Default::default(),
                     chance_per_block: None,

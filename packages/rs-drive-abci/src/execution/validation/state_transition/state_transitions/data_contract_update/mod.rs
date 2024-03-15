@@ -1,4 +1,3 @@
-mod advanced_structure;
 mod identity_contract_nonce;
 mod state;
 
@@ -26,7 +25,7 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
         &self,
         platform: &PlatformRef<C>,
         _block_info: &BlockInfo,
-        _validation_mode: ValidationMode,
+        validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -39,7 +38,7 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
             .contract_update_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(platform_version),
+            0 => self.transform_into_action_v0(validation_mode, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: transform_into_action".to_string(),
                 known_versions: vec![0],

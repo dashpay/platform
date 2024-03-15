@@ -20,6 +20,7 @@ use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::bls_signatures::PublicKey as ThresholdBlsPublicKey;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 
+use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 
@@ -586,7 +587,8 @@ impl PlatformStateV0Methods for PlatformStateV0 {
         self.validator_sets
             .get(&self.current_validator_set_quorum_hash)
             .ok_or(Error::Execution(ExecutionError::CorruptedCachedState(
-                "current validator quorum hash not in current known validator sets",
+                format!("current_validator_set: current validator quorum hash {} not in current known validator sets {} last committed block is {} (we might be processing new block)", self.current_validator_set_quorum_hash.to_string(), self.validator_sets.keys().into_iter().map(|quorum_hash| quorum_hash.to_string()).join(" | "),
+                        self.last_committed_block_info.as_ref().map(|block_info| block_info.basic_info().height).unwrap_or_default()),
             )))
     }
 

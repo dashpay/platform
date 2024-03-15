@@ -1,5 +1,3 @@
-use crate::data_contract::errors::StructureError;
-
 use crate::document::property_names;
 
 use crate::identity::TimestampMillis;
@@ -122,9 +120,9 @@ impl DocumentCborMethodsV0 for DocumentV0 {
         // we would need dedicated deserialization functions based on the document type
         let document_cbor_map: BTreeMap<String, CborValue> =
             ciborium::de::from_reader(document_cbor).map_err(|_| {
-                ProtocolError::StructureError(StructureError::InvalidCBOR(
-                    "unable to decode document for document call",
-                ))
+                ProtocolError::InvalidCBOR(
+                    "unable to decode document for document call".to_string(),
+                )
             })?;
         let document_map: BTreeMap<String, Value> =
             Value::convert_from_cbor_map(document_cbor_map).map_err(ProtocolError::ValueError)?;

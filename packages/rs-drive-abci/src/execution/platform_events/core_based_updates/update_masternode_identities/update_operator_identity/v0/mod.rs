@@ -35,7 +35,7 @@ where
     pub(super) fn update_operator_identity_v0(
         &self,
         masternode: &(ProTxHash, DMNStateDiff),
-        block_info: &BlockInfo,
+        _block_info: &BlockInfo,
         platform_state: &PlatformState,
         transaction: &Transaction,
         drive_operations: &mut Vec<DriveOperation>,
@@ -57,9 +57,10 @@ where
             .full_masternode_list()
             .get(pro_tx_hash)
             .ok_or_else(|| {
-                Error::Execution(ExecutionError::CorruptedCachedState(
-                    "expected masternode to be in state",
-                ))
+                Error::Execution(ExecutionError::CorruptedCachedState(format!(
+                    "expected masternode {} to be in state",
+                    pro_tx_hash.to_string()
+                )))
             })?;
 
         let old_operator_identifier = Self::get_operator_identifier_from_masternode_list_item(
@@ -144,7 +145,6 @@ where
                 drive_operations.push(IdentityOperation(DisableIdentityKeys {
                     identity_id: new_operator_identifier,
                     keys_ids: old_operator_identity_key_ids_to_disable,
-                    disable_at: block_info.time_ms,
                 }));
             }
 
@@ -232,7 +232,6 @@ where
                 drive_operations.push(IdentityOperation(DisableIdentityKeys {
                     identity_id: old_operator_identifier,
                     keys_ids: old_operator_identity_key_ids_to_disable,
-                    disable_at: block_info.time_ms,
                 }));
             }
             let new_payout_address =

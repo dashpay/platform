@@ -129,7 +129,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
     fn validate_advanced_structure_from_state(
         &self,
         _platform: &PlatformStateRef,
-        action: Option<&StateTransitionAction>,
+        action: &StateTransitionAction,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
@@ -140,10 +140,6 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
             .advanced_structure
         {
             0 => {
-                let action =
-                    action.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "documents batch structure validation should have an action",
-                    )))?;
                 let StateTransitionAction::DocumentsBatchAction(documents_batch_transition_action) =
                     action
                 else {
@@ -157,7 +153,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
                 )
             }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "documents batch transition: base structure".to_string(),
+                method: "documents batch transition: advanced structure from state".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

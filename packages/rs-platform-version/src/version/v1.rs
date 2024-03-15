@@ -3,10 +3,11 @@ use crate::version::dpp_versions::{
     ContractVersions, CostVersions, DPPValidationVersions, DPPVersion, DataContractMethodVersions,
     DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions,
     DocumentTransitionVersions, DocumentTypeClassMethodVersions, DocumentTypeIndexVersions,
-    DocumentTypeMethodVersions, DocumentTypeSchemaVersions, DocumentTypeVersions, DocumentVersions,
-    DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
-    IdentityKeyTypeMethodVersions, IdentityTransitionAssetLockVersions, IdentityTransitionVersions,
-    IdentityVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
+    DocumentTypeMethodVersions, DocumentTypeSchemaVersions, DocumentTypeValidationVersions,
+    DocumentTypeVersions, DocumentVersions, DocumentsBatchTransitionValidationVersions,
+    DocumentsBatchTransitionVersions, IdentityKeyTypeMethodVersions,
+    IdentityTransitionAssetLockVersions, IdentityTransitionVersions, IdentityVersions,
+    JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
     RecursiveSchemaValidatorVersions, StateTransitionConversionVersions,
     StateTransitionMethodVersions, StateTransitionSerializationVersions, StateTransitionVersions,
 };
@@ -640,7 +641,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     },
                 contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
-                    advanced_structure: Some(0),
+                    advanced_structure: None,
                     identity_signatures: None,
                     balance: None,
                     nonce: Some(0),
@@ -649,7 +650,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
                 contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: None,
-                    advanced_structure: Some(0),
+                    advanced_structure: None,
                     identity_signatures: None,
                     balance: None,
                     nonce: Some(0),
@@ -800,6 +801,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 validate_not_defined_properties: 0,
                 validate_property_definition: 0,
             },
+            document_type: DocumentTypeValidationVersions { validate_update: 0 },
         },
         state_transition_serialization_versions: StateTransitionSerializationVersions {
             identity_public_key_in_creation: FeatureVersionBounds {

@@ -8,7 +8,7 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Document with type {document_type} has badly constructed index '{index_path}'. Existing properties in the indices should be defined in the beginning of it.")]
+#[error("Document with type {document_type} could not add or remove '{index_path}' during data contract update as we do not allow modifications of data contract index paths")]
 #[platform_serialize(unversioned)]
 pub struct DataContractInvalidIndexDefinitionUpdateError {
     /*

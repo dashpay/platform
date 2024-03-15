@@ -64,9 +64,7 @@ pub mod transitions;
 ///
 /// - `operations`: A list of `Operation`s which define individual tasks or actions that are part of the strategy. Operations could encompass a range of blockchain-related actions like transfers, state changes, contract creations, etc.
 ///
-/// - `start_identities`: A list of tuples representing the starting state of identities. Each tuple contains:
-///   1. `Identity`: The initial identity state.
-///   2. `StateTransition`: The state transition that led to the current state of the identity.
+/// - `start_identities`: An instance of StartIdentities, which specifies the number of identities to register on the first block of the strategy, along with number of keys per identity and starting balance of each identity.
 ///
 /// - `identities_inserts`: Defines the frequency distribution of identity inserts. `Frequency` might encapsulate statistical data like mean, median, variance, etc., for understanding or predicting the frequency of identity insertions.
 ///
@@ -92,7 +90,7 @@ pub struct Strategy {
         Option<BTreeMap<u64, CreatedDataContract>>,
     )>,
     pub operations: Vec<Operation>,
-    pub start_identities: (u8, u8),
+    pub start_identities: StartIdentities,
     pub identities_inserts: Frequency,
     pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
@@ -103,6 +101,14 @@ pub struct Strategy {
 pub struct StrategyConfig {
     pub start_block_height: u64,
     pub number_of_blocks: u64,
+}
+
+/// Identities to register on the first block of the strategy
+#[derive(Clone, Debug, PartialEq, Default, Encode, Decode)]
+pub struct StartIdentities {
+    pub number_of_identities: u8,
+    pub keys_per_identity: u8,
+    pub starting_balances: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -120,7 +126,7 @@ pub enum LocalDocumentQuery<'a> {
 struct StrategyInSerializationFormat {
     pub contracts_with_updates: Vec<(Vec<u8>, Option<BTreeMap<u64, Vec<u8>>>)>,
     pub operations: Vec<Vec<u8>>,
-    pub start_identities: (u8, u8),
+    pub start_identities: StartIdentities,
     pub identities_inserts: Frequency,
     pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
@@ -325,10 +331,10 @@ impl Strategy {
         let mut state_transitions = vec![];
 
         // Add start_identities
-        if block_info.height == config.start_block_height && self.start_identities.0 > 0 {
+        if block_info.height == config.start_block_height && self.start_identities.number_of_identities > 0 {
             let mut new_transitions = crate::transitions::create_identities_state_transitions(
-                self.start_identities.0.into(), // number of identities
-                self.start_identities.1.into(), // number of keys per identity
+                self.start_identities.number_of_identities.into(), // number of identities
+                self.start_identities.keys_per_identity.into(), // number of keys per identity
                 signer,
                 rng,
                 create_asset_lock,
@@ -1431,7 +1437,7 @@ mod tests {
     use crate::frequency::Frequency;
     use crate::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use crate::transitions::create_state_transitions_for_identities;
-    use crate::Strategy;
+    use crate::{StartIdentities, Strategy};
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
@@ -1557,7 +1563,11 @@ mod tests {
                     },
                 },
             ],
-            start_identities: (2, 3),
+            start_identities: StartIdentities {
+                number_of_identities: 2,
+                keys_per_identity: 3,
+                starting_balances: None,
+            },
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,

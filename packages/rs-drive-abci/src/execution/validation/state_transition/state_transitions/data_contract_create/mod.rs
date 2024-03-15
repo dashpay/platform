@@ -1,4 +1,3 @@
-mod advanced_structure;
 mod basic_structure;
 mod identity_nonce;
 mod state;
@@ -110,7 +109,7 @@ impl StateTransitionStateValidationV0 for DataContractCreateTransition {
             .contract_create_state_transition
             .state
         {
-            0 => self.validate_state_v0(platform, tx, validation_mode, platform_version),
+            0 => self.validate_state_v0(platform, validation_mode, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_state".to_string(),
                 known_versions: vec![0],

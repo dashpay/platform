@@ -82,7 +82,7 @@ mod test {
             false,
             false,
             false,
-            &crate::version::PlatformVersion::latest(),
+            crate::version::PlatformVersion::latest(),
         );
 
         match result {

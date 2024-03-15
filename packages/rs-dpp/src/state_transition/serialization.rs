@@ -125,7 +125,6 @@ mod tests {
             nonce: 1,
             add_public_keys: add_public_keys_in_creation,
             disable_public_keys: vec![],
-            public_keys_disabled_at: None,
             user_fee_increase: 0,
         };
 
@@ -193,7 +192,6 @@ mod tests {
             nonce: 1,
             add_public_keys: add_public_keys_in_creation,
             disable_public_keys: vec![3, 4, 5],
-            public_keys_disabled_at: Some(15),
             user_fee_increase: 0,
         };
 

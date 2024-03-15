@@ -319,8 +319,16 @@ impl TryInto<JsonValue> for Value {
             Value::Identifier(bytes) => {
                 JsonValue::String(bs58::encode(bytes.as_slice()).into_string())
             }
-            Value::EnumU8(_) => todo!(),
-            Value::EnumString(_) => todo!(),
+            Value::EnumU8(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumU8 to JSONValue".to_string(),
+                ))
+            }
+            Value::EnumString(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumString to JSONValue".to_string(),
+                ))
+            }
         })
     }
 }
@@ -413,7 +421,6 @@ mod tests {
           "revision": 0,
           "signature": "HxtcTSpRdACokorvpx/f4ezM40e0WtgW2GUvjiwNkHPwKDppkIoS2cirhqpZURlhDuYdu+E0KllbHNlYghcK9Bg=",
           "signaturePublicKeyId": 1,
-          "publicKeysDisabledAt": 1234567,
           "addPublicKeys": [
             {
               "id": 0,

@@ -21,7 +21,7 @@ impl DataContractConfig {
         {
             0 => Ok(self.validate_config_update_v0(new_config, contract_id)),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DataContractConfig::from_value".to_string(),
+                method: "validate_config_update".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

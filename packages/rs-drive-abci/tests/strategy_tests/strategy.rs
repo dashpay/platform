@@ -365,9 +365,9 @@ impl NetworkStrategy {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
         let mut state_transitions = vec![];
-        if block_info.height == 1 && self.strategy.start_identities.0 > 0 {
+        if block_info.height == 1 && self.strategy.start_identities.number_of_identities > 0 {
             let mut new_transitions = NetworkStrategy::create_identities_state_transitions(
-                self.strategy.start_identities.0.into(),
+                self.strategy.start_identities.number_of_identities.into(),
                 5,
                 signer,
                 rng,
@@ -394,6 +394,7 @@ impl NetworkStrategy {
         &mut self,
         current_identities: &Vec<Identity>,
         signer: &SimpleSigner,
+        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
@@ -441,7 +442,12 @@ impl NetworkStrategy {
                     }
                 });
 
-                let state_transition = DataContractCreateTransition::new_from_data_contract(
+                let identity_contract_nonce = contract_nonce_counter
+                    .entry((identity.id, contract.id()))
+                    .or_default();
+                *identity_contract_nonce += 1;
+
+                DataContractCreateTransition::new_from_data_contract(
                     contract.clone(),
                     identity_nonce,
                     &identity,
@@ -450,8 +456,7 @@ impl NetworkStrategy {
                     platform_version,
                     None,
                 )
-                .expect("expected to create a create state transition from a data contract");
-                state_transition
+                .expect("expected to create a create state transition from a data contract")
             })
             .collect()
     }
@@ -1049,14 +1054,19 @@ impl NetworkStrategy {
 
         if block_info.height == 1 {
             // add contracts on block 1
-            let mut contract_state_transitions =
-                self.contract_state_transitions(current_identities, signer, rng, platform_version);
+            let mut contract_state_transitions = self.contract_state_transitions(
+                current_identities,
+                signer,
+                contract_nonce_counter,
+                rng,
+                platform_version,
+            );
             state_transitions.append(&mut contract_state_transitions);
         } else {
             // Don't do any state transitions on block 1
             let (mut document_state_transitions, mut add_to_finalize_block_operations) = self
                 .state_transitions_for_block(
-                    &platform,
+                    platform,
                     block_info,
                     current_identities,
                     signer,

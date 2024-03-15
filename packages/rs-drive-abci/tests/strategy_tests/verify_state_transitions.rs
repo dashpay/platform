@@ -315,7 +315,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         match document_transition_action {
                             DocumentTransitionAction::CreateAction(creation_action) => {
                                 if *was_executed {
-                                    let document = document.expect("expected a document");
+                                    let document = document.unwrap_or_else(|| {
+                                        panic!(
+                                            "expected a document on block {}",
+                                            platform.state.last_committed_block_height()
+                                        )
+                                    });
                                     // dbg!(
                                     //     &document,
                                     //     Document::try_from_create_transition(
