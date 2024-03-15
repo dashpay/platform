@@ -2,6 +2,7 @@ use crate::abci::app::{BlockExecutionApplication, PlatformApplication, Transacti
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
+use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
 
 pub fn finalize_block<'a, A, C>(
@@ -57,6 +58,11 @@ where
     }
 
     app.commit_transaction(platform_version)?;
+    app.platform().state.store(Arc::new(
+        block_finalization_outcome
+            .block_platform_state
+            .expect("block platform state must be set if outcome is valid"),
+    ));
 
     Ok(proto::ResponseFinalizeBlock {
         events: vec![],

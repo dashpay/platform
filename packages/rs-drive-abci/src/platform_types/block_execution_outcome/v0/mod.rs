@@ -1,5 +1,6 @@
 use crate::abci::AbciError;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
+use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::validation::SimpleValidationResult;
@@ -28,10 +29,15 @@ pub struct BlockFinalizationOutcome {
     /// Errors here can happen if the block that we receive to be finalized isn't actually
     /// the one we expect, this could be a replay attack or some other kind of attack.
     pub validation_result: SimpleValidationResult<AbciError>,
+    /// Platform state after block processing
+    pub block_platform_state: Option<PlatformState>,
 }
 
 impl From<SimpleValidationResult<AbciError>> for BlockFinalizationOutcome {
     fn from(validation_result: SimpleValidationResult<AbciError>) -> Self {
-        BlockFinalizationOutcome { validation_result }
+        BlockFinalizationOutcome {
+            validation_result,
+            block_platform_state: None,
+        }
     }
 }

@@ -37,7 +37,7 @@ where
     pub(super) fn update_state_cache_v0(
         &self,
         extended_block_info: ExtendedBlockInfo,
-        mut block_platform_state: PlatformState,
+        mut block_platform_state: &mut PlatformState,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -62,8 +62,6 @@ where
         // Persist block state
 
         self.store_platform_state(&block_platform_state, Some(transaction), platform_version)?;
-
-        self.state.store(Arc::new(block_platform_state));
 
         Ok(())
     }

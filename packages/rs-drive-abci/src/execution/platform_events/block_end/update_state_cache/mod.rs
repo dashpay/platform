@@ -36,7 +36,7 @@ where
     pub fn update_state_cache(
         &self,
         extended_block_info: ExtendedBlockInfo,
-        block_platform_state: PlatformState,
+        block_platform_state: &mut PlatformState,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {

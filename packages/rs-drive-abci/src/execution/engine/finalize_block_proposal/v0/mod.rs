@@ -247,11 +247,11 @@ where
         }
         .into();
 
-        let block_platform_state = block_execution_context.block_platform_state_owned();
+        let mut block_platform_state = block_execution_context.block_platform_state_owned();
 
         self.update_state_cache(
             extended_block_info,
-            block_platform_state,
+            &mut block_platform_state,
             transaction,
             platform_version,
         )?;
@@ -263,6 +263,9 @@ where
         crate::metrics::abci_last_platform_height(height);
         crate::metrics::abci_last_finalized_round(round);
 
-        Ok(validation_result.into())
+        Ok(block_execution_outcome::v0::BlockFinalizationOutcome {
+            validation_result,
+            block_platform_state: Some(block_platform_state),
+        })
     }
 }
