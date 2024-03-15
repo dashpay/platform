@@ -24,12 +24,16 @@ pub enum DocumentReplaceTransition {
 
 /// document from replace transition
 pub trait DocumentFromReplaceTransition {
-    /// Attempts to create a new `Document` from the given `DocumentReplaceTransition` reference and `owner_id`.
+    /// Attempts to create a new `Document` from the given `DocumentReplaceTransition` reference, `owner_id`, and additional metadata.
     ///
     /// # Arguments
     ///
-    /// * `value` - A reference to the `DocumentReplaceTransition` containing information about the document being replaced.
+    /// * `document_replace_transition_action` - A reference to the `DocumentReplaceTransition` containing information about the document being replaced.
     /// * `owner_id` - The `Identifier` of the document's owner.
+    /// * `created_at` - An optional timestamp representing when the document was created.
+    /// * `block_time` - The timestamp representing the blockchain time at which the document was updated.
+    /// * `requires_updated_at` - A boolean indicating if an `updated_at` timestamp is required for the document.
+    /// * `platform_version` - A reference to the `PlatformVersion` indicating the version of the platform for compatibility.
     ///
     /// # Returns
     ///
@@ -38,16 +42,23 @@ pub trait DocumentFromReplaceTransition {
         document_replace_transition_action: &DocumentReplaceTransition,
         owner_id: Identifier,
         created_at: Option<u64>,
+        block_time: u64,
+        requires_updated_at: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
-    /// Attempts to create a new `Document` from the given `DocumentReplaceTransition` instance and `owner_id`.
+
+    /// Attempts to create a new `Document` from the given `DocumentReplaceTransition` instance, `owner_id`, and additional metadata.
     ///
     /// # Arguments
     ///
-    /// * `value` - A `DocumentReplaceTransition` instance containing information about the document being replaced.
+    /// * `document_replace_transition_action` - A `DocumentReplaceTransition` instance containing information about the document being replaced.
     /// * `owner_id` - The `Identifier` of the document's owner.
+    /// * `created_at` - An optional timestamp representing when the document was created.
+    /// * `block_time` - The timestamp representing the blockchain time at which the document was updated.
+    /// * `requires_updated_at` - A boolean indicating if an `updated_at` timestamp is required for the document.
+    /// * `platform_version` - A reference to the `PlatformVersion` indicating the version of the platform for compatibility.
     ///
     /// # Returns
     ///
@@ -56,6 +67,8 @@ pub trait DocumentFromReplaceTransition {
         document_replace_transition_action: DocumentReplaceTransition,
         owner_id: Identifier,
         created_at: Option<u64>,
+        block_time: u64,
+        requires_updated_at: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -67,12 +80,19 @@ impl DocumentFromReplaceTransition for Document {
         document_replace_transition: &DocumentReplaceTransition,
         owner_id: Identifier,
         created_at: Option<u64>,
+        block_time: u64,
+        requires_updated_at: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match document_replace_transition {
-            DocumentReplaceTransition::V0(v0) => {
-                Self::try_from_replace_transition_v0(v0, owner_id, created_at, platform_version)
-            }
+            DocumentReplaceTransition::V0(v0) => Self::try_from_replace_transition_v0(
+                v0,
+                owner_id,
+                created_at,
+                block_time,
+                requires_updated_at,
+                platform_version,
+            ),
         }
     }
 
@@ -80,6 +100,8 @@ impl DocumentFromReplaceTransition for Document {
         document_replace_transition: DocumentReplaceTransition,
         owner_id: Identifier,
         created_at: Option<u64>,
+        block_time: u64,
+        requires_updated_at: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match document_replace_transition {
@@ -87,6 +109,8 @@ impl DocumentFromReplaceTransition for Document {
                 v0,
                 owner_id,
                 created_at,
+                block_time,
+                requires_updated_at,
                 platform_version,
             ),
         }

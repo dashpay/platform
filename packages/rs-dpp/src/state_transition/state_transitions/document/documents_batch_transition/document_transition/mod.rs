@@ -14,7 +14,6 @@ pub mod document_create_transition;
 pub mod document_delete_transition;
 pub mod document_replace_transition;
 
-use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use derive_more::Display;
@@ -31,14 +30,6 @@ pub const PROPERTY_ACTION: &str = "$action";
 
 pub trait DocumentTransitionV0Methods {
     fn base(&self) -> &DocumentBaseTransition;
-    /// returns the creation timestamp (in milliseconds) if it exists for given type of document transition
-    fn created_at(&self) -> Option<TimestampMillis>;
-    /// returns the update timestamp  (in milliseconds) if it exists for given type of document transition
-    fn updated_at(&self) -> Option<TimestampMillis>;
-    /// set the created_at (in milliseconds) if it exists
-    fn set_created_at(&mut self, timestamp_millis: Option<TimestampMillis>);
-    /// set the updated_at (in milliseconds) if it exists
-    fn set_updated_at(&mut self, timestamp_millis: Option<TimestampMillis>);
     /// returns the value of dynamic property. The dynamic property is a property that is not specified in protocol
     /// the `path` supports dot-syntax: i.e: property.internal_property
     fn get_dynamic_property(&self, path: &str) -> Option<&Value>;
@@ -228,47 +219,6 @@ impl DocumentTransitionV0Methods for DocumentTransition {
         }
     }
 
-    fn created_at(&self) -> Option<TimestampMillis> {
-        match self {
-            DocumentTransition::Create(t) => t.created_at(),
-            DocumentTransition::Replace(_) => None,
-            DocumentTransition::Delete(_) => None,
-        }
-    }
-
-    fn updated_at(&self) -> Option<TimestampMillis> {
-        match self {
-            DocumentTransition::Create(t) => t.updated_at(),
-            DocumentTransition::Replace(t) => t.updated_at(),
-            DocumentTransition::Delete(_) => None,
-        }
-    }
-
-    // TODO: it's confusing to set a value and internally it's not setting if your variant doesn't have it.
-    fn set_created_at(&mut self, timestamp_millis: Option<TimestampMillis>) {
-        match self {
-            DocumentTransition::Create(ref mut t) => t.set_created_at(timestamp_millis),
-            DocumentTransition::Replace(_) => {}
-            DocumentTransition::Delete(_) => {}
-        }
-    }
-
-    fn set_updated_at(&mut self, timestamp_millis: Option<TimestampMillis>) {
-        match self {
-            DocumentTransition::Create(ref mut t) => t.set_updated_at(timestamp_millis),
-            DocumentTransition::Replace(ref mut t) => t.set_updated_at(timestamp_millis),
-            DocumentTransition::Delete(_) => {}
-        }
-    }
-
-    fn set_revision(&mut self, revision: Revision) {
-        match self {
-            DocumentTransition::Create(_) => {}
-            DocumentTransition::Replace(ref mut t) => t.set_revision(revision),
-            DocumentTransition::Delete(_) => {}
-        }
-    }
-
     fn get_dynamic_property(&self, path: &str) -> Option<&Value> {
         match self {
             DocumentTransition::Create(t) => t.data().get(path),
@@ -302,6 +252,14 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Create(_) => Some(1),
             DocumentTransition::Replace(t) => Some(t.revision()),
             DocumentTransition::Delete(_) => None,
+        }
+    }
+
+    fn identity_contract_nonce(&self) -> IdentityNonce {
+        match self {
+            DocumentTransition::Create(t) => t.base().identity_contract_nonce(),
+            DocumentTransition::Replace(t) => t.base().identity_contract_nonce(),
+            DocumentTransition::Delete(t) => t.base().identity_contract_nonce(),
         }
     }
 
@@ -342,11 +300,11 @@ impl DocumentTransitionV0Methods for DocumentTransition {
         }
     }
 
-    fn identity_contract_nonce(&self) -> IdentityNonce {
+    fn set_revision(&mut self, revision: Revision) {
         match self {
-            DocumentTransition::Create(t) => t.base().identity_contract_nonce(),
-            DocumentTransition::Replace(t) => t.base().identity_contract_nonce(),
-            DocumentTransition::Delete(t) => t.base().identity_contract_nonce(),
+            DocumentTransition::Create(_) => {}
+            DocumentTransition::Replace(ref mut t) => t.set_revision(revision),
+            DocumentTransition::Delete(_) => {}
         }
     }
 

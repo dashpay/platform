@@ -170,13 +170,16 @@ where
         let is_st_asset_lock_funded = state_transition.optional_asset_lock_proof().is_some();
 
         // Validate state transition and produce an execution event
-        let mut st_validation_result =
-            process_state_transition(platform_ref, state_transition, Some(transaction)).map_err(
-                |error| StateTransitionAwareError {
-                    error,
-                    raw_state_transition: raw_state_transition.into(),
-                },
-            )?;
+        let mut st_validation_result = process_state_transition(
+            platform_ref,
+            block_info,
+            state_transition,
+            Some(transaction),
+        )
+        .map_err(|error| StateTransitionAwareError {
+            error,
+            raw_state_transition: raw_state_transition.into(),
+        })?;
 
         // State Transition is invalid
         if !st_validation_result.is_valid() {

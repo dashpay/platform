@@ -89,7 +89,11 @@ impl Drive {
             path_queries.extend(
                 document_queries
                     .iter()
-                    .map(|drive_query| drive_query.construct_path_query()),
+                    .map(|drive_query| {
+                        let mut path_query = drive_query.construct_path_query();
+                        path_query.query.limit = None;
+                        path_query
+                    }),
             );
             count += document_queries.len();
         }

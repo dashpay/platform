@@ -3,6 +3,7 @@ mod state;
 mod structure;
 
 use crate::error::Error;
+use dpp::block::block_info::BlockInfo;
 
 use crate::error::execution::ExecutionError;
 
@@ -31,6 +32,7 @@ impl StateTransitionActionTransformerV0 for IdentityCreateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        _block_info: &BlockInfo,
         _validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
