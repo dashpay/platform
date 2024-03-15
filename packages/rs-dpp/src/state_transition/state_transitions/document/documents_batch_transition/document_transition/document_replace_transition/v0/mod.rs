@@ -262,7 +262,8 @@ pub trait DocumentFromReplaceTransitionV0 {
         value: &DocumentReplaceTransitionV0,
         owner_id: Identifier,
         created_at: Option<u64>,
-        block_time: Option<u64>,
+        block_time: u64,
+        requires_updated_at: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -282,7 +283,8 @@ pub trait DocumentFromReplaceTransitionV0 {
         value: DocumentReplaceTransitionV0,
         owner_id: Identifier,
         created_at: Option<u64>,
-        block_time: Option<u64>,
+        block_time: u64,
+        requires_updated_at: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -294,7 +296,8 @@ impl DocumentFromReplaceTransitionV0 for Document {
         value: &DocumentReplaceTransitionV0,
         owner_id: Identifier,
         created_at: Option<u64>,
-        block_time: Option<u64>,
+        block_time: u64,
+        requires_updated_at: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let DocumentReplaceTransitionV0 {
@@ -304,6 +307,8 @@ impl DocumentFromReplaceTransitionV0 for Document {
         } = value;
 
         let id = base.id();
+
+        let updated_at = if requires_updated_at { Some(block_time) } else { None };
 
         match platform_version
             .dpp
@@ -316,7 +321,7 @@ impl DocumentFromReplaceTransitionV0 for Document {
                 properties: data.clone(),
                 revision: Some(*revision),
                 created_at,
-                updated_at: block_time,
+                updated_at,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -331,7 +336,8 @@ impl DocumentFromReplaceTransitionV0 for Document {
         value: DocumentReplaceTransitionV0,
         owner_id: Identifier,
         created_at: Option<u64>,
-        block_time: Option<u64>,
+        block_time: u64,
+        requires_updated_at: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let DocumentReplaceTransitionV0 {
@@ -341,6 +347,8 @@ impl DocumentFromReplaceTransitionV0 for Document {
         } = value;
 
         let id = base.id();
+
+        let updated_at = if requires_updated_at { Some(block_time) } else { None };
 
         match platform_version
             .dpp
@@ -353,7 +361,7 @@ impl DocumentFromReplaceTransitionV0 for Document {
                 properties: data,
                 revision: Some(revision),
                 created_at,
-                updated_at: block_time,
+                updated_at,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

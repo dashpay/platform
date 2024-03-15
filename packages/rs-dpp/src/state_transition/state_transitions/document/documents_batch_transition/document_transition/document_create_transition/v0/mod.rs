@@ -165,7 +165,9 @@ pub trait DocumentFromCreateTransitionV0 {
     fn try_from_owned_create_transition_v0(
         v0: DocumentCreateTransitionV0,
         owner_id: Identifier,
-        block_time: Option<TimestampMillis>,
+        block_time: TimestampMillis,
+        requires_created_at: bool,
+        requires_updated_at: bool,
         data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -184,7 +186,9 @@ pub trait DocumentFromCreateTransitionV0 {
     fn try_from_create_transition_v0(
         v0: &DocumentCreateTransitionV0,
         owner_id: Identifier,
-        block_time: Option<TimestampMillis>,
+        block_time: TimestampMillis,
+        requires_created_at: bool,
+        requires_updated_at: bool,
         data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -196,7 +200,9 @@ impl DocumentFromCreateTransitionV0 for Document {
     fn try_from_owned_create_transition_v0(
         v0: DocumentCreateTransitionV0,
         owner_id: Identifier,
-        block_time: Option<TimestampMillis>,
+        block_time: TimestampMillis,
+        requires_created_at: bool,
+        requires_updated_at: bool,
         data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -216,6 +222,9 @@ impl DocumentFromCreateTransitionV0 for Document {
                 let document_type =
                     data_contract.document_type_for_name(document_type_name.as_str())?;
 
+                let created_at = if requires_created_at { Some(block_time) } else { None };
+                let updated_at = if requires_updated_at { Some(block_time) } else { None };
+
                 match platform_version
                     .dpp
                     .document_versions
@@ -226,8 +235,8 @@ impl DocumentFromCreateTransitionV0 for Document {
                         owner_id,
                         properties: data,
                         revision: document_type.initial_revision(),
-                        created_at: block_time,
-                        updated_at: block_time,
+                        created_at,
+                        updated_at,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {
@@ -243,7 +252,9 @@ impl DocumentFromCreateTransitionV0 for Document {
     fn try_from_create_transition_v0(
         v0: &DocumentCreateTransitionV0,
         owner_id: Identifier,
-        block_time: Option<TimestampMillis>,
+        block_time: TimestampMillis,
+        requires_created_at: bool,
+        requires_updated_at: bool,
         data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -263,6 +274,9 @@ impl DocumentFromCreateTransitionV0 for Document {
                 let document_type =
                     data_contract.document_type_for_name(document_type_name.as_str())?;
 
+                let created_at = if requires_created_at { Some(block_time) } else { None };
+                let updated_at = if requires_updated_at { Some(block_time) } else { None };
+
                 match platform_version
                     .dpp
                     .document_versions
@@ -273,8 +287,8 @@ impl DocumentFromCreateTransitionV0 for Document {
                         owner_id,
                         properties: data.clone(),
                         revision: document_type.initial_revision(),
-                        created_at: block_time,
-                        updated_at: block_time,
+                        created_at,
+                        updated_at,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {
