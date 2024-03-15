@@ -1,11 +1,11 @@
 pub(crate) mod v0;
 
-use dpp::block::block_info::BlockInfo;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransition;
 

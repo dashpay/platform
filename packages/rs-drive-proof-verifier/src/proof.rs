@@ -812,6 +812,7 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
 
         let (root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
+            mtd.time_ms,
             &proof.grovedb_proof,
             &known_contracts_provider_fn,
             platform_version,

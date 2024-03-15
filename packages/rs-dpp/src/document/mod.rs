@@ -34,7 +34,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
 use crate::document::document_methods::{
     DocumentGetRawForContractV0, DocumentGetRawForDocumentTypeV0, DocumentHashV0Method,
-    DocumentMethodsV0,
+    DocumentIsEqualIgnoringTimestampsV0, DocumentMethodsV0,
 };
 use crate::document::errors::DocumentError;
 use crate::version::PlatformVersion;
@@ -177,6 +177,30 @@ impl DocumentMethodsV0 for Document {
         self.set_revision(Some(new_revision));
 
         Ok(())
+    }
+
+    fn is_equal_ignoring_timestamps(
+        &self,
+        rhs: &Self,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, ProtocolError> {
+        match (self, rhs) {
+            (Document::V0(document_v0), Document::V0(rhs_v0)) => {
+                match platform_version
+                    .dpp
+                    .document_versions
+                    .document_method_versions
+                    .is_equal_ignoring_timestamps
+                {
+                    0 => Ok(document_v0.is_equal_ignoring_timestamps_v0(rhs_v0)),
+                    version => Err(ProtocolError::UnknownVersionMismatch {
+                        method: "DocumentMethodV0::is_equal_ignoring_timestamps".to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    }),
+                }
+            }
+        }
     }
 }
 

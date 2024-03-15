@@ -73,9 +73,13 @@ impl DocumentFromReplaceTransition for Document {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match document_replace_transition {
-            DocumentReplaceTransition::V0(v0) => {
-                Self::try_from_replace_transition_v0(v0, owner_id, created_at, block_time, platform_version)
-            }
+            DocumentReplaceTransition::V0(v0) => Self::try_from_replace_transition_v0(
+                v0,
+                owner_id,
+                created_at,
+                block_time,
+                platform_version,
+            ),
         }
     }
 

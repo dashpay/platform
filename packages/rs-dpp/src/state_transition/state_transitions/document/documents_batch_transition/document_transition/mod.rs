@@ -14,7 +14,6 @@ pub mod document_create_transition;
 pub mod document_delete_transition;
 pub mod document_replace_transition;
 
-use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use derive_more::Display;

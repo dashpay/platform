@@ -111,10 +111,13 @@ impl<S: Signer> PutDocument<S> for Document {
 
         let response = request.execute(sdk, RequestSettings::default()).await?;
 
+        let block_time = response.metadata()?.time_ms;
+
         let proof = response.proof_owned()?;
 
         let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
+            block_time,
             proof.grovedb_proof.as_slice(),
             &|_| Ok(Some(data_contract.clone())),
             sdk.version(),

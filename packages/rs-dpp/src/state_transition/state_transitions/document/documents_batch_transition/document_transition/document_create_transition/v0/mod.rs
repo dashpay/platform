@@ -45,12 +45,7 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[display(
-    fmt = "Base: {}, Entropy: {:?}, Data: {:?}",
-    "base",
-    "entropy",
-    "data"
-)]
+#[display(fmt = "Base: {}, Entropy: {:?}, Data: {:?}", "base", "entropy", "data")]
 pub struct DocumentCreateTransitionV0 {
     /// Document Base Transition
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
@@ -208,11 +203,7 @@ impl DocumentFromCreateTransitionV0 for Document {
     where
         Self: Sized,
     {
-        let DocumentCreateTransitionV0 {
-            base,
-            data,
-            ..
-        } = v0;
+        let DocumentCreateTransitionV0 { base, data, .. } = v0;
 
         match base {
             DocumentBaseTransition::V0(base_v0) => {
@@ -259,11 +250,7 @@ impl DocumentFromCreateTransitionV0 for Document {
     where
         Self: Sized,
     {
-        let DocumentCreateTransitionV0 {
-            base,
-            data,
-            ..
-        } = v0;
+        let DocumentCreateTransitionV0 { base, data, .. } = v0;
 
         match base {
             DocumentBaseTransition::V0(base_v0) => {

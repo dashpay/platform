@@ -1,7 +1,6 @@
 mod from_document;
 pub mod v0_methods;
 
-use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use bincode::{Decode, Encode};
 use derive_more::Display;
@@ -29,12 +28,7 @@ mod property_names {
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[display(
-    fmt = "Base: {}, Revision: {}, Data: {:?}",
-    "base",
-    "revision",
-    "data"
-)]
+#[display(fmt = "Base: {}, Revision: {}, Data: {:?}", "base", "revision", "data")]
 pub struct DocumentReplaceTransitionV0 {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub base: DocumentBaseTransition,

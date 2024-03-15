@@ -5,6 +5,7 @@ mod v0_methods;
 
 use crate::data_contract::DataContract;
 use crate::document::Document;
+use crate::identity::TimestampMillis;
 use crate::state_transition::documents_batch_transition::document_create_transition::v0::DocumentFromCreateTransitionV0;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -14,7 +15,6 @@ use platform_version::version::PlatformVersion;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 pub use v0::DocumentCreateTransitionV0;
-use crate::identity::TimestampMillis;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
 #[cfg_attr(
@@ -86,9 +86,13 @@ impl DocumentFromCreateTransition for Document {
         Self: Sized,
     {
         match document_create_transition {
-            DocumentCreateTransition::V0(v0) => {
-                Self::try_from_create_transition_v0(v0, owner_id, block_time, data_contract, platform_version)
-            }
+            DocumentCreateTransition::V0(v0) => Self::try_from_create_transition_v0(
+                v0,
+                owner_id,
+                block_time,
+                data_contract,
+                platform_version,
+            ),
         }
     }
 

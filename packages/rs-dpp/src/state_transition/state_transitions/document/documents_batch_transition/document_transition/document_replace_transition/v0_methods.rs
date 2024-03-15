@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use platform_value::Value;
-use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
