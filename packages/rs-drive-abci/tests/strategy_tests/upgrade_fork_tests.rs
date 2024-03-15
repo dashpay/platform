@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+    use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::version::PlatformVersion;
@@ -1154,6 +1155,22 @@ mod tests {
                         ),
                         (Some(&2), Some(&68), Some(&3))
                     ); //some nodes reverted to previous version
+
+                    let epochs = platform
+                        .drive
+                        .get_epochs_infos(
+                            2,
+                            1,
+                            true,
+                            None,
+                            state
+                                .current_platform_version()
+                                .expect("should have version"),
+                        )
+                        .expect("should return epochs");
+
+                    assert_eq!(epochs.len(), 1);
+                    assert_eq!(epochs[0].protocol_version(), 1);
                 }
 
                 let strategy = NetworkStrategy {
@@ -1244,6 +1261,22 @@ mod tests {
                         ),
                         (None, Some(&3), Some(&143))
                     );
+
+                    let epochs = platform
+                        .drive
+                        .get_epochs_infos(
+                            4,
+                            1,
+                            true,
+                            None,
+                            state
+                                .current_platform_version()
+                                .expect("should have version"),
+                        )
+                        .expect("should return epochs");
+
+                    assert_eq!(epochs.len(), 1);
+                    assert_eq!(epochs[0].protocol_version(), TEST_PROTOCOL_VERSION_2);
                 }
             })
             .expect("Failed to create thread with custom stack size");

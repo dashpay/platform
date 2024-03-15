@@ -1150,7 +1150,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "b91e7b8759189050aa92a00dc5fb240689bb0a58e3a2388c80f8d18156d4eb0b".to_string()
+            "02afcc9932aaa3f6959b0f7eb253c1860964644a90364331faeb9e62003e7381".to_string()
         )
     }
 
@@ -1721,7 +1721,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "8f55b983f206f005897ce067091f144787b21d7c840c47d49fdba5edae3645c5".to_string()
+            "219a07c68c97f55d1b211fd9f2a7d301bb50fb4a7287c2af38f447229b76a425".to_string()
         )
     }
 
@@ -1842,7 +1842,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "6b5f954928a3f477b9371106f9594046ae3e059bf7eecf60f5f80f59719b8361".to_string()
+            "cf262a6cc6da0a62f98c3fac218e49b7f65a1560184b28c9d9bdd2368bdd12d5".to_string()
         )
     }
 
