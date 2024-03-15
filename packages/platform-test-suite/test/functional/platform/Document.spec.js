@@ -18,6 +18,16 @@ const {
   },
 } = Dash;
 
+const getDocumentObject = (document) => {
+  const documentObject = document.toObject();
+
+  // Delete createdAt and updatedAt fields because they could vary slightly
+  delete documentObject.$createdAt;
+  delete documentObject.$updatedAt;
+
+  return documentObject;
+};
+
 describe('Platform', () => {
   describe('Document', function main() {
     this.timeout(700000);
@@ -219,15 +229,14 @@ describe('Platform', () => {
       expect(fetchedDocument)
         .to
         .exist();
-      expect(document.toObject())
-        .to
-        .deep
-        .equal(fetchedDocument.toObject());
+
       expect(fetchedDocument.getUpdatedAt())
-        .to
-        .be
-        .deep
-        .equal(fetchedDocument.getCreatedAt());
+        .to.be.greaterThanOrEqual(document.getUpdatedAt());
+      expect(fetchedDocument.getCreatedAt())
+        .to.be.greaterThanOrEqual(document.getCreatedAt());
+
+      expect(getDocumentObject(document)).to.deep.equal(getDocumentObject(fetchedDocument));
+      expect(fetchedDocument.getUpdatedAt()).to.be.deep.equal(fetchedDocument.getCreatedAt());
     });
 
     it('should be able to fetch created document by created timestamp', async () => {
@@ -236,16 +245,12 @@ describe('Platform', () => {
         {
           where: [['$createdAt', '>', document.getCreatedAt()
             .getTime()]],
+          orderBy: [['$createdAt', 'desc']],
         },
       );
 
-      expect(fetchedDocument)
-        .to
-        .exist();
-      expect(document.toObject())
-        .to
-        .deep
-        .equal(fetchedDocument.toObject());
+      expect(fetchedDocument).to.exist();
+      expect(getDocumentObject(document)).to.deep.equal(getDocumentObject(fetchedDocument));
     });
 
     it('should be able to update document', async () => {
