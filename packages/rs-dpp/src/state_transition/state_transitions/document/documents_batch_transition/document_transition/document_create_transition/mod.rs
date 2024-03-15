@@ -5,6 +5,7 @@ mod v0_methods;
 
 use crate::data_contract::DataContract;
 use crate::document::Document;
+use crate::identity::TimestampMillis;
 use crate::state_transition::documents_batch_transition::document_create_transition::v0::DocumentFromCreateTransitionV0;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -33,12 +34,17 @@ impl Default for DocumentCreateTransition {
 
 /// document from create transition
 pub trait DocumentFromCreateTransition {
-    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` reference and `owner_id`.
+    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` reference, `owner_id`, and additional metadata.
     ///
     /// # Arguments
     ///
-    /// * `value` - A reference to the `DocumentCreateTransition` containing information about the document being created.
+    /// * `document_create_transition` - A reference to the `DocumentCreateTransition` containing information about the document being created.
     /// * `owner_id` - The `Identifier` of the document's owner.
+    /// * `block_time` - The timestamp (in milliseconds) representing when the document creation is being processed.
+    /// * `requires_created_at` - A boolean indicating if a `created_at` timestamp is required for the document.
+    /// * `requires_updated_at` - A boolean indicating if an `updated_at` timestamp is required for the document.
+    /// * `data_contract` - A reference to the `DataContract` associated with this document, defining its structure and rules.
+    /// * `platform_version` - A reference to the `PlatformVersion` indicating the version of the platform for compatibility.
     ///
     /// # Returns
     ///
@@ -46,17 +52,26 @@ pub trait DocumentFromCreateTransition {
     fn try_from_create_transition(
         document_create_transition: &DocumentCreateTransition,
         owner_id: Identifier,
+        block_time: TimestampMillis,
+        requires_created_at: bool,
+        requires_updated_at: bool,
         data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
-    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` instance and `owner_id`.
+
+    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` instance, `owner_id`, and additional metadata.
     ///
     /// # Arguments
     ///
-    /// * `value` - A `DocumentCreateTransition` instance containing information about the document being created.
+    /// * `document_create_transition` - A `DocumentCreateTransition` instance containing information about the document being created.
     /// * `owner_id` - The `Identifier` of the document's owner.
+    /// * `block_time` - The timestamp (in milliseconds) representing when the document creation is being processed.
+    /// * `requires_created_at` - A boolean indicating if a `created_at` timestamp is required for the document.
+    /// * `requires_updated_at` - A boolean indicating if an `updated_at` timestamp is required for the document.
+    /// * `data_contract` - A reference to the `DataContract` associated with this document, defining its structure and rules.
+    /// * `platform_version` - A reference to the `PlatformVersion` indicating the version of the platform for compatibility.
     ///
     /// # Returns
     ///
@@ -64,6 +79,9 @@ pub trait DocumentFromCreateTransition {
     fn try_from_owned_create_transition(
         document_create_transition: DocumentCreateTransition,
         owner_id: Identifier,
+        block_time: TimestampMillis,
+        requires_created_at: bool,
+        requires_updated_at: bool,
         data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -75,6 +93,9 @@ impl DocumentFromCreateTransition for Document {
     fn try_from_create_transition(
         document_create_transition: &DocumentCreateTransition,
         owner_id: Identifier,
+        block_time: TimestampMillis,
+        requires_created_at: bool,
+        requires_updated_at: bool,
         data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -82,15 +103,24 @@ impl DocumentFromCreateTransition for Document {
         Self: Sized,
     {
         match document_create_transition {
-            DocumentCreateTransition::V0(v0) => {
-                Self::try_from_create_transition_v0(v0, owner_id, data_contract, platform_version)
-            }
+            DocumentCreateTransition::V0(v0) => Self::try_from_create_transition_v0(
+                v0,
+                owner_id,
+                block_time,
+                requires_created_at,
+                requires_updated_at,
+                data_contract,
+                platform_version,
+            ),
         }
     }
 
     fn try_from_owned_create_transition(
         document_create_transition: DocumentCreateTransition,
         owner_id: Identifier,
+        block_time: TimestampMillis,
+        requires_created_at: bool,
+        requires_updated_at: bool,
         data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -101,6 +131,9 @@ impl DocumentFromCreateTransition for Document {
             DocumentCreateTransition::V0(v0) => Self::try_from_owned_create_transition_v0(
                 v0,
                 owner_id,
+                block_time,
+                requires_created_at,
+                requires_updated_at,
                 data_contract,
                 platform_version,
             ),

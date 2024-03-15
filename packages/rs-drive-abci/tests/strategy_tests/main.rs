@@ -80,12 +80,12 @@ mod tests {
     use dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, ExtendedQuorumDetails};
     use dashcore_rpc::json::AssetUnlockStatusResult;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-    use strategy_tests::StartIdentities;
     use std::sync::{Arc, Mutex};
     use strategy_tests::operations::DocumentAction::DocumentActionReplace;
     use strategy_tests::operations::{
         DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
     };
+    use strategy_tests::StartIdentities;
 
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
     use dpp::dashcore::bls_sig_utils::BLSSignature;
@@ -1722,7 +1722,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "af96b62e5b41ff40791e3c909979c4143590873bddddbcc3f781ac644eb688b1".to_string()
+            "2200b6da58af74075a6280091d94ad13773e3f7847e4e230b5d5398ede9cf8a5".to_string()
         )
     }
 
@@ -1843,7 +1843,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "9aaf2d490aecf00a23dfaf39140ef97a9f239371f5a66b57f9ab15fa38d81fe4".to_string()
+            "87ea052870576604c828f0675517942942f577dcc6fe51d2aff57b062682c899".to_string()
         )
     }
 

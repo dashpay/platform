@@ -21,9 +21,6 @@ pub struct DocumentCreateTransitionActionV0 {
     pub base: DocumentBaseTransitionAction,
     /// The creation time of the document
     pub created_at: Option<TimestampMillis>,
-    //todo: remove updated_at
-    /// The time the document was last updated
-    pub updated_at: Option<TimestampMillis>,
     /// Document properties
     pub data: BTreeMap<String, Value>,
 }
@@ -36,8 +33,6 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
     fn base_owned(self) -> DocumentBaseTransitionAction;
     /// created at
     fn created_at(&self) -> Option<TimestampMillis>;
-    /// updated at
-    fn updated_at(&self) -> Option<TimestampMillis>;
     /// data
     fn data(&self) -> &BTreeMap<String, Value>;
     /// data mut
@@ -93,7 +88,6 @@ impl DocumentFromCreateTransitionActionV0 for Document {
         let DocumentCreateTransitionActionV0 {
             base,
             created_at,
-            updated_at,
             data,
         } = v0;
 
@@ -121,7 +115,7 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                         properties: data.clone(),
                         revision: document_type.initial_revision(),
                         created_at: *created_at,
-                        updated_at: *updated_at,
+                        updated_at: *created_at,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {
@@ -142,7 +136,6 @@ impl DocumentFromCreateTransitionActionV0 for Document {
         let DocumentCreateTransitionActionV0 {
             base,
             created_at,
-            updated_at,
             data,
         } = v0;
 
@@ -170,7 +163,7 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                         properties: data,
                         revision: document_type.initial_revision(),
                         created_at,
-                        updated_at,
+                        updated_at: created_at,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {

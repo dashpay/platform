@@ -331,10 +331,12 @@ impl Strategy {
         let mut state_transitions = vec![];
 
         // Add start_identities
-        if block_info.height == config.start_block_height && self.start_identities.number_of_identities > 0 {
+        if block_info.height == config.start_block_height
+            && self.start_identities.number_of_identities > 0
+        {
             let mut new_transitions = crate::transitions::create_identities_state_transitions(
                 self.start_identities.number_of_identities.into(), // number of identities
-                self.start_identities.keys_per_identity.into(), // number of keys per identity
+                self.start_identities.keys_per_identity.into(),    // number of keys per identity
                 signer,
                 rng,
                 create_asset_lock,
@@ -654,13 +656,6 @@ impl Strategy {
                         documents
                             .into_iter()
                             .for_each(|(document, identity, entropy)| {
-                                let updated_at =
-                                    if document_type.required_fields().contains("$updatedAt") {
-                                        document.created_at()
-                                    } else {
-                                        None
-                                    };
-
                                 let identity_contract_nonce = contract_nonce_counter
                                     .entry((identity.id(), contract.id()))
                                     .or_default();
@@ -681,8 +676,6 @@ impl Strategy {
                                         }
                                         .into(),
                                         entropy: entropy.to_buffer(),
-                                        created_at: document.created_at(),
-                                        updated_at,
                                         data: document.properties_consumed(),
                                     }
                                     .into();
@@ -773,12 +766,6 @@ impl Strategy {
                                 document
                                     .properties_mut()
                                     .append(&mut specific_document_key_value_pairs.clone());
-                                let updated_at =
-                                    if document_type.required_fields().contains("$updatedAt") {
-                                        document.created_at()
-                                    } else {
-                                        None
-                                    };
 
                                 let identity_contract_nonce = contract_nonce_counter
                                     .entry((identity.id(), contract.id()))
@@ -795,8 +782,6 @@ impl Strategy {
                                         }
                                         .into(),
                                         entropy: entropy.to_buffer(),
-                                        created_at: document.created_at(),
-                                        updated_at,
                                         data: document.properties_consumed(),
                                     }
                                     .into();
@@ -1005,7 +990,6 @@ impl Strategy {
                                         .revision()
                                         .expect("expected to unwrap revision")
                                         + 1,
-                                    updated_at: Some(block_info.time_ms),
                                     data: random_new_document.properties_consumed(),
                                 }
                                 .into();

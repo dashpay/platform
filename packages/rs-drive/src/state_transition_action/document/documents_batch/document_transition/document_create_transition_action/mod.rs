@@ -42,12 +42,6 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
         }
     }
 
-    fn updated_at(&self) -> Option<TimestampMillis> {
-        match self {
-            DocumentCreateTransitionAction::V0(v0) => v0.updated_at,
-        }
-    }
-
     fn data(&self) -> &BTreeMap<String, Value> {
         match self {
             DocumentCreateTransitionAction::V0(v0) => &v0.data,

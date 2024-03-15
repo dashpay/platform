@@ -24,8 +24,6 @@ impl DocumentCreateTransitionV0 {
                 base_feature_version,
             )?,
             entropy,
-            created_at: document.created_at(),
-            updated_at: document.updated_at(),
             data: document.properties_consumed(),
         })
     }

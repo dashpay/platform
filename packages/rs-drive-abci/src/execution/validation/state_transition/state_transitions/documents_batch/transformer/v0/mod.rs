@@ -14,6 +14,7 @@ use dpp::consensus::state::document::invalid_document_revision_error::InvalidDoc
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
+use dpp::block::block_info::BlockInfo;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{consensus::ConsensusError, prelude::Identifier, validation::ConsensusValidationResult};
@@ -43,6 +44,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
     fn try_into_action_v0(
         &self,
         platform: &PlatformStateRef,
+        block_info: &BlockInfo,
         validate: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
@@ -52,6 +54,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
 trait DocumentsBatchTransitionInternalTransformerV0 {
     fn transform_document_transitions_within_contract_v0(
         platform: &PlatformStateRef,
+        block_info: &BlockInfo,
         validate: bool,
         data_contract_id: &Identifier,
         owner_id: Identifier,
@@ -62,6 +65,7 @@ trait DocumentsBatchTransitionInternalTransformerV0 {
     ) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error>;
     fn transform_document_transitions_within_document_type_v0(
         platform: &PlatformStateRef,
+        block_info: &BlockInfo,
         validate: bool,
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         document_type_name: &str,
@@ -74,6 +78,7 @@ trait DocumentsBatchTransitionInternalTransformerV0 {
     /// The data contract can be of multiple difference versions
     fn transform_transition_v0(
         validate: bool,
+        block_info: &BlockInfo,
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         transition: &DocumentTransition,
         replaced_documents: &[Document],
@@ -98,6 +103,7 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
     fn try_into_action_v0(
         &self,
         platform: &PlatformStateRef,
+        block_info: &BlockInfo,
         validate_against_state: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
@@ -139,6 +145,7 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
                 |(data_contract_id, document_transitions_by_document_type)| {
                     Self::transform_document_transitions_within_contract_v0(
                         platform,
+                        block_info,
                         validate_against_state,
                         data_contract_id,
                         owner_id,
@@ -173,6 +180,7 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
 impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition {
     fn transform_document_transitions_within_contract_v0(
         platform: &PlatformStateRef,
+        block_info: &BlockInfo,
         validate_against_state: bool,
         data_contract_id: &Identifier,
         owner_id: Identifier,
@@ -206,6 +214,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
         .map(|(document_type_name, document_transitions)| {
             Self::transform_document_transitions_within_document_type_v0(
                 platform,
+                block_info,
                 validate_against_state,
                 data_contract_fetch_info.clone(),
                 document_type_name,
@@ -223,6 +232,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
 
     fn transform_document_transitions_within_document_type_v0(
         platform: &PlatformStateRef,
+        block_info: &BlockInfo,
         validate_against_state: bool,
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         document_type_name: &str,
@@ -287,6 +297,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                     // we validate every transition in this document type
                     Self::transform_transition_v0(
                         validate_against_state,
+                        block_info,
                         data_contract_fetch_info.clone(),
                         transition,
                         &replaced_documents,
@@ -322,6 +333,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
     /// The data contract can be of multiple difference versions
     fn transform_transition_v0<'a>(
         validate_against_state: bool,
+        block_info: &BlockInfo,
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         transition: &DocumentTransition,
         replaced_documents: &[Document],
@@ -331,7 +343,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
             DocumentTransition::Create(document_create_transition) => {
                 let result = ConsensusValidationResult::<DocumentTransitionAction>::new();
 
-                let document_create_action = DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, |_identifier| {
+                let document_create_action = DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, block_info, |_identifier| {
                 Ok(data_contract_fetch_info.clone())
             })?;
 
@@ -388,6 +400,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                     DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
                         document_replace_transition,
                         original_document_created_at,
+                        block_info.time_ms,
                         |_identifier| Ok(data_contract_fetch_info.clone()),
                     )?;
 

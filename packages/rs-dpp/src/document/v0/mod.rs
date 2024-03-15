@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::document::document_methods::{
     DocumentGetRawForContractV0, DocumentGetRawForDocumentTypeV0, DocumentHashV0Method,
+    DocumentIsEqualIgnoringTimestampsV0,
 };
 
 use crate::identity::TimestampMillis;
@@ -61,6 +62,10 @@ pub struct DocumentV0 {
 }
 
 impl DocumentGetRawForContractV0 for DocumentV0 {
+    //automatically done
+}
+
+impl DocumentIsEqualIgnoringTimestampsV0 for DocumentV0 {
     //automatically done
 }
 

@@ -2,6 +2,7 @@ mod basic_structure;
 mod identity_nonce;
 mod state;
 
+use dpp::block::block_info::BlockInfo;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -40,6 +41,7 @@ impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        _block_info: &BlockInfo,
         validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
