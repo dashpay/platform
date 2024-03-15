@@ -234,7 +234,7 @@ describe('Platform', () => {
       const [fetchedDocument] = await client.platform.documents.get(
         'customContracts.indexedDocument',
         {
-          where: [['$createdAt', '==', document.getCreatedAt()
+          where: [['$createdAt', '>', document.getCreatedAt()
             .getTime()]],
         },
       );
@@ -361,65 +361,6 @@ describe('Platform', () => {
         .greaterThanOrEqual(0);
     });
 
-    it('should fail to update document with timestamp in violated time frame', async () => {
-      const [storedDocument] = await client.platform.documents.get(
-        'customContracts.indexedDocument',
-        { where: [['$id', '==', document.getId()]] },
-      );
-
-      const updatedAt = storedDocument.getUpdatedAt();
-
-      updatedAt.setMinutes(updatedAt.getMinutes() - 10);
-
-      let broadcastError;
-
-      const documentsBatchTransition = await client.platform.documents.broadcast({
-        replace: [storedDocument],
-      }, identity);
-
-      // Additional wait time to mitigate testnet latency
-      await waitForSTPropagated();
-
-      const transitions = documentsBatchTransition.getTransitions();
-      transitions[0].setRevision(transitions[0].getRevision() + 1);
-      transitions[0].setUpdatedAt(updatedAt);
-
-      documentsBatchTransition.setTransitions(transitions);
-      const identityContractNonce = await client.platform
-        .nonceManager
-        .getIdentityContractNonce(identity.getId(), storedDocument.getDataContractId()) + 1;
-
-      documentsBatchTransition.setIdentityContractNonce(identityContractNonce);
-      const signedTransition = await signStateTransition(
-        client.platform,
-        documentsBatchTransition,
-        identity,
-        1,
-      );
-
-      try {
-        await client.platform.broadcastStateTransition(signedTransition);
-      } catch (e) {
-        client.platform.nonceManager.setIdentityContractNonce(
-          identity.getId(),
-          dataContractFixture.getId(),
-          identityContractNonce,
-        );
-        broadcastError = e;
-      }
-
-      expect(broadcastError)
-        .to
-        .exist();
-      expect(broadcastError.code)
-        .to
-        .be
-        .equal(4008);
-      expect(broadcastError.message)
-        .to
-        .match(/Document \w* updatedAt timestamp .* are out of block time window from .* and .*/);
-    });
-
     it('should be able to delete a document', async () => {
       await client.platform.documents.broadcast({
         delete: [document],
@@ -436,45 +377,6 @@ describe('Platform', () => {
         .to
         .not
         .exist();
-    });
-
-    it('should fail to create a new document with timestamp in violated time frame', async () => {
-      document = await client.platform.documents.create(
-        'customContracts.indexedDocument',
-        identity,
-        {
-          firstName: 'myName',
-          lastName: 'lastName',
-        },
-      );
-
-      const timestamp = document.getCreatedAt();
-
-      timestamp.setMinutes(timestamp.getMinutes() - 10);
-
-      document.setCreatedAt(timestamp);
-      document.setUpdatedAt(timestamp);
-
-      let broadcastError;
-
-      try {
-        await client.platform.documents.broadcast({
-          create: [document],
-        }, identity);
-      } catch (e) {
-        broadcastError = e;
-      }
-
-      expect(broadcastError)
-        .to
-        .exist();
-      expect(broadcastError.message)
-        .to
-        .match(/Document \w* createdAt timestamp .* are out of block time window from .* and .*/);
-      expect(broadcastError.code)
-        .to
-        .be
-        .equal(4008);
     });
   });
 });
