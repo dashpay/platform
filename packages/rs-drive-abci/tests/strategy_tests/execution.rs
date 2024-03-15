@@ -837,7 +837,7 @@ pub(crate) fn continue_chain_for_strategy(
     let mut state_transitions_per_block = BTreeMap::new();
     let mut state_transition_results_per_block = BTreeMap::new();
 
-    let mut protocol_version = config.initial_protocol_version;
+    let mut protocol_version = config.testing_configs.initial_protocol_version;
 
     for block_height in block_start..(block_start + block_count) {
         let state = platform.state.load();

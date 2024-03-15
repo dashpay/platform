@@ -31,6 +31,7 @@ use std::path::PathBuf;
 
 use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::config::DriveConfig;
+use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::logging::LogConfigs;
@@ -194,10 +195,6 @@ pub struct PlatformConfig {
     /// Approximately how often are blocks produced
     pub block_spacing_ms: u64,
 
-    /// Initial protocol version
-    #[serde(default = "PlatformConfig::default_initial_protocol_version")]
-    pub initial_protocol_version: ProtocolVersion,
-
     /// Path to data storage
     pub db_path: PathBuf,
 
@@ -237,11 +234,6 @@ impl ExecutionConfig {
 }
 
 impl PlatformConfig {
-    fn default_initial_protocol_version() -> ProtocolVersion {
-        //todo: versioning
-        1
-    }
-
     fn default_tokio_console_address() -> String {
         String::from("127.0.0.1:6669")
     }
@@ -346,7 +338,6 @@ impl PlatformConfig {
             tokio_console_enabled: false,
             tokio_console_address: PlatformConfig::default_tokio_console_address(),
             tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
-            initial_protocol_version: 1,
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
         }
@@ -366,7 +357,6 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
-            initial_protocol_version: 1,
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
             tokio_console_enabled: false,
@@ -389,7 +379,6 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
-            initial_protocol_version: 1,
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
             tokio_console_enabled: false,
@@ -406,6 +395,9 @@ pub struct PlatformTestConfig {
     pub block_signing: bool,
     /// Block signature verification
     pub block_commit_signature_verification: bool,
+    /// Initial protocol version
+    #[serde(default = "PlatformTestConfig::default_initial_protocol_version")]
+    pub initial_protocol_version: ProtocolVersion,
 }
 
 impl PlatformTestConfig {
@@ -414,7 +406,12 @@ impl PlatformTestConfig {
         Self {
             block_signing: false,
             block_commit_signature_verification: false,
+            initial_protocol_version: Self::default_initial_protocol_version(),
         }
+    }
+
+    fn default_initial_protocol_version() -> ProtocolVersion {
+        INITIAL_PROTOCOL_VERSION
     }
 }
 
@@ -423,6 +420,7 @@ impl Default for PlatformTestConfig {
         Self {
             block_signing: true,
             block_commit_signature_verification: true,
+            initial_protocol_version: Self::default_initial_protocol_version(),
         }
     }
 }
