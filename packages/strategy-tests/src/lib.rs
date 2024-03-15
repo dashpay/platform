@@ -331,10 +331,12 @@ impl Strategy {
         let mut state_transitions = vec![];
 
         // Add start_identities
-        if block_info.height == config.start_block_height && self.start_identities.number_of_identities > 0 {
+        if block_info.height == config.start_block_height
+            && self.start_identities.number_of_identities > 0
+        {
             let mut new_transitions = crate::transitions::create_identities_state_transitions(
                 self.start_identities.number_of_identities.into(), // number of identities
-                self.start_identities.keys_per_identity.into(), // number of keys per identity
+                self.start_identities.keys_per_identity.into(),    // number of keys per identity
                 signer,
                 rng,
                 create_asset_lock,

@@ -222,8 +222,16 @@ impl DocumentFromCreateTransitionV0 for Document {
                 let document_type =
                     data_contract.document_type_for_name(document_type_name.as_str())?;
 
-                let created_at = if requires_created_at { Some(block_time) } else { None };
-                let updated_at = if requires_updated_at { Some(block_time) } else { None };
+                let created_at = if requires_created_at {
+                    Some(block_time)
+                } else {
+                    None
+                };
+                let updated_at = if requires_updated_at {
+                    Some(block_time)
+                } else {
+                    None
+                };
 
                 match platform_version
                     .dpp
@@ -274,8 +282,16 @@ impl DocumentFromCreateTransitionV0 for Document {
                 let document_type =
                     data_contract.document_type_for_name(document_type_name.as_str())?;
 
-                let created_at = if requires_created_at { Some(block_time) } else { None };
-                let updated_at = if requires_updated_at { Some(block_time) } else { None };
+                let created_at = if requires_created_at {
+                    Some(block_time)
+                } else {
+                    None
+                };
+                let updated_at = if requires_updated_at {
+                    Some(block_time)
+                } else {
+                    None
+                };
 
                 match platform_version
                     .dpp

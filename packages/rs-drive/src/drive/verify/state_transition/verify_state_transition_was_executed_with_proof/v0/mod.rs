@@ -123,8 +123,12 @@ impl Drive {
                 match transition {
                     DocumentTransition::Create(create_transition) => {
                         let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (create)", create_transition.base().id()))))?;
-                        let requires_created_at = document_type.required_fields().contains(property_names::CREATED_AT);
-                        let requires_updated_at = document_type.required_fields().contains(property_names::UPDATED_AT);
+                        let requires_created_at = document_type
+                            .required_fields()
+                            .contains(property_names::CREATED_AT);
+                        let requires_updated_at = document_type
+                            .required_fields()
+                            .contains(property_names::UPDATED_AT);
                         let expected_document = Document::try_from_create_transition(
                             create_transition,
                             documents_batch_transition.owner_id(),
@@ -147,7 +151,9 @@ impl Drive {
                     }
                     DocumentTransition::Replace(replace_transition) => {
                         let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (replace)", replace_transition.base().id()))))?;
-                        let requires_updated_at = document_type.required_fields().contains(property_names::UPDATED_AT);
+                        let requires_updated_at = document_type
+                            .required_fields()
+                            .contains(property_names::UPDATED_AT);
                         let expected_document = Document::try_from_replace_transition(
                             replace_transition,
                             documents_batch_transition.owner_id(),

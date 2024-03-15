@@ -308,7 +308,11 @@ impl DocumentFromReplaceTransitionV0 for Document {
 
         let id = base.id();
 
-        let updated_at = if requires_updated_at { Some(block_time) } else { None };
+        let updated_at = if requires_updated_at {
+            Some(block_time)
+        } else {
+            None
+        };
 
         match platform_version
             .dpp
@@ -348,7 +352,11 @@ impl DocumentFromReplaceTransitionV0 for Document {
 
         let id = base.id();
 
-        let updated_at = if requires_updated_at { Some(block_time) } else { None };
+        let updated_at = if requires_updated_at {
+            Some(block_time)
+        } else {
+            None
+        };
 
         match platform_version
             .dpp
