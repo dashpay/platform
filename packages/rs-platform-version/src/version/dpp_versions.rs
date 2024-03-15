@@ -220,6 +220,7 @@ pub struct DocumentVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DocumentMethodVersions {
+    pub is_equal_ignoring_timestamps: FeatureVersion,
     pub hash: FeatureVersion,
     pub get_raw_for_contract: FeatureVersion,
     pub get_raw_for_document_type: FeatureVersion,

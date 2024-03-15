@@ -423,6 +423,7 @@ pub fn create_domain_data_trigger_v0(
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
+    use dpp::block::block_info::BlockInfo;
     use dpp::platform_value::Bytes32;
     use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
@@ -500,7 +501,7 @@ mod test {
 
         let result = create_domain_data_trigger_v0(
             &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(
-                document_create_transition,|_identifier| {
+                document_create_transition, &BlockInfo::default(), |_identifier| {
                     Ok(Arc::new(DataContractFetchInfo::dpns_contract_fixture(platform_version.protocol_version)))
                 }).expect("expected to create action").into(),
             &data_trigger_context,

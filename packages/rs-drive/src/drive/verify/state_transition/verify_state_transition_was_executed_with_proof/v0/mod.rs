@@ -3,8 +3,9 @@ use std::sync::Arc;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
-use dpp::document::{Document, DocumentV0Getters};
-use dpp::identity::PartialIdentity;
+use dpp::document::{Document, DocumentV0Getters, property_names};
+use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::identity::{PartialIdentity, TimestampMillis};
 use dpp::prelude::{DataContract, Identifier};
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
@@ -36,6 +37,7 @@ use crate::query::SingleDocumentDriveQuery;
 impl Drive {
     pub(super) fn verify_state_transition_was_executed_with_proof_v0(
         state_transition: &StateTransition,
+        block_time: TimestampMillis,
         proof: &[u8],
         known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
         platform_version: &PlatformVersion,
@@ -121,15 +123,26 @@ impl Drive {
                 match transition {
                     DocumentTransition::Create(create_transition) => {
                         let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (create)", create_transition.base().id()))))?;
+                        let requires_created_at = document_type
+                            .required_fields()
+                            .contains(property_names::CREATED_AT);
+                        let requires_updated_at = document_type
+                            .required_fields()
+                            .contains(property_names::UPDATED_AT);
                         let expected_document = Document::try_from_create_transition(
                             create_transition,
                             documents_batch_transition.owner_id(),
+                            block_time,
+                            requires_created_at,
+                            requires_updated_at,
                             &contract,
                             platform_version,
                         )?;
 
-                        if document != expected_document {
-                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected document after create with id {}", create_transition.base().id()))));
+                        if !document
+                            .is_equal_ignoring_timestamps(&expected_document, platform_version)?
+                        {
+                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after create with id {}", create_transition.base().id()))));
                         }
                         Ok((
                             root_hash,
@@ -138,10 +151,15 @@ impl Drive {
                     }
                     DocumentTransition::Replace(replace_transition) => {
                         let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (replace)", replace_transition.base().id()))))?;
+                        let requires_updated_at = document_type
+                            .required_fields()
+                            .contains(property_names::UPDATED_AT);
                         let expected_document = Document::try_from_replace_transition(
                             replace_transition,
                             documents_batch_transition.owner_id(),
                             document.created_at(), //we can trust the created at (as we don't care)
+                            block_time,
+                            requires_updated_at,
                             platform_version,
                         )?;
 

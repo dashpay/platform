@@ -974,6 +974,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 default_current_version: 0,
             },
             document_method_versions: DocumentMethodVersions {
+                is_equal_ignoring_timestamps: 0,
                 hash: 0,
                 get_raw_for_contract: 0,
                 get_raw_for_document_type: 0,

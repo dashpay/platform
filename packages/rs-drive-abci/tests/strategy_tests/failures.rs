@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
     use crate::execution::run_chain_for_strategy;
-
     use std::collections::{BTreeMap, HashMap};
     use strategy_tests::frequency::Frequency;
 

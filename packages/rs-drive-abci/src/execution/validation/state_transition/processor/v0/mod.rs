@@ -26,6 +26,7 @@ use crate::execution::validation::state_transition::ValidationMode;
 
 pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
+    block_info: &BlockInfo,
     state_transition: StateTransition,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
@@ -36,6 +37,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let action = if state_transition.requires_state_to_validate_identity_and_signatures() {
         let state_transition_action_result = state_transition.transform_into_action(
             platform,
+            block_info,
             ValidationMode::Validator,
             &mut state_transition_execution_context,
             transaction,
@@ -133,6 +135,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         } else {
             let state_transition_action_result = state_transition.transform_into_action(
                 platform,
+                block_info,
                 ValidationMode::Validator,
                 &mut state_transition_execution_context,
                 transaction,

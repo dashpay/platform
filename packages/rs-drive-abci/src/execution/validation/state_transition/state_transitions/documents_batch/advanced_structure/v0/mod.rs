@@ -19,13 +19,11 @@ use crate::execution::validation::state_transition::state_transitions::documents
 use crate::execution::validation::state_transition::state_transitions::documents_batch::action_validation::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::error::execution::ExecutionError;
-use crate::platform_types::platform::PlatformStateRef;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchStateTransitionStructureValidationV0
 {
     fn validate_advanced_structure_from_state_v0(
         &self,
-        platform: &PlatformStateRef,
         action: &DocumentsBatchTransitionAction,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
@@ -34,7 +32,6 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
 impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransition {
     fn validate_advanced_structure_from_state_v0(
         &self,
-        platform: &PlatformStateRef,
         action: &DocumentsBatchTransitionAction,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
@@ -62,13 +59,13 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
         for transition in action.transitions() {
             match transition {
                 DocumentTransitionAction::CreateAction(create_action) => {
-                    let result = create_action.validate_structure(platform, platform_version)?;
+                    let result = create_action.validate_structure(platform_version)?;
                     if !result.is_valid() {
                         return Ok(result);
                     }
                 }
                 DocumentTransitionAction::ReplaceAction(replace_action) => {
-                    let result = replace_action.validate_structure(platform, platform_version)?;
+                    let result = replace_action.validate_structure(platform_version)?;
                     if !result.is_valid() {
                         return Ok(result);
                     }

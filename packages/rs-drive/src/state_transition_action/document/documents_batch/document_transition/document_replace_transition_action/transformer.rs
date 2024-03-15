@@ -12,6 +12,7 @@ impl DocumentReplaceTransitionAction {
     pub fn try_from_borrowed_document_replace_transition(
         document_replace_transition: &DocumentReplaceTransition,
         originally_created_at: Option<TimestampMillis>,
+        block_time_ms: TimestampMillis,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
         match document_replace_transition {
@@ -19,6 +20,7 @@ impl DocumentReplaceTransitionAction {
                 DocumentReplaceTransitionActionV0::try_from_borrowed_document_replace_transition(
                     v0,
                     originally_created_at,
+                    block_time_ms,
                     get_data_contract,
                 )?
                 .into(),

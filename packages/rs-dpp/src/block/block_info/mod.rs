@@ -1,4 +1,5 @@
 use crate::block::epoch::{Epoch, EPOCH_0};
+use crate::prelude::TimestampMillis;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +17,7 @@ pub const DEFAULT_BLOCK_INFO: BlockInfo = BlockInfo {
 #[derive(Clone, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
 pub struct BlockInfo {
     /// Block time in milliseconds
-    pub time_ms: u64,
+    pub time_ms: TimestampMillis,
 
     /// Block height
     pub height: u64,

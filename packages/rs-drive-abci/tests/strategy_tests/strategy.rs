@@ -547,13 +547,6 @@ impl NetworkStrategy {
                         documents
                             .into_iter()
                             .for_each(|(document, identity, entropy)| {
-                                let updated_at =
-                                    if document_type.required_fields().contains("$updatedAt") {
-                                        document.created_at()
-                                    } else {
-                                        None
-                                    };
-
                                 let identity_contract_nonce = contract_nonce_counter
                                     .entry((identity.id(), contract.id()))
                                     .or_default();
@@ -575,8 +568,6 @@ impl NetworkStrategy {
                                         }
                                         .into(),
                                         entropy: entropy.to_buffer(),
-                                        created_at: document.created_at(),
-                                        updated_at,
                                         data: document.properties_consumed(),
                                     }
                                     .into();
@@ -668,12 +659,6 @@ impl NetworkStrategy {
                                 document
                                     .properties_mut()
                                     .append(&mut specific_document_key_value_pairs.clone());
-                                let updated_at =
-                                    if document_type.required_fields().contains("$updatedAt") {
-                                        document.created_at()
-                                    } else {
-                                        None
-                                    };
 
                                 let identity_contract_nonce = contract_nonce_counter
                                     .entry((identity.id(), contract.id()))
@@ -690,8 +675,6 @@ impl NetworkStrategy {
                                         }
                                         .into(),
                                         entropy: entropy.to_buffer(),
-                                        created_at: document.created_at(),
-                                        updated_at,
                                         data: document.properties_consumed(),
                                     }
                                     .into();
@@ -891,7 +874,6 @@ impl NetworkStrategy {
                                         .revision()
                                         .expect("expected to unwrap revision")
                                         + 1,
-                                    updated_at: Some(block_info.time_ms),
                                     data: random_new_document.properties_consumed(),
                                 }
                                 .into();

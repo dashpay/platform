@@ -47,6 +47,7 @@ impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
@@ -60,7 +61,7 @@ impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
             .documents_batch_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(&platform.into(), validation_mode, tx),
+            0 => self.transform_into_action_v0(&platform.into(), block_info, validation_mode, tx),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -127,7 +128,7 @@ impl StateTransitionNonceValidationV0 for DocumentsBatchTransition {
 impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransition {
     fn validate_advanced_structure_from_state(
         &self,
-        platform: &PlatformStateRef,
+        _platform: &PlatformStateRef,
         action: &StateTransitionAction,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
@@ -147,7 +148,6 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
                     )));
                 };
                 self.validate_advanced_structure_from_state_v0(
-                    platform,
                     documents_batch_transition_action,
                     platform_version,
                 )
