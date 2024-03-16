@@ -60,10 +60,12 @@ use dpp::data_contract::DataContract;
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
+#[cfg(feature = "fixtures-and-mocks")]
 use dpp::prelude::Identifier;
 
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::tests::json_document::json_document_to_contract_with_ids;
+#[cfg(feature = "fixtures-and-mocks")]
 use dpp::version::PlatformVersion;
 
 #[cfg(test)]

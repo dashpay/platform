@@ -14,7 +14,7 @@ impl DriveHighLevelOperationConverter for DataContractCreateTransitionAction {
         _epoch: &Epoch,
         _platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
-        let operations = vec![
+        Ok(vec![
             IdentityOperation(IdentityOperationType::UpdateIdentityNonce {
                 identity_id: self.data_contract_ref().owner_id().into_buffer(),
                 nonce: self.identity_nonce(),
@@ -31,8 +31,6 @@ impl DriveHighLevelOperationConverter for DataContractCreateTransitionAction {
                 contract: Cow::Owned(self.data_contract()),
                 storage_flags: None,
             }),
-        ];
-
-        Ok(operations)
+        ])
     }
 }

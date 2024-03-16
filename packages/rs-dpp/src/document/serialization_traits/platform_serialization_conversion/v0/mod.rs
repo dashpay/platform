@@ -1,4 +1,5 @@
 use crate::data_contract::document_type::DocumentTypeRef;
+#[cfg(feature = "validation")]
 use crate::validation::ConsensusValidationResult;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
