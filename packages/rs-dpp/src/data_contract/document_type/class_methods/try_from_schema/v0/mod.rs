@@ -24,6 +24,7 @@ use std::collections::HashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
+#[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeRequiredSecurityLevelError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
