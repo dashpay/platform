@@ -12,6 +12,7 @@ use drive_abci::rpc::core::DefaultCoreRPC;
 use drive_abci::{logging, server};
 use itertools::Itertools;
 use std::fs::remove_file;
+#[cfg(tokio_unstable)]
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -20,7 +21,9 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
+#[cfg(tokio_unstable)]
 use tracing_subscriber::layer::SubscriberExt;
+#[cfg(tokio_unstable)]
 use tracing_subscriber::util::SubscriberInitExt;
 
 const SHUTDOWN_TIMEOUT_MILIS: u64 = 5000; // 5s; Docker defaults to 10s
@@ -165,26 +168,28 @@ fn main() -> Result<(), ExitCode> {
         panic!("tokio_unstable flag should be set");
 
         // Initialize Tokio console subscriber
+        #[cfg(tokio_unstable)]
+        {
+            let socket_addr: SocketAddr = config
+                .tokio_console_address
+                .parse()
+                .expect("cannot parse tokio console address");
 
-        let socket_addr: SocketAddr = config
-            .tokio_console_address
-            .parse()
-            .expect("cannot parse tokio console address");
+            let console_layer = console_subscriber::ConsoleLayer::builder()
+                .retention(Duration::from_secs(config.tokio_console_retention_secs))
+                .server_addr(socket_addr)
+                .spawn();
 
-        let console_layer = console_subscriber::ConsoleLayer::builder()
-            .retention(Duration::from_secs(config.tokio_console_retention_secs))
-            .server_addr(socket_addr)
-            .spawn();
-
-        tracing_subscriber::registry()
-            .with(
-                loggers
-                    .tracing_subscriber_layers()
-                    .expect("should return layers"),
-            )
-            .with(console_layer)
-            .try_init()
-            .expect("can't init tracing subscribers");
+            tracing_subscriber::registry()
+                .with(
+                    loggers
+                        .tracing_subscriber_layers()
+                        .expect("should return layers"),
+                )
+                .with(console_layer)
+                .try_init()
+                .expect("can't init tracing subscribers");
+        }
     } else {
         loggers.install();
     }

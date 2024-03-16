@@ -26,7 +26,9 @@ use platform_version::version::FeatureVersion;
 use std::collections::BTreeMap;
 
 use crate::consensus::basic::decode::DecodingError;
+#[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;
+#[cfg(feature = "validation")]
 use crate::consensus::ConsensusError;
 use std::io::{BufReader, Read};
 
