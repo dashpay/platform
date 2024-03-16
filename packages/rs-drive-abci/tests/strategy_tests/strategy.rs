@@ -179,6 +179,7 @@ pub enum CoreHeightIncrease {
     #[default]
     NoCoreHeightIncrease,
     RandomCoreHeightIncrease(Frequency),
+    #[allow(dead_code)] // TODO investigate why this is never constructed according to compiler
     KnownCoreHeightIncreases(Vec<u32>),
 }
 
