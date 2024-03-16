@@ -4,23 +4,26 @@
 //! create various types of random documents.
 //!
 
-use std::time::{SystemTime, UNIX_EPOCH};
 use crate::data_contract::document_type::property_names::{CREATED_AT, UPDATED_AT};
 use crate::data_contract::document_type::random_document::{
     CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
+use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::document::property_names::{
+    CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT_BLOCK_HEIGHT,
+    UPDATED_AT_CORE_BLOCK_HEIGHT,
+};
 use crate::document::{Document, DocumentV0};
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::Identity;
+use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use crate::document::property_names::{CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT};
-use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 
 impl CreateRandomDocument for DocumentTypeV0 {
     /// Creates `count` Documents with random data using a seed if given, otherwise entropy.
@@ -202,7 +205,8 @@ impl CreateRandomDocument for DocumentTypeV0 {
                 time_ms
             } else {
                 let now = SystemTime::now();
-                let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+                let duration_since_epoch =
+                    now.duration_since(UNIX_EPOCH).expect("Time went backwards");
                 let milliseconds = duration_since_epoch.as_millis() as u64;
                 Some(milliseconds)
             }
@@ -217,7 +221,8 @@ impl CreateRandomDocument for DocumentTypeV0 {
                 created_at
             } else {
                 let now = SystemTime::now();
-                let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+                let duration_since_epoch =
+                    now.duration_since(UNIX_EPOCH).expect("Time went backwards");
                 let milliseconds = duration_since_epoch.as_millis() as u64;
                 Some(milliseconds)
             }
@@ -245,26 +250,27 @@ impl CreateRandomDocument for DocumentTypeV0 {
             None
         };
 
-        let created_at_core_block_height = if self.required_fields.contains(CREATED_AT_CORE_BLOCK_HEIGHT) {
-            if core_block_height.is_some() {
-                core_block_height
+        let created_at_core_block_height =
+            if self.required_fields.contains(CREATED_AT_CORE_BLOCK_HEIGHT) {
+                if core_block_height.is_some() {
+                    core_block_height
+                } else {
+                    Some(0)
+                }
             } else {
-                Some(0)
-            }
-        } else {
-            None
-        };
+                None
+            };
 
-        let updated_at_core_block_height = if self.required_fields.contains(UPDATED_AT_CORE_BLOCK_HEIGHT) {
-            if core_block_height.is_some() {
-                core_block_height
+        let updated_at_core_block_height =
+            if self.required_fields.contains(UPDATED_AT_CORE_BLOCK_HEIGHT) {
+                if core_block_height.is_some() {
+                    core_block_height
+                } else {
+                    Some(0)
+                }
             } else {
-                Some(0)
-            }
-        } else {
-            None
-        };
-
+                None
+            };
 
         match platform_version
             .dpp

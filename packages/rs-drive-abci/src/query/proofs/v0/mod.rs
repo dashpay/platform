@@ -258,14 +258,12 @@ mod tests {
         let (platform, state, version) = setup_platform();
 
         let request = GetProofsRequestV0 {
-            identities: vec![
-                IdentityRequest {
-                    identity_id: vec![0; 32],
-                    request_type: 0,
-                }
-            ],
+            identities: vec![IdentityRequest {
+                identity_id: vec![0; 32],
+                request_type: 0,
+            }],
             contracts: vec![ContractRequest {
-                contract_id: vec![0; 32]
+                contract_id: vec![0; 32],
             }],
             documents: vec![DocumentRequest {
                 contract_id: vec![0; 32],

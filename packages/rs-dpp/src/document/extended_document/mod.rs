@@ -487,10 +487,22 @@ mod test {
 
         assert_eq!(init_doc.created_at(), doc.created_at());
         assert_eq!(init_doc.updated_at(), doc.updated_at());
-        assert_eq!(init_doc.created_at_block_height(), doc.created_at_block_height());
-        assert_eq!(init_doc.updated_at_block_height(), doc.updated_at_block_height());
-        assert_eq!(init_doc.created_at_core_block_height(), doc.created_at_core_block_height());
-        assert_eq!(init_doc.updated_at_core_block_height(), doc.updated_at_core_block_height());
+        assert_eq!(
+            init_doc.created_at_block_height(),
+            doc.created_at_block_height()
+        );
+        assert_eq!(
+            init_doc.updated_at_block_height(),
+            doc.updated_at_block_height()
+        );
+        assert_eq!(
+            init_doc.created_at_core_block_height(),
+            doc.created_at_core_block_height()
+        );
+        assert_eq!(
+            init_doc.updated_at_core_block_height(),
+            doc.updated_at_core_block_height()
+        );
         assert_eq!(init_doc.id(), doc.id());
         assert_eq!(init_doc.data_contract_id(), doc.data_contract_id());
         assert_eq!(init_doc.owner_id(), doc.owner_id());

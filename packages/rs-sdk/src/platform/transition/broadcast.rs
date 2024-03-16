@@ -1,11 +1,11 @@
 use super::broadcast_request::BroadcastRequestForStateTransition;
+use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
-use crate::platform::block_info_from_metadata::block_info_from_metadata;
 
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {

@@ -9,6 +9,7 @@ use dpp::prelude::UserFeeIncrease;
 
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
+use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
@@ -17,7 +18,6 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::withdrawal::Pooling;
 use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
-use crate::platform::block_info_from_metadata::block_info_from_metadata;
 
 #[async_trait::async_trait]
 pub trait WithdrawFromIdentity {

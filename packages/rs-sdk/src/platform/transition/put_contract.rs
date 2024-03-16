@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 
 use crate::{Error, Sdk};
 
+use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::transition::put_settings::PutSettings;
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -16,7 +17,6 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
-use crate::platform::block_info_from_metadata::block_info_from_metadata;
 
 #[async_trait::async_trait]
 /// A trait for putting a contract to platform

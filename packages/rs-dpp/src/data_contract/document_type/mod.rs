@@ -168,9 +168,14 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
         match self {
-            DocumentTypeRef::V0(v0) => {
-                v0.create_document_from_data(data, owner_id, block_height, core_block_height, document_entropy, platform_version)
-            }
+            DocumentTypeRef::V0(v0) => v0.create_document_from_data(
+                data,
+                owner_id,
+                block_height,
+                core_block_height,
+                document_entropy,
+                platform_version,
+            ),
         }
     }
 

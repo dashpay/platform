@@ -1,6 +1,6 @@
+use dpp::block::block_info::BlockInfo;
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
-use dpp::block::block_info::BlockInfo;
 
 use dpp::identity::TimestampMillis;
 use dpp::prelude::{BlockHeight, CoreBlockHeight};

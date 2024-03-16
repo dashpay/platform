@@ -1,15 +1,18 @@
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::property_names::{CREATED_AT, UPDATED_AT};
 use crate::data_contract::document_type::v0::DocumentTypeV0;
+use crate::document::property_names::{
+    CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT_BLOCK_HEIGHT,
+    UPDATED_AT_CORE_BLOCK_HEIGHT,
+};
 use crate::document::{Document, DocumentV0, INITIAL_REVISION};
 use crate::identity::TimestampMillis;
+use crate::prelude::{BlockHeight, CoreBlockHeight};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use chrono::Utc;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::{Identifier, ReplacementType, Value};
-use crate::document::property_names::{CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT};
-use crate::prelude::{BlockHeight, CoreBlockHeight};
 
 impl DocumentTypeV0 {
     pub(in crate::data_contract::document_type) fn create_document_from_data_v0(
@@ -63,11 +66,17 @@ impl DocumentTypeV0 {
         let is_created_at_required = self.required_fields().contains(CREATED_AT);
         let is_updated_at_required = self.required_fields().contains(UPDATED_AT);
 
-        let is_created_at_block_height_required = self.required_fields().contains(CREATED_AT_BLOCK_HEIGHT);
-        let is_updated_at_block_height_required = self.required_fields().contains(UPDATED_AT_BLOCK_HEIGHT);
+        let is_created_at_block_height_required =
+            self.required_fields().contains(CREATED_AT_BLOCK_HEIGHT);
+        let is_updated_at_block_height_required =
+            self.required_fields().contains(UPDATED_AT_BLOCK_HEIGHT);
 
-        let is_created_at_core_block_height_required = self.required_fields().contains(CREATED_AT_CORE_BLOCK_HEIGHT);
-        let is_updated_at_core_block_height_required = self.required_fields().contains(UPDATED_AT_CORE_BLOCK_HEIGHT);
+        let is_created_at_core_block_height_required = self
+            .required_fields()
+            .contains(CREATED_AT_CORE_BLOCK_HEIGHT);
+        let is_updated_at_core_block_height_required = self
+            .required_fields()
+            .contains(UPDATED_AT_CORE_BLOCK_HEIGHT);
 
         if (is_created_at_required && created_at.is_none())
             || (is_updated_at_required && updated_at.is_none())

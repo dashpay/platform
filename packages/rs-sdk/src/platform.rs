@@ -5,6 +5,7 @@
 // generated types. Later these re-exports could be swapped with actual dash-platform-sdk's requests
 // and while it will change the substance, the API structure will remain the same.
 
+pub mod block_info_from_metadata;
 mod delegate;
 mod document_query;
 mod fetch;
@@ -12,7 +13,6 @@ mod fetch_many;
 mod query;
 pub mod transition;
 pub mod types;
-pub mod block_info_from_metadata;
 
 pub use dapi_grpc::platform::v0::{self as proto};
 pub use dpp::{

@@ -25,8 +25,8 @@ use crate::document::document_methods::{
 };
 
 use crate::identity::TimestampMillis;
-use crate::prelude::{BlockHeight, CoreBlockHeight, Identifier};
 use crate::prelude::Revision;
+use crate::prelude::{BlockHeight, CoreBlockHeight, Identifier};
 
 /// Documents contain the data that goes into data contracts.
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -61,26 +61,26 @@ pub struct DocumentV0 {
     pub updated_at: Option<TimestampMillis>,
     /// The block that the document was created
     #[cfg_attr(
-    feature = "document-serde-conversion",
-    serde(rename = "$createdAtBlockHeight", default)
+        feature = "document-serde-conversion",
+        serde(rename = "$createdAtBlockHeight", default)
     )]
     pub created_at_block_height: Option<BlockHeight>,
     /// The block that the document was last updated
     #[cfg_attr(
-    feature = "document-serde-conversion",
-    serde(rename = "$updatedAtBlockHeight", default)
+        feature = "document-serde-conversion",
+        serde(rename = "$updatedAtBlockHeight", default)
     )]
     pub updated_at_block_height: Option<BlockHeight>,
     /// The core block that the document was created
     #[cfg_attr(
-    feature = "document-serde-conversion",
-    serde(rename = "$createdAtCoreBlockHeight", default)
+        feature = "document-serde-conversion",
+        serde(rename = "$createdAtCoreBlockHeight", default)
     )]
     pub created_at_core_block_height: Option<CoreBlockHeight>,
     /// The core block that the document was last updated
     #[cfg_attr(
-    feature = "document-serde-conversion",
-    serde(rename = "$updatedAtCoreBlockHeight", default)
+        feature = "document-serde-conversion",
+        serde(rename = "$updatedAtCoreBlockHeight", default)
     )]
     pub updated_at_core_block_height: Option<CoreBlockHeight>,
 }
@@ -121,10 +121,18 @@ impl fmt::Display for DocumentV0 {
             write!(f, "updated_at_block_height:{} ", updated_at_block_height)?;
         }
         if let Some(created_at_core_block_height) = self.created_at_core_block_height {
-            write!(f, "created_at_core_block_height:{} ", created_at_core_block_height)?;
+            write!(
+                f,
+                "created_at_core_block_height:{} ",
+                created_at_core_block_height
+            )?;
         }
         if let Some(updated_at_core_block_height) = self.updated_at_core_block_height {
-            write!(f, "updated_at_core_block_height:{} ", updated_at_core_block_height)?;
+            write!(
+                f,
+                "updated_at_core_block_height:{} ",
+                updated_at_core_block_height
+            )?;
         }
 
         if self.properties.is_empty() {

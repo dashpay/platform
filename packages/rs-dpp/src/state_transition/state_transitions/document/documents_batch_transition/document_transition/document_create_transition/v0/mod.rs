@@ -15,7 +15,10 @@ use std::string::ToString;
 
 use crate::{data_contract::DataContract, document, errors::ProtocolError};
 
+use crate::block::block_info::BlockInfo;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 #[cfg(feature = "state-transition-value-conversion")]
@@ -23,9 +26,6 @@ use crate::state_transition::documents_batch_transition::document_base_transitio
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use derive_more::Display;
 use platform_version::version::PlatformVersion;
-use crate::block::block_info::BlockInfo;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::DocumentTypeRef;
 
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::documents_batch_transition;
@@ -219,10 +219,7 @@ impl DocumentFromCreateTransitionV0 for Document {
 
         match base {
             DocumentBaseTransition::V0(base_v0) => {
-                let DocumentBaseTransitionV0 {
-                    id,
-                    ..
-                } = base_v0;
+                let DocumentBaseTransitionV0 { id, .. } = base_v0;
 
                 let requires_created_at = document_type
                     .required_fields()
@@ -320,10 +317,7 @@ impl DocumentFromCreateTransitionV0 for Document {
 
         match base {
             DocumentBaseTransition::V0(base_v0) => {
-                let DocumentBaseTransitionV0 {
-                    id,
-                    ..
-                } = base_v0;
+                let DocumentBaseTransitionV0 { id, .. } = base_v0;
 
                 let requires_created_at = document_type
                     .required_fields()

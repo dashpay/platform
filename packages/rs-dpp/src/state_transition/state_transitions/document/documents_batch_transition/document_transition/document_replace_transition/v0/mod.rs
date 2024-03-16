@@ -9,13 +9,13 @@ use platform_value::{Identifier, Value};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+use crate::block::block_info::BlockInfo;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
 use crate::{document, ProtocolError};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
-use crate::block::block_info::BlockInfo;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::DocumentTypeRef;
 
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;

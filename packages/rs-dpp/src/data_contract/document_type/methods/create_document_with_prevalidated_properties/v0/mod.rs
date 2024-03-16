@@ -5,14 +5,17 @@ use crate::ProtocolError;
 use chrono::Utc;
 use platform_value::Value;
 
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
+use crate::document::property_names::{
+    CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT_BLOCK_HEIGHT,
+    UPDATED_AT_CORE_BLOCK_HEIGHT,
+};
 use crate::document::INITIAL_REVISION;
 use crate::version::PlatformVersion;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::document::property_names::{CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT};
 
 impl DocumentTypeV0 {
     /// Creates a document at the current time based on document type information
@@ -26,7 +29,6 @@ impl DocumentTypeV0 {
         properties: BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
-
         // Set timestamps if they are required and not exist
         let mut created_at: Option<TimestampMillis> = properties
             .get_optional_integer(CREATED_AT)
@@ -55,11 +57,17 @@ impl DocumentTypeV0 {
         let is_created_at_required = self.required_fields().contains(CREATED_AT);
         let is_updated_at_required = self.required_fields().contains(UPDATED_AT);
 
-        let is_created_at_block_height_required = self.required_fields().contains(CREATED_AT_BLOCK_HEIGHT);
-        let is_updated_at_block_height_required = self.required_fields().contains(UPDATED_AT_BLOCK_HEIGHT);
+        let is_created_at_block_height_required =
+            self.required_fields().contains(CREATED_AT_BLOCK_HEIGHT);
+        let is_updated_at_block_height_required =
+            self.required_fields().contains(UPDATED_AT_BLOCK_HEIGHT);
 
-        let is_created_at_core_block_height_required = self.required_fields().contains(CREATED_AT_CORE_BLOCK_HEIGHT);
-        let is_updated_at_core_block_height_required = self.required_fields().contains(UPDATED_AT_CORE_BLOCK_HEIGHT);
+        let is_created_at_core_block_height_required = self
+            .required_fields()
+            .contains(CREATED_AT_CORE_BLOCK_HEIGHT);
+        let is_updated_at_core_block_height_required = self
+            .required_fields()
+            .contains(UPDATED_AT_CORE_BLOCK_HEIGHT);
 
         if (is_created_at_required && created_at.is_none())
             || (is_updated_at_required && updated_at.is_none())

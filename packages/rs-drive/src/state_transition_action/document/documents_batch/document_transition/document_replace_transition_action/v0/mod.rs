@@ -101,7 +101,11 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
             revision,
             created_at,
             updated_at,
-            created_at_block_height, updated_at_block_height, created_at_core_block_height, updated_at_core_block_height, data,
+            created_at_block_height,
+            updated_at_block_height,
+            created_at_core_block_height,
+            updated_at_core_block_height,
+            data,
         } = value;
 
         let id = base.id();
@@ -142,7 +146,11 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
             revision,
             created_at,
             updated_at,
-            created_at_block_height, updated_at_block_height, created_at_core_block_height, updated_at_core_block_height, data,
+            created_at_block_height,
+            updated_at_block_height,
+            created_at_core_block_height,
+            updated_at_core_block_height,
+            data,
         } = value;
 
         let id = base.id();

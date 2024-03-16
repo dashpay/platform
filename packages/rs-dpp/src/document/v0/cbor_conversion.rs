@@ -64,7 +64,11 @@ impl TryFrom<DocumentV0> for DocumentForCbor {
             owner_id,
             revision,
             created_at,
-            updated_at, created_at_block_height, updated_at_block_height, created_at_core_block_height, updated_at_core_block_height,
+            updated_at,
+            created_at_block_height,
+            updated_at_block_height,
+            created_at_core_block_height,
+            updated_at_core_block_height,
         } = value;
         Ok(DocumentForCbor {
             id: id.to_buffer(),
@@ -108,10 +112,14 @@ impl DocumentV0 {
 
         let created_at = document_map.remove_optional_integer(property_names::CREATED_AT)?;
         let updated_at = document_map.remove_optional_integer(property_names::UPDATED_AT)?;
-        let created_at_block_height = document_map.remove_optional_integer(property_names::CREATED_AT_BLOCK_HEIGHT)?;
-        let updated_at_block_height = document_map.remove_optional_integer(property_names::UPDATED_AT_BLOCK_HEIGHT)?;
-        let created_at_core_block_height = document_map.remove_optional_integer(property_names::CREATED_AT_CORE_BLOCK_HEIGHT)?;
-        let updated_at_core_block_height = document_map.remove_optional_integer(property_names::UPDATED_AT_CORE_BLOCK_HEIGHT)?;
+        let created_at_block_height =
+            document_map.remove_optional_integer(property_names::CREATED_AT_BLOCK_HEIGHT)?;
+        let updated_at_block_height =
+            document_map.remove_optional_integer(property_names::UPDATED_AT_BLOCK_HEIGHT)?;
+        let created_at_core_block_height =
+            document_map.remove_optional_integer(property_names::CREATED_AT_CORE_BLOCK_HEIGHT)?;
+        let updated_at_core_block_height =
+            document_map.remove_optional_integer(property_names::UPDATED_AT_CORE_BLOCK_HEIGHT)?;
 
         // dev-note: properties is everything other than the id and owner id
         Ok(DocumentV0 {

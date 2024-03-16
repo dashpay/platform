@@ -30,6 +30,7 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
 
+use dpp::block::block_info::BlockInfo;
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::query::DriveQuery;
@@ -37,7 +38,6 @@ use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 use std::sync::Arc;
-use dpp::block::block_info::BlockInfo;
 
 use crate::verify::verify_tenderdash_proof;
 
@@ -804,7 +804,7 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
 
         let metadata = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        if  metadata.epoch > MAX_EPOCH as u32 {
+        if metadata.epoch > MAX_EPOCH as u32 {
             return Err(drive::error::Error::Proof(ProofError::InvalidMetadata(format!("platform returned an epoch {} that was higher that maximum of a 16 bit integer", metadata.epoch))).into());
         }
 

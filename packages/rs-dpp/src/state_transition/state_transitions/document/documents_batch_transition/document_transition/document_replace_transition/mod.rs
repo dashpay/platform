@@ -2,7 +2,10 @@ mod from_document;
 pub mod v0;
 pub mod v0_methods;
 
+use crate::block::block_info::BlockInfo;
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
+use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::{Display, From};
@@ -11,9 +14,6 @@ use platform_version::version::PlatformVersion;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 pub use v0::*;
-use crate::block::block_info::BlockInfo;
-use crate::data_contract::document_type::DocumentTypeRef;
-use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
 #[cfg_attr(
@@ -59,8 +59,8 @@ pub trait DocumentFromReplaceTransition {
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
-        where
-            Self: Sized;
+    where
+        Self: Sized;
 
     /// Attempts to create a new `Document` from the given `DocumentReplaceTransition` instance, incorporating `owner_id`, creation metadata, and additional blockchain-related information.
     ///

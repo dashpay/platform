@@ -1,7 +1,7 @@
+use dpp::block::block_info::BlockInfo;
 use dpp::document::property_names;
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
-use dpp::block::block_info::BlockInfo;
 
 use dpp::identity::TimestampMillis;
 use dpp::prelude::{BlockHeight, CoreBlockHeight};
@@ -38,13 +38,16 @@ impl DocumentReplaceTransitionActionV0 {
             None
         };
 
-        let updated_at_block_height = if base.document_type_field_is_required(property_names::UPDATED_AT_BLOCK_HEIGHT)? {
-            Some(block_info.height)
-        } else {
-            None
-        };
+        let updated_at_block_height =
+            if base.document_type_field_is_required(property_names::UPDATED_AT_BLOCK_HEIGHT)? {
+                Some(block_info.height)
+            } else {
+                None
+            };
 
-        let updated_at_core_block_height = if base.document_type_field_is_required(property_names::UPDATED_AT_CORE_BLOCK_HEIGHT)? {
+        let updated_at_core_block_height = if base
+            .document_type_field_is_required(property_names::UPDATED_AT_CORE_BLOCK_HEIGHT)?
+        {
             Some(block_info.core_height)
         } else {
             None

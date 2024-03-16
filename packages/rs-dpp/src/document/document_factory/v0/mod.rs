@@ -101,14 +101,21 @@ impl DocumentFactoryV0 {
             return Err(DataContractError::InvalidDocumentTypeError(
                 InvalidDocumentTypeError::new(document_type_name, data_contract.id()),
             )
-                .into());
+            .into());
         }
 
         let document_entropy = self.entropy_generator.generate()?;
 
         let document_type = data_contract.document_type_for_name(document_type_name.as_str())?;
 
-        document_type.create_document_from_data(data, owner_id, block_time, core_block_height, document_entropy, platform_version)
+        document_type.create_document_from_data(
+            data,
+            owner_id,
+            block_time,
+            core_block_height,
+            document_entropy,
+            platform_version,
+        )
     }
 
     pub fn create_document_without_time_based_properties(
@@ -130,7 +137,14 @@ impl DocumentFactoryV0 {
 
         let document_type = data_contract.document_type_for_name(document_type_name.as_str())?;
 
-        document_type.create_document_from_data(data, owner_id, 0, 0,  document_entropy, platform_version)
+        document_type.create_document_from_data(
+            data,
+            owner_id,
+            0,
+            0,
+            document_entropy,
+            platform_version,
+        )
     }
 
     #[cfg(feature = "extended-document")]

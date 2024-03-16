@@ -151,7 +151,9 @@ impl DocumentFromCreateTransitionActionV0 for Document {
         let DocumentCreateTransitionActionV0 {
             base,
             created_at,
-            created_at_block_height, created_at_core_block_height, data,
+            created_at_block_height,
+            created_at_core_block_height,
+            data,
         } = v0;
 
         match base {

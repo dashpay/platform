@@ -1,7 +1,10 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 
-use crate::document::property_names::{CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT, UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT};
+use crate::document::property_names::{
+    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
+    UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
+};
 
 #[cfg(feature = "validation")]
 use crate::prelude::ConsensusValidationResult;
@@ -51,7 +54,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             buffer.extend((1 as Revision).encode_var_vec())
         }
 
-        let mut bitwise_exists_flag : u8 = 0;
+        let mut bitwise_exists_flag: u8 = 0;
 
         let mut time_fields_data_buffer = vec![];
 
@@ -85,7 +88,10 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
         if let Some(created_at_block_height) = &self.created_at_block_height {
             bitwise_exists_flag |= 4;
             time_fields_data_buffer.extend(created_at_block_height.to_be_bytes());
-        } else if document_type.required_fields().contains(CREATED_AT_BLOCK_HEIGHT) {
+        } else if document_type
+            .required_fields()
+            .contains(CREATED_AT_BLOCK_HEIGHT)
+        {
             return Err(ProtocolError::DataContractError(
                 DataContractError::MissingRequiredKey(
                     "created_at_block_height field is not present".to_string(),
@@ -97,7 +103,10 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
         if let Some(updated_at_block_height) = &self.updated_at_block_height {
             bitwise_exists_flag |= 8;
             time_fields_data_buffer.extend(updated_at_block_height.to_be_bytes());
-        } else if document_type.required_fields().contains(UPDATED_AT_BLOCK_HEIGHT) {
+        } else if document_type
+            .required_fields()
+            .contains(UPDATED_AT_BLOCK_HEIGHT)
+        {
             return Err(ProtocolError::DataContractError(
                 DataContractError::MissingRequiredKey(
                     "updated_at_block_height field is not present".to_string(),
@@ -109,7 +118,10 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
         if let Some(created_at_core_block_height) = &self.created_at_core_block_height {
             bitwise_exists_flag |= 16;
             time_fields_data_buffer.extend(created_at_core_block_height.to_be_bytes());
-        } else if document_type.required_fields().contains(CREATED_AT_CORE_BLOCK_HEIGHT) {
+        } else if document_type
+            .required_fields()
+            .contains(CREATED_AT_CORE_BLOCK_HEIGHT)
+        {
             return Err(ProtocolError::DataContractError(
                 DataContractError::MissingRequiredKey(
                     "created_at_core_block_height field is not present".to_string(),
@@ -121,7 +133,10 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
         if let Some(updated_at_core_block_height) = &self.updated_at_core_block_height {
             bitwise_exists_flag |= 32;
             time_fields_data_buffer.extend(updated_at_core_block_height.to_be_bytes());
-        } else if document_type.required_fields().contains(UPDATED_AT_CORE_BLOCK_HEIGHT) {
+        } else if document_type
+            .required_fields()
+            .contains(UPDATED_AT_CORE_BLOCK_HEIGHT)
+        {
             return Err(ProtocolError::DataContractError(
                 DataContractError::MissingRequiredKey(
                     "updated_at_core_block_height field is not present".to_string(),
@@ -200,7 +215,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
         if let Some(revision) = self.revision {
             buffer.extend(revision.to_be_bytes())
         }
-        let mut bitwise_exists_flag : u8 = 0;
+        let mut bitwise_exists_flag: u8 = 0;
 
         let mut time_fields_data_buffer = vec![];
 
@@ -234,7 +249,10 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
         if let Some(created_at_block_height) = &self.created_at_block_height {
             bitwise_exists_flag |= 4;
             time_fields_data_buffer.extend(created_at_block_height.to_be_bytes());
-        } else if document_type.required_fields().contains(CREATED_AT_BLOCK_HEIGHT) {
+        } else if document_type
+            .required_fields()
+            .contains(CREATED_AT_BLOCK_HEIGHT)
+        {
             return Err(ProtocolError::DataContractError(
                 DataContractError::MissingRequiredKey(
                     "created_at_block_height field is not present".to_string(),
@@ -246,7 +264,10 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
         if let Some(updated_at_block_height) = &self.updated_at_block_height {
             bitwise_exists_flag |= 8;
             time_fields_data_buffer.extend(updated_at_block_height.to_be_bytes());
-        } else if document_type.required_fields().contains(UPDATED_AT_BLOCK_HEIGHT) {
+        } else if document_type
+            .required_fields()
+            .contains(UPDATED_AT_BLOCK_HEIGHT)
+        {
             return Err(ProtocolError::DataContractError(
                 DataContractError::MissingRequiredKey(
                     "updated_at_block_height field is not present".to_string(),
@@ -258,7 +279,10 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
         if let Some(created_at_core_block_height) = &self.created_at_core_block_height {
             bitwise_exists_flag |= 16;
             time_fields_data_buffer.extend(created_at_core_block_height.to_be_bytes());
-        } else if document_type.required_fields().contains(CREATED_AT_CORE_BLOCK_HEIGHT) {
+        } else if document_type
+            .required_fields()
+            .contains(CREATED_AT_CORE_BLOCK_HEIGHT)
+        {
             return Err(ProtocolError::DataContractError(
                 DataContractError::MissingRequiredKey(
                     "created_at_core_block_height field is not present".to_string(),
@@ -270,7 +294,10 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
         if let Some(updated_at_core_block_height) = &self.updated_at_core_block_height {
             bitwise_exists_flag |= 32;
             time_fields_data_buffer.extend(updated_at_core_block_height.to_be_bytes());
-        } else if document_type.required_fields().contains(UPDATED_AT_CORE_BLOCK_HEIGHT) {
+        } else if document_type
+            .required_fields()
+            .contains(UPDATED_AT_CORE_BLOCK_HEIGHT)
+        {
             return Err(ProtocolError::DataContractError(
                 DataContractError::MissingRequiredKey(
                     "updated_at_core_block_height field is not present".to_string(),
@@ -387,7 +414,9 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                     "error reading created_at timestamp from serialized document".to_string(),
                 )
             })?)
-        } else { None };
+        } else {
+            None
+        };
 
         let updated_at = if timestamp_flags & 2 > 0 {
             Some(buf.read_u64::<BigEndian>().map_err(|_| {
@@ -395,7 +424,9 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                     "error reading updated_at timestamp from serialized document".to_string(),
                 )
             })?)
-        } else { None };
+        } else {
+            None
+        };
 
         let created_at_block_height = if timestamp_flags & 4 > 0 {
             Some(buf.read_u64::<BigEndian>().map_err(|_| {
@@ -403,7 +434,9 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                     "error reading created_at_block_height from serialized document".to_string(),
                 )
             })?)
-        } else { None };
+        } else {
+            None
+        };
 
         let updated_at_block_height = if timestamp_flags & 8 > 0 {
             Some(buf.read_u64::<BigEndian>().map_err(|_| {
@@ -411,23 +444,31 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                     "error reading updated_at_block_height from serialized document".to_string(),
                 )
             })?)
-        } else { None };
+        } else {
+            None
+        };
 
         let created_at_core_block_height = if timestamp_flags & 16 > 0 {
             Some(buf.read_u32::<BigEndian>().map_err(|_| {
                 DataContractError::CorruptedSerialization(
-                    "error reading created_at_core_block_height from serialized document".to_string(),
+                    "error reading created_at_core_block_height from serialized document"
+                        .to_string(),
                 )
             })?)
-        } else { None };
+        } else {
+            None
+        };
 
         let updated_at_core_block_height = if timestamp_flags & 32 > 0 {
             Some(buf.read_u32::<BigEndian>().map_err(|_| {
                 DataContractError::CorruptedSerialization(
-                    "error reading updated_at_core_block_height from serialized document".to_string(),
+                    "error reading updated_at_core_block_height from serialized document"
+                        .to_string(),
                 )
             })?)
-        } else { None };
+        } else {
+            None
+        };
 
         let mut finished_buffer = false;
 
