@@ -21,6 +21,10 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
+#[cfg(tokio_unstable)]
+use tracing_subscriber::layer::SubscriberExt;
+#[cfg(tokio_unstable)]
+use tracing_subscriber::util::SubscriberInitExt;
 
 const SHUTDOWN_TIMEOUT_MILIS: u64 = 5000; // 5s; Docker defaults to 10s
 
