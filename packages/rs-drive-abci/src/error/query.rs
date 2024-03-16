@@ -44,6 +44,10 @@ pub enum QueryError {
     #[error("not found error: {0}")]
     NotFound(String),
 
+    /// Server issue
+    #[error("query not serviceable: {0}")]
+    NotServiceable(String),
+
     /// Decoding Error
     #[error("decoding error: {0}")]
     DecodingError(String),
