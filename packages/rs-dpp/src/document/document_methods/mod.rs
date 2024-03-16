@@ -43,7 +43,7 @@ pub trait DocumentMethodsV0 {
     fn increment_revision(&mut self) -> Result<(), ProtocolError>;
 
     /// Returns if the documents are equal but ignoring the timestamp
-    fn is_equal_ignoring_timestamps(
+    fn is_equal_ignoring_time_based_fields(
         &self,
         rhs: &Self,
         platform_version: &PlatformVersion,

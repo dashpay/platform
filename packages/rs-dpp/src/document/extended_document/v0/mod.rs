@@ -14,7 +14,7 @@ use crate::document::extended_document::fields::property_names;
 use crate::document::{Document, DocumentV0Getters, ExtendedDocument};
 use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
-use crate::prelude::Revision;
+use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 
 use crate::util::hash::hash_double_to_vec;
 use crate::ProtocolError;
@@ -176,6 +176,26 @@ impl ExtendedDocumentV0 {
 
     pub fn updated_at(&self) -> Option<TimestampMillis> {
         self.document.updated_at()
+    }
+
+    /// Returns an optional block height at which the document was created.
+    pub fn created_at_block_height(&self) -> Option<BlockHeight> {
+        self.document.created_at_block_height()
+    }
+
+    /// Returns an optional block height at which the document was last updated.
+    pub fn updated_at_block_height(&self) -> Option<BlockHeight> {
+        self.document.updated_at_block_height()
+    }
+
+    /// Returns an optional core block height at which the document was created.
+    pub fn created_at_core_block_height(&self) -> Option<CoreBlockHeight> {
+        self.document.created_at_core_block_height()
+    }
+
+    /// Returns an optional core block height at which the document was last updated.
+    pub fn updated_at_core_block_height(&self) -> Option<CoreBlockHeight> {
+        self.document.updated_at_core_block_height()
     }
 
     /// Create an extended document with additional information.

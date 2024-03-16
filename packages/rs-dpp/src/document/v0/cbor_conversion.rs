@@ -1,7 +1,7 @@
 use crate::document::property_names;
 
 use crate::identity::TimestampMillis;
-use crate::prelude::Revision;
+use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 
 use crate::ProtocolError;
 
@@ -41,6 +41,16 @@ pub struct DocumentForCbor {
     pub created_at: Option<TimestampMillis>,
     #[serde(rename = "$updatedAt")]
     pub updated_at: Option<TimestampMillis>,
+
+    #[serde(rename = "$createdAtBlockHeight")]
+    pub created_at_block_height: Option<BlockHeight>,
+    #[serde(rename = "$updatedAtBlockHeight")]
+    pub updated_at_block_height: Option<BlockHeight>,
+
+    #[serde(rename = "$createdAtCoreBlockHeight")]
+    pub created_at_core_block_height: Option<CoreBlockHeight>,
+    #[serde(rename = "$updatedAtCoreBlockHeight")]
+    pub updated_at_core_block_height: Option<CoreBlockHeight>,
 }
 
 #[cfg(feature = "cbor")]
@@ -54,7 +64,7 @@ impl TryFrom<DocumentV0> for DocumentForCbor {
             owner_id,
             revision,
             created_at,
-            updated_at,
+            updated_at, created_at_block_height, updated_at_block_height, created_at_core_block_height, updated_at_core_block_height,
         } = value;
         Ok(DocumentForCbor {
             id: id.to_buffer(),
@@ -64,6 +74,10 @@ impl TryFrom<DocumentV0> for DocumentForCbor {
             revision,
             created_at,
             updated_at,
+            created_at_block_height,
+            updated_at_block_height,
+            created_at_core_block_height,
+            updated_at_core_block_height,
         })
     }
 }
@@ -94,6 +108,10 @@ impl DocumentV0 {
 
         let created_at = document_map.remove_optional_integer(property_names::CREATED_AT)?;
         let updated_at = document_map.remove_optional_integer(property_names::UPDATED_AT)?;
+        let created_at_block_height = document_map.remove_optional_integer(property_names::CREATED_AT_BLOCK_HEIGHT)?;
+        let updated_at_block_height = document_map.remove_optional_integer(property_names::UPDATED_AT_BLOCK_HEIGHT)?;
+        let created_at_core_block_height = document_map.remove_optional_integer(property_names::CREATED_AT_CORE_BLOCK_HEIGHT)?;
+        let updated_at_core_block_height = document_map.remove_optional_integer(property_names::UPDATED_AT_CORE_BLOCK_HEIGHT)?;
 
         // dev-note: properties is everything other than the id and owner id
         Ok(DocumentV0 {
@@ -103,6 +121,10 @@ impl DocumentV0 {
             revision,
             created_at,
             updated_at,
+            created_at_block_height,
+            updated_at_block_height,
+            created_at_core_block_height,
+            updated_at_core_block_height,
         })
     }
 }

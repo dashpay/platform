@@ -255,6 +255,10 @@ impl<C> Platform<C> {
             revision: None,
             created_at: None,
             updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
         }
         .into();
 
@@ -309,8 +313,7 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    48, 165, 165, 234, 103, 120, 205, 238, 156, 93, 195, 194, 17, 242, 245, 101,
-                    176, 129, 137, 59, 185, 249, 76, 104, 217, 226, 66, 115, 67, 226, 235, 180
+                    234, 164, 235, 118, 224, 151, 97, 37, 216, 180, 69, 227, 187, 186, 178, 82, 251, 35, 184, 238, 104, 188, 106, 117, 182, 210, 91, 97, 218, 177, 130, 64
                 ]
             )
         }

@@ -44,6 +44,22 @@ impl DocumentV0Getters for DocumentV0 {
     fn properties_consumed(self) -> BTreeMap<String, Value> {
         self.properties
     }
+
+    fn created_at_block_height(&self) -> Option<u64> {
+        self.created_at_block_height
+    }
+
+    fn updated_at_block_height(&self) -> Option<u64> {
+        self.updated_at_block_height
+    }
+
+    fn created_at_core_block_height(&self) -> Option<u32> {
+        self.created_at_core_block_height
+    }
+
+    fn updated_at_core_block_height(&self) -> Option<u32> {
+        self.updated_at_core_block_height
+    }
 }
 
 impl DocumentV0Setters for DocumentV0 {
@@ -69,5 +85,21 @@ impl DocumentV0Setters for DocumentV0 {
 
     fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>) {
         self.updated_at = updated_at;
+    }
+
+    fn set_created_at_block_height(&mut self, created_at_block_height: Option<u64>) {
+        self.created_at_block_height = created_at_block_height;
+    }
+
+    fn set_updated_at_block_height(&mut self, updated_at_block_height: Option<u64>) {
+        self.updated_at_block_height = updated_at_block_height;
+    }
+
+    fn set_created_at_core_block_height(&mut self, created_at_core_block_height: Option<u32>) {
+        self.created_at_core_block_height = created_at_core_block_height;
+    }
+
+    fn set_updated_at_core_block_height(&mut self, updated_at_core_block_height: Option<u32>) {
+        self.updated_at_core_block_height = updated_at_core_block_height;
     }
 }

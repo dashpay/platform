@@ -17,6 +17,7 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use rs_dapi_client::{DapiRequest, RequestSettings};
+use crate::platform::block_info_from_metadata::block_info_from_metadata;
 
 #[async_trait::async_trait]
 /// A trait for putting a document to platform
@@ -111,13 +112,13 @@ impl<S: Signer> PutDocument<S> for Document {
 
         let response = request.execute(sdk, RequestSettings::default()).await?;
 
-        let block_time = response.metadata()?.time_ms;
+        let block_info = block_info_from_metadata(response.metadata()?)?;
 
         let proof = response.proof_owned()?;
 
         let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
-            block_time,
+            &block_info,
             proof.grovedb_proof.as_slice(),
             &|_| Ok(Some(data_contract.clone())),
             sdk.version(),

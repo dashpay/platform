@@ -14,7 +14,7 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;
 use crate::document::INITIAL_REVISION;
-use crate::prelude::Revision;
+use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
@@ -64,6 +64,8 @@ pub trait DocumentTypeV0Methods {
         &self,
         data: Value,
         owner_id: Identifier,
+        block_height: BlockHeight,
+        core_block_height: CoreBlockHeight,
         document_entropy: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError>;
@@ -74,6 +76,8 @@ pub trait DocumentTypeV0Methods {
         &self,
         id: Identifier,
         owner_id: Identifier,
+        block_height: BlockHeight,
+        core_block_height: CoreBlockHeight,
         properties: BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError>;
@@ -200,6 +204,8 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         &self,
         data: Value,
         owner_id: Identifier,
+        block_height: BlockHeight,
+        core_block_height: CoreBlockHeight,
         document_entropy: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
@@ -213,6 +219,8 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             0 => self.create_document_from_data_v0(
                 data,
                 owner_id,
+                block_height,
+                core_block_height,
                 document_entropy,
                 platform_version,
             ),
@@ -228,6 +236,8 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         &self,
         id: Identifier,
         owner_id: Identifier,
+        block_height: BlockHeight,
+        core_block_height: CoreBlockHeight,
         properties: BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
@@ -241,6 +251,8 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             0 => self.create_document_with_prevalidated_properties_v0(
                 id,
                 owner_id,
+                block_height,
+                core_block_height,
                 properties,
                 platform_version,
             ),

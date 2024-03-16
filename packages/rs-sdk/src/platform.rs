@@ -12,6 +12,7 @@ mod fetch_many;
 mod query;
 pub mod transition;
 pub mod types;
+pub mod block_info_from_metadata;
 
 pub use dapi_grpc::platform::v0::{self as proto};
 pub use dpp::{

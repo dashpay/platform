@@ -140,6 +140,10 @@ pub fn json_document_to_document(
         revision: data.remove_optional_integer("$revision")?,
         created_at: data.remove_optional_integer("$createdAt")?,
         updated_at: data.remove_optional_integer("$updatedAt")?,
+        created_at_block_height: data.remove_optional_integer("$createdAtBlockHeight")?,
+        updated_at_block_height: data.remove_optional_integer("$updatedAtBlockHeight")?,
+        created_at_core_block_height: data.remove_optional_integer("$createdAtCoreBlockHeight")?,
+        updated_at_core_block_height: data.remove_optional_integer("$updatedAtCoreBlockHeight")?,
     };
 
     data.replace_at_paths(

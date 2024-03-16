@@ -4,6 +4,7 @@
 //! create various types of random documents.
 //!
 
+use std::time::{SystemTime, UNIX_EPOCH};
 use crate::data_contract::document_type::property_names::{CREATED_AT, UPDATED_AT};
 use crate::data_contract::document_type::random_document::{
     CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
@@ -18,7 +19,8 @@ use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use std::time::{SystemTime, UNIX_EPOCH};
+use crate::document::property_names::{CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT};
+use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 
 impl CreateRandomDocument for DocumentTypeV0 {
     /// Creates `count` Documents with random data using a seed if given, otherwise entropy.
@@ -54,7 +56,9 @@ impl CreateRandomDocument for DocumentTypeV0 {
         &self,
         count: u32,
         identities: &[Identity],
-        time_ms: u64,
+        time_ms: Option<TimestampMillis>,
+        block_height: Option<BlockHeight>,
+        core_block_height: Option<CoreBlockHeight>,
         document_field_fill_type: DocumentFieldFillType,
         document_field_fill_size: DocumentFieldFillSize,
         rng: &mut StdRng,
@@ -70,6 +74,8 @@ impl CreateRandomDocument for DocumentTypeV0 {
                     identity.id(),
                     entropy,
                     time_ms,
+                    block_height,
+                    core_block_height,
                     document_field_fill_type,
                     document_field_fill_size,
                     rng,
@@ -105,13 +111,12 @@ impl CreateRandomDocument for DocumentTypeV0 {
         document_field_fill_size: DocumentFieldFillSize,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
-        let now = SystemTime::now();
-        let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
-        let milliseconds = duration_since_epoch.as_millis() as u64;
         self.random_document_with_params(
             owner_id,
             entropy,
-            milliseconds,
+            None,
+            None,
+            None,
             document_field_fill_type,
             document_field_fill_size,
             rng,
@@ -127,13 +132,13 @@ impl CreateRandomDocument for DocumentTypeV0 {
     ) -> Result<Document, ProtocolError> {
         let owner_id = Identifier::random_with_rng(rng);
         let entropy = Bytes32::random_with_rng(rng);
-        let now = SystemTime::now();
-        let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
-        let milliseconds = duration_since_epoch.as_millis() as u64;
+
         self.random_document_with_params(
             owner_id,
             entropy,
-            milliseconds,
+            None,
+            None,
+            None,
             DocumentFieldFillType::FillIfNotRequired,
             DocumentFieldFillSize::AnyDocumentFillSize,
             rng,
@@ -146,7 +151,9 @@ impl CreateRandomDocument for DocumentTypeV0 {
         &self,
         owner_id: Identifier,
         entropy: Bytes32,
-        time_ms: u64,
+        time_ms: Option<TimestampMillis>,
+        block_height: Option<BlockHeight>,
+        core_block_height: Option<CoreBlockHeight>,
         document_field_fill_type: DocumentFieldFillType,
         document_field_fill_size: DocumentFieldFillSize,
         rng: &mut StdRng,
@@ -191,16 +198,73 @@ impl CreateRandomDocument for DocumentTypeV0 {
         };
 
         let created_at = if self.required_fields.contains(CREATED_AT) {
-            Some(time_ms)
+            if time_ms.is_some() {
+                time_ms
+            } else {
+                let now = SystemTime::now();
+                let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+                let milliseconds = duration_since_epoch.as_millis() as u64;
+                Some(milliseconds)
+            }
         } else {
             None
         };
 
         let updated_at = if self.required_fields.contains(UPDATED_AT) {
-            Some(time_ms)
+            if time_ms.is_some() {
+                time_ms
+            } else if created_at.is_some() {
+                created_at
+            } else {
+                let now = SystemTime::now();
+                let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+                let milliseconds = duration_since_epoch.as_millis() as u64;
+                Some(milliseconds)
+            }
         } else {
             None
         };
+
+        let created_at_block_height = if self.required_fields.contains(CREATED_AT_BLOCK_HEIGHT) {
+            if block_height.is_some() {
+                block_height
+            } else {
+                Some(0)
+            }
+        } else {
+            None
+        };
+
+        let updated_at_block_height = if self.required_fields.contains(UPDATED_AT_BLOCK_HEIGHT) {
+            if block_height.is_some() {
+                block_height
+            } else {
+                Some(0)
+            }
+        } else {
+            None
+        };
+
+        let created_at_core_block_height = if self.required_fields.contains(CREATED_AT_CORE_BLOCK_HEIGHT) {
+            if core_block_height.is_some() {
+                core_block_height
+            } else {
+                Some(0)
+            }
+        } else {
+            None
+        };
+
+        let updated_at_core_block_height = if self.required_fields.contains(UPDATED_AT_CORE_BLOCK_HEIGHT) {
+            if core_block_height.is_some() {
+                core_block_height
+            } else {
+                Some(0)
+            }
+        } else {
+            None
+        };
+
 
         match platform_version
             .dpp
@@ -214,6 +278,10 @@ impl CreateRandomDocument for DocumentTypeV0 {
                 revision,
                 created_at,
                 updated_at,
+                created_at_block_height,
+                updated_at_block_height,
+                created_at_core_block_height,
+                updated_at_core_block_height,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

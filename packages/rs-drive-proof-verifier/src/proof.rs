@@ -16,7 +16,7 @@ use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
     VersionedGrpcResponse,
 };
-use dpp::block::epoch::EpochIndex;
+use dpp::block::epoch::{EpochIndex, MAX_EPOCH};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
@@ -37,6 +37,7 @@ use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 use std::sync::Arc;
+use dpp::block::block_info::BlockInfo;
 
 use crate::verify::verify_tenderdash_proof;
 
@@ -801,7 +802,18 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             error: e.to_string(),
         })?;
 
-        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+        let metadata = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        if  metadata.epoch > MAX_EPOCH as u32 {
+            return Err(drive::error::Error::Proof(ProofError::InvalidMetadata(format!("platform returned an epoch {} that was higher that maximum of a 16 bit integer", metadata.epoch))).into());
+        }
+
+        let block_info = BlockInfo {
+            time_ms: metadata.time_ms,
+            height: metadata.height,
+            core_height: metadata.core_chain_locked_height,
+            epoch: (metadata.epoch as u16).try_into()?,
+        };
 
         let known_contracts_provider_fn =
             |id: &Identifier| -> Result<Option<Arc<DataContract>>, drive::error::Error> {
@@ -812,7 +824,7 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
 
         let (root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
-            mtd.time_ms,
+            &block_info,
             &proof.grovedb_proof,
             &known_contracts_provider_fn,
             platform_version,
@@ -821,9 +833,9 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, metadata, &root_hash, provider)?;
 
-        Ok((Some(result), mtd.clone()))
+        Ok((Some(result), metadata.clone()))
     }
 }
 
