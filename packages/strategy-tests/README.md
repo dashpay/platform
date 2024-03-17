@@ -2,7 +2,7 @@
 # Dash Platform Strategy Testing Library
 
 ## Overview
-This library offers a robust framework for developers and testers to simulate a wide range of blockchain activities through comprehensive testing strategies. Utilizing the `Strategy` struct, it facilitates the simulation of various operations including balance transfers, contract interactions, and identity management with detailed control over state transitions on a per-block basis.
+This library offers a robust framework for developers and testers to simulate a wide range of blockchain activities on Dash Platform through comprehensive testing strategies. Utilizing the `Strategy` struct, it facilitates the simulation of various operations including balance transfers, contract interactions, and identity management with detailed control over state transitions on a per-block basis.
 
 ## Key Features
 - **State Transition Focused**: Designed to simulate every type of state transition possible on the Dash Platform, providing a comprehensive test environment.
