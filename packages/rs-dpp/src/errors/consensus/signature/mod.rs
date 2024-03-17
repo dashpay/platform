@@ -10,11 +10,13 @@ mod public_key_security_level_not_met_error;
 mod signature_error;
 mod signature_should_not_be_present_error;
 mod wrong_public_key_purpose_error;
+mod invalid_signature_public_key_purpose_error;
 
 pub use crate::consensus::signature::basic_bls_error::BasicBLSError;
 pub use crate::consensus::signature::basic_ecdsa_error::BasicECDSAError;
 pub use crate::consensus::signature::identity_not_found_error::IdentityNotFoundError;
 pub use crate::consensus::signature::invalid_identity_public_key_type_error::InvalidIdentityPublicKeyTypeError;
+pub use crate::consensus::signature::invalid_signature_public_key_purpose_error::InvalidSignaturePublicKeyPurposeError;
 pub use crate::consensus::signature::invalid_signature_public_key_security_level_error::InvalidSignaturePublicKeySecurityLevelError;
 pub use crate::consensus::signature::invalid_state_transition_signature_error::InvalidStateTransitionSignatureError;
 pub use crate::consensus::signature::missing_public_key_error::MissingPublicKeyError;

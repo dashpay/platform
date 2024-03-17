@@ -332,9 +332,14 @@ impl StateTransition {
         call_getter_method_identity_signed!(self, signature_public_key_id)
     }
 
-    /// returns the security level requirement for the state transition
+    /// returns the key security level requirement for the state transition
     pub fn security_level_requirement(&self) -> Option<Vec<SecurityLevel>> {
         call_getter_method_identity_signed!(self, security_level_requirement)
+    }
+
+    /// returns the key purpose requirement for the state transition
+    pub fn purpose_requirement(&self) -> Option<Purpose> {
+        call_getter_method_identity_signed!(self, purpose_requirement)
     }
 
     /// returns the signature as a byte-array

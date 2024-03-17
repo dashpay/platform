@@ -49,7 +49,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
 
         let identity_public_key = identity
             .get_first_public_key_matching(
-                Purpose::WITHDRAW,
+                Purpose::TRANSFER,
                 SecurityLevel::full_range().into(),
                 KeyType::all_key_types().into(),
             )

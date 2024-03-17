@@ -85,6 +85,13 @@ pub trait StateTransitionIdentitySigned: StateTransitionLike {
     /// Returns minimal key security level that can be used to sign this ST.
     /// Override this method if the ST requires a different security level.
     fn security_level_requirement(&self) -> Vec<SecurityLevel>;
+    
+    /// The purpose requirement for the signing key
+    /// The default is authentication
+    /// However for Withdrawals and Fund Transfers the requirement is TRANSFER
+    fn purpose_requirement(&self) -> Purpose {
+        Purpose::AUTHENTICATION
+    }
 }
 
 pub fn get_compressed_public_ec_key(private_key: &[u8]) -> Result<[u8; 33], ProtocolError> {

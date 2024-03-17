@@ -1,9 +1,6 @@
 use crate::error::Error;
 
-use dpp::consensus::signature::{
-    IdentityNotFoundError, InvalidSignaturePublicKeySecurityLevelError,
-    InvalidStateTransitionSignatureError, PublicKeySecurityLevelNotMetError,
-};
+use dpp::consensus::signature::{IdentityNotFoundError, InvalidSignaturePublicKeyPurposeError, InvalidSignaturePublicKeySecurityLevelError, InvalidStateTransitionSignatureError, PublicKeySecurityLevelNotMetError};
 
 use dpp::identity::PartialIdentity;
 
@@ -93,9 +90,13 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
             _ => self
                 .security_level_requirement()
                 .ok_or(ProtocolError::CorruptedCodeExecution(
-                    "state_transition does not have a owner Id to verify".to_string(),
+                    "state_transition does not have security level".to_string(),
                 )),
         }?;
+
+        let purpose = self.purpose_requirement().ok_or(ProtocolError::CorruptedCodeExecution(
+            "state_transition does not have a key purpose requirement".to_string(),
+        ))?;
 
         let key_request = IdentityKeysRequest::new_specific_key_query(owner_id.as_bytes(), key_id);
 
@@ -147,6 +148,18 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
                     InvalidSignaturePublicKeySecurityLevelError::new(
                         public_key.security_level(),
                         security_levels,
+                    ),
+                ),
+            );
+            return Ok(validation_result);
+        }
+
+        if purpose != public_key.purpose() {
+            validation_result.add_error(
+                SignatureError::InvalidSignaturePublicKeyPurposeError(
+                    InvalidSignaturePublicKeyPurposeError::new(
+                        public_key.purpose(),
+                        purpose,
                     ),
                 ),
             );

@@ -10,6 +10,7 @@ use thiserror::Error;
 
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use crate::consensus::signature::invalid_signature_public_key_purpose_error::InvalidSignaturePublicKeyPurposeError;
 
 #[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone)]
 pub enum SignatureError {
@@ -29,6 +30,9 @@ pub enum SignatureError {
 
     #[error(transparent)]
     MissingPublicKeyError(MissingPublicKeyError),
+
+    #[error(transparent)]
+    InvalidSignaturePublicKeyPurposeError(InvalidSignaturePublicKeyPurposeError),
 
     #[error(transparent)]
     InvalidSignaturePublicKeySecurityLevelError(InvalidSignaturePublicKeySecurityLevelError),
