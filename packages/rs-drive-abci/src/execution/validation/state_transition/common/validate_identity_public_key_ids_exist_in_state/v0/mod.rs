@@ -44,10 +44,7 @@ pub(super) fn validate_identity_public_key_ids_exist_in_state_v0(
             MissingIdentityPublicKeyIdsError::new(missing_keys).into(),
         ))
     } else {
-        let values: Vec<_> = to_remove_keys
-            .into_iter()
-            .map(|(_key, value)| value)
-            .collect();
+        let values: Vec<_> = to_remove_keys.into_values().collect();
         Ok(ConsensusValidationResult::new_with_data(values))
     }
 }
