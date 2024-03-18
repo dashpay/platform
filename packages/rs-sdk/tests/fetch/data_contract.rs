@@ -1,5 +1,6 @@
 use super::config::Config;
 use dpp::prelude::{DataContract, Identifier};
+use drive_proof_verifier::types::DataContractHistory;
 use rs_sdk::platform::{Fetch, FetchMany};
 
 /// Given some dummy data contract ID, when I fetch data contract, I get None because it doesn't exist.
@@ -87,4 +88,28 @@ async fn test_data_contracts_2_nx() {
         result.get(&nx_id_2).expect("found in result").is_none(),
         "proof of non-existence 2 failed"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_data_contract_history_read() {
+    // use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    let cfg = Config::new();
+    let id = cfg.existing_data_contract_id;
+
+    let sdk = cfg.setup_api().await;
+
+    let result = DataContractHistory::fetch(
+        &sdk,
+        (id, 0),
+    ).await;
+
+    if let Err(e) = result {
+        panic!("error {:?}", e);
+    }
+
+    // println!("res {:?}", result);
+    // let result = DataContract::fetch_by_identifier(&sdk, id).await;
+    //
+    // assert!(matches!(result, Ok(Some(_))), "result: {:?}", result);
+    // assert_eq!(result.unwrap().unwrap().id(), id);
 }

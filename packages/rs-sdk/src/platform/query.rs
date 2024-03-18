@@ -4,11 +4,7 @@
 use std::fmt::Debug;
 
 use dapi_grpc::mock::Mockable;
-use dapi_grpc::platform::v0::{
-    self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
-    AllKeys, GetEpochsInfoRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeVoteStatusRequest, KeyRequestType,
-};
+use dapi_grpc::platform::v0::{self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0, AllKeys, GetEpochsInfoRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest, KeyRequestType, GetDataContractHistoryRequest};
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};
 use drive::query::DriveQuery;
@@ -109,6 +105,36 @@ impl Query<proto::GetDataContractsRequest> for Vec<Identifier> {
         Ok(proto::GetDataContractsRequest {
             version: Some(proto::get_data_contracts_request::Version::V0(
                 proto::get_data_contracts_request::GetDataContractsRequestV0 { ids, prove },
+            )),
+        })
+    }
+}
+
+// impl Query<GetDataContractHistoryRequest> for LimitQuery<(Identifier, u64)> {
+//     fn query(self, prove: bool) -> Result<GetDataContractHistoryRequest, Error> {
+//         LimitQuery {
+//             query: Some(self.query),
+//             limit: self.limit,
+//         }.query(prove)
+//     }
+// }
+
+impl Query<proto::GetDataContractHistoryRequest> for (Identifier, u64) {
+    fn query(self, prove: bool) -> Result<proto::GetDataContractHistoryRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        let (id, start_at_ms) = self;
+
+        Ok(proto::GetDataContractHistoryRequest {
+            version: Some(proto::get_data_contract_history_request::Version::V0(
+                proto::get_data_contract_history_request::GetDataContractHistoryRequestV0 {
+                    id: id.to_vec(),
+                    limit: Some(10),
+                    offset: None,
+                    start_at_ms,
+                    prove,
+                },
             )),
         })
     }
