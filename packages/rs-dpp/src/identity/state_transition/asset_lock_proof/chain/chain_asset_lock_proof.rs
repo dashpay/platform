@@ -1,20 +1,24 @@
-use platform_value::{Bytes36, Value};
-use serde::{Deserialize, Serialize};
+use ::serde::{Deserialize, Serialize};
+use platform_value::Value;
 use std::convert::TryFrom;
+use std::io;
 
-use crate::{
-    errors::NonConsensusError, identifier::Identifier, util::hash::hash_to_vec,
-    util::vec::vec_to_array, ProtocolError,
-};
+use crate::util::hash::hash_double;
+use crate::{identifier::Identifier, ProtocolError};
 pub use bincode::{Decode, Encode};
+use dashcore::OutPoint;
 
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Encode, Decode)]
+/// Instant Asset Lock Proof is a part of Identity Create and Identity Topup
+/// transitions. It is a proof that specific output of dash is locked in credits
+/// pull and the transitions can mint credits and populate identity's balance.
+/// To prove that the output is locked, a height where transaction was chain locked is provided.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChainAssetLockProof {
-    #[serde(rename = "type")]
-    asset_lock_type: u8,
+    /// Core height on which the asset lock transaction was chain locked or higher
     pub core_chain_locked_height: u32,
-    pub out_point: Bytes36,
+    /// A reference to Asset Lock Special Transaction ID and output index in the payload
+    pub out_point: OutPoint,
 }
 
 impl TryFrom<Value> for ChainAssetLockProof {
@@ -34,21 +38,20 @@ impl ChainAssetLockProof {
 
     pub fn new(core_chain_locked_height: u32, out_point: [u8; 36]) -> Self {
         Self {
-            // TODO: change to const
-            asset_lock_type: 1,
             core_chain_locked_height,
-            out_point: Bytes36::new(out_point),
+            out_point: OutPoint::from(out_point),
         }
     }
 
-    /// Get proof type
-    pub fn asset_lock_type() -> u8 {
-        1
-    }
-
     /// Create identifier
-    pub fn create_identifier(&self) -> Result<Identifier, NonConsensusError> {
-        let array = vec_to_array(hash_to_vec(self.out_point.as_slice()).as_ref())?;
-        Ok(Identifier::new(array))
+    pub fn create_identifier(&self) -> Result<Identifier, ProtocolError> {
+        let output_vec: Vec<u8> = self
+            .out_point
+            .try_into()
+            .map_err(|e: io::Error| ProtocolError::EncodingError(e.to_string()))?;
+
+        let hash = hash_double(output_vec);
+
+        Ok(Identifier::new(hash))
     }
 }

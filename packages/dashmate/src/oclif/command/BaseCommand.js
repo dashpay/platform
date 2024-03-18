@@ -1,21 +1,26 @@
-const { Command, Flags, settings } = require('@oclif/core');
+import { Command, Flags, settings } from '@oclif/core';
 
-const { asValue } = require('awilix');
+import { asValue } from 'awilix';
 
-const graceful = require('node-graceful');
+import graceful from 'node-graceful';
 
-const dotenv = require('dotenv');
-
-const getFunctionParams = require('../../util/getFunctionParams');
-
-const createDIContainer = require('../../createDIContainer');
-
-const ConfigFileNotFoundError = require('../../config/errors/ConfigFileNotFoundError');
+import dotenv from 'dotenv';
+import createDIContainer from '../../createDIContainer.js';
+import ConfigFileNotFoundError from '../../config/errors/ConfigFileNotFoundError.js';
+import getFunctionParams from '../../util/getFunctionParams.js';
 
 /**
  * @abstract
  */
-class BaseCommand extends Command {
+export default class BaseCommand extends Command {
+  static flags = {
+    verbose: Flags.boolean({
+      char: 'v',
+      description: 'use verbose mode for output',
+      default: false,
+    }),
+  };
+
   async init() {
     // Read environment variables from .env file
     dotenv.config();
@@ -36,7 +41,7 @@ class BaseCommand extends Command {
     let configFile;
     try {
       // Load config collection from config file
-      configFile = await configFileRepository.read();
+      configFile = configFileRepository.read();
     } catch (e) {
       // Create default config collection if config file is not present
       // on the first start for example
@@ -91,12 +96,29 @@ class BaseCommand extends Command {
   async finally(err) {
     // Save configs collection
     if (this.container) {
+      /**
+       * @var {ConfigFileJsonRepository} configFileRepository
+       */
       const configFileRepository = this.container.resolve('configFileRepository');
 
-      if (this.container.has('configFile')) {
+      if (this.container.has('configFile') && err === undefined) {
+        /**
+         * @var {ConfigFile} configFile
+         */
         const configFile = this.container.resolve('configFile');
 
-        configFileRepository.write(configFile);
+        if (configFile.isChanged()) {
+          configFileRepository.write(configFile);
+
+          /**
+           * @var {writeConfigTemplates} writeConfigTemplates
+           */
+          const writeConfigTemplates = this.container.resolve('writeConfigTemplates');
+
+          configFile.getAllConfigs()
+            .filter((config) => config.isChanged())
+            .forEach(writeConfigTemplates);
+        }
       }
 
       // Stop all running containers
@@ -114,13 +136,3 @@ class BaseCommand extends Command {
     return super.finally(err);
   }
 }
-
-BaseCommand.flags = {
-  verbose: Flags.boolean({
-    char: 'v',
-    description: 'use verbose mode for output',
-    default: false,
-  }),
-};
-
-module.exports = BaseCommand;

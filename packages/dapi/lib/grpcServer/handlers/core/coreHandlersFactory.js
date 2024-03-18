@@ -32,7 +32,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const log = require('../../../log');
+const logger = require('../../../logger');
 
 const getBlockHandlerFactory = require(
   './getBlockHandlerFactory',
@@ -53,7 +53,7 @@ const broadcastTransactionHandlerFactory = require(
  * @returns {Object<string, function>}
  */
 function coreHandlersFactory(coreRPCClient, isProductionEnvironment) {
-  const wrapInErrorHandler = wrapInErrorHandlerFactory(log, isProductionEnvironment);
+  const wrapInErrorHandler = wrapInErrorHandlerFactory(logger, isProductionEnvironment);
 
   // getBlock
   const getBlockHandler = getBlockHandlerFactory(coreRPCClient);

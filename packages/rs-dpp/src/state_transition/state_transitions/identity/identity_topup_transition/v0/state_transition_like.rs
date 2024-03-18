@@ -1,5 +1,6 @@
 use platform_value::BinaryData;
 
+use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::{
     prelude::Identifier,
@@ -48,5 +49,29 @@ impl StateTransitionLike for IdentityTopUpTransitionV0 {
     /// Get owner ID
     fn owner_id(&self) -> Identifier {
         self.identity_id
+    }
+
+    /// We want transactions to be unique based on the asset lock proof, here there is a
+    /// conflict on purpose with identity create transitions
+    fn unique_identifiers(&self) -> Vec<String> {
+        let identifier = self.asset_lock_proof.create_identifier();
+        match identifier {
+            Ok(identifier) => {
+                vec![base64::encode(identifier)]
+            }
+            Err(_) => {
+                // no unique identifier, this won't actually occur on Platform
+                // as we ask for the unique identifier after validation
+                vec![String::default()]
+            }
+        }
+    }
+
+    fn user_fee_increase(&self) -> UserFeeIncrease {
+        self.user_fee_increase
+    }
+
+    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
+        self.user_fee_increase = fee_multiplier
     }
 }

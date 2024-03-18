@@ -3,19 +3,16 @@ use dpp::dashcore::{
     consensus::encode::serialize,
 };
 
+use dpp::dashcore::consensus::Encodable;
+use dpp::identity::state_transition::asset_lock_proof::AssetLockProofType;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
 use crate::utils::WithJsError;
-use crate::{
-    buffer::Buffer,
-    errors::{from_dpp_err, RustConversionError},
-    identifier::IdentifierWrapper,
-    with_js_error,
-};
+use crate::{buffer::Buffer, errors::from_dpp_err, identifier::IdentifierWrapper, with_js_error};
 use dpp::identity::state_transition::asset_lock_proof::instant::{
-    InstantAssetLockProof, RawInstantLock,
+    InstantAssetLockProof, RawInstantLockProof,
 };
 use dpp::platform_value::string_encoding;
 use dpp::platform_value::string_encoding::Encoding;
@@ -51,34 +48,41 @@ impl From<InstantAssetLockProofWasm> for InstantAssetLockProof {
 #[wasm_bindgen(js_class = InstantAssetLockProof)]
 impl InstantAssetLockProofWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_parameters: JsValue) -> Result<InstantAssetLockProofWasm, JsValue> {
-        let raw_instant_lock: RawInstantLock =
-            with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
+    pub fn new(raw_parameters: JsValue) -> Result<InstantAssetLockProofWasm, JsError> {
+        let raw_instant_lock: RawInstantLockProof = serde_wasm_bindgen::from_value(raw_parameters)
+            .map_err(|_| JsError::new("invalid raw instant lock proof"))?;
 
-        let instant_asset_lock_proof: InstantAssetLockProof =
-            raw_instant_lock.try_into().map_err(|_| {
-                RustConversionError::Error(String::from("object passed is not a raw Instant Lock"))
-                    .to_js_value()
-            })?;
+        let instant_asset_lock_proof: InstantAssetLockProof = raw_instant_lock
+            .try_into()
+            .map_err(|_| JsError::new("object passed is not a raw Instant Lock"))?;
 
         Ok(instant_asset_lock_proof.into())
     }
 
     #[wasm_bindgen(js_name=getType)]
     pub fn get_type(&self) -> u8 {
-        self.0.asset_lock_type()
+        AssetLockProofType::Instant as u8
     }
 
     #[wasm_bindgen(js_name=getOutputIndex)]
-    pub fn get_output_index(&self) -> usize {
+    pub fn get_output_index(&self) -> u32 {
         self.0.output_index()
     }
 
     #[wasm_bindgen(js_name=getOutPoint)]
-    pub fn get_out_point(&self) -> Option<Buffer> {
+    pub fn get_out_point(&self) -> Result<Option<Buffer>, JsValue> {
         self.0
             .out_point()
-            .map(|out_point| Buffer::from_bytes(&out_point))
+            .map(|out_point| {
+                let mut outpoint_bytes = Vec::new();
+
+                out_point
+                    .consensus_encode(&mut outpoint_bytes)
+                    .map_err(|e| e.to_string())?;
+
+                Ok(Buffer::from_bytes_owned(outpoint_bytes))
+            })
+            .transpose()
     }
 
     #[wasm_bindgen(js_name=getOutput)]
@@ -93,10 +97,7 @@ impl InstantAssetLockProofWasm {
 
     #[wasm_bindgen(js_name=createIdentifier)]
     pub fn create_identifier(&self) -> Result<IdentifierWrapper, JsValue> {
-        let identifier = self
-            .0
-            .create_identifier()
-            .map_err(|e| from_dpp_err(e.into()))?;
+        let identifier = self.0.create_identifier().map_err(from_dpp_err)?;
         Ok(identifier.into())
     }
 

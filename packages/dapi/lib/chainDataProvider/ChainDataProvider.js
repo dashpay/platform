@@ -1,7 +1,7 @@
 const ChainLockSigMessage = require('@dashevo/dashcore-lib/lib/zmqMessages/ChainLockSigMessage');
 const { EventEmitter } = require('events');
 const { BlockHeader, ChainLock } = require('@dashevo/dashcore-lib');
-const log = require('../log');
+const logger = require('../logger');
 
 const REORG_SAFE_DEPTH = 6;
 
@@ -78,16 +78,20 @@ class ChainDataProvider extends EventEmitter {
       this.chainLockHandler(chainLock);
     } catch (e) {
       if (e.code === -32603) {
-        log.info('No chain lock available in dashcore node');
+        logger.info('No chain lock available in dashcore node');
       } else {
         throw e;
       }
     }
 
-    this.zmqClient.on(this.zmqClient.topics.rawchainlocksig,
-      (buffer) => this.rawChainLockSigHandler(buffer));
-    this.zmqClient.on(this.zmqClient.topics.hashblock,
-      (buffer) => this.blockHashHandler(buffer));
+    this.zmqClient.on(
+      this.zmqClient.topics.rawchainlocksig,
+      (buffer) => this.rawChainLockSigHandler(buffer),
+    );
+    this.zmqClient.on(
+      this.zmqClient.topics.hashblock,
+      (buffer) => this.blockHashHandler(buffer),
+    );
   }
 
   /**
@@ -177,8 +181,10 @@ class ChainDataProvider extends EventEmitter {
     // Fetch missing items
     const missingBlockHeaders = await this.coreRpcAPI.getBlockHeaders(startHash, fetchCount);
     // Concatenate all items together
-    const rawBlockHeaders = [...((cachedBlockHeaders.slice(0,
-      lastCachedIndex !== -1 ? lastCachedIndex : 0)).map((e) => e.toString('hex'))), ...missingBlockHeaders];
+    const rawBlockHeaders = [...((cachedBlockHeaders.slice(
+      0,
+      lastCachedIndex !== -1 ? lastCachedIndex : 0,
+    )).map((e) => e.toString('hex'))), ...missingBlockHeaders];
 
     // Calculate safe height in order to cache headers that are
     // not subjected to reorgs

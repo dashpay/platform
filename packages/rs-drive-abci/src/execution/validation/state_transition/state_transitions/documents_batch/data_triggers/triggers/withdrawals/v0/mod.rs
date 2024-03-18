@@ -1,4 +1,4 @@
-///! The `withdrawals_data_triggers` module contains data triggers related to withdrawals.
+//! The `withdrawals_data_triggers` module contains data triggers related to withdrawals.
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
@@ -15,7 +15,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::DocumentV0Getters;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
-use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -38,7 +38,12 @@ pub fn delete_withdrawal_data_trigger_v0(
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
-    let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
+    let data_contract_fetch_info = document_transition
+        .base()
+        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "expecting action to have a base",
+        )))?
+        .data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
     let mut result = DataTriggerExecutionResult::default();
 
@@ -46,7 +51,12 @@ pub fn delete_withdrawal_data_trigger_v0(
         return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
             format!(
                 "the Document Transition {} isn't 'DELETE",
-                document_transition.base().id()
+                document_transition
+                    .base()
+                    .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "expecting action to have a base"
+                    )))?
+                    .id()
             ),
         )));
     };
@@ -87,7 +97,7 @@ pub fn delete_withdrawal_data_trigger_v0(
         )?
         .documents_owned();
 
-    let Some(withdrawal) = withdrawals.get(0) else {
+    let Some(withdrawal) = withdrawals.first() else {
         let err = DataTriggerConditionError::new(
             data_contract.id(),
             dt_delete.base().id(),
@@ -104,13 +114,11 @@ pub fn delete_withdrawal_data_trigger_v0(
         .get_integer("status")
         .map_err(ProtocolError::ValueError)?;
 
-    if status != withdrawals_contract::WithdrawalStatus::COMPLETE as u8
-        || status != withdrawals_contract::WithdrawalStatus::EXPIRED as u8
-    {
+    if status != withdrawals_contract::WithdrawalStatus::COMPLETE as u8 {
         let err = DataTriggerConditionError::new(
             data_contract.id(),
             dt_delete.base().id(),
-            "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses".to_string(),
+            "withdrawal deletion is allowed only for COMPLETE statuses".to_string(),
         );
 
         result.add_error(err);
@@ -131,7 +139,7 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::{Document, DocumentV0Getters};
-    use dpp::platform_value::{platform_value, Bytes32};
+    use dpp::platform_value::platform_value;
     use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
     use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
     use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionV0;
@@ -150,7 +158,7 @@ mod tests {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
-        let state_read_guard = platform.state.read().unwrap();
+        let state_read_guard = platform.state.load();
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_read_guard,
@@ -159,12 +167,13 @@ mod tests {
         let platform_version = state_read_guard.current_platform_version().unwrap();
 
         let transition_execution_context = StateTransitionExecutionContextV0::default();
-        let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
+        let data_contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
         let owner_id = data_contract.owner_id();
 
         let base_transition: DocumentBaseTransitionAction = DocumentBaseTransitionActionV0 {
             id: Default::default(),
+            identity_contract_nonce: 1,
             document_type_name: "".to_string(),
             data_contract: Arc::new(DataContractFetchInfo::dpns_contract_fixture(1)),
         }
@@ -202,11 +211,9 @@ mod tests {
     fn can_serialize_and_deserialize_withdrawal() {
         let platform_version = PlatformVersion::first();
 
-        let data_contract = load_system_data_contract(
-            SystemDataContract::Withdrawals,
-            platform_version.protocol_version,
-        )
-        .expect("to load system data contract");
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                .expect("to load system data contract");
         let owner_id = data_contract.owner_id();
 
         let document_type = data_contract
@@ -223,7 +230,6 @@ mod tests {
                 "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
                 "transactionIndex": 1u64,
                 "transactionSignHeight": 93u64,
-                "transactionId": Bytes32::new([1;32]),
             }),
             None,
             platform_version.protocol_version,
@@ -242,7 +248,7 @@ mod tests {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_genesis_state();
-        let state_read_guard = platform.state.read().unwrap();
+        let state_read_guard = platform.state.load();
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
@@ -257,11 +263,9 @@ mod tests {
             .current_platform_version()
             .expect("should return a platform version");
 
-        let data_contract = load_system_data_contract(
-            SystemDataContract::Withdrawals,
-            platform_version.protocol_version,
-        )
-        .expect("to load system data contract");
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                .expect("to load system data contract");
         let owner_id = data_contract.owner_id();
 
         let document_type = data_contract
@@ -279,7 +283,6 @@ mod tests {
                 "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
                 "transactionIndex": 1u64,
                 "transactionSignHeight": 93u64,
-                "transactionId": Bytes32::new([1;32]),
             }),
             None,
             platform_version.protocol_version,
@@ -309,6 +312,7 @@ mod tests {
             DocumentDeleteTransitionAction::V0(DocumentDeleteTransitionActionV0 {
                 base: DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
                     id: document.id(),
+                    identity_contract_nonce: 1,
                     document_type_name: "withdrawal".to_string(),
                     data_contract: Arc::new(DataContractFetchInfo::withdrawals_contract_fixture(
                         platform_version.protocol_version,
@@ -336,7 +340,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses"
+            "withdrawal deletion is allowed only for COMPLETE statuses"
         );
     }
 }

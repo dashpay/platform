@@ -3,6 +3,7 @@ use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
 use crate::serialization::Signable;
 
+use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionV0,
@@ -18,12 +19,16 @@ impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransitionV0 {
         data_contract: DataContract,
         identity: &PartialIdentity,
         key_id: KeyID,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
         _feature_version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
         let transition = DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
+            identity_contract_nonce,
             data_contract: data_contract.try_into_platform_versioned(platform_version)?,
+            user_fee_increase,
             signature_public_key_id: key_id,
             signature: Default::default(),
         });

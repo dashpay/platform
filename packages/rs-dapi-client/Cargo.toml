@@ -1,0 +1,29 @@
+[package]
+name = "rs-dapi-client"
+version = "1.0.0-dev.8"
+edition = "2021"
+
+[features]
+default = ["mocks", "offline-testing"]
+mocks = ["dep:sha2", "dep:hex", "dapi-grpc/mocks"]
+# dump requests and responses to file
+dump = ["mocks", "dep:chrono"]
+# skip tests that require connection to the platform; enabled by default
+offline-testing = []
+
+
+[dependencies]
+backon = "0.4.1"
+dapi-grpc = { path = "../dapi-grpc" }
+futures = "0.3.28"
+http = "0.2.9"
+rand = { version = "0.8.5", features = ["small_rng"] }
+thiserror = "1.0.41"
+tracing = "0.1.40"
+tokio = { version = "1.32.0", default-features = false }
+sha2 = { version = "0.10", optional = true }
+chrono = { version = "0.4.31", optional = true }
+hex = { version = "0.4.3", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1.32.0", features = ["macros"] }

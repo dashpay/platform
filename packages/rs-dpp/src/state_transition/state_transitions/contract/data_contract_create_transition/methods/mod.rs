@@ -5,19 +5,19 @@ pub use v0::*;
 use crate::data_contract::DataContract;
 use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
+use crate::prelude::IdentityNonce;
 use crate::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionV0,
 };
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
-use platform_value::Bytes32;
 use platform_version::version::PlatformVersion;
 
 impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransition {
     fn new_from_data_contract<S: Signer>(
         data_contract: DataContract,
-        entropy: Bytes32,
+        identity_nonce: IdentityNonce,
         identity: &PartialIdentity,
         key_id: KeyID,
         signer: &S,
@@ -33,7 +33,7 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransition {
         ) {
             0 => DataContractCreateTransitionV0::new_from_data_contract(
                 data_contract,
-                entropy,
+                identity_nonce,
                 identity,
                 key_id,
                 signer,

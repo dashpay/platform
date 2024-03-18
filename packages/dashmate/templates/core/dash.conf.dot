@@ -69,8 +69,7 @@ regtest=1
 {{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
 {{? it.core.miner.mediantime}}mocktime={{=it.core.miner.mediantime}}{{?}}
-llmqinstantsend=llmq_test
-llmqinstantsenddip0024=llmq_test_instantsend
+llmqtestinstantsenddip0024=llmq_test_instantsend
 
 {{?? it.network === 'devnet'}}
 devnet={{=it.core.devnet.name}}

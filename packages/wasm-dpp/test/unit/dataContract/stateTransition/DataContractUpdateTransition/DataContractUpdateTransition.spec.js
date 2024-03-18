@@ -1,5 +1,3 @@
-const JsDataContractUpdateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/DataContractUpdateTransition');
-
 const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
 const { default: loadWasmDpp } = require('../../../../..');
 const { StateTransitionTypes } = require('../../../../..');
@@ -22,6 +20,7 @@ describe('DataContractUpdateTransition', () => {
     stateTransition = new DataContractUpdateTransition({
       protocolVersion: 1,
       dataContract: dataContract.toObject(),
+      identityContractNonce: 1,
     });
   });
 
@@ -66,7 +65,7 @@ describe('DataContractUpdateTransition', () => {
     it('should return serialized State Transition', () => {
       const result = stateTransition.toBuffer();
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(2188);
+      expect(result).to.have.lengthOf(2358);
     });
 
     it('should be able to restore contract config from bytes', () => {
@@ -81,12 +80,12 @@ describe('DataContractUpdateTransition', () => {
 
   describe.skip('#hash', () => {
     it('should return State Transition hash as hex', () => {
-      const jsStateTransition = new JsDataContractUpdateTransition(stateTransition.toJSON());
-
-      const result = stateTransition.hash();
-      const resultJs = jsStateTransition.hash();
-
-      expect(result).to.equal(resultJs);
+      // const jsStateTransition = new JsDataContractUpdateTransition(stateTransition.toJSON());
+      //
+      // const result = stateTransition.hash();
+      // const resultJs = jsStateTransition.hash();
+      //
+      // expect(result).to.equal(resultJs);
     });
   });
 

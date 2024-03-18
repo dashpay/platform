@@ -1,6 +1,6 @@
 const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
-const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/js/getDocumentsFixture');
-const getDataContractFixture = require('../../../../../../../lib/test/fixtures/js/getDataContractFixture');
+const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
 const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
 
 const { default: loadWasmDpp } = require('../../../../../../..');
@@ -81,7 +81,7 @@ describe.skip('validateDocumentsBatchTransitionBasicFactory', () => {
 
     rawStateTransition = stateTransition.toObject();
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.fetchDataContract.resolves(dataContract.clone());
 
     protocolVersionValidator = new ProtocolVersionValidator();

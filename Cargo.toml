@@ -1,7 +1,10 @@
 [workspace]
 
+resolver = "2"
+
 members = [
     "packages/dapi-grpc",
+    "packages/rs-dapi-grpc-macros",
     "packages/rs-dpp",
     "packages/rs-drive",
     "packages/rs-platform-value",
@@ -17,5 +20,10 @@ members = [
     "packages/feature-flags-contract",
     "packages/dpns-contract",
     "packages/data-contracts",
+    "packages/rs-drive-proof-verifier",
     "packages/wasm-dpp",
+    "packages/rs-dapi-client",
+    "packages/rs-sdk",
+    "packages/strategy-tests",
+    "packages/simple-signer",
 ]

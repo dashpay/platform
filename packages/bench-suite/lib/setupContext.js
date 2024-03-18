@@ -1,4 +1,4 @@
-const { convertCreditsToSatoshi } = require('@dashevo/dpp/lib/identity/creditsConverter');
+const { convertCreditsToSatoshi } = require('@dashevo/wasm-dpp/lib/utils/creditsConverter');
 
 const createClientWithFundedWallet = require('./client/createClientWithFundedWallet');
 

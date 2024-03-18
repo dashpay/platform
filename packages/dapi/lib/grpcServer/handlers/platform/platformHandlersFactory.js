@@ -16,61 +16,34 @@ const {
 const {
   v0: {
     BroadcastStateTransitionRequest,
-    GetIdentityRequest,
-    GetDataContractRequest,
-    GetDataContractHistoryRequest,
-    GetDocumentsRequest,
-    GetIdentitiesByPublicKeyHashesRequest,
     WaitForStateTransitionResultRequest,
     GetConsensusParamsRequest,
     pbjs: {
       BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
       BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
-      GetIdentityRequest: PBJSGetIdentityRequest,
-      GetIdentityResponse: PBJSGetIdentityResponse,
-      GetDataContractRequest: PBJSGetDataContractRequest,
-      GetDataContractResponse: PBJSGetDataContractResponse,
-      GetDocumentsRequest: PBJSGetDocumentsRequest,
-      GetDocumentsResponse: PBJSGetDocumentsResponse,
-      GetIdentitiesByPublicKeyHashesResponse: PBJSGetIdentitiesByPublicKeyHashesResponse,
-      GetIdentitiesByPublicKeyHashesRequest: PBJSGetIdentitiesByPublicKeyHashesRequest,
       WaitForStateTransitionResultRequest: PBJSWaitForStateTransitionResultRequest,
       WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
       GetConsensusParamsRequest: PBJSGetConsensusParamsRequest,
       GetConsensusParamsResponse: PBJSGetConsensusParamsResponse,
-      GetDataContractHistoryRequest: PBJSGetDataContractHistoryRequest,
-      GetDataContractHistoryResponse: PBJSGetDataContractHistoryResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
 
-const log = require('../../../log');
+const logger = require('../../../logger');
 
 const createGrpcErrorFromDriveResponse = require('../createGrpcErrorFromDriveResponse');
 
-const getIdentityHandlerFactory = require(
-  './getIdentityHandlerFactory',
-);
 const broadcastStateTransitionHandlerFactory = require(
   './broadcastStateTransitionHandlerFactory',
-);
-const getDocumentsHandlerFactory = require(
-  './getDocumentsHandlerFactory',
-);
-const getDataContractHandlerFactory = require(
-  './getDataContractHandlerFactory',
-);
-const getDataContractHistoryHandlerFactory = require(
-  './getDataContractHistoryHandlerFactory',
-);
-const getIdentitiesByPublicKeyHashesHandlerFactory = require(
-  './getIdentitiesByPublicKeyHashesHandlerFactory',
 );
 const waitForStateTransitionResultHandlerFactory = require(
   './waitForStateTransitionResultHandlerFactory',
 );
 const getConsensusParamsHandlerFactory = require(
   './getConsensusParamsHandlerFactory',
+);
+const unimplementedHandlerFactory = require(
+  './unimplementedHandlerFactory',
 );
 
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
@@ -82,7 +55,7 @@ const getConsensusParamsFactory = require('../../../externalApis/tenderdash/getC
 /**
  * @param {jaysonClient} rpcClient
  * @param {BlockchainListener} blockchainListener
- * @param {DriveClient} driveClient
+ * @param {PlatformPromiseClient} driveClient
  * @param {DashPlatformProtocol} dpp
  * @param {boolean} isProductionEnvironment
  * @returns {Object<string, function>}
@@ -94,7 +67,7 @@ function platformHandlersFactory(
   dpp,
   isProductionEnvironment,
 ) {
-  const wrapInErrorHandler = wrapInErrorHandlerFactory(log, isProductionEnvironment);
+  const wrapInErrorHandler = wrapInErrorHandlerFactory(logger, isProductionEnvironment);
 
   // broadcastStateTransition
   const broadcastStateTransitionHandler = broadcastStateTransitionHandlerFactory(
@@ -111,86 +84,6 @@ function platformHandlersFactory(
       PBJSBroadcastStateTransitionResponse,
     ),
     wrapInErrorHandler(broadcastStateTransitionHandler),
-  );
-
-  // getIdentity
-  const getIdentityHandler = getIdentityHandlerFactory(
-    driveClient,
-  );
-
-  const wrappedGetIdentity = jsonToProtobufHandlerWrapper(
-    jsonToProtobufFactory(
-      GetIdentityRequest,
-      PBJSGetIdentityRequest,
-    ),
-    protobufToJsonFactory(
-      PBJSGetIdentityResponse,
-    ),
-    wrapInErrorHandler(getIdentityHandler),
-  );
-
-  // getDocuments
-  const getDocumentsHandler = getDocumentsHandlerFactory(
-    driveClient,
-  );
-
-  const wrappedGetDocuments = jsonToProtobufHandlerWrapper(
-    jsonToProtobufFactory(
-      GetDocumentsRequest,
-      PBJSGetDocumentsRequest,
-    ),
-    protobufToJsonFactory(
-      PBJSGetDocumentsResponse,
-    ),
-    wrapInErrorHandler(getDocumentsHandler),
-  );
-
-  // getDataContract
-  const getDataContractHandler = getDataContractHandlerFactory(
-    driveClient,
-  );
-
-  const wrappedGetDataContract = jsonToProtobufHandlerWrapper(
-    jsonToProtobufFactory(
-      GetDataContractRequest,
-      PBJSGetDataContractRequest,
-    ),
-    protobufToJsonFactory(
-      PBJSGetDataContractResponse,
-    ),
-    wrapInErrorHandler(getDataContractHandler),
-  );
-
-  // getDataContractHistory
-  const getDataContractHistoryHandler = getDataContractHistoryHandlerFactory(
-    driveClient,
-  );
-
-  const wrappedGetDataContractHistory = jsonToProtobufHandlerWrapper(
-    jsonToProtobufFactory(
-      GetDataContractHistoryRequest,
-      PBJSGetDataContractHistoryRequest,
-    ),
-    protobufToJsonFactory(
-      PBJSGetDataContractHistoryResponse,
-    ),
-    wrapInErrorHandler(getDataContractHistoryHandler),
-  );
-
-  // getIdentitiesByPublicKeyHashes
-  const getIdentitiesByPublicKeyHashesHandler = getIdentitiesByPublicKeyHashesHandlerFactory(
-    driveClient,
-  );
-
-  const wrappedGetIdentitiesByPublicKeyHashes = jsonToProtobufHandlerWrapper(
-    jsonToProtobufFactory(
-      GetIdentitiesByPublicKeyHashesRequest,
-      PBJSGetIdentitiesByPublicKeyHashesRequest,
-    ),
-    protobufToJsonFactory(
-      PBJSGetIdentitiesByPublicKeyHashesResponse,
-    ),
-    wrapInErrorHandler(getIdentitiesByPublicKeyHashesHandler),
   );
 
   // waitForStateTransitionResult
@@ -241,13 +134,25 @@ function platformHandlersFactory(
 
   return {
     broadcastStateTransition: wrappedBroadcastStateTransition,
-    getIdentity: wrappedGetIdentity,
-    getDocuments: wrappedGetDocuments,
-    getDataContract: wrappedGetDataContract,
-    getDataContractHistory: wrappedGetDataContractHistory,
-    getIdentitiesByPublicKeyHashes: wrappedGetIdentitiesByPublicKeyHashes,
+    getIdentity: wrapInErrorHandler(unimplementedHandlerFactory('getIdentity')),
+    getIdentities: wrapInErrorHandler(unimplementedHandlerFactory('getIdentities')),
+    getIdentityBalance: wrapInErrorHandler(unimplementedHandlerFactory('getIdentityBalance')),
+    getIdentityBalanceAndRevision: wrapInErrorHandler(unimplementedHandlerFactory('getIdentityBalanceAndRevision')),
+    getIdentityKeys: wrapInErrorHandler(unimplementedHandlerFactory('getIdentityKeys')),
+    getDocuments: wrapInErrorHandler(unimplementedHandlerFactory('getDocuments')),
+    getDataContract: wrapInErrorHandler(unimplementedHandlerFactory('getDataContract')),
+    getDataContracts: wrapInErrorHandler(unimplementedHandlerFactory('getDataContracts')),
+    getDataContractHistory: wrapInErrorHandler(unimplementedHandlerFactory('getDataContractHistory')),
+    getIdentityByPublicKeyHash: wrapInErrorHandler(unimplementedHandlerFactory('getIdentityByPublicKeyHash')),
+    getIdentitiesByPublicKeyHashes: wrapInErrorHandler(unimplementedHandlerFactory('getIdentitiesByPublicKeyHashes')),
     waitForStateTransitionResult: wrappedWaitForStateTransitionResult,
     getConsensusParams: wrappedGetConsensusParams,
+    getProofs: wrapInErrorHandler(unimplementedHandlerFactory('getProofs')),
+    getEpochsInfo: wrapInErrorHandler(unimplementedHandlerFactory('getEpochsInfo')),
+    getProtocolVersionUpgradeVoteStatus: wrapInErrorHandler(unimplementedHandlerFactory('getProtocolVersionUpgradeVoteStatus')),
+    getProtocolVersionUpgradeState: wrapInErrorHandler(unimplementedHandlerFactory('getProtocolVersionUpgradeState')),
+    getIdentityContractNonce: wrapInErrorHandler(unimplementedHandlerFactory('getIdentityContractNonce')),
+    getIdentityNonce: wrapInErrorHandler(unimplementedHandlerFactory('getIdentityNonce')),
   };
 }
 

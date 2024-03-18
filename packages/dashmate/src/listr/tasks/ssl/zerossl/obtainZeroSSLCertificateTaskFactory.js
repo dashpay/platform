@@ -1,9 +1,9 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
 
-const chalk = require('chalk');
-const path = require('path');
-const fs = require('fs');
-const wait = require('../../../../util/wait');
+import chalk from 'chalk';
+import path from 'path';
+import fs from 'fs';
+import wait from '../../../../util/wait.js';
 
 /**
  * @param {generateCsr} generateCsr
@@ -18,7 +18,7 @@ const wait = require('../../../../util/wait');
  * @param {HomeDir} homeDir
  * @return {obtainZeroSSLCertificateTask}
  */
-function obtainZeroSSLCertificateTaskFactory(
+export default function obtainZeroSSLCertificateTaskFactory(
   generateCsr,
   generateKeyPair,
   createZeroSSLCertificate,
@@ -40,7 +40,7 @@ function obtainZeroSSLCertificateTaskFactory(
     const apiKey = config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey', true);
     const externalIp = config.get('externalIp', true);
 
-    const sslConfigDir = homeDir.joinPath('ssl', config.getName());
+    const sslConfigDir = homeDir.joinPath(config.getName(), 'platform', 'dapi', 'envoy', 'ssl');
     const csrFilePath = path.join(sslConfigDir, 'csr.pem');
     const privateKeyFilePath = path.join(sslConfigDir, 'private.key');
     const bundleFilePath = path.join(sslConfigDir, 'bundle.crt');
@@ -314,5 +314,3 @@ function obtainZeroSSLCertificateTaskFactory(
 
   return obtainZeroSSLCertificateTask;
 }
-
-module.exports = obtainZeroSSLCertificateTaskFactory;

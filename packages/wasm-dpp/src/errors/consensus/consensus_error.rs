@@ -2,16 +2,16 @@ use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm, JsonSchemaErrorWasm,
     UnsupportedProtocolVersionErrorWasm, UnsupportedVersionErrorWasm,
 };
-use dpp::consensus::{ConsensusError as DPPConsensusError, ConsensusError};
-use std::ops::Deref;
+use dpp::consensus::ConsensusError as DPPConsensusError;
 
 use crate::errors::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm,
     IdentityAssetLockProofLockedTransactionMismatchErrorWasm,
     IdentityAssetLockTransactionIsNotFoundErrorWasm,
     IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm,
-    IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityInsufficientBalanceErrorWasm,
-    InvalidAssetLockProofCoreChainHeightErrorWasm, InvalidAssetLockProofTransactionHeightErrorWasm,
+    IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityCreditTransferToSelfErrorWasm,
+    IdentityInsufficientBalanceErrorWasm, InvalidAssetLockProofCoreChainHeightErrorWasm,
+    InvalidAssetLockProofTransactionHeightErrorWasm, InvalidAssetLockProofValueErrorWasm,
     InvalidAssetLockTransactionOutputReturnSizeErrorWasm,
     InvalidIdentityAssetLockProofChainLockValidationErrorWasm,
     InvalidIdentityAssetLockTransactionErrorWasm,
@@ -26,7 +26,7 @@ use crate::errors::consensus::basic::identity::{
 
 use crate::errors::consensus::state::identity::{
     DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
-    MissingIdentityPublicKeyIdsErrorWasm,
+    InvalidIdentityNonceErrorWasm, MissingIdentityPublicKeyIdsErrorWasm,
 };
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::BasicError::{
@@ -53,17 +53,22 @@ use dpp::consensus::signature::SignatureError;
 // use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use dpp::consensus::state::state_error::StateError;
 
+use dpp::consensus::state::data_trigger::DataTriggerError::{
+    DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
+};
 use wasm_bindgen::{JsError, JsValue};
 
 use crate::errors::consensus::basic::data_contract::{
-    DataContractHaveNewUniqueIndexErrorWasm, DataContractImmutablePropertiesUpdateErrorWasm,
+    DataContractEmptySchemaErrorWasm, DataContractHaveNewUniqueIndexErrorWasm,
+    DataContractImmutablePropertiesUpdateErrorWasm,
     DataContractInvalidIndexDefinitionUpdateErrorWasm, DataContractUniqueIndicesChangedErrorWasm,
     IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm,
 };
 use crate::errors::consensus::basic::document::{
     DuplicateDocumentTransitionsWithIdsErrorWasm, DuplicateDocumentTransitionsWithIndicesErrorWasm,
-    InvalidDocumentTransitionActionErrorWasm, InvalidDocumentTransitionIdErrorWasm,
-    MissingDataContractIdErrorWasm, MissingDocumentTypeErrorWasm,
+    IdentityContractNonceOutOfBoundsErrorWasm, InvalidDocumentTransitionActionErrorWasm,
+    InvalidDocumentTransitionIdErrorWasm, MissingDataContractIdErrorWasm,
+    MissingDocumentTypeErrorWasm,
 };
 use crate::errors::consensus::basic::state_transition::{
     InvalidStateTransitionTypeErrorWasm, MissingStateTransitionTypeErrorWasm,
@@ -73,9 +78,9 @@ use crate::errors::consensus::signature::{
     BasicBLSErrorWasm, BasicECDSAErrorWasm, IdentityNotFoundErrorWasm,
     SignatureShouldNotBePresentErrorWasm,
 };
-// use crate::errors::consensus::state::data_contract::data_trigger::{
-//     DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm,
-// };
+use crate::errors::consensus::state::data_contract::data_trigger::{
+    DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm, DataTriggerInvalidResultErrorWasm,
+};
 use crate::errors::consensus::state::data_contract::{
     DataContractAlreadyPresentErrorWasm, DataContractConfigUpdateErrorWasm,
     DataContractIsReadonlyErrorWasm,
@@ -86,10 +91,9 @@ use crate::errors::consensus::state::document::{
     DuplicateUniqueIndexErrorWasm, InvalidDocumentRevisionErrorWasm,
 };
 use crate::errors::consensus::state::identity::{
-    IdentityAlreadyExistsErrorWasm, IdentityPublicKeyDisabledAtWindowViolationErrorWasm,
-    IdentityPublicKeyIsDisabledErrorWasm, IdentityPublicKeyIsReadOnlyErrorWasm,
-    InvalidIdentityPublicKeyIdErrorWasm, InvalidIdentityRevisionErrorWasm,
-    MaxIdentityPublicKeyLimitReachedErrorWasm,
+    IdentityAlreadyExistsErrorWasm, IdentityPublicKeyIsDisabledErrorWasm,
+    IdentityPublicKeyIsReadOnlyErrorWasm, InvalidIdentityPublicKeyIdErrorWasm,
+    InvalidIdentityRevisionErrorWasm, MaxIdentityPublicKeyLimitReachedErrorWasm,
 };
 
 use crate::errors::consensus::basic::data_contract::{
@@ -118,7 +122,6 @@ use crate::errors::consensus::basic::{
 };
 use crate::errors::consensus::fee::BalanceIsNotEnoughErrorWasm;
 
-// use crate::errors::consensus::state::data_contract::data_trigger::DataTriggerInvalidResultErrorWasm;
 use crate::errors::consensus::value_error::ValueErrorWasm;
 
 use super::state::document::DocumentTimestampsAreEqualErrorWasm;
@@ -136,7 +139,7 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
 }
 
 pub fn from_state_error(state_error: &StateError) -> JsValue {
-    match state_error.deref() {
+    match state_error {
         StateError::DuplicatedIdentityPublicKeyIdStateError(e) => {
             DuplicatedIdentityPublicKeyIdStateErrorWasm::from(e).into()
         }
@@ -166,9 +169,6 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::InvalidIdentityRevisionError(e) => {
             InvalidIdentityRevisionErrorWasm::from(e).into()
         }
-        StateError::IdentityPublicKeyDisabledAtWindowViolationError(e) => {
-            IdentityPublicKeyDisabledAtWindowViolationErrorWasm::from(e).into()
-        }
         StateError::IdentityPublicKeyIsReadOnlyError(e) => {
             IdentityPublicKeyIsReadOnlyErrorWasm::from(e).into()
         }
@@ -184,20 +184,11 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::MissingIdentityPublicKeyIdsError(e) => {
             MissingIdentityPublicKeyIdsErrorWasm::from(e).into()
         }
-        // TODO(versioning): restore
-        // StateError::DataTriggerError(data_trigger_error) => match data_trigger_error.deref() {
-        //     DataTriggerError::DataTriggerConditionError(e) => {
-        //         DataTriggerConditionErrorWasm::from(e).into()
-        //     }
-        //     DataTriggerError::DataTriggerExecutionError(e) => {
-        //         DataTriggerExecutionErrorWasm::from(e).into()
-        //     }
-        //     DataTriggerError::DataTriggerInvalidResultError(e) => {
-        //         DataTriggerInvalidResultErrorWasm::from(e).into()
-        //     }
-        // },
-        // TODO(versioning): restore
-        // StateError::DataTriggerActionError(_) => JsError::new("Data Trigger action error").into(),
+        StateError::DataTriggerError(data_trigger_error) => match data_trigger_error {
+            DataTriggerConditionError(e) => DataTriggerConditionErrorWasm::from(e).into(),
+            DataTriggerExecutionError(e) => DataTriggerExecutionErrorWasm::from(e).into(),
+            DataTriggerInvalidResultError(e) => DataTriggerInvalidResultErrorWasm::from(e).into(),
+        },
         StateError::IdentityAlreadyExistsError(e) => {
             let wasm_error: IdentityAlreadyExistsErrorWasm = e.into();
             wasm_error.into()
@@ -215,6 +206,10 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::DataContractConfigUpdateError(e) => {
             DataContractConfigUpdateErrorWasm::from(e).into()
         }
+        StateError::InvalidAssetLockProofValueError(e) => {
+            InvalidAssetLockProofValueErrorWasm::from(e).into()
+        }
+        StateError::InvalidIdentityNonceError(e) => InvalidIdentityNonceErrorWasm::from(e).into(),
         // TODO(versioning): restore
         _ => todo!(),
     }
@@ -222,7 +217,7 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
 
 // TODO: Move as From/TryInto trait implementation to wasm error modules
 fn from_basic_error(basic_error: &BasicError) -> JsValue {
-    match basic_error.deref() {
+    match basic_error {
         BasicError::ValueError(value_error) => ValueErrorWasm::from(value_error).into(),
         BasicError::DataContractNotPresentError(err) => {
             DataContractNotPresentErrorWasm::from(err).into()
@@ -310,11 +305,20 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::IncompatibleDataContractSchemaError(err) => {
             IncompatibleDataContractSchemaErrorWasm::from(err).into()
         }
+        BasicError::DataContractEmptySchemaError(err) => {
+            DataContractEmptySchemaErrorWasm::from(err).into()
+        }
         BasicError::InvalidIdentityKeySignatureError(err) => {
             InvalidIdentityKeySignatureErrorWasm::from(err).into()
         }
         BasicError::InvalidDataContractIdError(err) => {
             InvalidDataContractIdErrorWasm::from(err).into()
+        }
+        BasicError::IdentityCreditTransferToSelfError(err) => {
+            IdentityCreditTransferToSelfErrorWasm::from(err).into()
+        }
+        BasicError::IdentityContractNonceOutOfBoundsError(err) => {
+            IdentityContractNonceOutOfBoundsErrorWasm::from(err).into()
         }
         ProtocolVersionParsingError(e) => ProtocolVersionParsingErrorWasm::from(e).into(),
         SerializedObjectParsingError(e) => SerializedObjectParsingErrorWasm::from(e).into(),
@@ -387,7 +391,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
 }
 
 fn from_signature_error(signature_error: &SignatureError) -> JsValue {
-    match signature_error.deref() {
+    match signature_error {
         SignatureError::MissingPublicKeyError(err) => MissingPublicKeyErrorWasm::from(err).into(),
         SignatureError::InvalidIdentityPublicKeyTypeError(err) => {
             InvalidIdentityPublicKeyTypeErrorWasm::from(err).into()

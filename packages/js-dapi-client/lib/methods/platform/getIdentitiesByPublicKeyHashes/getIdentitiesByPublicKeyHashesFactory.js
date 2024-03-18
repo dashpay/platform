@@ -15,18 +15,20 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 function getIdentitiesByPublicKeyHashesFactory(grpcTransport) {
   /**
    * Fetch the identities by public key hashes
-   *
    * @typedef {getIdentitiesByPublicKeyHashes}
    * @param {Buffer[]} publicKeyHashes
    * @param {DAPIClientOptions & {prove: boolean}} [options]
    * @returns {Promise<GetIdentitiesByPublicKeyHashesResponse>}
    */
   async function getIdentitiesByPublicKeyHashes(publicKeyHashes, options = {}) {
+    const { GetIdentitiesByPublicKeyHashesRequestV0 } = GetIdentitiesByPublicKeyHashesRequest;
     const getIdentitiesByPublicKeyHashesRequest = new GetIdentitiesByPublicKeyHashesRequest();
-    getIdentitiesByPublicKeyHashesRequest.setPublicKeyHashesList(
-      publicKeyHashes,
+    getIdentitiesByPublicKeyHashesRequest.setV0(
+      new GetIdentitiesByPublicKeyHashesRequestV0()
+        .setPublicKeyHashesList(
+          publicKeyHashes,
+        ).setProve(!!options.prove),
     );
-    getIdentitiesByPublicKeyHashesRequest.setProve(!!options.prove);
 
     let lastError;
 

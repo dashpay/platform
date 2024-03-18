@@ -1,3 +1,4 @@
+use crate::prelude::UserFeeIncrease;
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
@@ -46,6 +47,27 @@ impl StateTransitionLike for DataContractUpdateTransition {
     fn owner_id(&self) -> Identifier {
         match self {
             DataContractUpdateTransition::V0(transition) => transition.owner_id(),
+        }
+    }
+
+    fn unique_identifiers(&self) -> Vec<String> {
+        match self {
+            DataContractUpdateTransition::V0(transition) => transition.unique_identifiers(),
+        }
+    }
+
+    /// returns the fee increase multiplier
+    fn user_fee_increase(&self) -> UserFeeIncrease {
+        match self {
+            DataContractUpdateTransition::V0(transition) => transition.user_fee_increase(),
+        }
+    }
+    /// set a fee increase multiplier
+    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
+        match self {
+            DataContractUpdateTransition::V0(transition) => {
+                transition.set_user_fee_increase(user_fee_increase)
+            }
         }
     }
 }

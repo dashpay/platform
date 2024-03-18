@@ -12,6 +12,8 @@ services:
     ports:
       - 127.0.0.1:${DASHMATE_HELPER_API_PORT:?err}:${DASHMATE_HELPER_API_PORT:?err}
     command: yarn workspace dashmate helper ${CONFIG_NAME:?err}
+    expose:
+      - ${DASHMATE_HELPER_API_PORT:?err}
     volumes:
       - ${DASHMATE_HOME_DIR:?err}:/home/dashmate/.dashmate
       - /var/run/docker.sock:/var/run/docker.sock
@@ -22,8 +24,8 @@ services:
       org.dashmate.service.title: "Core"
     restart: unless-stopped
     ports:
-      - ${DOCKER_NETWORK_BIND_IP:?err}:${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err} # P2P
-      - 127.0.0.1:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err} #RPC
+      - ${CORE_P2P_HOST:?err}:${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err} # P2P
+      - ${CORE_RPC_HOST:?err}:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err} #RPC
     volumes:
       - core_data:/home/dash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/core/dash.conf:/home/dash/.dashcore/dash.conf:ro
@@ -46,17 +48,12 @@ services:
     restart: unless-stopped
     volumes:
       - drive_abci_data:/var/lib/dash/rs-drive-abci/db
-      - ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH:?err}:/var/log/dash/drive/pretty
-      - ${PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH:?err}:/var/log/dash/drive/json
     environment:
-      - BLOCK_SPACING_MS=3000 # TODO: sync with tenderdash
-      - CHAIN_ID=devnet # TODO: sync with tenderdash chain id
+      - CHAIN_ID=${PLATFORM_DRIVE_TENDERDASH_GENESIS_CHAIN_ID:-devnet}
       - CORE_JSON_RPC_USERNAME=${CORE_RPC_USER:?err}
       - CORE_JSON_RPC_PASSWORD=${CORE_RPC_PASSWORD:?err}
       - CORE_JSON_RPC_HOST=core
       - CORE_JSON_RPC_PORT=${CORE_RPC_PORT:?err}
-      - CORE_ZMQ_HOST=core
-      - CORE_ZMQ_PORT=29998
       - DPNS_MASTER_PUBLIC_KEY=${PLATFORM_DPNS_MASTER_PUBLIC_KEY}
       - DPNS_SECOND_PUBLIC_KEY=${PLATFORM_DPNS_SECOND_PUBLIC_KEY}
       - DASHPAY_MASTER_PUBLIC_KEY=${PLATFORM_DASHPAY_MASTER_PUBLIC_KEY}
@@ -68,23 +65,30 @@ services:
       - MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY=${PLATFORM_MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY}
       - WITHDRAWALS_MASTER_PUBLIC_KEY=${PLATFORM_WITHDRAWALS_MASTER_PUBLIC_KEY}
       - WITHDRAWALS_SECOND_PUBLIC_KEY=${PLATFORM_WITHDRAWALS_SECOND_PUBLIC_KEY}
-      - QUORUM_SIZE=5 # TODO: sync with Tenderdash
-      - QUORUM_TYPE=${PLATFORM_DRIVE_ABCI_VALIDATOR_SET_LLMQ_TYPE:?err}
-      - NETWORK=${NETWORK:?err}
-      - TENDERDASH_P2P_PORT=${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}
-      - ABCI_LOG_STDOUT_DESTINATION=stdout
-      - ABCI_LOG_STDOUT_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_STDOUT_LEVEL:?err}
-      - ABCI_LOG_STDOUT_FORMAT=pretty
-      - ABCI_LOG_STDOUT_COLOR=true
-      - ABCI_LOG_PRETTY_DESTINATION=/var/log/dash/drive/pretty/${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME:?err}
-      - ABCI_LOG_PRETTY_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_LEVEL:?err}
-      - ABCI_LOG_PRETTY_FORMAT=pretty
-      - ABCI_LOG_JSON_DESTINATION=/var/log/dash/drive/json/${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME:?err}
-      - ABCI_LOG_JSON_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_LEVEL:?err}
-      - ABCI_LOG_JSON_FORMAT=json
+      - VALIDATOR_SET_QUORUM_TYPE=${PLATFORM_DRIVE_ABCI_VALIDATOR_SET_LLMQ_TYPE:?err}
+      - CHAIN_LOCK_QUORUM_TYPE=${PLATFORM_DRIVE_ABCI_CHAIN_LOCK_LLMQ_TYPE:?err}
+      - CHAIN_LOCK_QUORUM_WINDOW=${PLATFORM_DRIVE_ABCI_CHAIN_LOCK_DKG_INTERVAL:?err}
+      - CHAIN_LOCK_QUORUM_SIZE=${PLATFORM_DRIVE_ABCI_CHAIN_LOCK_LLMQ_SIZE:?err}
+      - DB_PATH=/var/lib/dash/rs-drive-abci/db
+      - ABCI_CONSENSUS_BIND_ADDRESS=tcp://0.0.0.0:26658
+      - GRPC_BIND_ADDRESS=0.0.0.0:26670
+      - PROMETHEUS_BIND_ADDRESS=http://0.0.0.0:29090
+      - TOKIO_CONSOLE_ENABLED=${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_ENABLED:?err}
+      - TOKIO_CONSOLE_ADDRESS=0.0.0.0:${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_PORT:?err}
+      - TOKIO_CONSOLE_RETENTION_SECS=${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_RETENTION_SECS:?err}
     stop_grace_period: 30s
+    expose:
+      - 26658
+      - 26659
+      - 26670
+      - 29090
+    env_file:
+      # Logger settings
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/abci/logger.env
     profiles:
       - platform
+    ports:
+      - ${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_HOST:?err}:${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_PORT:?err}:${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_PORT:?err}
 
   drive_tenderdash:
     image: ${PLATFORM_DRIVE_TENDERDASH_DOCKER_IMAGE:?err}
@@ -94,10 +98,10 @@ services:
     depends_on:
       - drive_abci
     ports:
-      - ${DOCKER_NETWORK_BIND_IP:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err} # P2P
-      - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err} # RPC
+      - ${PLATFORM_DRIVE_TENDERDASH_P2P_HOST:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err} # P2P
+      - ${PLATFORM_DRIVE_TENDERDASH_RPC_HOST}:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err} # RPC
       - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_PPROF_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_PPROF_PORT:?err} # pprof
-      - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_METRICS_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_METRICS_PORT:?err} # Metrics
+      - ${PLATFORM_DRIVE_TENDERDASH_METRICS_HOST:?err}:${PLATFORM_DRIVE_TENDERDASH_METRICS_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_METRICS_PORT:?err} # Metrics
     volumes:
       - drive_tenderdash:/tenderdash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/tenderdash:/tenderdash/config:ro
@@ -111,6 +115,9 @@ services:
     labels:
       org.dashmate.service.title: "DAPI API"
     restart: unless-stopped
+    deploy:
+      mode: replicated
+      replicas: ${PLATFORM_DAPI_API_DOCKER_DEPLOY_REPLICAS:-1}
     depends_on:
       - drive_tenderdash
     environment:
@@ -129,16 +136,24 @@ services:
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}
       - NODE_ENV=${ENVIRONMENT:?err}
-    command: yarn workspace @dashevo/dapi api
+      - DRIVE_RPC_HOST=drive_abci
+      - DRIVE_RPC_PORT=26670
+    command: yarn run api
     stop_grace_period: 10s
     profiles:
       - platform
+    expose:
+      - 3004
+      - 3005
 
   dapi_tx_filter_stream:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "DAPI Transactions Filter Stream"
     restart: unless-stopped
+    deploy:
+      mode: replicated
+      replicas: ${PLATFORM_DAPI_API_DOCKER_DEPLOY_REPLICAS:-1}
     environment:
       - TX_FILTER_STREAM_GRPC_PORT=3006
       - DASHCORE_RPC_HOST=core
@@ -153,10 +168,14 @@ services:
       - NETWORK=devnet
       - TENDERMINT_RPC_HOST=drive_tenderdash
       - TENDERMINT_RPC_PORT=26657
-    command: yarn workspace @dashevo/dapi core-streams
+      - DRIVE_RPC_HOST=drive_abci
+      - DRIVE_RPC_PORT=26670
+    command: yarn run core-streams
     stop_grace_period: 10s
     profiles:
       - platform
+    expose:
+      - 3006
 
   dapi_envoy:
     image: ${PLATFORM_DAPI_ENVOY_DOCKER_IMAGE:?err}
@@ -164,7 +183,7 @@ services:
       org.dashmate.service.title: "DAPI Envoy"
     restart: unless-stopped
     ports:
-      - ${DOCKER_NETWORK_BIND_IP:?err}:${PLATFORM_DAPI_ENVOY_HTTP_PORT:?err}:10000 # JSON RPC and gRPC Web & Native
+      - ${PLATFORM_DAPI_ENVOY_HTTP_HOST:?err}:${PLATFORM_DAPI_ENVOY_HTTP_PORT:?err}:10000 # JSON RPC and gRPC Web & Native
     depends_on:
       - dapi_api
       - dapi_tx_filter_stream
@@ -173,8 +192,8 @@ services:
       - ENVOY_GID=${LOCAL_GID:?err}
     volumes:
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
-      - ${DASHMATE_HOME_DIR:?err}/ssl/${CONFIG_NAME:?err}/bundle.crt:/etc/ssl/bundle.crt:ro
-      - ${DASHMATE_HOME_DIR:?err}/ssl/${CONFIG_NAME:?err}/private.key:/etc/ssl/private.key:ro
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/ssl/bundle.crt:/etc/ssl/bundle.crt:ro
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/ssl/private.key:/etc/ssl/private.key:ro
     stop_grace_period: 10s
     profiles:
       - platform

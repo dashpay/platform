@@ -3,15 +3,16 @@
  * @param {boolean} isHelper
  * @return {getConnectionHost}
  */
-function getConnectionHostFactory(dockerCompose, isHelper) {
+export default function getConnectionHostFactory(dockerCompose, isHelper) {
   /**
    * Get proper service endpoint url
    * @typedef {function} getConnectionHost
    * @param {Config} config
    * @param {string} serviceName
+   * @param {string} hostConfigurationPath
    * @return {Promise<string>}
    */
-  async function getConnectionHost(config, serviceName) {
+  async function getConnectionHost(config, serviceName, hostConfigurationPath) {
     if (isHelper) {
       const containerInfo = await dockerCompose.inspectService(config, serviceName);
 
@@ -21,10 +22,8 @@ function getConnectionHostFactory(dockerCompose, isHelper) {
       return containerIP;
     }
 
-    return '127.0.0.1';
+    return config.get(hostConfigurationPath);
   }
 
   return getConnectionHost;
 }
-
-module.exports = getConnectionHostFactory;

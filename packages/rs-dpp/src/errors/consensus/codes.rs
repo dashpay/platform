@@ -1,6 +1,7 @@
 use crate::consensus::signature::SignatureError;
 #[cfg(feature = "state-transition-validation")]
 use crate::consensus::state::data_trigger::DataTriggerError;
+use crate::data_contract::errors::DataContractError;
 
 use crate::errors::consensus::{
     basic::BasicError, fee::fee_error::FeeError, state::state_error::StateError, ConsensusError,
@@ -59,10 +60,35 @@ impl ErrorWithCode for BasicError {
             Self::DuplicateIndexNameError { .. } => 1048,
             Self::InvalidDataContractVersionError { .. } => 1050,
             Self::IncompatibleDataContractSchemaError { .. } => 1051,
+            Self::DataContractEmptySchemaError { .. } => 1069,
             Self::DataContractImmutablePropertiesUpdateError { .. } => 1052,
             Self::DataContractUniqueIndicesChangedError { .. } => 1053,
             Self::DataContractInvalidIndexDefinitionUpdateError { .. } => 1054,
             Self::DataContractHaveNewUniqueIndexError { .. } => 1055,
+            Self::InvalidDocumentTypeRequiredSecurityLevelError { .. } => 1071,
+            Self::UnknownSecurityLevelError { .. } => 1072,
+            Self::UnknownStorageKeyRequirementsError { .. } => 1073,
+            Self::ContractError(DataContractError::DecodingContractError { .. }) => 1074,
+            Self::ContractError(DataContractError::DecodingDocumentError { .. }) => 1076,
+            Self::ContractError(DataContractError::InvalidDocumentTypeError { .. }) => 1077,
+            Self::ContractError(DataContractError::MissingRequiredKey(_)) => 1078,
+            Self::ContractError(DataContractError::FieldRequirementUnmet(_)) => 1079,
+            Self::ContractError(DataContractError::KeyWrongType(_)) => 1080,
+            Self::ContractError(DataContractError::ValueWrongType(_)) => 1081,
+            Self::ContractError(DataContractError::ValueDecodingError(_)) => 1082,
+            Self::ContractError(DataContractError::EncodingDataStructureNotSupported(_)) => 1083,
+            Self::ContractError(DataContractError::InvalidContractStructure(_)) => 1084,
+            Self::ContractError(DataContractError::DocumentTypeNotFound(_)) => 1085,
+            Self::ContractError(DataContractError::DocumentTypeFieldNotFound(_)) => 1086,
+            Self::ContractError(DataContractError::ReferenceDefinitionNotFound(_)) => 1087,
+            Self::ContractError(DataContractError::DocumentOwnerIdMissing(_)) => 1088,
+            Self::ContractError(DataContractError::DocumentIdMissing(_)) => 1089,
+            Self::ContractError(DataContractError::Unsupported(_)) => 1090,
+            Self::ContractError(DataContractError::CorruptedSerialization(_)) => 1091,
+            Self::ContractError(DataContractError::JsonSchema(_)) => 1092,
+            Self::ContractError(DataContractError::InvalidURI(_)) => 1093,
+            Self::ContractError(DataContractError::KeyWrongBounds(_)) => 1094,
+            Self::ContractError(DataContractError::KeyValueMustExist(_)) => 1095,
 
             // Document
             Self::DataContractNotPresentError { .. } => 1018,
@@ -76,7 +102,10 @@ impl ErrorWithCode for BasicError {
             Self::MissingDocumentTransitionActionError { .. } => 1026,
             Self::MissingDocumentTransitionTypeError { .. } => 1027,
             Self::MissingDocumentTypeError { .. } => 1028,
+            Self::MissingPositionsInDocumentTypePropertiesError { .. } => 1067,
             Self::MaxDocumentsTransitionsExceededError { .. } => 1065,
+            Self::DocumentTransitionsAreAbsentError { .. } => 1068,
+            Self::IdentityContractNonceOutOfBoundsError(_) => 1069,
 
             // Identity
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 1029,
@@ -95,6 +124,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidInstantAssetLockProofSignatureError(_) => 1042,
             Self::InvalidIdentityAssetLockProofChainLockValidationError(_) => 1043,
             Self::DataContractBoundsNotPresentError(_) => 1066,
+            Self::DisablingKeyIdAlsoBeingAddedInSameTransitionError(_) => 1096,
 
             Self::MissingMasterPublicKeyError(_) => 1046,
             Self::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
@@ -106,6 +136,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidIdentityCreditWithdrawalTransitionAmountError(_) => 1062,
             Self::InvalidIdentityUpdateTransitionEmptyError(_) => 1063,
             Self::InvalidIdentityUpdateTransitionDisableKeysError(_) => 1064,
+            Self::IdentityCreditTransferToSelfError(_) => 1070,
 
             // State Transition
             Self::InvalidStateTransitionTypeError { .. } => 1043,
@@ -147,7 +178,7 @@ impl ErrorWithCode for StateError {
             // Data contract
             Self::DataContractAlreadyPresentError { .. } => 4000,
             Self::DataContractIsReadonlyError { .. } => 4026,
-            #[cfg(feature = "validation")]
+            #[cfg(feature = "state-transition-validation")]
             Self::DataTriggerError(ref e) => e.code(),
             Self::DataContractConfigUpdateError { .. } => 4027,
 
@@ -159,21 +190,23 @@ impl ErrorWithCode for StateError {
             Self::DocumentTimestampWindowViolationError { .. } => 4008,
             Self::DuplicateUniqueIndexError { .. } => 4009,
             Self::InvalidDocumentRevisionError { .. } => 4010,
-            Self::DocumentTimestampsAreEqualError(_) => 4025,
+            Self::DocumentTimestampsAreEqualError(_) => 4031,
 
             // Identity
             Self::IdentityAlreadyExistsError(_) => 4011,
-            Self::IdentityPublicKeyDisabledAtWindowViolationError { .. } => 4012,
             Self::IdentityPublicKeyIsReadOnlyError { .. } => 4017,
             Self::InvalidIdentityPublicKeyIdError { .. } => 4018,
             Self::InvalidIdentityRevisionError { .. } => 4019,
-            Self::MaxIdentityPublicKeyLimitReachedError { .. } => 4020,
-            Self::DuplicatedIdentityPublicKeyStateError { .. } => 4021,
-            Self::DuplicatedIdentityPublicKeyIdStateError { .. } => 4022,
-            Self::IdentityPublicKeyIsDisabledError { .. } => 4023,
-            Self::MissingIdentityPublicKeyIdsError { .. } => 4024,
+            Self::InvalidIdentityNonceError(_) => 4020,
+            Self::MaxIdentityPublicKeyLimitReachedError { .. } => 4021,
+            Self::DuplicatedIdentityPublicKeyStateError { .. } => 4022,
+            Self::DuplicatedIdentityPublicKeyIdStateError { .. } => 4023,
+            Self::IdentityPublicKeyIsDisabledError { .. } => 4024,
+            Self::MissingIdentityPublicKeyIdsError { .. } => 4025,
             Self::IdentityInsufficientBalanceError(_) => 4026,
-            Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 4027,
+            Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 4028,
+            Self::InvalidAssetLockProofValueError(_) => 4029,
+            Self::DocumentTypeUpdateError(_) => 4030,
         }
     }
 }

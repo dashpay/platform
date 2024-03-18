@@ -17,7 +17,8 @@ impl Drive {
     /// # Parameters
     /// - `identity_queries`: A list of [IdentityDriveQuery]. These specify the identities
     ///   to be proven.
-    /// - `contract_ids`: A list of Data Contract IDs to prove
+    /// - `contract_ids`: A list of Data Contract IDs to prove with an associated bool to represent
+    ///   if the contract is historical.
     /// - `document_queries`: A list of [SingleDocumentDriveQuery]. These specify the documents
     ///   to be proven.
     /// - `transaction`: An optional grovedb transaction
@@ -29,9 +30,9 @@ impl Drive {
     /// or an `Error` if the function fails.
     pub fn prove_multiple(
         &self,
-        identity_queries: &Vec<IdentityDriveQuery>,
-        contract_ids: &[[u8; 32]],
-        document_queries: &Vec<SingleDocumentDriveQuery>,
+        identity_queries: &[IdentityDriveQuery],
+        contract_ids: &[([u8; 32], Option<bool>)], //bool represents if it is historical
+        document_queries: &[SingleDocumentDriveQuery],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {

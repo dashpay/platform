@@ -3,28 +3,28 @@ pub mod v0;
 
 use crate::error::Error;
 use crate::platform_types::platform_state::v0::{
-    PlatformInitializationState, PlatformStateForSavingV0, PlatformStateV0, PlatformStateV0Methods,
+    PlatformStateForSavingV0, PlatformStateV0, PlatformStateV0Methods,
 };
 
 use crate::platform_types::validator_set::ValidatorSet;
-use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, MasternodeListItem, QuorumType};
+use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use derive_more::From;
 use dpp::bincode::{config, Decode, Encode};
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::dashcore::{ProTxHash, QuorumHash};
-use dpp::serialization::{
-    PlatformDeserializable, PlatformDeserializableFromVersionedStructure, PlatformSerializable,
-};
+use dpp::serialization::{PlatformDeserializableFromVersionedStructure, PlatformSerializable};
 use dpp::util::deserializer::ProtocolVersion;
 
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use dpp::ProtocolError;
-use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use indexmap::IndexMap;
 
 use crate::error::execution::ExecutionError;
-use std::collections::{BTreeMap, HashMap};
+use dpp::block::block_info::BlockInfo;
+use dpp::bls_signatures::PublicKey as ThresholdBlsPublicKey;
+use dpp::util::hash::hash_double;
+use std::collections::BTreeMap;
 
 /// Platform state
 #[derive(Clone, Debug, From)]
@@ -35,12 +35,21 @@ pub enum PlatformState {
 
 /// Platform state
 #[derive(Clone, Debug, Encode, Decode, From)]
-enum PlatformStateForSaving {
+pub enum PlatformStateForSaving {
     /// Version 0
     V0(PlatformStateForSavingV0),
 }
 
 impl PlatformStateForSaving {
+    /// Retrieves the current protocol version used in consensus.
+    ///
+    /// Matches against `PlatformStateForSaving` variants to extract the protocol version.
+    ///
+    /// # Returns
+    /// A `ProtocolVersion` indicating the current consensus protocol version.
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     pub fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
         match self {
             PlatformStateForSaving::V0(v0) => v0.current_protocol_version_in_consensus,
@@ -57,31 +66,12 @@ impl PlatformSerializable for PlatformState {
         let platform_state_for_saving: PlatformStateForSaving =
             self.clone().try_into_platform_versioned(platform_version)?;
         bincode::encode_to_vec(platform_state_for_saving, config).map_err(|e| {
-            PlatformSerializationError(format!("unable to serialize PlatformState: {}", e)).into()
+            ProtocolError::PlatformSerializationError(format!(
+                "unable to serialize PlatformState: {}",
+                e
+            ))
+            .into()
         })
-    }
-}
-
-// The version we should deserialize this into is determined by the actual saved state
-impl PlatformDeserializable for PlatformState {
-    fn deserialize_from_bytes_no_limit(data: &[u8]) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        let config = config::standard().with_big_endian().with_no_limit();
-        let platform_state_in_save_format: PlatformStateForSaving =
-            bincode::decode_from_slice(data, config)
-                .map_err(|e| {
-                    PlatformDeserializationError(format!(
-                        "unable to deserialize PlatformStateForSaving: {}",
-                        e
-                    ))
-                })?
-                .0;
-        let platform_version = PlatformVersion::get(
-            platform_state_in_save_format.current_protocol_version_in_consensus(),
-        )?;
-        platform_state_in_save_format.try_into_platform_versioned(platform_version)
     }
 }
 
@@ -97,17 +87,27 @@ impl PlatformDeserializableFromVersionedStructure for PlatformState {
         let platform_state_in_save_format: PlatformStateForSaving =
             bincode::decode_from_slice(data, config)
                 .map_err(|e| {
-                    PlatformDeserializationError(format!(
+                    ProtocolError::PlatformDeserializationError(format!(
                         "unable to deserialize PlatformStateForSaving: {}",
                         e
                     ))
                 })?
                 .0;
-        platform_state_in_save_format.try_into_platform_versioned(platform_version)
+
+        platform_state_in_save_format
+            .try_into_platform_versioned(platform_version)
+            .map_err(|e: Error| ProtocolError::Generic(e.to_string()))
     }
 }
 
 impl PlatformState {
+    /// Get the state fingerprint
+    pub fn fingerprint(&self) -> [u8; 32] {
+        hash_double(
+            self.serialize_to_bytes()
+                .expect("expected to serialize state"),
+        )
+    }
     /// Get the current platform version
     pub fn current_platform_version(&self) -> Result<&'static PlatformVersion, Error> {
         Ok(PlatformVersion::get(
@@ -174,7 +174,7 @@ impl TryFromPlatformVersioned<PlatformState> for PlatformStateForSaving {
 }
 
 impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
-    type Error = ProtocolError;
+    type Error = Error;
 
     fn try_from_platform_versioned(
         value: PlatformStateForSaving,
@@ -184,16 +184,17 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
             PlatformStateForSaving::V0(v0) => {
                 match platform_version.drive_abci.structs.platform_state_structure {
                     0 => {
-                        let platform_state_v0: PlatformStateV0 = v0.into();
+                        let platform_state_v0 = PlatformStateV0::from(v0);
+
                         Ok(platform_state_v0.into())
                     }
-                    version => Err(ProtocolError::UnknownVersionMismatch {
+                    version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                         method:
                             "PlatformState::try_from_platform_versioned(PlatformStateForSaving)"
                                 .to_string(),
                         known_versions: vec![0],
                         received: version,
-                    }),
+                    })),
                 }
             }
         }
@@ -201,75 +202,63 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
 }
 
 impl PlatformStateV0Methods for PlatformState {
-    fn height(&self) -> u64 {
+    fn last_committed_known_block_height_or(&self, default: u64) -> u64 {
         match self {
-            PlatformState::V0(v0) => v0.height(),
+            PlatformState::V0(v0) => v0.last_committed_known_block_height_or(default),
         }
     }
 
-    fn known_height_or(&self, default: u64) -> u64 {
+    fn last_committed_core_height(&self) -> u32 {
         match self {
-            PlatformState::V0(v0) => v0.known_height_or(default),
+            PlatformState::V0(v0) => v0.last_committed_core_height(),
         }
     }
 
-    fn core_height(&self) -> u32 {
+    fn last_committed_known_core_height_or(&self, default: u32) -> u32 {
         match self {
-            PlatformState::V0(v0) => v0.core_height(),
+            PlatformState::V0(v0) => v0.last_committed_known_core_height_or(default),
         }
     }
 
-    fn known_core_height_or(&self, default: u32) -> u32 {
+    fn last_committed_block_time_ms(&self) -> Option<u64> {
         match self {
-            PlatformState::V0(v0) => v0.known_core_height_or(default),
+            PlatformState::V0(v0) => v0.last_committed_block_time_ms(),
         }
     }
 
-    fn last_block_time_ms(&self) -> Option<u64> {
+    fn last_committed_quorum_hash(&self) -> [u8; 32] {
         match self {
-            PlatformState::V0(v0) => v0.last_block_time_ms(),
+            PlatformState::V0(v0) => v0.last_committed_quorum_hash(),
         }
     }
 
-    fn last_quorum_hash(&self) -> [u8; 32] {
+    fn last_committed_block_signature(&self) -> [u8; 96] {
         match self {
-            PlatformState::V0(v0) => v0.last_quorum_hash(),
+            PlatformState::V0(v0) => v0.last_committed_block_signature(),
         }
     }
 
-    fn last_block_signature(&self) -> [u8; 96] {
+    fn last_committed_block_app_hash(&self) -> Option<[u8; 32]> {
         match self {
-            PlatformState::V0(v0) => v0.last_block_signature(),
+            PlatformState::V0(v0) => v0.last_committed_block_app_hash(),
         }
     }
 
-    fn last_block_app_hash(&self) -> Option<[u8; 32]> {
+    fn last_committed_block_height(&self) -> u64 {
         match self {
-            PlatformState::V0(v0) => v0.last_block_app_hash(),
+            PlatformState::V0(v0) => v0.last_committed_block_height(),
         }
     }
 
-    fn last_block_height(&self) -> u64 {
+    fn last_committed_block_round(&self) -> u32 {
         match self {
-            PlatformState::V0(v0) => v0.last_block_height(),
+            PlatformState::V0(v0) => v0.last_committed_block_round(),
         }
     }
 
-    fn last_block_round(&self) -> u32 {
+    fn last_committed_block_epoch(&self) -> Epoch {
         match self {
-            PlatformState::V0(v0) => v0.last_block_round(),
-        }
-    }
-
-    fn epoch(&self) -> Epoch {
-        match self {
-            PlatformState::V0(v0) => v0.epoch(),
-        }
-    }
-
-    fn epoch_ref(&self) -> &Epoch {
-        match self {
-            PlatformState::V0(v0) => v0.epoch_ref(),
+            PlatformState::V0(v0) => v0.last_committed_block_epoch(),
         }
     }
 
@@ -285,29 +274,21 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
-        match self {
-            PlatformState::V0(v0) => v0.current_protocol_version_in_consensus(),
-        }
-    }
-
     fn last_committed_block_info(&self) -> &Option<ExtendedBlockInfo> {
         match self {
             PlatformState::V0(v0) => &v0.last_committed_block_info,
         }
     }
 
-    fn next_epoch_protocol_version(&self) -> ProtocolVersion {
+    fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
         match self {
-            PlatformState::V0(v0) => v0.next_epoch_protocol_version,
+            PlatformState::V0(v0) => v0.current_protocol_version_in_consensus(),
         }
     }
 
-    fn quorums_extended_info(
-        &self,
-    ) -> &BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>> {
+    fn next_epoch_protocol_version(&self) -> ProtocolVersion {
         match self {
-            PlatformState::V0(v0) => &v0.quorums_extended_info,
+            PlatformState::V0(v0) => v0.next_epoch_protocol_version,
         }
     }
 
@@ -323,9 +304,21 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
+    fn take_next_validator_set_quorum_hash(&mut self) -> Option<QuorumHash> {
+        match self {
+            PlatformState::V0(v0) => v0.take_next_validator_set_quorum_hash(),
+        }
+    }
+
     fn validator_sets(&self) -> &IndexMap<QuorumHash, ValidatorSet> {
         match self {
             PlatformState::V0(v0) => &v0.validator_sets,
+        }
+    }
+
+    fn chain_lock_validating_quorums(&self) -> &BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
+        match self {
+            PlatformState::V0(v0) => &v0.chain_lock_validating_quorums,
         }
     }
 
@@ -341,9 +334,15 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn initialization_information(&self) -> &Option<PlatformInitializationState> {
+    fn genesis_block_info(&self) -> Option<&BlockInfo> {
         match self {
-            PlatformState::V0(v0) => &v0.initialization_information,
+            PlatformState::V0(v0) => v0.genesis_block_info.as_ref(),
+        }
+    }
+
+    fn last_block_info(&self) -> &BlockInfo {
+        match self {
+            PlatformState::V0(v0) => v0.last_block_info(),
         }
     }
 
@@ -365,15 +364,6 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn set_quorums_extended_info(
-        &mut self,
-        info: BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>>,
-    ) {
-        match self {
-            PlatformState::V0(v0) => v0.set_quorums_extended_info(info),
-        }
-    }
-
     fn set_current_validator_set_quorum_hash(&mut self, hash: QuorumHash) {
         match self {
             PlatformState::V0(v0) => v0.set_current_validator_set_quorum_hash(hash),
@@ -392,6 +382,41 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
+    fn set_chain_lock_validating_quorums(
+        &mut self,
+        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    ) {
+        match self {
+            PlatformState::V0(v0) => v0.set_chain_lock_validating_quorums(quorums),
+        }
+    }
+
+    fn replace_chain_lock_validating_quorums(
+        &mut self,
+        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    ) -> BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
+        match self {
+            PlatformState::V0(v0) => v0.replace_chain_lock_validating_quorums(quorums),
+        }
+    }
+
+    fn set_previous_chain_lock_validating_quorums(
+        &mut self,
+        previous_core_height: u32,
+        change_core_height: u32,
+        previous_quorums_change_height: Option<u32>,
+        quorums: BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    ) {
+        match self {
+            PlatformState::V0(v0) => v0.set_previous_chain_lock_validating_quorums(
+                previous_core_height,
+                change_core_height,
+                previous_quorums_change_height,
+                quorums,
+            ),
+        }
+    }
+
     fn set_full_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>) {
         match self {
             PlatformState::V0(v0) => v0.set_full_masternode_list(list),
@@ -404,9 +429,9 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn set_initialization_information(&mut self, info: Option<PlatformInitializationState>) {
+    fn set_genesis_block_info(&mut self, info: Option<BlockInfo>) {
         match self {
-            PlatformState::V0(v0) => v0.set_initialization_information(info),
+            PlatformState::V0(v0) => v0.set_genesis_block_info(info),
         }
     }
 
@@ -428,14 +453,6 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn quorums_extended_info_mut(
-        &mut self,
-    ) -> &mut BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>> {
-        match self {
-            PlatformState::V0(v0) => v0.quorums_extended_info_mut(),
-        }
-    }
-
     fn current_validator_set_quorum_hash_mut(&mut self) -> &mut QuorumHash {
         match self {
             PlatformState::V0(v0) => v0.current_validator_set_quorum_hash_mut(),
@@ -454,6 +471,40 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
+    fn chain_lock_validating_quorums_mut(
+        &mut self,
+    ) -> &mut BTreeMap<QuorumHash, ThresholdBlsPublicKey> {
+        match self {
+            PlatformState::V0(v0) => v0.chain_lock_validating_quorums_mut(),
+        }
+    }
+
+    fn previous_height_chain_lock_validating_quorums(
+        &self,
+    ) -> Option<&(
+        u32,
+        u32,
+        Option<u32>,
+        BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    )> {
+        match self {
+            PlatformState::V0(v0) => v0.previous_height_chain_lock_validating_quorums(),
+        }
+    }
+
+    fn previous_height_chain_lock_validating_quorums_mut(
+        &mut self,
+    ) -> &mut Option<(
+        u32,
+        u32,
+        Option<u32>,
+        BTreeMap<QuorumHash, ThresholdBlsPublicKey>,
+    )> {
+        match self {
+            PlatformState::V0(v0) => v0.previous_height_chain_lock_validating_quorums_mut(),
+        }
+    }
+
     fn full_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem> {
         match self {
             PlatformState::V0(v0) => v0.full_masternode_list_mut(),
@@ -466,21 +517,15 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn initialization_information_mut(&mut self) -> &mut Option<PlatformInitializationState> {
+    fn last_committed_block_epoch_ref(&self) -> &Epoch {
         match self {
-            PlatformState::V0(v0) => v0.initialization_information_mut(),
+            PlatformState::V0(v0) => v0.last_committed_block_epoch_ref(),
         }
     }
 
-    fn take_next_validator_set_quorum_hash(&mut self) -> Option<QuorumHash> {
+    fn last_committed_block_id_hash(&self) -> [u8; 32] {
         match self {
-            PlatformState::V0(v0) => v0.take_next_validator_set_quorum_hash(),
-        }
-    }
-
-    fn last_block_id_hash(&self) -> [u8; 32] {
-        match self {
-            PlatformState::V0(v0) => v0.last_block_id_hash(),
+            PlatformState::V0(v0) => v0.last_committed_block_id_hash(),
         }
     }
 }

@@ -32,15 +32,18 @@
                 "avatarUrl": {
                     "type": "string",
                     "format": "uri",
-                    "maxLength": 2048
+                    "maxLength": 2048,
+                    "position": 0
                 },
                 "publicMessage": {
                     "type": "string",
-                    "maxLength": 140
+                    "maxLength": 140,
+                    "position": 1
                 },
                 "displayName": {
                     "type": "string",
-                    "maxLength": 25
+                    "maxLength": 25,
+                    "position": 2
                 }
             },
             "required": [
@@ -77,27 +80,33 @@
                 "avatarUrl": {
                     "type": "string",
                     "format": "uri",
-                    "maxLength": 2048
+                    "maxLength": 2048,
+                    "position": 0
                 },
                 "publicMessage": {
                     "type": "string",
-                    "maxLength": 140
+                    "maxLength": 140,
+                    "position": 1
                 },
                 "displayName": {
                     "type": "string",
-                    "maxLength": 25
+                    "maxLength": 25,
+                    "position": 2
                 },
                 "address": {
                     "type": "string",
-                    "maxLength": 25
+                    "maxLength": 25,
+                    "position": 3
                 },
                 "favoriteSong": {
                     "type": "string",
-                    "maxLength": 40
+                    "maxLength": 40,
+                    "position": 4
                 },
                 "country": {
                     "type": "string",
-                    "maxLength": 40
+                    "maxLength": 40,
+                    "position": 5
                 }
             },
             "required": [
@@ -141,19 +150,23 @@
                     "type": "array",
                     "byteArray": true,
                     "minItems": 32,
-                    "maxItems": 32
+                    "maxItems": 32,
+                    "position": 0
                 },
                 "rootEncryptionKeyIndex": {
-                    "type": "integer"
+                    "type": "integer",
+                    "position": 1
                 },
                 "derivationEncryptionKeyIndex": {
-                    "type": "integer"
+                    "type": "integer",
+                    "position": 2
                 },
                 "privateData": {
                     "type": "array",
                     "byteArray": true,
                     "minItems": 48,
                     "maxItems": 2048,
+                    "position": 3,
                     "description": "This is the encrypted values of aliasName + note + displayHidden encoded as an array in cbor"
                 }
             },
@@ -226,31 +239,38 @@
                     "type": "array",
                     "byteArray": true,
                     "minItems": 32,
-                    "maxItems": 32
+                    "maxItems": 32,
+                    "position": 0
                 },
                 "encryptedPublicKey": {
                     "type": "array",
                     "byteArray": true,
                     "minItems": 96,
-                    "maxItems": 96
+                    "maxItems": 96,
+                    "position": 1
                 },
                 "senderKeyIndex": {
-                    "type": "integer"
-                },
-                "senderAdditionalInfo": {
-                    "type": "integer"
+                    "type": "integer",
+                    "position": 2
                 },
                 "recipientKeyIndex": {
-                    "type": "integer"
+                    "type": "integer",
+                    "position": 3
                 },
                 "accountReference": {
-                    "type": "integer"
+                    "type": "integer",
+                    "position": 4
                 },
                 "encryptedAccountLabel": {
                     "type": "array",
                     "byteArray": true,
                     "minItems": 48,
-                    "maxItems": 80
+                    "maxItems": 80,
+                    "position": 5
+                },
+                "senderAdditionalInfo": {
+                    "type": "integer",
+                    "position": 6
                 }
             },
             "required": [

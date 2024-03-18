@@ -36,29 +36,21 @@
 // This module contains functionality for adding operations to update multiple documents
 #[cfg(feature = "full")]
 mod add_update_multiple_documents_operations;
-#[cfg(feature = "full")]
-pub use add_update_multiple_documents_operations::*;
 
 // Module: update_document_for_contract
 // This module contains functionality for updating a document for a given contract
 #[cfg(feature = "full")]
 mod update_document_for_contract;
-#[cfg(feature = "full")]
-pub use update_document_for_contract::*;
 
 // Module: update_document_for_contract_id
 // This module contains functionality for updating a document associated with a given contract id
 #[cfg(feature = "full")]
 mod update_document_for_contract_id;
-#[cfg(feature = "full")]
-pub use update_document_for_contract_id::*;
 
 // Module: update_document_with_serialization_for_contract
 // This module contains functionality for updating a document (with serialization) for a contract
 mod internal;
 mod update_document_with_serialization_for_contract;
-
-pub use update_document_with_serialization_for_contract::*;
 
 #[cfg(test)]
 mod tests {
@@ -77,7 +69,6 @@ mod tests {
     use rand::{random, Rng};
     use serde::{Deserialize, Serialize};
     use serde_json::json;
-    use tempfile::TempDir;
 
     use crate::drive::config::DriveConfig;
     use crate::drive::flags::StorageFlags;
@@ -85,9 +76,10 @@ mod tests {
     use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::drive::Drive;
 
+    use crate::common::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
     use crate::query::DriveQuery;
-    use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
+    use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
@@ -118,6 +110,8 @@ mod tests {
             .create_document_from_data(
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
+                random(),
+                random(),
                 random(),
                 platform_version,
             )
@@ -193,6 +187,8 @@ mod tests {
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
                 random(),
+                random(),
+                random(),
                 platform_version,
             )
             .expect("should create document");
@@ -227,7 +223,7 @@ mod tests {
         // Check Alice profile
 
         let sql_string = "select * from profile";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
@@ -287,6 +283,8 @@ mod tests {
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
                 random(),
+                random(),
+                random(),
                 platform_version,
             )
             .expect("should create document");
@@ -327,7 +325,7 @@ mod tests {
         // Check Alice profile
 
         let sql_string = "select * from profile";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
@@ -395,6 +393,8 @@ mod tests {
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
                 random(),
+                random(),
+                random(),
                 platform_version,
             )
             .expect("should create document");
@@ -435,7 +435,7 @@ mod tests {
         // Check Alice profile
 
         let sql_string = "select * from profile";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
@@ -527,13 +527,9 @@ mod tests {
 
     #[test]
     fn test_create_update_and_delete_document() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-        let _db_transaction = drive.grove.start_transaction();
+        let drive = setup_drive_with_initial_state_structure();
+
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("should create root tree");
 
         let contract = platform_value!({
             "$format_version": "0",
@@ -556,10 +552,12 @@ mod tests {
                         "firstName": {
                             "type": "string",
                             "maxLength": 63,
+                            "position": 0,
                         },
                         "lastName": {
                             "type": "string",
                             "maxLength": 63,
+                            "position": 1,
                         }
                     },
                     "required": ["firstName", "$createdAt", "$updatedAt", "lastName"],
@@ -685,15 +683,11 @@ mod tests {
 
     #[test]
     fn test_modify_dashpay_contact_request() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -775,15 +769,11 @@ mod tests {
 
     #[test]
     fn test_update_dashpay_profile_with_history() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -857,11 +847,10 @@ mod tests {
             default_genesis_time: Some(0),
             ..Default::default()
         };
-        let tmp_dir = TempDir::new().unwrap();
+
         let platform_version = PlatformVersion::latest();
 
-        let drive: Drive =
-            Drive::open(&tmp_dir, Some(config)).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive(Some(config));
 
         let transaction = if using_transaction {
             Some(drive.grove.start_transaction())
@@ -917,7 +906,7 @@ mod tests {
             .serialize_consume(document_type, platform_version)
             .expect("expected to serialize document");
 
-        assert_eq!(document_serialized.len(), 120);
+        assert_eq!(document_serialized.len(), 119);
         let original_fees = apply_person(
             &drive,
             &contract,
@@ -932,10 +921,10 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
-            //Explanation for 1236
+            //Explanation for 1237
 
             //todo
-            1238
+            1237
         } else {
             //Explanation for 959
 
@@ -951,13 +940,13 @@ mod tests {
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 224
+            // Value -> 223
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   118 for item serialized bytes (verified above)
+            //   117 for item serialized bytes (verified above)
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -1070,7 +1059,7 @@ mod tests {
 
             //// 359 + 179 + 145 + 278
 
-            962
+            961
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1093,14 +1082,14 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 25940733);
+            assert_eq!(*removed_credits, 25913567);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 960); // we refunded 960 instead of 962
+            assert_eq!(refund_equivalent_bytes, 959); // we refunded 959 instead of 962
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1138,7 +1127,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        let expected_added_bytes = if using_history { 313 } else { 1 };
+        let expected_added_bytes = if using_history { 312 } else { 1 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
@@ -1149,12 +1138,10 @@ mod tests {
             default_genesis_time: Some(0),
             ..Default::default()
         };
-        let tmp_dir = TempDir::new().unwrap();
 
         let platform_version = PlatformVersion::latest();
 
-        let drive: Drive =
-            Drive::open(&tmp_dir, Some(config)).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive(Some(config));
 
         let transaction = if using_transaction {
             Some(drive.grove.start_transaction())
@@ -1210,7 +1197,7 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        let expected_added_bytes = if using_history { 1238 } else { 962 };
+        let expected_added_bytes = if using_history { 1237 } else { 961 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
             // let's delete it, just to make sure everything is working.
@@ -1230,14 +1217,14 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 25940733);
+            assert_eq!(*removed_credits, 25913567);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 960); // we refunded 960 instead of 1011
+            assert_eq!(refund_equivalent_bytes, 959); // we refunded 959 instead of 1011
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1345,12 +1332,10 @@ mod tests {
             default_genesis_time: Some(0),
             ..Default::default()
         };
-        let tmp_dir = TempDir::new().unwrap();
 
         let platform_version = PlatformVersion::latest();
 
-        let drive: Drive =
-            Drive::open(&tmp_dir, Some(config)).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive(Some(config));
 
         let transaction = if using_transaction {
             Some(drive.grove.start_transaction())
@@ -1407,10 +1392,10 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
-            //Explanation for 1238
+            //Explanation for 1237
 
             //todo
-            1238
+            1237
         } else {
             //Explanation for 959
 
@@ -1432,7 +1417,7 @@ mod tests {
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   117 for item serialized bytes
+            //   116 for item serialized bytes
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -1545,7 +1530,7 @@ mod tests {
 
             // 360 + 179 + 145 + 278 = 960
 
-            962
+            961
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1566,7 +1551,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        let expected_added_bytes = if using_history { 1239 } else { 963 };
+        let expected_added_bytes = if using_history { 1238 } else { 962 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
@@ -1678,12 +1663,10 @@ mod tests {
             default_genesis_time: Some(0),
             ..Default::default()
         };
-        let tmp_dir = TempDir::new().unwrap();
 
         let platform_version = PlatformVersion::latest();
 
-        let drive: Drive =
-            Drive::open(&tmp_dir, Some(config)).expect("expected to open Drive successfully");
+        let drive: Drive = setup_drive(Some(config));
 
         let transaction = if using_transaction {
             Some(drive.grove.start_transaction())
@@ -1824,15 +1807,9 @@ mod tests {
 
     #[test]
     fn test_update_document_without_apply_should_calculate_storage_fees() {
-        let tmp_dir = TempDir::new().unwrap();
-
-        let drive: Drive =
-            Drive::open(&tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("expected to create root tree successfully");
 
         // Create a contract
 
@@ -1844,7 +1821,8 @@ mod tests {
                 "type": "object",
                 "properties": {
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "position": 0,
                     }
                 },
                 "required": [
@@ -1854,11 +1832,10 @@ mod tests {
             }
         });
 
-        let factory = DataContractFactory::new(1, Some(Box::new(TestEntropyGenerator::new())))
-            .expect("expected to create factory");
+        let factory = DataContractFactory::new(1).expect("expected to create factory");
 
         let contract = factory
-            .create_with_value_config(owner_id, documents, None, None)
+            .create_with_value_config(owner_id, 0, documents, None, None)
             .expect("data in fixture should be correct")
             .data_contract_owned();
 

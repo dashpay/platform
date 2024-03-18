@@ -1,16 +1,16 @@
-const lodashMerge = require('lodash/merge');
+import lodash from 'lodash';
 
-const {
-  NETWORK_LOCAL,
-} = require('../../src/constants');
+import {
+  NETWORK_LOCAL, SSL_PROVIDERS,
+} from '../../src/constants.js';
+import Config from '../../src/config/Config.js';
 
-const Config = require('../../src/config/Config');
-
+const { merge: lodashMerge } = lodash;
 /**
  * @param {getBaseConfig} getBaseConfig
  * @returns {getLocalConfig}
  */
-function getLocalConfigFactory(getBaseConfig) {
+export default function getLocalConfigFactory(getBaseConfig) {
   /**
    * @typedef {function} getLocalConfig
    * @returns {Config}
@@ -24,6 +24,10 @@ function getLocalConfigFactory(getBaseConfig) {
         },
       },
       core: {
+        docker: {
+          image: 'dashpay/dashd:20.1.0',
+          commandArgs: [],
+        },
         p2p: {
           port: 20001,
         },
@@ -34,6 +38,9 @@ function getLocalConfigFactory(getBaseConfig) {
       platform: {
         dapi: {
           envoy: {
+            ssl: {
+              provider: SSL_PROVIDERS.SELF_SIGNED,
+            },
             http: {
               port: 2443,
             },
@@ -46,6 +53,10 @@ function getLocalConfigFactory(getBaseConfig) {
           tenderdash: {
             p2p: {
               port: 46656,
+              flushThrottleTimeout: '10ms',
+              maxPacketMsgPayloadSize: 1024,
+              sendRate: 20000000,
+              recvRate: 20000000,
             },
             rpc: {
               port: 46657,
@@ -61,6 +72,11 @@ function getLocalConfigFactory(getBaseConfig) {
             validatorSet: {
               llmqType: 106,
             },
+            chainLock: {
+              llmqType: 100,
+              dkgInterval: 24,
+              llmqSize: 3,
+            },
           },
         },
       },
@@ -68,10 +84,9 @@ function getLocalConfigFactory(getBaseConfig) {
       network: NETWORK_LOCAL,
     };
 
-    return new Config('local', lodashMerge({}, getBaseConfig().getOptions(), options));
+    return new Config('local', lodashMerge({}, getBaseConfig()
+      .getOptions(), options));
   }
 
   return getLocalConfig;
 }
-
-module.exports = getLocalConfigFactory;

@@ -1,12 +1,30 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
+import { Flags } from '@oclif/core';
+import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
+import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
+import { PRESET_LOCAL } from '../../constants.js';
 
-const { Flags } = require('@oclif/core');
+export default class GroupResetCommand extends GroupBaseCommand {
+  static description = 'Reset group nodes';
 
-const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
-const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
-const { PRESET_LOCAL } = require('../../constants');
+  static flags = {
+    ...GroupBaseCommand.flags,
+    hard: Flags.boolean({
+      description: 'reset config as well as data',
+      default: false,
+    }),
+    force: Flags.boolean({
+      char: 'f',
+      description: 'reset even running node',
+      default: false,
+    }),
+    platform: Flags.boolean({
+      char: 'p',
+      description: 'reset platform services and data only',
+      default: false,
+    }),
+  };
 
-class GroupResetCommand extends GroupBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -14,8 +32,6 @@ class GroupResetCommand extends GroupBaseCommand {
    * @param {Config[]} configGroup
    * @param {configureCoreTask} configureCoreTask
    * @param {configureTenderdashTask} configureTenderdashTask
-   * @param {generateToAddressTask} generateToAddressTask
-   * @param {ConfigFile} configFile
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -30,8 +46,6 @@ class GroupResetCommand extends GroupBaseCommand {
     configGroup,
     configureCoreTask,
     configureTenderdashTask,
-    generateToAddressTask,
-    configFile,
   ) {
     const groupName = configGroup[0].get('group');
 
@@ -39,7 +53,9 @@ class GroupResetCommand extends GroupBaseCommand {
       [
         {
           title: `Reset ${groupName} nodes`,
-          task: () => {
+          task: (ctx) => {
+            ctx.removeConfig = ctx.isHardReset && groupName === PRESET_LOCAL;
+
             const resetTasks = configGroup.map((config) => ({
               title: `Reset ${config.getName()} node`,
               task: () => resetNodeTask(config),
@@ -47,15 +63,6 @@ class GroupResetCommand extends GroupBaseCommand {
 
             return new Listr(resetTasks);
           },
-        },
-        {
-          enabled: (ctx) => ctx.isHardReset && groupName === PRESET_LOCAL,
-          title: 'Delete node configs',
-          task: () => (
-            configGroup
-              .filter((config) => configFile.isConfigExists(config.getName()))
-              .forEach((config) => configFile.removeConfig(config.getName()))
-          ),
         },
         {
           enabled: (ctx) => !ctx.isHardReset
@@ -92,25 +99,3 @@ class GroupResetCommand extends GroupBaseCommand {
     }
   }
 }
-
-GroupResetCommand.description = 'Reset group nodes';
-
-GroupResetCommand.flags = {
-  ...GroupBaseCommand.flags,
-  hard: Flags.boolean({
-    description: 'reset config as well as data',
-    default: false,
-  }),
-  force: Flags.boolean({
-    char: 'f',
-    description: 'reset even running node',
-    default: false,
-  }),
-  platform: Flags.boolean({
-    char: 'p',
-    description: 'reset platform services and data only',
-    default: false,
-  }),
-};
-
-module.exports = GroupResetCommand;

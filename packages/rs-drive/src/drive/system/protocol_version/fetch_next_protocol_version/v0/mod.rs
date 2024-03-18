@@ -30,7 +30,7 @@ impl Drive {
                         let bytes = e.as_item_bytes()?;
                         let Some((protocol_version, _)) = ProtocolVersion::decode_var(bytes) else {
                             return Err(Error::Drive(DriveError::CorruptedSerialization(
-                                "protocol version incorrectly serialized",
+                                String::from("protocol version incorrectly serialized"),
                             )));
                         };
                         Ok(protocol_version)

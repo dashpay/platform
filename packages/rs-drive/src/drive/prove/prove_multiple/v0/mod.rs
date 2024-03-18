@@ -6,6 +6,7 @@ use crate::query::SingleDocumentDriveQuery;
 
 use dpp::version::PlatformVersion;
 use grovedb::{PathQuery, TransactionArg};
+use itertools::{Either, Itertools};
 
 impl Drive {
     /// This function query requested identities, documents and contracts and provide cryptographic proofs
@@ -25,9 +26,9 @@ impl Drive {
     /// or an `Error` if the function fails.
     pub(super) fn prove_multiple_v0(
         &self,
-        identity_queries: &Vec<IdentityDriveQuery>,
-        contract_ids: &[[u8; 32]],
-        document_queries: &Vec<SingleDocumentDriveQuery>,
+        identity_queries: &[IdentityDriveQuery],
+        contract_ids: &[([u8; 32], Option<bool>)], //bool is history
+        document_queries: &[SingleDocumentDriveQuery],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -48,20 +49,48 @@ impl Drive {
                         path_queries
                             .push(Self::identity_all_keys_query(&identity_query.identity_id)?);
                     }
+                    IdentityProveRequestType::Revision => {
+                        path_queries
+                            .push(Self::identity_revision_query(&identity_query.identity_id));
+                    }
                 }
             }
             count += identity_queries.len();
         }
+
+        let (contract_ids, historical_contract_ids): (Vec<_>, Vec<_>) = contract_ids
+            .iter()
+            .partition_map(|(contract_id, historical)| {
+                // TODO: implement None
+                let history = historical.unwrap_or(false);
+                if !history {
+                    Either::Left(*contract_id)
+                } else {
+                    Either::Right(*contract_id)
+                }
+            });
+
         if !contract_ids.is_empty() {
-            path_queries.push(Self::fetch_contracts_query(contract_ids)?);
+            let mut path_query =
+                Self::fetch_non_historical_contracts_query(contract_ids.as_slice());
+            path_query.query.limit = None;
+            path_queries.push(path_query);
             count += contract_ids.len();
         }
+
+        if !historical_contract_ids.is_empty() {
+            let mut path_query =
+                Self::fetch_historical_contracts_query(historical_contract_ids.as_slice());
+            path_query.query.limit = None;
+            path_queries.push(path_query);
+            count += historical_contract_ids.len();
+        }
         if !document_queries.is_empty() {
-            path_queries.extend(
-                document_queries
-                    .iter()
-                    .map(|drive_query| drive_query.construct_path_query()),
-            );
+            path_queries.extend(document_queries.iter().map(|drive_query| {
+                let mut path_query = drive_query.construct_path_query();
+                path_query.query.limit = None;
+                path_query
+            }));
             count += document_queries.len();
         }
         let verbose = match count {

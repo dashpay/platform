@@ -1,8 +1,9 @@
-const { Listr } = require('listr2');
+import { Listr } from 'listr2';
+import DashCoreLib from '@dashevo/dashcore-lib';
+import { NETWORK_LOCAL } from '../../constants.js';
+import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
 
-const { PrivateKey } = require('@dashevo/dashcore-lib');
-const { NETWORK_LOCAL } = require('../../constants');
-const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
+const { PrivateKey } = DashCoreLib;
 
 /**
  *
@@ -17,7 +18,7 @@ const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
  * @param {getConnectionHost} getConnectionHost
  * @return {startGroupNodesTask}
  */
-function startGroupNodesTaskFactory(
+export default function startGroupNodesTaskFactory(
   dockerCompose,
   waitForCorePeersConnected,
   waitForMasternodesSync,
@@ -71,7 +72,7 @@ function startGroupNodesTaskFactory(
                 port: config.get('core.rpc.port'),
                 user: config.get('core.rpc.user'),
                 pass: config.get('core.rpc.password'),
-                host: await getConnectionHost(config, 'core'),
+                host: await getConnectionHost(config, 'core', 'core.rpc.host'),
               });
 
               await waitForCorePeersConnected(rpcClient);
@@ -170,5 +171,3 @@ function startGroupNodesTaskFactory(
 
   return startGroupNodesTask;
 }
-
-module.exports = startGroupNodesTaskFactory;

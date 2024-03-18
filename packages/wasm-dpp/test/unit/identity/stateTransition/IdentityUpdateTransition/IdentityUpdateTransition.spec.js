@@ -99,23 +99,6 @@ describe('IdentityUpdateTransition', () => {
     });
   });
 
-  describe('#getPublicKeysDisabledAt', () => {
-    it('should return time to disable public keys', () => {
-      expect(stateTransition.getPublicKeysDisabledAt())
-        .to.deep.equal(rawStateTransition.publicKeysDisabledAt);
-    });
-  });
-
-  describe('#setPublicKeysDisabledAt', () => {
-    it('should set time to disable public keys', () => {
-      const now = new Date();
-
-      stateTransition.setPublicKeysDisabledAt(now);
-
-      expect(stateTransition.getPublicKeysDisabledAt()).to.deep.equal(new Date(now));
-    });
-  });
-
   describe('#toObject', () => {
     it('should return raw state transition', () => {
       rawStateTransition = stateTransition.toObject();
@@ -126,7 +109,6 @@ describe('IdentityUpdateTransition', () => {
         signature: undefined,
         identityId: rawStateTransition.identityId,
         revision: rawStateTransition.revision,
-        publicKeysDisabledAt: rawStateTransition.publicKeysDisabledAt,
         addPublicKeys: rawStateTransition.addPublicKeys,
         disablePublicKeys: rawStateTransition.disablePublicKeys,
         signaturePublicKeyId: 0,
@@ -141,7 +123,6 @@ describe('IdentityUpdateTransition', () => {
         type: StateTransitionTypes.IdentityUpdate,
         identityId: rawStateTransition.identityId,
         revision: rawStateTransition.revision,
-        publicKeysDisabledAt: rawStateTransition.publicKeysDisabledAt,
         addPublicKeys: rawStateTransition.addPublicKeys,
         disablePublicKeys: rawStateTransition.disablePublicKeys,
       });
@@ -149,7 +130,6 @@ describe('IdentityUpdateTransition', () => {
 
     it('should return raw state transition without optional properties', () => {
       stateTransition.setPublicKeyIdsToDisable(undefined);
-      stateTransition.setPublicKeysDisabledAt(undefined);
       stateTransition.setPublicKeysToAdd(undefined);
 
       rawStateTransition = stateTransition.toObject();
@@ -175,7 +155,6 @@ describe('IdentityUpdateTransition', () => {
         signature: undefined,
         identityId: stateTransition.getIdentityId().toString(),
         revision: rawStateTransition.revision,
-        publicKeysDisabledAt: rawStateTransition.publicKeysDisabledAt.getTime(),
         addPublicKeys: stateTransition.getPublicKeysToAdd().map((k) => k.toJSON()),
         disablePublicKeys: rawStateTransition.disablePublicKeys,
         signaturePublicKeyId: 0,

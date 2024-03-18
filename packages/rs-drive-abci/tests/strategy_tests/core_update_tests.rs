@@ -1,33 +1,39 @@
 #[cfg(test)]
 mod tests {
-    use tenderdash_abci::proto::types::CoreChainLock;
 
     use crate::execution::run_chain_for_strategy;
-    use crate::frequency::Frequency;
-    use crate::strategy::{MasternodeListChangesStrategy, Strategy};
+    use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
+    use crate::strategy::{MasternodeListChangesStrategy, NetworkStrategy};
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::platform_types::validator_set::v0::ValidatorSetV0Getters;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
+    use strategy_tests::frequency::Frequency;
+    use strategy_tests::{StartIdentities, Strategy};
 
     #[test]
     fn run_chain_random_bans() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: StartIdentities::default(),
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                identity_contract_nonce_gaps: None,
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Default::default(),
                 removed_hpmns: Default::default(),
@@ -51,16 +57,18 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
-            signer: None,
+            ..Default::default()
         };
 
         let quorum_size = 100;
 
         let config = PlatformConfig {
-            quorum_size,
+            validator_set_quorum_size: quorum_size,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -71,21 +79,11 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 1,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
         let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
 
         // we expect to see quorums with banned members
 
-        let state = outcome.abci_app.platform.state.read().unwrap();
+        let state = outcome.abci_app.platform.state.load();
 
         let banned_count = state
             .validator_sets()
@@ -115,22 +113,27 @@ mod tests {
 
     #[test]
     fn run_chain_random_removals() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: StartIdentities::default(),
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                identity_contract_nonce_gaps: None,
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Default::default(),
                 removed_hpmns: Frequency {
@@ -154,16 +157,18 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
-            signer: None,
+            ..Default::default()
         };
 
         let quorum_size = 100;
 
         let config = PlatformConfig {
-            quorum_size,
+            validator_set_quorum_size: quorum_size,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -174,21 +179,11 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 1,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
         let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
 
         // we expect to see quorums with banned members
 
-        let _state = outcome.abci_app.platform.state.read().unwrap();
+        let _state = outcome.abci_app.platform.state.load();
 
         // We should also see validator sets with less than the quorum size
 
@@ -204,22 +199,27 @@ mod tests {
 
     #[test]
     fn run_chain_random_bans_and_unbans() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: StartIdentities::default(),
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                identity_contract_nonce_gaps: None,
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Default::default(),
                 removed_hpmns: Default::default(),
@@ -246,16 +246,18 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
-            signer: None,
+            ..Default::default()
         };
 
         let quorum_size = 100;
 
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set_quorum_size: quorum_size,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -266,16 +268,6 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 1,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
         let outcome = run_chain_for_strategy(&mut platform, 26, strategy, config, 13);
 
         // We should also see validator sets with less than the quorum size

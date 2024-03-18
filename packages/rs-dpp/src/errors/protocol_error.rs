@@ -7,16 +7,15 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
 use crate::document::errors::*;
-#[cfg(feature = "validation")]
-use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::{
-    InvalidSignaturePublicKeyError, PublicKeyMismatchError, PublicKeySecurityLevelNotMetError,
-    StateTransitionError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
+    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
+    PublicKeySecurityLevelNotMetError, StateTransitionError, StateTransitionIsNotSignedError,
+    WrongPublicKeyPurposeError,
 };
 use crate::{
-    CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError, NonConsensusError,
-    SerdeParsingError,
+    CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError,
+    InvalidVectorSizeError, NonConsensusError, SerdeParsingError,
 };
 
 use dashcore::consensus::encode::Error as DashCoreError;
@@ -90,9 +89,6 @@ pub enum ProtocolError {
     #[error("Invalid key contract bounds error {0}")]
     InvalidKeyContractBoundsError(String),
 
-    #[error("unknown storage key requirements {0}")]
-    UnknownStorageKeyRequirements(String),
-
     #[error(transparent)]
     DataContractError(#[from] DataContractError),
 
@@ -100,8 +96,8 @@ pub enum ProtocolError {
     #[error(transparent)]
     StateTransitionError(#[from] StateTransitionError),
 
-    #[error(transparent)]
-    StructureError(#[from] StructureError),
+    #[error("Invalid State Transition Type: {0}")]
+    InvalidStateTransitionType(String),
 
     #[error(transparent)]
     PlatformVersionError(#[from] PlatformVersionError),
@@ -115,23 +111,30 @@ pub enum ProtocolError {
     #[error("Generic Error: {0}")]
     Generic(String),
 
+    #[cfg(feature = "message-signing")]
+    #[error("Invalid signing type error: {0}")]
+    InvalidSigningKeyTypeError(String),
+
     // State Transition Errors
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(any(
+        feature = "state-transition-validation",
+        feature = "state-transition-signing"
+    ))]
     #[error(transparent)]
     InvalidIdentityPublicKeyTypeError(InvalidIdentityPublicKeyTypeError),
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     StateTransitionIsNotSignedError(StateTransitionIsNotSignedError),
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     PublicKeySecurityLevelNotMetError(PublicKeySecurityLevelNotMetError),
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     WrongPublicKeyPurposeError(WrongPublicKeyPurposeError),
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     PublicKeyMismatchError(PublicKeyMismatchError),
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     InvalidSignaturePublicKeyError(InvalidSignaturePublicKeyError),
 
@@ -140,13 +143,6 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     CompatibleProtocolVersionIsNotDefinedError(#[from] CompatibleProtocolVersionIsNotDefinedError),
-
-    // Data Contract
-    #[error("Data Contract already exists")]
-    DataContractAlreadyExistsError,
-
-    #[error(transparent)]
-    InvalidDataContractError(InvalidDataContractError),
 
     #[error(transparent)]
     InvalidDocumentTypeError(InvalidDocumentTypeError),
@@ -172,7 +168,7 @@ pub enum ProtocolError {
 
     /// Error
     #[error("missing key: {0}")]
-    DocumentKeyMissing(String),
+    DesiredKeyWithTypePurposeSecurityLevelMissing(String),
 
     /// Value error
     #[error("value error: {0}")]
@@ -207,6 +203,13 @@ pub enum ProtocolError {
 
     #[error("critical corrupted credits code execution: {0}")]
     CriticalCorruptedCreditsCodeExecution(String),
+
+    #[error(transparent)]
+    InvalidVectorSizeError(InvalidVectorSizeError),
+
+    /// Invalid CBOR error
+    #[error("invalid cbor error: {0}")]
+    InvalidCBOR(String),
 }
 
 impl From<&str> for ProtocolError {
@@ -242,5 +245,11 @@ impl From<SerdeParsingError> for ProtocolError {
 impl From<DashPlatformProtocolInitError> for ProtocolError {
     fn from(e: DashPlatformProtocolInitError) -> Self {
         ProtocolError::Generic(e.to_string())
+    }
+}
+
+impl From<InvalidVectorSizeError> for ProtocolError {
+    fn from(err: InvalidVectorSizeError) -> Self {
+        Self::InvalidVectorSizeError(err)
     }
 }

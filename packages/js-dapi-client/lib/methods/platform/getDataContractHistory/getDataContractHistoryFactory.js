@@ -16,7 +16,6 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 function getDataContractHistoryFactory(grpcTransport) {
   /**
    * Fetch Data Contract by id
-   *
    * @typedef {getDataContractHistory}
    * @param {Buffer} contractId
    * @param {number} [startAtMs]
@@ -32,6 +31,7 @@ function getDataContractHistoryFactory(grpcTransport) {
     offset = 0,
     options = {},
   ) {
+    const { GetDataContractHistoryRequestV0 } = GetDataContractHistoryRequest;
     const getDataContractHistoryRequest = new GetDataContractHistoryRequest();
 
     // need to convert objects inherited from Buffer to pure buffer as google protobuf
@@ -42,11 +42,14 @@ function getDataContractHistoryFactory(grpcTransport) {
       contractId = Buffer.from(contractId);
     }
 
-    getDataContractHistoryRequest.setId(contractId);
-    getDataContractHistoryRequest.setStartAtMs(startAtMs);
-    getDataContractHistoryRequest.setLimit(new UInt32Value([limit]));
-    getDataContractHistoryRequest.setOffset(new UInt32Value([offset]));
-    getDataContractHistoryRequest.setProve(!!options.prove);
+    getDataContractHistoryRequest.setV0(
+      new GetDataContractHistoryRequestV0()
+        .setId(contractId)
+        .setStartAtMs(startAtMs)
+        .setLimit(new UInt32Value([limit]))
+        .setOffset(new UInt32Value([offset]))
+        .setProve(!!options.prove),
+    );
 
     let lastError;
 

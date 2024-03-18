@@ -1,17 +1,23 @@
 use crate::identity::v0::IdentityV0;
 use crate::identity::{IdentityPublicKey, KeyID};
-use crate::prelude::{AssetLockProof, Revision};
+use crate::prelude::Revision;
 
+#[cfg(feature = "identity-hashing")]
 use crate::serialization::PlatformSerializable;
+#[cfg(feature = "identity-hashing")]
 use crate::util::hash;
 use crate::version::PlatformVersion;
 
 use crate::ProtocolError;
+#[cfg(feature = "identity-serialization")]
 use bincode::{Decode, Encode};
 use derive_more::From;
+#[cfg(feature = "identity-serialization")]
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 
+use crate::fee::Credits;
+#[cfg(feature = "identity-serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -40,7 +46,7 @@ pub enum Identity {
 pub struct PartialIdentity {
     pub id: Identifier,
     pub loaded_public_keys: BTreeMap<KeyID, IdentityPublicKey>,
-    pub balance: Option<u64>,
+    pub balance: Option<Credits>,
     pub revision: Option<Revision>,
     /// These are keys that were requested but didn't exist
     pub not_found_public_keys: BTreeSet<KeyID>,
@@ -50,9 +56,9 @@ impl Identity {
     #[cfg(feature = "identity-hashing")]
     /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash_to_vec(PlatformSerializable::serialize_to_bytes(
-            self,
-        )?))
+        Ok(hash::hash_double_to_vec(
+            PlatformSerializable::serialize_to_bytes(self)?,
+        ))
     }
 
     pub fn default_versioned(

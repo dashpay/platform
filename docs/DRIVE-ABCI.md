@@ -27,13 +27,13 @@ Specifies the destination of the logs. It can have one of the following values:
 Specifies the logs verbosity level preset:
 
 * **silent**: No logs.
-* **custom**: Uses RUST_LOG env or info level if not set.
 * **error**: Only errors.
 * **warn**: Warnings and errors. Errors for 3rd party dependencies.
 * **info**: Info level and lower. Warnings for 3rd party dependencies. Default.
 * **debug**: Debug level and lower. Info level for 3rd party dependencies.
 * **trace**: Trace level and lower. Debug level for 3rd party dependencies.
 * **paranoid**: Trace level for everything.
+* logging specification string (RUST_LOG) for custom logger verbosity configuration.
 
 #### COLOR (optional)
 

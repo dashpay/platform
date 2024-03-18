@@ -122,15 +122,17 @@ mod tests {
         n: u64,
         platform_version: &PlatformVersion,
     ) {
-        let updated_document_template = platform_value!({
+        let mut updated_document = platform_value!({
             "type": "object",
             "properties": {
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "position": 0
                 },
                 "newProp": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "position": 1
                 }
             },
             "required": [
@@ -141,7 +143,6 @@ mod tests {
 
         let mut data_contract = data_contract.clone();
         for i in 0..n {
-            let mut updated_document = updated_document_template.clone();
             updated_document
                 .to_map_mut()
                 .expect("document to be an object")
@@ -151,11 +152,16 @@ mod tests {
                 .expect("properties to be an object")
                 .insert_string_key_value(
                     format!("newProp{}", i),
-                    platform_value!({"type": "integer", "minimum": 0}),
+                    platform_value!({"type": "integer", "minimum": 0, "position": i + 2}),
                 );
 
             data_contract
-                .set_document_schema("niceDocument", updated_document, true, platform_version)
+                .set_document_schema(
+                    "niceDocument",
+                    updated_document.clone(),
+                    true,
+                    platform_version,
+                )
                 .expect("to be able to set document schema");
 
             data_contract.increment_version();
@@ -244,7 +250,7 @@ mod tests {
 
     fn setup_test() -> TestData {
         let data_contract =
-            get_data_contract_fixture(None, PlatformVersion::latest().protocol_version)
+            get_data_contract_fixture(None, 0, PlatformVersion::latest().protocol_version)
                 .data_contract_owned();
 
         TestData {

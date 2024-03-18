@@ -3,6 +3,7 @@ use crate::error::contract::DataContractError;
 use crate::error::proof::ProofError;
 use crate::error::storage_flags::StorageFlagsError;
 use document::DocumentError;
+use dpp::data_contract::errors::DataContractError as ProtocolDataContractError;
 use dpp::platform_value::Error as ValueError;
 use dpp::ProtocolError;
 use fee::FeeError;
@@ -62,4 +63,10 @@ pub enum Error {
     ///DataContract error
     #[error("contract: {0}")]
     DataContract(#[from] DataContractError),
+}
+
+impl From<ProtocolDataContractError> for Error {
+    fn from(value: ProtocolDataContractError) -> Self {
+        Self::Protocol(ProtocolError::DataContractError(value))
+    }
 }

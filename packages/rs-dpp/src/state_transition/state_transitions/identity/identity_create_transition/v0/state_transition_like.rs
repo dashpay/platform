@@ -1,5 +1,6 @@
 use platform_value::BinaryData;
 
+use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::{
     prelude::Identifier,
@@ -48,5 +49,18 @@ impl StateTransitionLike for IdentityCreateTransitionV0 {
     /// Get owner ID
     fn owner_id(&self) -> Identifier {
         self.identity_id
+    }
+
+    /// this is based on the asset lock
+    fn unique_identifiers(&self) -> Vec<String> {
+        vec![base64::encode(self.identity_id)]
+    }
+
+    fn user_fee_increase(&self) -> UserFeeIncrease {
+        self.user_fee_increase
+    }
+
+    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
+        self.user_fee_increase = fee_multiplier
     }
 }

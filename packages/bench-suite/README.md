@@ -14,7 +14,7 @@ This benchmark publishes a data contract and documents defined in configuration 
 
 ### Function
 
-Function benchmark allow to call a function or functions and collect metrics using [performance tools](https://nodejs.org/docs/latest-v18.x/api/perf_hooks.html).
+Function benchmark allow to call a function or functions and collect metrics using [performance tools](https://nodejs.org/docs/latest-v20.x/api/perf_hooks.html).
 
 ### Running benchmarks
 

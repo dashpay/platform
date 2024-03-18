@@ -1,5 +1,3 @@
-use dashcore_rpc::dashcore::hashes::Hash;
-
 use dpp::block::epoch::Epoch;
 
 use dpp::validation::SimpleValidationResult;
@@ -10,16 +8,21 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::version::PlatformVersion;
 
+use dpp::dashcore::bls_sig_utils::BLSSignature;
+
 use tenderdash_abci::{
     proto::{serializers::timestamp::ToMilis, types::BlockId as ProtoBlockId},
-    signatures::SignBytes,
+    signatures::Hashable,
 };
 
 use crate::abci::AbciError;
-use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
-use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::execution::types::block_execution_context::v0::{
+    BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
+    BlockExecutionContextV0OwnedGetters,
+};
+use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::execution::types::block_state_info::v0::{
     BlockStateInfoV0Getters, BlockStateInfoV0Methods,
 };
@@ -59,31 +62,27 @@ where
     pub(super) fn finalize_block_proposal_v0(
         &self,
         request_finalize_block: FinalizeBlockCleanedRequest,
+        mut block_execution_context: BlockExecutionContext,
         transaction: &Transaction,
-        _platform_version: &PlatformVersion,
+        _last_committed_platform_version: &PlatformVersion,
     ) -> Result<block_execution_outcome::v0::BlockFinalizationOutcome, Error> {
         let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
-
-        // Retrieve block execution context before we do anything at all
-        let guarded_block_execution_context = self.block_execution_context.read().unwrap();
-        let block_execution_context =
-            guarded_block_execution_context
-                .as_ref()
-                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "block execution context must be set in block begin handler for finalize block proposal",
-                )))?;
 
         let block_state_info = block_execution_context.block_state_info();
         let epoch_info = block_execution_context.epoch_info();
         let block_platform_state = block_execution_context.block_platform_state();
 
+        // TODO: The block was processed with last committed platform version, it's wrong to call all functions
+        //  here with new version. Except probably state storage version.
+        //  Another problem that block was processed wit last committed version but we storing state with new version.
+        //  It means when we load the state we would expect this block to be processed with the new version.
         let current_protocol_version = block_platform_state.current_protocol_version_in_consensus();
 
         let platform_version = PlatformVersion::get(current_protocol_version)?;
 
         // Let's decompose the request
         let FinalizeBlockCleanedRequest {
-            commit: commit_info,
+            commit: mut commit_info,
             misbehavior: _,
             hash,
             height,
@@ -101,13 +100,13 @@ where
         } = block;
 
         let block_id_hash = Into::<ProtoBlockId>::into(block_id.clone())
-            .sha256(&self.config.abci.chain_id, height as i64, round as i32)
+            .calculate_msg_hash(&self.config.abci.chain_id, height as i64, round as i32)
             .map_err(AbciError::from)?
             .try_into()
             .expect("invalid sha256 length");
 
         //// Verification that commit is for our current executed block
-        // When receiving the finalized block, we need to make sure that info matches our current block
+        // When receiving the finalized block, we need to make sure info matches our current block
 
         // First let's check the basics, height, round and hash
         if !block_state_info.matches_expected_block_info(
@@ -126,14 +125,17 @@ where
                 block_header.core_chain_locked_height,
                 block_state_info.height(),
                 block_state_info.round(),
-                block_state_info.block_hash().map(|a| hex::encode(a)).unwrap_or("None".to_string()),
+                block_state_info.block_hash().map(hex::encode).unwrap_or("None".to_string()),
                 block_state_info.core_chain_locked_height()
             )));
             return Ok(validation_result.into());
         }
 
-        let state_cache = self.state.read().unwrap();
-        let current_quorum_hash = state_cache.current_validator_set_quorum_hash().into();
+        let last_committed_state = self.state.load();
+        let current_quorum_hash = last_committed_state
+            .current_validator_set_quorum_hash()
+            .into();
+
         if current_quorum_hash != commit_info.quorum_hash {
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {} with validator set quorum hash {} expected current validator set quorum hash is {}",
@@ -142,7 +144,23 @@ where
             return Ok(validation_result.into());
         }
 
-        let quorum_public_key = &state_cache.current_validator_set()?.threshold_public_key();
+        // Verify vote extensions
+        // We don't need to verify vote extension signatures once again after tenderdash
+        // here, because we will do it bellow broadcasting withdrawal transactions.
+        // The sendrawtransaction RPC method returns an error if quorum signature is invalid
+        let expected_withdrawal_transactions =
+            block_execution_context.unsigned_withdrawal_transactions();
+
+        if !expected_withdrawal_transactions
+            .are_matching_with_vote_extensions(&commit_info.threshold_vote_extensions)
+        {
+            validation_result.add_error(AbciError::VoteExtensionMismatchReceived {
+                got: commit_info.threshold_vote_extensions,
+                expected: expected_withdrawal_transactions.into(),
+            });
+
+            return Ok(validation_result.into());
+        }
 
         // In production this will always be true
         if self
@@ -152,7 +170,11 @@ where
         {
             // Verify commit
 
-            let quorum_type = self.config.quorum_type();
+            let quorum_public_key = last_committed_state
+                .current_validator_set()?
+                .threshold_public_key();
+            let quorum_type = self.config.validator_set_quorum_type();
+            // TODO: We already had commit in the function above, why do we need to create it again with clone?
             let commit = Commit::new_from_cleaned(
                 commit_info.clone(),
                 block_id,
@@ -168,24 +190,6 @@ where
                 return Ok(validation_result.into());
             }
         }
-        drop(state_cache);
-
-        // Verify vote extensions
-        // let received_withdrawals = WithdrawalTxs::from(&commit.threshold_vote_extensions);
-        // let our_withdrawals = WithdrawalTxs::load(Some(transaction), &self.drive)
-        //     .map_err(|e| AbciError::WithdrawalTransactionsDBLoadError(e.to_string()))?;
-        //todo: reenable check
-        //
-        // if let Err(e) = self.check_withdrawals(
-        //     &received_withdrawals,
-        //     &our_withdrawals,
-        //     Some(quorum_public_key),
-        // ) {
-        //     validation_result.add_error(e);
-        //     return Ok(validation_result.into());
-        // }
-
-        // Next let's check that the hash received is the same as the hash we expect
 
         if height == self.config.abci.genesis_height {
             self.drive
@@ -197,17 +201,41 @@ where
                 .expect("current epoch info should be in range"),
         );
 
-        // we need to add the block time
         to_commit_block_info.time_ms = block_header.time.to_milis();
 
         to_commit_block_info.core_height = block_header.core_chain_locked_height;
 
-        // // Finalize withdrawal processing
-        // our_withdrawals.finalize(Some(transaction), &self.drive, &to_commit_block_info)?;
+        // Append signatures and broadcast asset unlock transactions to Core
 
-        // At the end we update the state cache
+        // Drain withdrawal transaction instead of cloning
+        let unsigned_withdrawal_transactions = block_execution_context
+            .unsigned_withdrawal_transactions_mut()
+            .drain();
 
-        drop(guarded_block_execution_context);
+        // Drain signatures instead of cloning
+        let signatures = commit_info
+            .threshold_vote_extensions
+            .drain(..)
+            .map(|vote_extension| {
+                let signature_bytes: [u8; 96] =
+                    vote_extension.signature.try_into().map_err(|e| {
+                        AbciError::BadRequestDataSize(format!(
+                            "invalid vote extension signature size: {}",
+                            hex::encode(e)
+                        ))
+                    })?;
+
+                Ok(BLSSignature::from(signature_bytes))
+            })
+            .collect::<Result<_, AbciError>>()?;
+
+        self.append_signatures_and_broadcast_withdrawal_transactions(
+            unsigned_withdrawal_transactions,
+            signatures,
+            platform_version,
+        )?;
+
+        // Update platform (drive abci) state
 
         let extended_block_info = ExtendedBlockInfoV0 {
             basic_info: to_commit_block_info,
@@ -219,15 +247,16 @@ where
         }
         .into();
 
-        self.update_state_cache(extended_block_info, transaction, platform_version)?;
+        let block_platform_state = block_execution_context.block_platform_state_owned();
 
-        let mut drive_cache = self.drive.cache.write().unwrap();
+        self.update_state_cache(
+            extended_block_info,
+            block_platform_state,
+            transaction,
+            platform_version,
+        )?;
 
-        // Update global cache with updated contracts
-        drive_cache.cached_contracts.merge_block_cache();
-        // This is unnecessary since we clear block cache before every proposal execution
-        drive_cache.cached_contracts.clear_block_cache();
-        drop(drive_cache);
+        self.update_drive_cache(platform_version)?;
 
         // Gather some metrics
         crate::metrics::abci_last_block_time(block_header.time.seconds as u64);

@@ -1,6 +1,14 @@
-use crate::block::epoch::Epoch;
+use crate::block::epoch::{Epoch, EPOCH_0};
+use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+
+pub const DEFAULT_BLOCK_INFO: BlockInfo = BlockInfo {
+    time_ms: 0,
+    height: 0,
+    core_height: 0,
+    epoch: EPOCH_0,
+};
 
 // We make this immutable because it should never be changed or updated
 // Extended block info however is not immutable
@@ -9,19 +17,20 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
 pub struct BlockInfo {
     /// Block time in milliseconds
-    pub time_ms: u64,
+    pub time_ms: TimestampMillis,
 
     /// Block height
-    pub height: u64,
+    pub height: BlockHeight,
 
     /// Core height
-    pub core_height: u32,
+    pub core_height: CoreBlockHeight,
 
     /// Current fee epoch
     pub epoch: Epoch,
 }
 
 impl BlockInfo {
+    // TODO: It's not actually a genesis one. We should use just default to avoid confusion
     /// Create block info for genesis block
     pub fn genesis() -> BlockInfo {
         BlockInfo::default()

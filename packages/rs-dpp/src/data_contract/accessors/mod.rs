@@ -4,11 +4,11 @@ use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
 use crate::prelude::DataContract;
-use crate::ProtocolError;
+
 use platform_value::Identifier;
 
-use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
-use std::collections::{BTreeMap, BTreeSet};
+use crate::data_contract::errors::DataContractError;
+use std::collections::BTreeMap;
 
 pub mod v0;
 
@@ -37,7 +37,13 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
-    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, ProtocolError> {
+    fn document_type_cloned_for_name(&self, name: &str) -> Result<DocumentType, DataContractError> {
+        match self {
+            DataContract::V0(v0) => v0.document_type_cloned_for_name(name),
+        }
+    }
+
+    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, DataContractError> {
         match self {
             DataContract::V0(v0) => v0.document_type_for_name(name),
         }
@@ -46,6 +52,12 @@ impl DataContractV0Getters for DataContract {
     fn document_type_optional_for_name(&self, name: &str) -> Option<DocumentTypeRef> {
         match self {
             DataContract::V0(v0) => v0.document_type_optional_for_name(name),
+        }
+    }
+
+    fn document_type_cloned_optional_for_name(&self, name: &str) -> Option<DocumentType> {
+        match self {
+            DataContract::V0(v0) => v0.document_type_cloned_optional_for_name(name),
         }
     }
 
@@ -58,6 +70,12 @@ impl DataContractV0Getters for DataContract {
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType> {
         match self {
             DataContract::V0(v0) => v0.document_types(),
+        }
+    }
+
+    fn document_types_mut(&mut self) -> &mut BTreeMap<DocumentName, DocumentType> {
+        match self {
+            DataContract::V0(v0) => v0.document_types_mut(),
         }
     }
 

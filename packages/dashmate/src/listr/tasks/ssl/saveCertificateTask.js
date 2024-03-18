@@ -1,12 +1,12 @@
-const { Listr } = require('listr2');
-const path = require('path');
-const fs = require('fs');
+import { Listr } from 'listr2';
+import path from 'path';
+import fs from 'fs';
 
 /**
  * @param {HomeDir} homeDir
  * @return {saveCertificateTask}
  */
-function saveCertificateTaskFactory(homeDir) {
+export default function saveCertificateTaskFactory(homeDir) {
   /**
    * @typedef {function} saveCertificateTask
    * @param {Config} config
@@ -17,15 +17,21 @@ function saveCertificateTaskFactory(homeDir) {
       {
         title: 'Save certificates',
         task: async (ctx) => {
-          const configDir = homeDir.joinPath('ssl', config.getName());
+          const certificatesDir = homeDir.joinPath(
+            config.getName(),
+            'platform',
+            'dapi',
+            'envoy',
+            'ssl',
+          );
 
-          fs.mkdirSync(configDir, { recursive: true });
+          fs.mkdirSync(certificatesDir, { recursive: true });
 
-          const crtFile = path.join(configDir, 'bundle.crt');
+          const crtFile = path.join(certificatesDir, 'bundle.crt');
 
           fs.writeFileSync(crtFile, ctx.certificateFile, 'utf8');
 
-          const keyFile = path.join(configDir, 'private.key');
+          const keyFile = path.join(certificatesDir, 'private.key');
           fs.writeFileSync(keyFile, ctx.privateKeyFile, 'utf8');
 
           config.set('platform.dapi.envoy.ssl.enabled', true);
@@ -35,5 +41,3 @@ function saveCertificateTaskFactory(homeDir) {
 
   return saveCertificateTask;
 }
-
-module.exports = saveCertificateTaskFactory;

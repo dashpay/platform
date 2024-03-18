@@ -34,7 +34,7 @@ use dpp::platform_value::Value;
 use grovedb::Error;
 
 /// Order clause struct
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct OrderClause {
     /// Field
     pub field: String,
@@ -52,7 +52,7 @@ impl<'a> OrderClause {
         }
 
         let field_value = clause_components
-            .get(0)
+            .first()
             .expect("check above enforces it exists");
         let field_ref = field_value.as_text().ok_or(Error::InvalidQuery(
             "first field of where component should be a string",
@@ -78,5 +78,16 @@ impl<'a> OrderClause {
         };
 
         Ok(OrderClause { field, ascending })
+    }
+}
+
+impl From<OrderClause> for Value {
+    fn from(order: OrderClause) -> Self {
+        let direction = match order.ascending {
+            true => "asc",
+            false => "desc",
+        };
+
+        Self::Array(vec![order.field.into(), direction.into()])
     }
 }

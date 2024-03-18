@@ -26,20 +26,32 @@
 @class GetDataContractsResponse;
 @class GetDocumentsRequest;
 @class GetDocumentsResponse;
+@class GetEpochsInfoRequest;
+@class GetEpochsInfoResponse;
 @class GetIdentitiesByPublicKeyHashesRequest;
 @class GetIdentitiesByPublicKeyHashesResponse;
 @class GetIdentitiesRequest;
 @class GetIdentitiesResponse;
+@class GetIdentityBalanceAndRevisionRequest;
 @class GetIdentityBalanceAndRevisionResponse;
+@class GetIdentityBalanceRequest;
 @class GetIdentityBalanceResponse;
-@class GetIdentityByPublicKeyHashesRequest;
-@class GetIdentityByPublicKeyHashesResponse;
+@class GetIdentityByPublicKeyHashRequest;
+@class GetIdentityByPublicKeyHashResponse;
+@class GetIdentityContractNonceRequest;
+@class GetIdentityContractNonceResponse;
 @class GetIdentityKeysRequest;
 @class GetIdentityKeysResponse;
+@class GetIdentityNonceRequest;
+@class GetIdentityNonceResponse;
 @class GetIdentityRequest;
 @class GetIdentityResponse;
 @class GetProofsRequest;
 @class GetProofsResponse;
+@class GetProtocolVersionUpgradeStateRequest;
+@class GetProtocolVersionUpgradeStateResponse;
+@class GetProtocolVersionUpgradeVoteStatusRequest;
+@class GetProtocolVersionUpgradeVoteStatusResponse;
 @class WaitForStateTransitionResultRequest;
 @class WaitForStateTransitionResultResponse;
 
@@ -88,16 +100,21 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getIdentityKeysWithMessage:(GetIdentityKeysRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getIdentityBalance(GetIdentityRequest) returns (GetIdentityBalanceResponse)
+#pragma mark getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse)
 
-/**
- * rpc getIdentitiesKeys (GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse);
- */
-- (GRPCUnaryProtoCall *)getIdentityBalanceWithMessage:(GetIdentityRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+- (GRPCUnaryProtoCall *)getIdentityNonceWithMessage:(GetIdentityNonceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getIdentityBalanceAndRevision(GetIdentityRequest) returns (GetIdentityBalanceAndRevisionResponse)
+#pragma mark getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse)
 
-- (GRPCUnaryProtoCall *)getIdentityBalanceAndRevisionWithMessage:(GetIdentityRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+- (GRPCUnaryProtoCall *)getIdentityContractNonceWithMessage:(GetIdentityContractNonceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getIdentityBalance(GetIdentityBalanceRequest) returns (GetIdentityBalanceResponse)
+
+- (GRPCUnaryProtoCall *)getIdentityBalanceWithMessage:(GetIdentityBalanceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest) returns (GetIdentityBalanceAndRevisionResponse)
+
+- (GRPCUnaryProtoCall *)getIdentityBalanceAndRevisionWithMessage:(GetIdentityBalanceAndRevisionRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getProofs(GetProofsRequest) returns (GetProofsResponse)
 
@@ -123,9 +140,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getIdentitiesByPublicKeyHashesWithMessage:(GetIdentitiesByPublicKeyHashesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getIdentityByPublicKeyHashes(GetIdentityByPublicKeyHashesRequest) returns (GetIdentityByPublicKeyHashesResponse)
+#pragma mark getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest) returns (GetIdentityByPublicKeyHashResponse)
 
-- (GRPCUnaryProtoCall *)getIdentityByPublicKeyHashesWithMessage:(GetIdentityByPublicKeyHashesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+- (GRPCUnaryProtoCall *)getIdentityByPublicKeyHashWithMessage:(GetIdentityByPublicKeyHashRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark waitForStateTransitionResult(WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse)
 
@@ -134,6 +151,18 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getConsensusParams(GetConsensusParamsRequest) returns (GetConsensusParamsResponse)
 
 - (GRPCUnaryProtoCall *)getConsensusParamsWithMessage:(GetConsensusParamsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getProtocolVersionUpgradeState(GetProtocolVersionUpgradeStateRequest) returns (GetProtocolVersionUpgradeStateResponse)
+
+- (GRPCUnaryProtoCall *)getProtocolVersionUpgradeStateWithMessage:(GetProtocolVersionUpgradeStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getProtocolVersionUpgradeVoteStatus(GetProtocolVersionUpgradeVoteStatusRequest) returns (GetProtocolVersionUpgradeVoteStatusResponse)
+
+- (GRPCUnaryProtoCall *)getProtocolVersionUpgradeVoteStatusWithMessage:(GetProtocolVersionUpgradeVoteStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse)
+
+- (GRPCUnaryProtoCall *)getEpochsInfoWithMessage:(GetEpochsInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 @end
 
@@ -171,28 +200,32 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetIdentityKeysWithRequest:(GetIdentityKeysRequest *)request handler:(void(^)(GetIdentityKeysResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
-#pragma mark getIdentityBalance(GetIdentityRequest) returns (GetIdentityBalanceResponse)
+#pragma mark getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse)
 
-/**
- * rpc getIdentitiesKeys (GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse);
- *
- * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
- */
-- (void)getIdentityBalanceWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler;
+- (void)getIdentityNonceWithRequest:(GetIdentityNonceRequest *)request handler:(void(^)(GetIdentityNonceResponse *_Nullable response, NSError *_Nullable error))handler;
 
-/**
- * rpc getIdentitiesKeys (GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse);
- *
- * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
- */
-- (GRPCProtoCall *)RPCTogetIdentityBalanceWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler;
+- (GRPCProtoCall *)RPCTogetIdentityNonceWithRequest:(GetIdentityNonceRequest *)request handler:(void(^)(GetIdentityNonceResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
-#pragma mark getIdentityBalanceAndRevision(GetIdentityRequest) returns (GetIdentityBalanceAndRevisionResponse)
+#pragma mark getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse)
 
-- (void)getIdentityBalanceAndRevisionWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler;
+- (void)getIdentityContractNonceWithRequest:(GetIdentityContractNonceRequest *)request handler:(void(^)(GetIdentityContractNonceResponse *_Nullable response, NSError *_Nullable error))handler;
 
-- (GRPCProtoCall *)RPCTogetIdentityBalanceAndRevisionWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler;
+- (GRPCProtoCall *)RPCTogetIdentityContractNonceWithRequest:(GetIdentityContractNonceRequest *)request handler:(void(^)(GetIdentityContractNonceResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getIdentityBalance(GetIdentityBalanceRequest) returns (GetIdentityBalanceResponse)
+
+- (void)getIdentityBalanceWithRequest:(GetIdentityBalanceRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetIdentityBalanceWithRequest:(GetIdentityBalanceRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest) returns (GetIdentityBalanceAndRevisionResponse)
+
+- (void)getIdentityBalanceAndRevisionWithRequest:(GetIdentityBalanceAndRevisionRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetIdentityBalanceAndRevisionWithRequest:(GetIdentityBalanceAndRevisionRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getProofs(GetProofsRequest) returns (GetProofsResponse)
@@ -237,11 +270,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetIdentitiesByPublicKeyHashesWithRequest:(GetIdentitiesByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentitiesByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
-#pragma mark getIdentityByPublicKeyHashes(GetIdentityByPublicKeyHashesRequest) returns (GetIdentityByPublicKeyHashesResponse)
+#pragma mark getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest) returns (GetIdentityByPublicKeyHashResponse)
 
-- (void)getIdentityByPublicKeyHashesWithRequest:(GetIdentityByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentityByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler;
+- (void)getIdentityByPublicKeyHashWithRequest:(GetIdentityByPublicKeyHashRequest *)request handler:(void(^)(GetIdentityByPublicKeyHashResponse *_Nullable response, NSError *_Nullable error))handler;
 
-- (GRPCProtoCall *)RPCTogetIdentityByPublicKeyHashesWithRequest:(GetIdentityByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentityByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler;
+- (GRPCProtoCall *)RPCTogetIdentityByPublicKeyHashWithRequest:(GetIdentityByPublicKeyHashRequest *)request handler:(void(^)(GetIdentityByPublicKeyHashResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark waitForStateTransitionResult(WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse)
@@ -256,6 +289,27 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getConsensusParamsWithRequest:(GetConsensusParamsRequest *)request handler:(void(^)(GetConsensusParamsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetConsensusParamsWithRequest:(GetConsensusParamsRequest *)request handler:(void(^)(GetConsensusParamsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getProtocolVersionUpgradeState(GetProtocolVersionUpgradeStateRequest) returns (GetProtocolVersionUpgradeStateResponse)
+
+- (void)getProtocolVersionUpgradeStateWithRequest:(GetProtocolVersionUpgradeStateRequest *)request handler:(void(^)(GetProtocolVersionUpgradeStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetProtocolVersionUpgradeStateWithRequest:(GetProtocolVersionUpgradeStateRequest *)request handler:(void(^)(GetProtocolVersionUpgradeStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getProtocolVersionUpgradeVoteStatus(GetProtocolVersionUpgradeVoteStatusRequest) returns (GetProtocolVersionUpgradeVoteStatusResponse)
+
+- (void)getProtocolVersionUpgradeVoteStatusWithRequest:(GetProtocolVersionUpgradeVoteStatusRequest *)request handler:(void(^)(GetProtocolVersionUpgradeVoteStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetProtocolVersionUpgradeVoteStatusWithRequest:(GetProtocolVersionUpgradeVoteStatusRequest *)request handler:(void(^)(GetProtocolVersionUpgradeVoteStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse)
+
+- (void)getEpochsInfoWithRequest:(GetEpochsInfoRequest *)request handler:(void(^)(GetEpochsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetEpochsInfoWithRequest:(GetEpochsInfoRequest *)request handler:(void(^)(GetEpochsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end

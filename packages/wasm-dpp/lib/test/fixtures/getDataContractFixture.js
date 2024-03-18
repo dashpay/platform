@@ -1,9 +1,7 @@
 const crypto = require('crypto');
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const JsIdentifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const generateRandomIdentifierAsync = require('../utils/generateRandomIdentifierAsync');
 const { default: loadWasmDpp } = require('../../..');
-let { DataContractFactory } = require('../../..');
+const { DataContractFactory, getLatestProtocolVersion, Identifier } = require('../../..');
 
 let randomOwnerId = null;
 
@@ -13,7 +11,7 @@ let randomOwnerId = null;
  * @return {Promise<DataContract>}
  */
 module.exports = async function getDataContractFixture(ownerId = randomOwnerId) {
-  ({ DataContractFactory } = await loadWasmDpp());
+  await loadWasmDpp();
 
   if (!randomOwnerId) {
     randomOwnerId = await generateRandomIdentifierAsync();
@@ -30,6 +28,7 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
       properties: {
         name: {
           type: 'string',
+          position: 0,
         },
       },
       required: ['$createdAt'],
@@ -40,6 +39,7 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
       properties: {
         lastName: {
           type: 'string',
+          position: 0,
         },
       },
       required: ['lastName', '$updatedAt'],
@@ -95,14 +95,17 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
         firstName: {
           type: 'string',
           maxLength: 63,
+          position: 0,
         },
         lastName: {
           type: 'string',
           maxLength: 63,
+          position: 1,
         },
         otherProperty: {
           type: 'string',
           maxLength: 42,
+          position: 2,
         },
       },
       required: ['firstName', '$createdAt', '$updatedAt', 'lastName'],
@@ -139,6 +142,7 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
       properties: {
         name: {
           type: 'string',
+          position: 0,
         },
       },
       additionalProperties: false,
@@ -164,9 +168,11 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
       properties: {
         firstName: {
           type: 'string',
+          position: 0,
         },
         lastName: {
           type: 'string',
+          position: 1,
         },
       },
       required: ['firstName', '$createdAt', '$updatedAt'],
@@ -187,13 +193,15 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
           type: 'array',
           byteArray: true,
           maxItems: 16,
+          position: 0,
         },
         identifierField: {
           type: 'array',
           byteArray: true,
-          contentMediaType: JsIdentifier.MEDIA_TYPE,
+          contentMediaType: Identifier.MEDIA_TYPE,
           minItems: 32,
           maxItems: 32,
+          position: 1,
         },
       },
       required: ['byteArrayField'],
@@ -205,18 +213,22 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
         firstName: {
           type: 'string',
           maxLength: 63,
+          position: 0,
         },
         lastName: {
           type: 'string',
           maxLength: 63,
+          position: 1,
         },
         country: {
           type: 'string',
           maxLength: 63,
+          position: 2,
         },
         city: {
           type: 'string',
           maxLength: 63,
+          position: 3,
         },
       },
       indices: [
@@ -256,7 +268,7 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
     },
   };
   const factory = new DataContractFactory(
-    protocolVersion.latestVersion,
+    getLatestProtocolVersion(),
     entropyGenerator,
   );
 
@@ -268,5 +280,6 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
     documentsMutableContractDefault: true,
   };
 
-  return factory.create(ownerId, documents, config);
+  // eslint-disable-next-line
+  return factory.create(ownerId, BigInt(1), documents, config);
 };

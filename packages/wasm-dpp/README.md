@@ -37,7 +37,7 @@ Library consumers must ignore class names minification for `@dashevo/wasm-dpp` l
 
 ## Prerequisites
 
-- Install [Rust](https://www.rust-lang.org/tools/install) v1.67+
+- Install [Rust](https://www.rust-lang.org/tools/install) v1.73+
 - Add wasm32 target: `$ rustup target add wasm32-unknown-unknown`
 - Install wasm-bingen-cli: `cargo install wasm-bindgen-cli@0.2.85`
   - *double-check that wasm-bindgen-cli version above matches wasm-bindgen version in Cargo.lock file*

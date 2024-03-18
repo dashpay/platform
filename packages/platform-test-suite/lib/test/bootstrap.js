@@ -10,22 +10,33 @@ use(chaiAsPromised);
 use(dirtyChai);
 use(sinonChai);
 
-process.env.NODE_ENV = 'test';
-
 dotenvSafe.config({
   path: path.resolve(__dirname, '..', '..', '.env'),
 });
 
-beforeEach(function beforeEach() {
-  if (!this.sinon) {
-    this.sinon = sinon.createSandbox();
-  } else {
-    this.sinon.restore();
-  }
-});
+process.env.NODE_ENV = 'test';
 
-afterEach(function afterEach() {
-  this.sinon.restore();
-});
+let faucetIndex = 1;
+if (process.env.MOCHA_WORKER_ID) {
+  const mochaWorkerId = parseInt(process.env.MOCHA_WORKER_ID, 10);
+  faucetIndex = mochaWorkerId + 1;
+}
+
+process.env.FAUCET_ADDRESS = process.env[`FAUCET_${faucetIndex}_ADDRESS`];
+process.env.FAUCET_PRIVATE_KEY = process.env[`FAUCET_${faucetIndex}_PRIVATE_KEY`];
+
+exports.mochaHooks = {
+  beforeEach() {
+    if (!this.sinon) {
+      this.sinon = sinon.createSandbox();
+    } else {
+      this.sinon.restore();
+    }
+  },
+
+  afterEach() {
+    this.sinon.restore();
+  },
+};
 
 global.expect = expect;

@@ -14,18 +14,19 @@ use dpp::consensus::state::document::invalid_document_revision_error::InvalidDoc
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
+use dpp::block::block_info::BlockInfo;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{consensus::ConsensusError, prelude::Identifier, validation::ConsensusValidationResult};
 
-use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition};
+use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentTransition, DocumentReplaceTransition, DocumentTransitionV0Methods};
 use dpp::state_transition::StateTransitionLike;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
-use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::{DocumentReplaceTransitionAction, DocumentReplaceTransitionActionAccessorsV0};
+use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
 use drive::state_transition_action::document::documents_batch::v0::DocumentsBatchTransitionActionV0;
@@ -36,14 +37,14 @@ use drive::grovedb::TransactionArg;
 
 use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use drive::drive::contract::DataContractFetchInfo;
-use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext};
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchTransitionTransformerV0
 {
     fn try_into_action_v0(
         &self,
         platform: &PlatformStateRef,
+        block_info: &BlockInfo,
         validate: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
@@ -53,6 +54,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
 trait DocumentsBatchTransitionInternalTransformerV0 {
     fn transform_document_transitions_within_contract_v0(
         platform: &PlatformStateRef,
+        block_info: &BlockInfo,
         validate: bool,
         data_contract_id: &Identifier,
         owner_id: Identifier,
@@ -63,6 +65,7 @@ trait DocumentsBatchTransitionInternalTransformerV0 {
     ) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error>;
     fn transform_document_transitions_within_document_type_v0(
         platform: &PlatformStateRef,
+        block_info: &BlockInfo,
         validate: bool,
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         document_type_name: &str,
@@ -73,8 +76,9 @@ trait DocumentsBatchTransitionInternalTransformerV0 {
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error>;
     /// The data contract can be of multiple difference versions
-    fn transform_transition_v0<'a>(
+    fn transform_transition_v0(
         validate: bool,
+        block_info: &BlockInfo,
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         transition: &DocumentTransition,
         replaced_documents: &[Document],
@@ -99,11 +103,13 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
     fn try_into_action_v0(
         &self,
         platform: &PlatformStateRef,
-        validate: bool,
+        block_info: &BlockInfo,
+        validate_against_state: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
     ) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction>, Error> {
         let owner_id = self.owner_id();
+        let user_fee_increase = self.user_fee_increase();
         let platform_version = platform.state.current_platform_version()?;
         let mut transitions_by_contracts_and_types: BTreeMap<
             &Identifier,
@@ -139,7 +145,8 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
                 |(data_contract_id, document_transitions_by_document_type)| {
                     Self::transform_document_transitions_within_contract_v0(
                         platform,
-                        validate,
+                        block_info,
+                        validate_against_state,
                         data_contract_id,
                         owner_id,
                         document_transitions_by_document_type,
@@ -156,6 +163,7 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
             let batch_transition_action = DocumentsBatchTransitionActionV0 {
                 owner_id,
                 transitions: validation_result.into_data()?,
+                user_fee_increase,
             }
             .into();
             Ok(ConsensusValidationResult::new_with_data(
@@ -172,7 +180,8 @@ impl DocumentsBatchTransitionTransformerV0 for DocumentsBatchTransition {
 impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition {
     fn transform_document_transitions_within_contract_v0(
         platform: &PlatformStateRef,
-        validate: bool,
+        block_info: &BlockInfo,
+        validate_against_state: bool,
         data_contract_id: &Identifier,
         owner_id: Identifier,
         document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
@@ -205,7 +214,8 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
         .map(|(document_type_name, document_transitions)| {
             Self::transform_document_transitions_within_document_type_v0(
                 platform,
-                validate,
+                block_info,
+                validate_against_state,
                 data_contract_fetch_info.clone(),
                 document_type_name,
                 owner_id,
@@ -222,7 +232,8 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
 
     fn transform_document_transitions_within_document_type_v0(
         platform: &PlatformStateRef,
-        validate: bool,
+        block_info: &BlockInfo,
+        validate_against_state: bool,
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         document_type_name: &str,
         owner_id: Identifier,
@@ -285,7 +296,8 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                 .map(|transition| {
                     // we validate every transition in this document type
                     Self::transform_transition_v0(
-                        validate,
+                        validate_against_state,
+                        block_info,
                         data_contract_fetch_info.clone(),
                         transition,
                         &replaced_documents,
@@ -320,7 +332,8 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
 
     /// The data contract can be of multiple difference versions
     fn transform_transition_v0<'a>(
-        validate: bool,
+        validate_against_state: bool,
+        block_info: &BlockInfo,
         data_contract_fetch_info: Arc<DataContractFetchInfo>,
         transition: &DocumentTransition,
         replaced_documents: &[Document],
@@ -330,7 +343,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
             DocumentTransition::Create(document_create_transition) => {
                 let result = ConsensusValidationResult::<DocumentTransitionAction>::new();
 
-                let document_create_action = DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, |_identifier| {
+                let document_create_action = DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, block_info, |_identifier| {
                 Ok(data_contract_fetch_info.clone())
             })?;
 
@@ -357,6 +370,12 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                 // In this case we don't care about the created at
                 let original_document_created_at = original_document.created_at();
 
+                let original_document_created_at_block_height =
+                    original_document.created_at_block_height();
+
+                let original_document_created_at_core_block_height =
+                    original_document.created_at_core_block_height();
+
                 let validation_result = Self::check_ownership_of_old_replaced_document_v0(
                     document_replace_transition,
                     original_document,
@@ -368,7 +387,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                     return Ok(result);
                 }
 
-                if validate {
+                if validate_against_state {
                     //there are situations where we don't want to validate this against the state
                     // for example when we already applied the state transition action
                     // and we are just validating it happened
@@ -387,6 +406,9 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                     DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
                         document_replace_transition,
                         original_document_created_at,
+                        original_document_created_at_block_height,
+                        original_document_created_at_core_block_height,
+                        block_info,
                         |_identifier| Ok(data_contract_fetch_info.clone()),
                     )?;
 

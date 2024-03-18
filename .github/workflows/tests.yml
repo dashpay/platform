@@ -1,0 +1,222 @@
+name: Tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [ opened, synchronize, reopened, ready_for_review ]
+    branches:
+      - master
+      - 'v[0-9]+\.[0-9]+-dev'
+  push:
+    branches:
+      - master
+      - 'v[0-9]+\.[0-9]+-dev'
+  schedule:
+    - cron: "30 4 * * *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Determine changed packages
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-22.04
+    outputs:
+      js-packages: ${{ steps.filter-js.outputs.changes }}
+      rs-packages: ${{ steps.filter-rs.outputs.changes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - uses: dorny/paths-filter@v2
+        id: filter-js
+        with:
+          filters: .github/package-filters/js-packages.yml
+
+      - uses: dorny/paths-filter@v2
+        id: filter-rs
+        with:
+          filters: .github/package-filters/rs-packages.yml
+
+  build-js:
+    name: Build JS packages
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    secrets: inherit
+    uses: ./.github/workflows/tests-build-js.yml
+
+  build-images:
+    name: Build Docker images
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Drive
+            image_name: drive
+            target: drive-abci
+          - name: DAPI
+            image_name: dapi
+            target: dapi
+          - name: Dashmate helper
+            image_name: dashmate-helper
+            target: dashmate-helper
+    uses: ./.github/workflows/tests-build-image.yml
+    with:
+      name: ${{ matrix.name }}
+      image_name: ${{ matrix.image_name }}
+      target: ${{ matrix.target }}
+
+  rs-packages:
+    name: Rust packages
+    needs:
+      - changes
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        rs-package: ${{ fromJson(needs.changes.outputs.rs-packages) }}
+    uses: ./.github/workflows/tests-rs-package.yml
+    with:
+      package: ${{ matrix.rs-package }}
+      # lint-runner: ${{ contains(fromJSON('["drive-abci", "drive"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' || '"ubuntu-22.04"' }}
+      # FIXME: Clippy fails on github hosted runners, most likely due to RAM usage. Using self-hosted runners for now.
+      lint-runner: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
+      # Run drive tests on self-hosted 4x
+      test-runner: ${{ contains(fromJSON('["drive-abci"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]' || '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' }}
+      check-each-feature: ${{ contains(fromJSON('["rs-sdk","rs-dapi-client","dapi-grpc","dpp","drive-abci"]'), matrix.rs-package) }}
+
+  rs-crates-security:
+    name: Rust crates security audit
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Audit crates
+        uses: rustsec/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  js-packages:
+    name: JS packages
+    needs:
+      - changes
+      - build-js
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        js-package: ${{ fromJson(needs.changes.outputs.js-packages) }}
+    uses: ./.github/workflows/tests-js-package.yml
+    with:
+      package: ${{ matrix.js-package }}
+      test-command: ${{ matrix.js-package == 'dashmate' && 'test:unit' || 'test' }}
+      skip-tests: ${{ contains(matrix.js-package, 'platform-test-suite') }}
+
+  js-deps-versions:
+    name: JS dependency versions check
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Validate workspaces
+        run: yarn constraints
+
+  js-npm-security:
+    name: JS NPM security audit
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Audit NPM
+        run: yarn npm audit --environment production --all --recursive
+
+  js-codeql:
+    name: JS code security audit
+    needs: build-js
+    secrets: inherit
+    uses: ./.github/workflows/tests-codeql.yml
+
+  dashmate-e2e-tests:
+    name: Dashmate E2E tests
+    secrets: inherit
+    needs:
+      - changes
+      - build-images
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Local network
+            test-pattern: test/e2e/localNetwork.spec.js
+            restore_local_network_data: true
+          - name: Testnet fullnode
+            test-pattern: test/e2e/testnetFullnode.spec.js
+            restore_local_network_data: false
+          - name: Testnet Evonode
+            test-pattern: test/e2e/testnetEvonode.spec.js
+            restore_local_network_data: false
+    uses: ./.github/workflows/tests-dashmate.yml
+    with:
+      name: ${{ matrix.name }}
+      test-pattern: ${{ matrix.test-pattern }}
+      restore_local_network_data: ${{ matrix.restore_local_network_data }}
+    if: contains(needs.changes.outputs.js-packages, 'dashmate')
+
+  test-suite:
+    name: Test Suite
+    needs:
+      - build-js
+      - build-images
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Test Suite
+            command: test:suite
+            batch_index: 0
+            batch_total: 0
+          - name: Test Suite in browser (1)
+            command: test:browsers
+            batch_index: 0
+            batch_total: 2
+          - name: Test Suite in browser (2)
+            command: test:browsers
+            batch_index: 1
+            batch_total: 2
+    uses: ./.github/workflows/tests-test-suite.yml
+    with:
+      name: ${{ matrix.name }}
+      command: ${{ matrix.command }}
+      batch_total: ${{ matrix.batch_total }}
+      batch_index: ${{ matrix.batch_index }}
+
+  test-functional:
+    name: Packages functional tests
+    needs:
+      - build-js
+      - build-images
+    secrets: inherit
+    uses: ./.github/workflows/tests-packges-functional.yml

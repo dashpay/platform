@@ -1,30 +1,12 @@
 mod v0;
 
-use crate::prelude::AssetLockProof;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::NonConsensusError;
+
 use platform_value::Identifier;
 pub use v0::*;
 
 impl IdentityCreateTransitionAccessorsV0 for IdentityCreateTransition {
-    fn set_asset_lock_proof(
-        &mut self,
-        asset_lock_proof: AssetLockProof,
-    ) -> Result<(), NonConsensusError> {
-        match self {
-            IdentityCreateTransition::V0(transition) => {
-                transition.set_asset_lock_proof(asset_lock_proof)
-            }
-        }
-    }
-
-    fn asset_lock_proof(&self) -> &AssetLockProof {
-        match self {
-            IdentityCreateTransition::V0(transition) => transition.asset_lock_proof(),
-        }
-    }
-
     fn public_keys(&self) -> &[IdentityPublicKeyInCreation] {
         match self {
             IdentityCreateTransition::V0(transition) => transition.public_keys(),

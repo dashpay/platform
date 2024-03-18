@@ -1,6 +1,5 @@
 const bs58 = require('bs58');
 const crypto = require('crypto');
-const DocumentCreateTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
 
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
@@ -10,7 +9,7 @@ let {
   Identifier, DocumentFactory, ExtendedDocument,
   InvalidDocumentTypeInDataContractError, InvalidDocumentError,
   JsonSchemaError, NoDocumentsSuppliedError, MismatchOwnerIdsError, InvalidInitialRevisionError,
-  InvalidActionNameError,
+  InvalidActionNameError, DocumentCreateTransition,
 } = require('../../..');
 
 const { default: loadWasmDpp, SerializedObjectParsingError } = require('../../..');
@@ -38,6 +37,7 @@ describe('DocumentFactory', () => {
       MismatchOwnerIdsError,
       InvalidInitialRevisionError,
       InvalidActionNameError,
+      DocumentCreateTransition,
     } = await loadWasmDpp());
   });
 
@@ -233,7 +233,7 @@ describe('DocumentFactory', () => {
       try {
         factory.createStateTransition({
           unknown: documents,
-        });
+        }, {});
 
         expect.fail('Error was not thrown');
       } catch (e) {
@@ -245,7 +245,7 @@ describe('DocumentFactory', () => {
 
     it('should throw and error if no documents were supplied', async () => {
       try {
-        factory.createStateTransition({});
+        factory.createStateTransition({}, {});
         expect.fail('Error was not thrown');
       } catch (e) {
         expect(e).to.be.an.instanceOf(NoDocumentsSuppliedError);
@@ -287,9 +287,15 @@ describe('DocumentFactory', () => {
       const [newDocument] = await getDocumentsFixture(dataContract);
       newDocument.setData({ lastName: 'Keck' });
 
+      const identityId = newDocument.getOwnerId();
+
       const stateTransition = factory.createStateTransition({
         create: documents,
         replace: [newDocument],
+      }, {
+        [identityId.toString()]: {
+          [dataContract.getId().toString()]: 1,
+        },
       });
 
       const replaceDocuments = stateTransition.getTransitions()

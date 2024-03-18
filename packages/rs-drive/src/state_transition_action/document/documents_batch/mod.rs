@@ -5,6 +5,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identity::SecurityLevel;
 use dpp::platform_value::Identifier;
+use dpp::prelude::UserFeeIncrease;
 use dpp::ProtocolError;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 
@@ -35,10 +36,38 @@ impl DocumentsBatchTransitionAction {
         }
     }
 
+    /// transitions
+    pub fn transitions_mut(&mut self) -> &mut Vec<DocumentTransitionAction> {
+        match self {
+            DocumentsBatchTransitionAction::V0(v0) => &mut v0.transitions,
+        }
+    }
+
+    /// transitions
+    pub fn transitions_take(&mut self) -> Vec<DocumentTransitionAction> {
+        match self {
+            DocumentsBatchTransitionAction::V0(v0) => std::mem::take(&mut v0.transitions),
+        }
+    }
+
     /// transitions owned
     pub fn transitions_owned(self) -> Vec<DocumentTransitionAction> {
         match self {
             DocumentsBatchTransitionAction::V0(v0) => v0.transitions,
+        }
+    }
+
+    /// set transitions
+    pub fn set_transitions(&mut self, transitions: Vec<DocumentTransitionAction>) {
+        match self {
+            DocumentsBatchTransitionAction::V0(v0) => v0.transitions = transitions,
+        }
+    }
+
+    /// fee multiplier
+    pub fn user_fee_increase(&self) -> UserFeeIncrease {
+        match self {
+            DocumentsBatchTransitionAction::V0(transition) => transition.user_fee_increase,
         }
     }
 }
@@ -81,8 +110,18 @@ impl DocumentsBatchTransitionAction {
         let mut highest_security_level = SecurityLevel::lowest_level();
 
         for transition in self.transitions().iter() {
-            let document_type_name = transition.base().document_type_name();
-            let data_contract_info = transition.base().data_contract_fetch_info();
+            let document_type_name = transition
+                .base()
+                .ok_or(ProtocolError::CorruptedCodeExecution(
+                    "expecting action to have a base".to_string(),
+                ))?
+                .document_type_name();
+            let data_contract_info = transition
+                .base()
+                .ok_or(ProtocolError::CorruptedCodeExecution(
+                    "expecting action to have a base".to_string(),
+                ))?
+                .data_contract_fetch_info();
 
             let document_type = data_contract_info
                 .contract

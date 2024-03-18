@@ -38,6 +38,10 @@ pub trait DocumentV0Getters {
     fn id_ref(&self) -> &Identifier;
     fn owner_id_ref(&self) -> &Identifier;
     fn properties_consumed(self) -> BTreeMap<String, Value>;
+    fn created_at_block_height(&self) -> Option<u64>;
+    fn updated_at_block_height(&self) -> Option<u64>;
+    fn created_at_core_block_height(&self) -> Option<u32>;
+    fn updated_at_core_block_height(&self) -> Option<u32>;
 }
 
 pub trait DocumentV0Setters: DocumentV0Getters {
@@ -123,4 +127,8 @@ pub trait DocumentV0Setters: DocumentV0Getters {
         self.properties_mut()
             .insert(property_name.to_string(), Value::Bytes(value));
     }
+    fn set_created_at_block_height(&mut self, created_at_block_height: Option<u64>);
+    fn set_updated_at_block_height(&mut self, updated_at_block_height: Option<u64>);
+    fn set_created_at_core_block_height(&mut self, created_at_core_block_height: Option<u32>);
+    fn set_updated_at_core_block_height(&mut self, updated_at_core_block_height: Option<u32>);
 }

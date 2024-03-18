@@ -5,13 +5,12 @@ use serde_json::Value as JsonValue;
 
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::{Identifier, Revision, TimestampMillis};
-use dpp::util::json_schema::JsonSchemaExt;
+
 use dpp::util::json_value::JsonValueExt;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
@@ -20,6 +19,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
 use crate::data_contract::DataContractWasm;
+#[allow(deprecated)] // BinaryType is unsed in unused code below
 use crate::document::BinaryType;
 use crate::document::{ConversionOptions, DocumentWasm};
 use crate::errors::RustConversionError;
@@ -27,6 +27,7 @@ use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
 use crate::metadata::MetadataWasm;
 use crate::utils::{with_serde_to_platform_value, IntoWasm, ToSerdeJSONExt, WithJsError};
+use crate::validation::ValidationResultWasm;
 use crate::with_js_error;
 
 #[wasm_bindgen(js_name=ExtendedDocument)]
@@ -190,7 +191,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=set)]
     pub fn set(&mut self, path: String, js_value_to_set: JsValue) -> Result<(), JsValue> {
-        let mut value: Value = js_value_to_set.with_serde_to_platform_value()?;
+        let value: Value = js_value_to_set.with_serde_to_platform_value()?;
         self.0.set_untrusted(&path, value).with_js_error()
     }
 
@@ -259,7 +260,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=getMetadata)]
     pub fn get_metadata(&self) -> Option<MetadataWasm> {
-        self.0.metadata().clone().map(Into::into)
+        (*self.0.metadata()).map(Into::into)
     }
 
     #[wasm_bindgen(js_name=setMetadata)]
@@ -345,9 +346,26 @@ impl ExtendedDocumentWasm {
     pub fn deep_clone(&self) -> Self {
         self.clone()
     }
+
+    #[wasm_bindgen]
+    pub fn validate(&self, platform_version: u32) -> Result<ValidationResultWasm, JsValue> {
+        let platform_version =
+            PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
+
+        let result = self
+            .0
+            .validate(platform_version)
+            .with_js_error()?
+            .map(|_| JsValue::undefined());
+
+        Ok(result.into())
+    }
 }
 
 impl ExtendedDocumentWasm {
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     fn get_binary_type_of_path(&self, path: &String) -> Result<BinaryType, JsValue> {
         let document_type = self.0.document_type().with_js_error()?;
 

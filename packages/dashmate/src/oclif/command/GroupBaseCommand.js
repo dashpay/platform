@@ -1,14 +1,20 @@
-const { Flags } = require('@oclif/core');
-
-const { asValue } = require('awilix');
-
-const BaseCommand = require('./BaseCommand');
-const GroupIsNotPresentError = require('../../config/errors/GroupIsNotPresentError');
+import { Flags } from '@oclif/core';
+import { asValue } from 'awilix';
+import BaseCommand from './BaseCommand.js';
+import GroupIsNotPresentError from '../../config/errors/GroupIsNotPresentError.js';
 
 /**
  * @abstract
  */
-class GroupBaseCommand extends BaseCommand {
+export default class GroupBaseCommand extends BaseCommand {
+  static flags = {
+    group: Flags.string({
+      description: 'group name to use',
+      default: null,
+    }),
+    ...BaseCommand.flags,
+  };
+
   async run() {
     const configFile = this.container.resolve('configFile');
 
@@ -39,24 +45,6 @@ class GroupBaseCommand extends BaseCommand {
       configGroup: asValue(group),
     });
 
-    const renderServiceTemplates = this.container.resolve('renderServiceTemplates');
-    const writeServiceConfigs = this.container.resolve('writeServiceConfigs');
-
-    for (const config of group) {
-      const serviceConfigFiles = renderServiceTemplates(config);
-      writeServiceConfigs(config.getName(), serviceConfigFiles);
-    }
-
     return super.run();
   }
 }
-
-GroupBaseCommand.flags = {
-  group: Flags.string({
-    description: 'group name to use',
-    default: null,
-  }),
-  ...BaseCommand.flags,
-};
-
-module.exports = GroupBaseCommand;

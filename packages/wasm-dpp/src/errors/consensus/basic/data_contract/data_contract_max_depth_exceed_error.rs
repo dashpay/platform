@@ -1,8 +1,7 @@
-use crate::buffer::Buffer;
 use dpp::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
-use dpp::serialization::PlatformSerializable;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractMaxDepthExceedError)]

@@ -25,9 +25,10 @@ mod test {
         let transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: generate_random_identifier_struct(),
             revision: 0,
+            nonce: 1,
             add_public_keys: vec![public_key.into()],
             disable_public_keys: vec![],
-            public_keys_disabled_at: None,
+            user_fee_increase: 0,
             signature_public_key_id: 0,
             signature: BinaryData::new(buffer.to_vec()),
         }

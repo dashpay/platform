@@ -30,14 +30,13 @@
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
 
 ARG ALPINE_VERSION=3.18
-
-# Set RUSTC_WRAPPER to `sccache` to enable sccache caching
+ARG PROTOC_VERSION=25.2
 ARG RUSTC_WRAPPER
 
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
 #
-FROM rust:alpine${ALPINE_VERSION} as deps-base
+FROM node:20-alpine${ALPINE_VERSION} as deps-base
 
 #
 # Install some dependencies
@@ -53,8 +52,6 @@ RUN apk add --no-cache \
         libc-dev \
         linux-headers \
         llvm-static llvm-dev  \
-        'nodejs~=18' \
-        npm \
         openssl-dev \
         perl \
         python3 \
@@ -63,31 +60,34 @@ RUN apk add --no-cache \
         xz \
         zeromq-dev
 
-SHELL ["/bin/bash", "-c"]
+# Configure Node.js
+
+RUN npm config set --global audit false
+
+# Install latest Rust toolbox
 
 ARG TARGETARCH
 
-RUN rustup install stable && \
-    rustup target add wasm32-unknown-unknown --toolchain stable
+# TODO: It doesn't sharing PATH between stages, so we need "source $HOME/.cargo/env" everywhere
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
+    --profile minimal \
+    -y \
+    # Rust version the same as in /README.md
+    --default-toolchain 1.76 \
+    --target wasm32-unknown-unknown
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
+ARG PROTOC_VERSION
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else export PROTOC_ARCH=x86_64; fi; \
-    curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v22.4/protoc-22.4-linux-${PROTOC_ARCH}.zip \
+    curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip \
         -o /tmp/protoc.zip && \
     unzip -qd /opt/protoc /tmp/protoc.zip && \
     rm /tmp/protoc.zip && \
     ln -s /opt/protoc/bin/protoc /usr/bin/
 
-# Configure Node.js
-RUN npm config set audit false && \
-    npm install -g npm@9.6.6 && \
-    npm install -g corepack@latest && \
-    corepack enable
-
 # Switch to clang
 RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
-
 
 # Select whether we want dev or release
 ARG CARGO_BUILD_PROFILE=dev
@@ -96,35 +96,56 @@ ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
 
-ARG RUSTC_WRAPPER
-
 FROM deps-base AS deps-sccache
+
+ARG SCCHACHE_VERSION=0.7.1
 
 # Install sccache for caching
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
     curl -Ls \
-        https://github.com/mozilla/sccache/releases/download/v0.4.1/sccache-v0.4.1-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
+        https://github.com/mozilla/sccache/releases/download/v$SCCHACHE_VERSION/sccache-v$SCCHACHE_VERSION-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
         tar -C /tmp -xz && \
         mv /tmp/sccache-*/sccache /usr/bin/
 
 #
 # Configure sccache
 #
+ARG RUSTC_WRAPPER
+ENV RUSTC_WRAPPER=${RUSTC_WRAPPER}
+
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
+ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
+
 ARG ACTIONS_CACHE_URL
+ENV ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}
+
 ARG ACTIONS_RUNTIME_TOKEN
+ENV ACTIONS_RUNTIME_TOKEN=${ACTIONS_RUNTIME_TOKEN}
+
 # Alternative solution is to use memcache
 ARG SCCACHE_MEMCACHED
+ENV SCCACHE_MEMCACHED=${SCCACHE_MEMCACHED}
+
+# S3 storage
+ARG SCCACHE_BUCKET
+ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
+
+ARG SCCACHE_REGION
+ENV SCCACHE_REGION=${SCCACHE_REGION}
 
 # Disable incremental buildings, not supported by sccache
 ARG CARGO_INCREMENTAL=false
+ENV CARGO_INCREMENTAL=${CARGO_INCREMENTAL}
 
 #
 # DEPS: FULL DEPENCIES LIST
 #
 # This is separate from `deps` to use sccache for caching
 FROM deps-${RUSTC_WRAPPER:-base} AS deps
+
+ARG SCCACHE_S3_KEY_PREFIX
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
 
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
@@ -134,6 +155,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    source $HOME/.cargo/env && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     RUSTFLAGS="-C target-feature=-crt-static" \
     CARGO_TARGET_DIR="/platform/target" \
@@ -148,13 +170,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
 #
 FROM deps as sources
 
-
 WORKDIR /platform
 
 COPY . .
-
-# print the JS build output
-RUN yarn config set enableInlineBuilds true
 
 #
 # STAGE: BUILD RS-DRIVE-ABCI
@@ -162,12 +180,16 @@ RUN yarn config set enableInlineBuilds true
 # This will prebuild majority of dependencies
 FROM sources AS build-drive-abci
 
+ARG SCCACHE_S3_KEY_PREFIX
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
+
 RUN mkdir /artifacts
 
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    source $HOME/.cargo/env && \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
@@ -181,13 +203,17 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
 #
 FROM sources AS build-js
 
+ARG SCCACHE_S3_KEY_PREFIX
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/wasm/wasm32
+
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_wasm,target=/platform/target \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
+    source $HOME/.cargo/env && \
     cp -R /tmp/unplugged /platform/.yarn/ && \
-    yarn install && \
+    yarn install --inline-builds && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
@@ -211,7 +237,7 @@ RUN mkdir -p /var/log/dash \
     /var/lib/dash/rs-drive-abci/db
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
-COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.example /var/lib/dash/rs-drive-abci/.env
+COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
 
 # Create a volume
 VOLUME /var/lib/dash/rs-drive-abci/db
@@ -239,6 +265,7 @@ CMD ["start"]
 
 # ABCI interface
 EXPOSE 26658
+EXPOSE 26659
 # Prometheus port
 EXPOSE 29090
 
@@ -254,7 +281,7 @@ RUN yarn workspaces focus --production dashmate
 #
 #  STAGE: FINAL DASHMATE HELPER IMAGE
 #
-FROM node:18-alpine${ALPINE_VERSION} AS dashmate-helper
+FROM node:20-alpine${ALPINE_VERSION} AS dashmate-helper
 
 RUN apk add --no-cache docker-cli docker-cli-compose curl
 
@@ -269,9 +296,7 @@ COPY --from=build-dashmate-helper /platform/package.json /platform/yarn.lock /pl
 # Copy only necessary packages from monorepo
 COPY --from=build-dashmate-helper /platform/packages/dashmate packages/dashmate
 COPY --from=build-dashmate-helper /platform/packages/dashpay-contract packages/dashpay-contract
-COPY --from=build-dashmate-helper /platform/packages/js-dpp packages/js-dpp
 COPY --from=build-dashmate-helper /platform/packages/wallet-lib packages/wallet-lib
-COPY --from=build-dashmate-helper /platform/packages/js-dash-sdk packages/js-dash-sdk
 COPY --from=build-dashmate-helper /platform/packages/js-dapi-client packages/js-dapi-client
 COPY --from=build-dashmate-helper /platform/packages/js-grpc-common packages/js-grpc-common
 COPY --from=build-dashmate-helper /platform/packages/dapi-grpc packages/dapi-grpc
@@ -300,7 +325,7 @@ RUN yarn workspaces focus --production @dashevo/platform-test-suite
 #
 #  STAGE: FINAL TEST SUITE IMAGE
 #
-FROM node:18-alpine${ALPINE_VERSION} AS test-suite
+FROM node:20-alpine${ALPINE_VERSION} AS test-suite
 
 RUN apk add --no-cache bash
 
@@ -322,7 +347,6 @@ COPY --from=build-test-suite /platform/packages/platform-test-suite/Cargo.toml.t
 # Copy only necessary packages from monorepo
 COPY --from=build-test-suite /platform/packages/platform-test-suite packages/platform-test-suite
 COPY --from=build-test-suite /platform/packages/dashpay-contract packages/dashpay-contract
-COPY --from=build-test-suite /platform/packages/js-dpp packages/js-dpp
 COPY --from=build-test-suite /platform/packages/wallet-lib packages/wallet-lib
 COPY --from=build-test-suite /platform/packages/js-dash-sdk packages/js-dash-sdk
 COPY --from=build-test-suite /platform/packages/js-dapi-client packages/js-dapi-client
@@ -361,7 +385,7 @@ RUN yarn workspaces focus --production @dashevo/dapi
 #
 # STAGE: FINAL DAPI IMAGE
 #
-FROM node:18-alpine${ALPINE_VERSION} AS dapi
+FROM node:20-alpine${ALPINE_VERSION} AS dapi
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="DAPI Node.JS"
@@ -369,7 +393,7 @@ LABEL description="DAPI Node.JS"
 # Install ZMQ shared library
 RUN apk add --no-cache zeromq-dev
 
-WORKDIR /platform
+WORKDIR /platform/packages/dapi
 
 COPY --from=build-dapi /platform/.yarn /platform/.yarn
 COPY --from=build-dapi /platform/package.json /platform/yarn.lock /platform/.yarnrc.yml /platform/.pnp* /platform/
@@ -377,7 +401,6 @@ COPY --from=build-dapi /platform/package.json /platform/yarn.lock /platform/.yar
 # yarn run ultra --info --filter '@dashevo/dapi' |  sed -E 's/.*@dashevo\/(.*)/COPY --from=build-dapi \/platform\/packages\/\1 \/platform\/packages\/\1/'
 COPY --from=build-dapi /platform/packages/dapi /platform/packages/dapi
 COPY --from=build-dapi /platform/packages/dapi-grpc /platform/packages/dapi-grpc
-COPY --from=build-dapi /platform/packages/js-dpp /platform/packages/js-dpp
 COPY --from=build-dapi /platform/packages/js-grpc-common /platform/packages/js-grpc-common
 COPY --from=build-dapi /platform/packages/wasm-dpp /platform/packages/wasm-dpp
 COPY --from=build-dapi /platform/packages/js-dapi-client /platform/packages/js-dapi-client

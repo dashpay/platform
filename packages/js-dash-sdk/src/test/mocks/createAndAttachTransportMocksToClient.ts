@@ -1,6 +1,6 @@
 import { Transaction } from '@dashevo/dashcore-lib';
 import DAPIClient from '@dashevo/dapi-client';
-import stateTransitionTypes from '@dashevo/dpp/lib/stateTransition/stateTransitionTypes';
+import { StateTransitionTypes } from '@dashevo/wasm-dpp';
 
 import { createFakeInstantLock } from '../../utils/createFakeIntantLock';
 import getResponseMetadataFixture from '../fixtures/getResponseMetadataFixture';
@@ -51,7 +51,7 @@ async function makeGetIdentityRespondWithIdentity(client, dapiClientMock) {
     const interceptedIdentityStateTransition = await client
       .platform.dpp.stateTransition.createFromBuffer(stBuffer);
 
-    if (interceptedIdentityStateTransition.getType() === stateTransitionTypes.IDENTITY_CREATE) {
+    if (interceptedIdentityStateTransition.getType() === StateTransitionTypes.IdentityCreate) {
       const identityToResolve = await client
         .platform.dpp.identity.create(
           interceptedIdentityStateTransition.getIdentityId(),
@@ -84,6 +84,7 @@ export async function createAndAttachTransportMocksToClient(client, sinon) {
   // Mock dapi client for platform endpoints
   client.dapiClient = dapiClientMock;
   client.platform.fetcher.dapiClient = dapiClientMock;
+  client.platform.nonceManager.dapiClient = dapiClientMock;
 
   // Starting account sync
   const accountPromise = client.wallet.getAccount();

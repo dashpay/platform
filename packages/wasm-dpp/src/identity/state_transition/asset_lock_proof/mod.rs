@@ -7,8 +7,6 @@ use std::convert::TryInto;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::__rt::Ref;
 
-use crate::errors::RustConversionError;
-
 use dpp::identity::errors::UnknownAssetLockProofTypeError;
 use wasm_bindgen::prelude::*;
 
@@ -56,7 +54,7 @@ pub trait AssetLockProofLike {
 impl AssetLockProofWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_asset_lock_proof: JsValue) -> Result<AssetLockProofWasm, JsValue> {
-        let lock_type = get_lock_type(&raw_asset_lock_proof)?;
+        let lock_type = get_type_from_raw_asset_lock_proof(&raw_asset_lock_proof)?;
 
         match lock_type {
             AssetLockProofType::Instant => {
@@ -93,21 +91,22 @@ impl AssetLockProofWasm {
     }
 }
 
-fn get_lock_type(raw_asset_lock_proof: &JsValue) -> Result<AssetLockProofType, JsValue> {
-    (js_sys::Reflect::get(raw_asset_lock_proof, &JsValue::from_str("type"))
-        .map_err(|_| {
-            RustConversionError::Error(String::from("error getting type from raw asset lock"))
-                .to_js_value()
-        })?
+fn get_type_from_raw_asset_lock_proof(
+    raw_asset_lock_proof: &JsValue,
+) -> Result<AssetLockProofType, JsError> {
+    let proof_type = js_sys::Reflect::get(raw_asset_lock_proof, &JsValue::from_str("type"))
+        .map_err(|_| JsError::new("error getting type from raw asset lock"))?
         .as_f64()
-        .ok_or_else(|| JsValue::from_str("asset lock type must be a number"))? as u64)
+        .ok_or_else(|| JsError::new("asset lock type must be a number"))?;
+
+    (proof_type as u64)
         .try_into()
-        .map_err(|_| JsValue::from_str("unrecognized asset lock proof type"))
+        .map_err(|_| JsError::new("unrecognized asset lock proof type"))
 }
 
 #[wasm_bindgen(js_name=createAssetLockProofInstance)]
-pub fn create_asset_lock_proof_instance(raw_parameters: JsValue) -> Result<JsValue, JsValue> {
-    let lock_type = get_lock_type(&raw_parameters)?;
+pub fn create_asset_lock_proof_instance(raw_parameters: JsValue) -> Result<JsValue, JsError> {
+    let lock_type = get_type_from_raw_asset_lock_proof(&raw_parameters)?;
 
     match lock_type {
         AssetLockProofType::Instant => {

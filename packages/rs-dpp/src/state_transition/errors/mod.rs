@@ -1,6 +1,7 @@
 #[cfg(any(
     feature = "state-transition-validation",
-    feature = "state-transition-signing"
+    feature = "state-transition-signing",
+    feature = "message-signing",
 ))]
 mod invalid_identity_public_key_type_error;
 #[cfg(any(

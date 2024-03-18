@@ -33,7 +33,7 @@
 //! Namely functions to return the paths to certain objects and the path sizes.
 //!
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "full")]
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 #[cfg(feature = "full")]
 use crate::drive::flags::StorageFlags;
@@ -147,6 +147,8 @@ fn contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
 
 #[cfg(any(feature = "full", feature = "verify"))]
 #[allow(dead_code)]
+#[deprecated(note = "This function is marked as unused.")]
+#[allow(deprecated)]
 /// Returns the size of the path to a contract document.
 fn contract_documents_keeping_history_primary_key_path_for_document_id_size(
     document_type_name_len: u32,
@@ -235,26 +237,20 @@ fn unique_event_id() -> [u8; 32] {
 pub(crate) mod tests {
     use std::option::Option::None;
 
-    use tempfile::TempDir;
-
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
     use dpp::block::block_info::BlockInfo;
     use dpp::prelude::DataContract;
     use dpp::tests::json_document::json_document_to_contract;
 
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
 
     /// Setup Dashpay
     pub fn setup_dashpay(_prefix: &str, mutable_contact_requests: bool) -> (Drive, DataContract) {
-        // Todo: make TempDir based on _prefix
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("expected to create root tree successfully");
 
         let dashpay_path = if mutable_contact_requests {
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json"

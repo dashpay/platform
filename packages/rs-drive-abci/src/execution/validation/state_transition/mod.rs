@@ -1,3 +1,4 @@
+pub(crate) mod check_tx_verification;
 mod common;
 pub(crate) mod processor;
 mod state_transitions;

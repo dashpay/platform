@@ -32,18 +32,17 @@ class AbstractResponse {
   /**
    *
    * @param proto
-   *
    * @returns{{metadata: Metadata, proof: Proof|undefined}}
    * @throws {InvalidResponseError}
    */
   static createMetadataAndProofFromProto(proto) {
-    const metadata = proto.getMetadata();
+    const metadata = proto.getV0().getMetadata();
 
     if (metadata === undefined) {
       throw new InvalidResponseError('Metadata is not defined');
     }
 
-    const rawProof = proto.getProof();
+    const rawProof = proto.getV0().getProof();
 
     let proof;
     if (rawProof) {

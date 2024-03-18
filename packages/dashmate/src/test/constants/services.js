@@ -1,4 +1,4 @@
-const services = {
+export default {
   dashmate_helper: 'Dashmate Helper',
   dapi_envoy: 'DAPI Envoy',
   dapi_api: 'DAPI API',
@@ -6,8 +6,4 @@ const services = {
   drive_abci: 'Drive ABCI',
   dapi_tx_filter_stream: 'DAPI Transactions Filter Stream',
   core: 'Core',
-};
-
-module.exports = {
-  SERVICES: services,
 };

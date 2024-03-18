@@ -1,0 +1,45 @@
+on:
+  workflow_call:
+
+jobs:
+  test-functional:
+    name: Run functional tests
+    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+    timeout-minutes: 15
+    env:
+      CHROME_BIN: /usr/bin/brave-browser
+      ECR_HOST: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to ECR
+        run: aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_HOST }}
+
+      - name: Start local network
+        uses: ./.github/actions/local-network
+        with:
+          image_org: ${{ env.ECR_HOST }}
+
+      - name: Run Wallet functional tests
+        run: yarn workspace @dashevo/wallet-lib test:functional
+
+      - name: Run SDK functional tests
+        run: yarn workspace dash test:functional
+
+      - name: Show Docker logs
+        if: ${{ failure() }}
+        uses: jwalton/gh-docker-logs@v2

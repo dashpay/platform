@@ -1,6 +1,6 @@
-const dotenv = require('dotenv');
-const { asValue } = require('awilix');
-const createDIContainer = require('../src/createDIContainer');
+import dotenv from 'dotenv';
+import { asValue } from 'awilix';
+import createDIContainer from '../src/createDIContainer.js';
 
 (async function main() {
   // Read environment variables from .env file
@@ -24,8 +24,21 @@ const createDIContainer = require('../src/createDIContainer');
    * @type {ConfigFileJsonRepository}
    */
   const configFileRepository = container.resolve('configFileRepository');
+  /**
+   * @type {writeConfigTemplates}
+   */
+  const writeConfigTemplates = container.resolve('writeConfigTemplates');
 
   const configFile = await configFileRepository.read();
+
+  // Persist config if it was migrated
+  if (configFile.isChanged()) {
+    await configFileRepository.write(configFile);
+
+    configFile.getAllConfigs()
+      .filter((config) => config.isChanged())
+      .forEach(writeConfigTemplates);
+  }
 
   const config = configFile.getConfig(configName);
 
@@ -42,7 +55,8 @@ const createDIContainer = require('../src/createDIContainer');
     await scheduleRenewZeroSslCertificate(config);
   } else {
     // prevent infinite restarts
-    setInterval(() => {}, 60 * 1000);
+    setInterval(() => {
+    }, 60 * 1000);
   }
 
   if (config.get('dashmate.helper.api.enable')) {

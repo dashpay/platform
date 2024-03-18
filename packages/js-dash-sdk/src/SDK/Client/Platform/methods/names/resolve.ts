@@ -1,6 +1,5 @@
+import convertToHomographSafeChars from '../../../../../utils/convertToHomographSafeChars';
 import { Platform } from '../../Platform';
-
-const convertToHomographSafeChars = require('@dashevo/dpp/lib/util/convertToHomographSafeChars');
 
 /**
  * This method will allow you to resolve a DPNS record from its humanized name.

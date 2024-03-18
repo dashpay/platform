@@ -66,12 +66,11 @@ mod test {
             DocumentTransition::Create(DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
                 base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
                     id: Identifier::random(),
+                    identity_contract_nonce: 0,
                     document_type_name: "a".to_string(),
                     data_contract_id: Identifier::random(),
                 }),
                 entropy: Default::default(),
-                created_at: None,
-                updated_at: None,
                 data: Default::default(),
             }));
 
@@ -81,11 +80,11 @@ mod test {
             DocumentReplaceTransitionV0 {
                 base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
                     id: Identifier::random(),
+                    identity_contract_nonce: 1,
                     document_type_name: "a".to_string(),
                     data_contract_id: Identifier::random(),
                 }),
                 revision: Default::default(),
-                updated_at: None,
                 data: Default::default(),
             },
         ));
@@ -94,6 +93,7 @@ mod test {
             DocumentTransition::Delete(DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
                 base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
                     id: Identifier::random(),
+                    identity_contract_nonce: 2,
                     document_type_name: "c".to_string(),
                     data_contract_id: Identifier::random(),
                 }),

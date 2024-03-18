@@ -1,8 +1,13 @@
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::property_names::{CREATED_AT, UPDATED_AT};
 use crate::data_contract::document_type::v0::DocumentTypeV0;
+use crate::document::property_names::{
+    CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT_BLOCK_HEIGHT,
+    UPDATED_AT_CORE_BLOCK_HEIGHT,
+};
 use crate::document::{Document, DocumentV0, INITIAL_REVISION};
 use crate::identity::TimestampMillis;
+use crate::prelude::{BlockHeight, CoreBlockHeight};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use chrono::Utc;
@@ -14,6 +19,8 @@ impl DocumentTypeV0 {
         &self,
         data: Value,
         owner_id: Identifier,
+        block_height: BlockHeight,
+        core_block_height: CoreBlockHeight,
         document_entropy: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
@@ -40,8 +47,36 @@ impl DocumentTypeV0 {
             .get_optional_integer(UPDATED_AT)
             .map_err(ProtocolError::ValueError)?;
 
+        let mut created_at_block_height: Option<BlockHeight> = data
+            .get_optional_integer(CREATED_AT_BLOCK_HEIGHT)
+            .map_err(ProtocolError::ValueError)?;
+
+        let mut updated_at_block_height: Option<BlockHeight> = data
+            .get_optional_integer(UPDATED_AT_BLOCK_HEIGHT)
+            .map_err(ProtocolError::ValueError)?;
+
+        let mut created_at_core_block_height: Option<CoreBlockHeight> = data
+            .get_optional_integer(CREATED_AT_CORE_BLOCK_HEIGHT)
+            .map_err(ProtocolError::ValueError)?;
+
+        let mut updated_at_core_block_height: Option<CoreBlockHeight> = data
+            .get_optional_integer(UPDATED_AT_CORE_BLOCK_HEIGHT)
+            .map_err(ProtocolError::ValueError)?;
+
         let is_created_at_required = self.required_fields().contains(CREATED_AT);
         let is_updated_at_required = self.required_fields().contains(UPDATED_AT);
+
+        let is_created_at_block_height_required =
+            self.required_fields().contains(CREATED_AT_BLOCK_HEIGHT);
+        let is_updated_at_block_height_required =
+            self.required_fields().contains(UPDATED_AT_BLOCK_HEIGHT);
+
+        let is_created_at_core_block_height_required = self
+            .required_fields()
+            .contains(CREATED_AT_CORE_BLOCK_HEIGHT);
+        let is_updated_at_core_block_height_required = self
+            .required_fields()
+            .contains(UPDATED_AT_CORE_BLOCK_HEIGHT);
 
         if (is_created_at_required && created_at.is_none())
             || (is_updated_at_required && updated_at.is_none())
@@ -56,6 +91,22 @@ impl DocumentTypeV0 {
             if is_updated_at_required {
                 updated_at = updated_at.or(Some(now));
             };
+        };
+
+        if is_created_at_block_height_required {
+            created_at_block_height = created_at_block_height.or(Some(block_height));
+        };
+
+        if is_updated_at_block_height_required {
+            updated_at_block_height = updated_at_block_height.or(Some(block_height));
+        };
+
+        if is_created_at_core_block_height_required {
+            created_at_core_block_height = created_at_core_block_height.or(Some(core_block_height));
+        };
+
+        if is_updated_at_core_block_height_required {
+            updated_at_core_block_height = updated_at_core_block_height.or(Some(core_block_height));
         };
 
         match platform_version
@@ -73,6 +124,10 @@ impl DocumentTypeV0 {
                     revision,
                     created_at,
                     updated_at,
+                    created_at_block_height,
+                    updated_at_block_height,
+                    created_at_core_block_height,
+                    updated_at_core_block_height,
                 };
 
                 document

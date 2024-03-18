@@ -2,10 +2,10 @@
 name = "platform-versioning"
 authors = ["Samuel Westrich <sam@dash.org>"]
 description = "Version derivation"
-version = "0.1.0"
+version = "1.0.0-dev.8"
 edition = "2021"
+rust-version = "1.76"
 license = "MIT"
-private = true
 
 [lib]
 proc-macro = true

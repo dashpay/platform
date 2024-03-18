@@ -6,6 +6,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, Plat
 
 use platform_versioning::PlatformVersioned;
 
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 pub mod accessors;
@@ -27,6 +28,8 @@ use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 
 use crate::data_contract::DataContract;
 
+use crate::identity::state_transition::OptionallyAssetLockProved;
+use crate::prelude::IdentityNonce;
 pub use v0::*;
 
 pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
@@ -57,11 +60,11 @@ pub enum DataContractUpdateTransition {
     V0(DataContractUpdateTransitionV0),
 }
 
-impl TryFromPlatformVersioned<DataContract> for DataContractUpdateTransition {
+impl TryFromPlatformVersioned<(DataContract, IdentityNonce)> for DataContractUpdateTransition {
     type Error = ProtocolError;
 
     fn try_from_platform_versioned(
-        value: DataContract,
+        value: (DataContract, IdentityNonce),
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
         match platform_version
@@ -99,6 +102,8 @@ impl StateTransitionFieldTypes for DataContractUpdateTransition {
     }
 }
 
+impl OptionallyAssetLockProved for DataContractUpdateTransition {}
+
 #[cfg(test)]
 mod test {
     use crate::data_contract::DataContract;
@@ -120,11 +125,10 @@ mod test {
 
     fn get_test_data() -> TestData {
         let platform_version = PlatformVersion::first();
-        let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
+        let data_contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
 
-        let state_transition: DataContractUpdateTransition = data_contract
-            .clone()
+        let state_transition: DataContractUpdateTransition = (data_contract.clone(), 1)
             .try_into_platform_versioned(platform_version)
             .expect("expected to get transition");
 

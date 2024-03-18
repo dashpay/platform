@@ -8,7 +8,7 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Asset lock output ${output_index} is not a valid standard OP_RETURN output")]
+#[error("Asset lock output {output_index} is not a valid standard OP_RETURN output")]
 #[platform_serialize(unversioned)]
 pub struct InvalidIdentityAssetLockTransactionOutputError {
     /*

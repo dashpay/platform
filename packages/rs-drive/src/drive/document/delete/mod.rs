@@ -35,52 +35,42 @@
 // Module: delete_document_for_contract
 // This module contains functionality for deleting a document associated with a given contract
 mod delete_document_for_contract;
-pub use delete_document_for_contract::*;
 
 // Module: delete_document_for_contract_id
 // This module contains functionality for deleting a document associated with a given contract id
 mod delete_document_for_contract_id;
-pub use delete_document_for_contract_id::*;
 
 // Module: delete_document_for_contract_apply_and_add_to_operations
 // This module contains functionality to apply a delete operation and add to the operations of a contract
 mod delete_document_for_contract_apply_and_add_to_operations;
-pub use delete_document_for_contract_apply_and_add_to_operations::*;
 
 // Module: remove_document_from_primary_storage
 // This module contains functionality to remove a document from primary storage
 mod remove_document_from_primary_storage;
-pub use remove_document_from_primary_storage::*;
 
 // Module: remove_reference_for_index_level_for_contract_operations
 // This module contains functionality to remove a reference for an index level for contract operations
 mod remove_reference_for_index_level_for_contract_operations;
-pub use remove_reference_for_index_level_for_contract_operations::*;
 
 // Module: remove_indices_for_index_level_for_contract_operations
 // This module contains functionality to remove indices for an index level for contract operations
 mod remove_indices_for_index_level_for_contract_operations;
-pub use remove_indices_for_index_level_for_contract_operations::*;
 
 // Module: remove_indices_for_top_index_level_for_contract_operations
 // This module contains functionality to remove indices for the top index level for contract operations
 mod remove_indices_for_top_index_level_for_contract_operations;
-pub use remove_indices_for_top_index_level_for_contract_operations::*;
 
 // Module: delete_document_for_contract_id_with_named_type_operations
 // This module contains functionality to delete a document for a contract id with named type operations
 mod delete_document_for_contract_id_with_named_type_operations;
-pub use delete_document_for_contract_id_with_named_type_operations::*;
 
 // Module: delete_document_for_contract_with_named_type_operations
 // This module contains functionality to delete a document for a contract with named type operations
 mod delete_document_for_contract_with_named_type_operations;
-pub use delete_document_for_contract_with_named_type_operations::*;
 
 // Module: delete_document_for_contract_operations
 // This module contains functionality to delete a document for contract operations
 mod delete_document_for_contract_operations;
-pub use delete_document_for_contract_operations::*;
 
 mod internal;
 
@@ -112,14 +102,17 @@ mod tests {
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
 
     #[test]
     fn test_add_and_remove_family_one_document_no_transaction() {
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         let platform_version = PlatformVersion::latest();
+
         drive
             .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
@@ -167,7 +160,7 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
@@ -209,15 +202,11 @@ mod tests {
 
     #[test]
     fn test_add_and_remove_family_one_document() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -268,7 +257,7 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
@@ -351,15 +340,11 @@ mod tests {
 
     #[test]
     fn test_add_and_remove_family_documents() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -444,7 +429,7 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
@@ -482,7 +467,7 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
@@ -520,7 +505,7 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
@@ -532,15 +517,11 @@ mod tests {
 
     #[test]
     fn test_add_and_remove_family_documents_with_empty_fields() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -621,7 +602,7 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
@@ -730,7 +711,7 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
@@ -801,15 +782,11 @@ mod tests {
 
     #[test]
     fn test_delete_dashpay_documents() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -859,8 +836,8 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        // We added 1557 bytes
-        assert_eq!(added_bytes, 1557);
+        // We added 1558 bytes
+        assert_eq!(added_bytes, 1558);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()
@@ -889,27 +866,23 @@ mod tests {
             .get(&0)
             .unwrap();
 
-        assert_eq!(*removed_credits, 41827688);
+        assert_eq!(*removed_credits, 41854792);
         let refund_equivalent_bytes = removed_credits.to_unsigned()
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         assert!(added_bytes > refund_equivalent_bytes);
-        assert_eq!(refund_equivalent_bytes, 1549); // we refunded 1549 instead of 1556
+        assert_eq!(refund_equivalent_bytes, 1550); // we refunded 1550 instead of 1558
     }
 
     #[test]
     fn test_delete_dashpay_documents_without_apply() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive_with_initial_state_structure();
 
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), platform_version)
-            .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
             &drive,
@@ -959,8 +932,8 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        // We added 1553 bytes
-        assert_eq!(added_bytes, 1557);
+        // We added 1558 bytes
+        assert_eq!(added_bytes, 1558);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()

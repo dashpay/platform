@@ -85,7 +85,6 @@ where
             drive_operations.push(IdentityOperation(DisableIdentityKeys {
                 identity_id: owner_identifier,
                 keys_ids: key_ids_to_disable,
-                disable_at: block_info.time_ms,
             }));
         }
 

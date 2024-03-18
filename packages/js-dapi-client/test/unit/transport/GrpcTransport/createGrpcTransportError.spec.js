@@ -3,7 +3,6 @@ const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 const {
-  default: loadWasmDpp,
   ProtocolVersionParsingError,
 } = require('@dashevo/wasm-dpp');
 
@@ -21,10 +20,6 @@ describe('createGrpcTransportError', () => {
   let dapiAddress;
   let errorData;
   let metadata;
-
-  before(async () => {
-    await loadWasmDpp();
-  });
 
   beforeEach(() => {
     dapiAddress = new DAPIAddress('127.0.0.1:3001:3002');

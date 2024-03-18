@@ -1,9 +1,9 @@
 /* eslint-disable camelcase */
-const DockerStatusEnum = require('../enums/dockerStatus');
-const determineStatus = require('../determineStatus');
-const providers = require('../providers');
-const extractCoreVersion = require('../../core/extractCoreVersion');
-const ServiceStatusEnum = require('../enums/serviceStatus');
+import providers from '../providers.js';
+import { ServiceStatusEnum } from '../enums/serviceStatus.js';
+import { DockerStatusEnum } from '../enums/dockerStatus.js';
+import determineStatus from '../determineStatus.js';
+import extractCoreVersion from '../../core/extractCoreVersion.js';
 
 /**
  * @returns {getCoreScopeFactory}
@@ -11,7 +11,7 @@ const ServiceStatusEnum = require('../enums/serviceStatus');
  * @param {createRpcClient} createRpcClient
  * @param {getConnectionHost} getConnectionHost
  */
-function getCoreScopeFactory(
+export default function getCoreScopeFactory(
   dockerCompose,
   createRpcClient,
   getConnectionHost,
@@ -25,7 +25,7 @@ function getCoreScopeFactory(
    */
   async function getCoreScope(config) {
     const network = config.get('network');
-    const rpcService = config.get('core.rpc.port') ? `127.0.0.1:${config.get('core.rpc.port')}` : null;
+    const rpcService = `${config.get('core.rpc.host')}:${config.get('core.rpc.port')}`;
     const p2pService = config.get('externalIp') ? `${config.get('externalIp')}:${config.get('core.p2p.port')}` : null;
 
     const core = {
@@ -78,7 +78,7 @@ function getCoreScopeFactory(
         port: config.get('core.rpc.port'),
         user: config.get('core.rpc.user'),
         pass: config.get('core.rpc.password'),
-        host: await getConnectionHost(config, 'core'),
+        host: await getConnectionHost(config, 'core', 'core.rpc.host'),
       });
 
       const [mnsyncStatus, networkInfo, blockchainInfo] = await Promise.all([
@@ -139,5 +139,3 @@ function getCoreScopeFactory(
 
   return getCoreScope;
 }
-
-module.exports = getCoreScopeFactory;

@@ -5,8 +5,6 @@ use dpp::errors::consensus::codes::ErrorWithCode;
 
 use dpp::errors::consensus::ConsensusError;
 
-use crate::buffer::Buffer;
-use dpp::serialization::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=JsonSchemaError, inspectable)]
@@ -24,27 +22,27 @@ impl From<&JsonSchemaError> for JsonSchemaErrorWasm {
 #[wasm_bindgen(js_class=JsonSchemaError)]
 impl JsonSchemaErrorWasm {
     #[wasm_bindgen(js_name=getKeyword)]
-    pub fn keyword(&self) -> String {
+    pub fn get_keyword(&self) -> String {
         self.inner.keyword().to_string()
     }
 
     #[wasm_bindgen(js_name=getInstancePath)]
-    pub fn instance_path(&self) -> String {
+    pub fn get_instance_path(&self) -> String {
         self.inner.instance_path().to_string()
     }
 
     #[wasm_bindgen(js_name=getSchemaPath)]
-    pub fn schema_path(&self) -> String {
+    pub fn get_schema_path(&self) -> String {
         self.inner.schema_path().to_string()
     }
 
     #[wasm_bindgen(js_name=getPropertyName)]
-    pub fn property_name(&self) -> String {
+    pub fn get_property_name(&self) -> String {
         self.inner.property_name().to_string()
     }
 
     #[wasm_bindgen(js_name=getParams)]
-    pub fn params(&self) -> Result<JsValue, JsError> {
+    pub fn get_params(&self) -> Result<JsValue, JsError> {
         let ser = serde_wasm_bindgen::Serializer::json_compatible();
 
         self.inner.params().serialize(&ser).map_err(|e| e.into())
@@ -63,5 +61,35 @@ impl JsonSchemaErrorWasm {
     #[wasm_bindgen(getter)]
     pub fn message(&self) -> String {
         self.inner.to_string()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn keyword(&self) -> String {
+        self.get_keyword()
+    }
+
+    #[wasm_bindgen(getter, js_name=instancePath)]
+    pub fn instance_path(&self) -> String {
+        self.get_instance_path()
+    }
+
+    #[wasm_bindgen(getter, js_name=schemaPath)]
+    pub fn schema_path(&self) -> String {
+        self.get_schema_path()
+    }
+
+    #[wasm_bindgen(getter, js_name=propertyName)]
+    pub fn property_name(&self) -> String {
+        self.get_property_name()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn params(&self) -> Result<JsValue, JsError> {
+        self.get_params()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn code(&self) -> u32 {
+        self.get_code()
     }
 }

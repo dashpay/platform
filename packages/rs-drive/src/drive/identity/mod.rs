@@ -37,14 +37,13 @@ use crate::drive::object_size_info::DriveKeyInfo;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::RootTree;
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 
 #[cfg(feature = "full")]
 /// Everything related to withdrawals
 pub mod withdrawals;
 
-use dpp::identity::KeyType;
 #[cfg(feature = "full")]
 use dpp::identity::Purpose::AUTHENTICATION;
 #[cfg(feature = "full")]
@@ -52,8 +51,8 @@ use integer_encoding::VarInt;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 mod balance;
-#[cfg(feature = "full")]
-mod contract_info;
+#[cfg(any(feature = "full", feature = "verify"))]
+pub(crate) mod contract_info;
 #[cfg(feature = "full")]
 mod estimation_costs;
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -70,6 +69,7 @@ pub mod update;
 #[cfg(feature = "full")]
 pub use withdrawals::paths::add_initial_withdrawal_state_structure_operations;
 
+use crate::drive::identity::contract_info::ContractInfoStructure;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use fetch::queries::*;
 
@@ -109,6 +109,19 @@ pub fn identity_contract_info_root_path_vec(identity_id: &[u8; 32]) -> Vec<Vec<u
 }
 
 /// The group is either a contract id or on a family of contracts owned by the same identity
+pub fn identity_contract_info_group_path<'a>(
+    identity_id: &'a [u8; 32],
+    group_id: &'a [u8],
+) -> [&'a [u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Identities),
+        identity_id,
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityContractInfo),
+        group_id,
+    ]
+}
+
+/// The group is either a contract id or on a family of contracts owned by the same identity
 pub fn identity_contract_info_group_path_vec(
     identity_id: &[u8; 32],
     group_id: &[u8],
@@ -122,6 +135,21 @@ pub fn identity_contract_info_group_path_vec(
 }
 
 /// The group is either a contract id or on a family of contracts owned by the same identity
+pub fn identity_contract_info_group_keys_path_vec(
+    identity_id: &[u8; 32],
+    group_id: &[u8],
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityContractInfo as u8],
+        group_id.to_vec(),
+        vec![ContractInfoStructure::ContractInfoKeysKey as u8],
+    ]
+}
+
+/// The group is either a contract id or on a family of contracts owned by the same identity
+#[cfg(any(feature = "full", feature = "verify"))]
 pub fn identity_contract_info_group_path_key_purpose_vec(
     identity_id: &[u8; 32],
     group_id: &[u8],
@@ -132,6 +160,7 @@ pub fn identity_contract_info_group_path_key_purpose_vec(
         identity_id.to_vec(),
         vec![IdentityRootStructure::IdentityContractInfo as u8],
         group_id.to_vec(),
+        vec![ContractInfoStructure::ContractInfoKeysKey as u8],
         vec![key_purpose as u8],
     ]
 }
@@ -293,16 +322,18 @@ pub(crate) fn identity_query_keys_full_tree_path<'a>(
 #[repr(u8)]
 #[derive(Copy, Clone)]
 pub enum IdentityRootStructure {
-    /// The revision of identity data
-    IdentityTreeRevision = 0,
+    /// The revision of the identity
+    IdentityTreeRevision = 192,
+    /// The nonce of the identity, it is used to prevent replay attacks
+    IdentityTreeNonce = 64,
     /// The keys that an identity has
-    IdentityTreeKeys = 1,
+    IdentityTreeKeys = 128,
     /// A Way to search for specific keys
-    IdentityTreeKeyReferences = 2,
+    IdentityTreeKeyReferences = 160,
     /// Owed processing fees
-    IdentityTreeNegativeCredit = 3,
+    IdentityTreeNegativeCredit = 96,
     /// Identity contract information
-    IdentityContractInfo = 4,
+    IdentityContractInfo = 32,
 }
 
 #[cfg(feature = "full")]
@@ -330,11 +361,12 @@ impl From<IdentityRootStructure> for [u8; 1] {
 impl From<IdentityRootStructure> for &'static [u8; 1] {
     fn from(identity_tree: IdentityRootStructure) -> Self {
         match identity_tree {
-            IdentityRootStructure::IdentityTreeRevision => &[0],
-            IdentityRootStructure::IdentityTreeKeys => &[1],
-            IdentityRootStructure::IdentityTreeKeyReferences => &[2],
-            IdentityRootStructure::IdentityTreeNegativeCredit => &[3],
-            IdentityRootStructure::IdentityContractInfo => &[4],
+            IdentityRootStructure::IdentityTreeRevision => &[192],
+            IdentityRootStructure::IdentityTreeNonce => &[64],
+            IdentityRootStructure::IdentityTreeKeys => &[128],
+            IdentityRootStructure::IdentityTreeKeyReferences => &[160],
+            IdentityRootStructure::IdentityTreeNegativeCredit => &[96],
+            IdentityRootStructure::IdentityContractInfo => &[32],
         }
     }
 }

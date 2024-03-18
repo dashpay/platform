@@ -1,15 +1,14 @@
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::config::DataContractConfig;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
-use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
-use crate::ProtocolError;
+
 use platform_value::Identifier;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 impl DataContractV0Getters for DataContractV0 {
     fn id(&self) -> Identifier {
@@ -28,11 +27,20 @@ impl DataContractV0Getters for DataContractV0 {
         self.owner_id
     }
 
-    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, ProtocolError> {
+    fn document_type_cloned_for_name(&self, name: &str) -> Result<DocumentType, DataContractError> {
+        self.document_type_cloned_optional_for_name(name)
+            .ok_or_else(|| {
+                DataContractError::DocumentTypeNotFound(
+                    "can not get document type from contract".to_string(),
+                )
+            })
+    }
+
+    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, DataContractError> {
         self.document_type_optional_for_name(name).ok_or_else(|| {
-            ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
-                "can not get document type from contract",
-            ))
+            DataContractError::DocumentTypeNotFound(
+                "can not get document type from contract".to_string(),
+            )
         })
     }
 
@@ -42,12 +50,20 @@ impl DataContractV0Getters for DataContractV0 {
             .map(|document_type| document_type.as_ref())
     }
 
+    fn document_type_cloned_optional_for_name(&self, name: &str) -> Option<DocumentType> {
+        self.document_types.get(name).cloned()
+    }
+
     fn has_document_type_for_name(&self, name: &str) -> bool {
         self.document_types.get(name).is_some()
     }
 
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType> {
         &self.document_types
+    }
+
+    fn document_types_mut(&mut self) -> &mut BTreeMap<DocumentName, DocumentType> {
+        &mut self.document_types
     }
 
     fn metadata(&self) -> Option<&Metadata> {

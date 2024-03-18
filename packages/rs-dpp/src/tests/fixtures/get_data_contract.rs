@@ -8,6 +8,7 @@ use crate::{
 
 pub fn get_data_contract_fixture(
     owner_id: Option<Identifier>,
+    identity_nonce: IdentityNonce,
     protocol_version: u32,
 ) -> CreatedDataContract {
     let defs = platform_value!(
@@ -23,7 +24,8 @@ pub fn get_data_contract_fixture(
             "type": "object",
             "properties": {
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "position": 0
                 }
             },
             "required": [
@@ -35,7 +37,8 @@ pub fn get_data_contract_fixture(
             "type": "object",
             "properties": {
                 "lastName": {
-                    "$ref": "#/$defs/lastName"
+                    "$ref": "#/$defs/lastName",
+                    "position": 0
                 }
             },
             "required": [
@@ -111,11 +114,13 @@ pub fn get_data_contract_fixture(
             "properties": {
                 "firstName": {
                     "type": "string",
-                    "maxLength": 63u32
+                    "maxLength": 63u32,
+                    "position": 0
                 },
                 "lastName": {
                     "type": "string",
-                    "maxLength": 63u32
+                    "maxLength": 63u32,
+                    "position": 1
                 }
             },
             "required": [
@@ -130,7 +135,8 @@ pub fn get_data_contract_fixture(
             "type": "object",
             "properties": {
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "position": 0
                 },
             },
             "additionalProperties": false
@@ -161,10 +167,12 @@ pub fn get_data_contract_fixture(
             ],
             "properties": {
                 "firstName": {
-                    "type": "string"
+                    "type": "string",
+                    "position": 0
                 },
                 "lastName": {
-                    "type": "string"
+                    "type": "string",
+                    "position": 1
                 }
             },
             "required": [
@@ -191,13 +199,15 @@ pub fn get_data_contract_fixture(
                     "type": "array",
                     "byteArray": true,
                     "maxItems": 16u32,
+                    "position": 0
                 },
                 "identifierField": {
                     "type": "array",
                     "byteArray": true,
                     "contentMediaType": identifier::MEDIA_TYPE,
                     "minItems": 32u32,
-                    "maxItems": 32u32
+                    "maxItems": 32u32,
+                    "position": 1
                 }
             },
             "required": [
@@ -210,19 +220,23 @@ pub fn get_data_contract_fixture(
             "properties": {
                 "firstName": {
                     "type": "string",
-                    "maxLength": 63u32
+                    "maxLength": 63u32,
+                    "position": 0
                 },
                 "lastName": {
                     "type": "string",
-                    "maxLength": 63u32
+                    "maxLength": 63u32,
+                    "position": 1
                 },
                 "country": {
                     "type": "string",
-                    "maxLength": 63u32
+                    "maxLength": 63u32,
+                    "position": 2
                 },
                 "city": {
                     "type": "string",
-                    "maxLength": 63u32
+                    "maxLength": 63u32,
+                    "position": 3
                 }
             },
             "indices": [
@@ -271,12 +285,11 @@ pub fn get_data_contract_fixture(
         }
     });
 
-    let factory =
-        DataContractFactory::new(protocol_version, None).expect("expected to create a factory");
+    let factory = DataContractFactory::new(protocol_version).expect("expected to create a factory");
 
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
 
     factory
-        .create_with_value_config(owner_id, documents, None, Some(defs))
+        .create_with_value_config(owner_id, identity_nonce, documents, None, Some(defs))
         .expect("data in fixture should be correct")
 }

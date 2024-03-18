@@ -3,13 +3,14 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::version::dpp_versions::DocumentTypeVersions;
 use crate::ProtocolError;
-use std::collections::{BTreeMap, BTreeSet};
+use indexmap::IndexMap;
+use std::collections::BTreeSet;
 
 mod v0;
 
 impl DocumentType {
     pub(in crate::data_contract) fn find_identifier_and_binary_paths(
-        properties: &BTreeMap<String, DocumentProperty>,
+        properties: &IndexMap<String, DocumentProperty>,
         document_type_version: &DocumentTypeVersions,
     ) -> Result<(BTreeSet<String>, BTreeSet<String>), ProtocolError> {
         match document_type_version

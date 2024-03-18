@@ -1,10 +1,13 @@
 [package]
 name = "feature-flags-contract"
 description = "Feature flags data contract schema and tools"
-version = "0.24.0-dev.1"
+version = "1.0.0-dev.8"
 edition = "2021"
+rust-version = "1.76"
 license = "MIT"
 
 [dependencies]
+thiserror = "1.0.56"
+platform-version = { path = "../rs-platform-version" }
 serde_json = { version = "1.0" }
 platform-value = { path = "../rs-platform-value" }

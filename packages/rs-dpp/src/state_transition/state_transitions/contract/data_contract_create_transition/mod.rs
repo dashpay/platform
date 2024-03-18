@@ -4,7 +4,6 @@ mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 pub mod methods;
-mod serialize;
 mod state_transition_like;
 mod v0;
 #[cfg(feature = "state-transition-value-conversion")]
@@ -24,9 +23,11 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, Plat
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use platform_versioning::PlatformVersioned;
 
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
+use crate::identity::state_transition::OptionallyAssetLockProved;
 pub use v0::*;
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
@@ -134,7 +135,7 @@ impl StateTransitionFieldTypes for DataContractCreateTransition {
     }
 
     fn binary_property_paths() -> Vec<&'static str> {
-        vec![SIGNATURE, ENTROPY]
+        vec![SIGNATURE, IDENTITY_NONCE]
     }
 }
 
@@ -146,6 +147,8 @@ impl DataContractCreateTransition {
     }
 }
 
+impl OptionallyAssetLockProved for DataContractCreateTransition {}
+
 #[cfg(test)]
 mod test {
     use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
@@ -155,7 +158,6 @@ mod test {
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
-    use crate::state_transition::state_transitions::common_fields::property_names;
     use crate::state_transition::traits::StateTransitionLike;
     use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
     use crate::tests::fixtures::get_data_contract_fixture;
@@ -169,7 +171,7 @@ mod test {
     }
 
     pub(crate) fn get_test_data() -> TestData {
-        let created_data_contract = get_data_contract_fixture(None, 1);
+        let created_data_contract = get_data_contract_fixture(None, 0, 1);
 
         let state_transition = DataContractCreateTransition::from_object(
             Value::from([
@@ -181,12 +183,13 @@ mod test {
                             .validation_and_processing
                             .state_transitions
                             .contract_create_state_transition
-                            .structure,
+                            .basic_structure
+                            .unwrap(),
                     ),
                 ),
                 (
-                    property_names::ENTROPY,
-                    Value::Bytes32(created_data_contract.entropy_used().to_buffer()),
+                    IDENTITY_NONCE,
+                    Value::U64(created_data_contract.identity_nonce()),
                 ),
                 (
                     DATA_CONTRACT,

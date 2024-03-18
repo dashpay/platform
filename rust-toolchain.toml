@@ -1,2 +1,5 @@
 [toolchain]
-channel = "stable"
+# Rust version the same as in /README.md
+channel = "1.76"
+
+targets = ["wasm32-unknown-unknown"]

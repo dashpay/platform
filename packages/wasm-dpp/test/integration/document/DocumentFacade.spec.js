@@ -1,51 +1,40 @@
 const crypto = require('crypto');
-const generateRandomIdentifier = require('../../../lib/test/fixtures/js/generateRandomIdentifier');
-const getDataContractFixture = require('../../../lib/test/fixtures/js/getDataContractFixture');
-const getDocumentsFixture = require('../../../lib/test/fixtures/js/getDocumentsFixture');
+const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifierAsync');
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 
 const {
   ExtendedDocument,
   DataContract,
-  Identifier,
   ValidationResult,
   DocumentsBatchTransition,
   DashPlatformProtocol,
   DataContractNotPresentError,
-} = require('../../../dist');
-// const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
-
-// let ExtendedDocument;
-// let DataContract;
-// let Identifier;
-// let ValidationResult;
-// let DocumentsBatchTransition;
-// let DashPlatformProtocol;
-// let DataContractNotPresentError;
+} = require('../../..');
 
 describe('DocumentFacade', () => {
   let dpp;
   let document;
   let documents;
-  let documentsJs;
   let dataContract;
   let ownerId;
   let stateRepositoryMock;
 
   beforeEach(async function beforeEach() {
-    const ownerIdJs = generateRandomIdentifier();
-    ownerId = new Identifier(ownerIdJs.toBuffer());
-    const dataContractJs = getDataContractFixture(ownerIdJs);
-    const dataContractObject = dataContractJs.toObject();
+    ownerId = await generateRandomIdentifier();
+    const dataContractFixture = await getDataContractFixture(ownerId.toBuffer());
+    const dataContractObject = dataContractFixture.toObject();
+
     dataContract = new DataContract({
       $format_version: '0',
-      id: dataContractObject.$id,
+      id: dataContractObject.id,
       version: 1,
       ownerId: dataContractObject.ownerId,
-      documentSchemas: dataContractObject.documents,
+      documentSchemas: dataContractObject.documentSchemas,
     });
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
     dpp = new DashPlatformProtocol(
@@ -53,12 +42,7 @@ describe('DocumentFacade', () => {
       1,
     );
 
-    documentsJs = getDocumentsFixture(dataContractJs);
-    documents = documentsJs.map((d) => {
-      const currentDocument = new ExtendedDocument(d.toObject(), dataContract.clone());
-      currentDocument.setEntropy(d.entropy);
-      return currentDocument;
-    });
+    documents = await getDocumentsFixture(dataContract);
     ([document] = documents);
   });
 
@@ -112,8 +96,15 @@ describe('DocumentFacade', () => {
 
   describe('createStateTransition', () => {
     it('should create DocumentsBatchTransition with passed documents - Rust', () => {
+      const identityId = documents[0].getOwnerId();
+      const contractId = documents[0].getDataContractId();
+
       const result = dpp.document.createStateTransition({
         create: documents,
+      }, {
+        [identityId.toString()]: {
+          [contractId.toString()]: 1,
+        },
       });
 
       expect(result).to.be.instanceOf(DocumentsBatchTransition);

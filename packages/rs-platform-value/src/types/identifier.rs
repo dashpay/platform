@@ -52,6 +52,12 @@ impl AsRef<[u8]> for Identifier {
     }
 }
 
+impl From<Identifier> for [u8; 32] {
+    fn from(id: Identifier) -> Self {
+        id.into_buffer()
+    }
+}
+
 impl Serialize for IdentifierBytes32 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -172,6 +178,17 @@ impl Identifier {
 
         // Since we checked that vector size is 32, we can use unwrap
         Ok(Identifier::new(bytes.try_into().unwrap()))
+    }
+
+    pub fn from_vec(vec: Vec<u8>) -> Result<Identifier, Error> {
+        if vec.len() != 32 {
+            return Err(Error::ByteLengthNot32BytesError(String::from(
+                "Identifier must be 32 bytes long",
+            )));
+        }
+
+        // Since we checked that vector size is 32, we can use unwrap
+        Ok(Identifier::new(vec.try_into().unwrap()))
     }
 
     pub fn to_json_value_vec(&self) -> Vec<JsonValue> {

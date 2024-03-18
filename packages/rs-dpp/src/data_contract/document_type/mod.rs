@@ -16,14 +16,14 @@ pub mod v0;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;
-use crate::prelude::Revision;
+use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
-pub(self) mod property_names {
+mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";
     pub const DOCUMENTS_MUTABLE: &str = "documentsMutable";
     pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
@@ -33,6 +33,7 @@ pub(self) mod property_names {
         "requiresIdentityDecryptionBoundedKey";
     pub const INDICES: &str = "indices";
     pub const PROPERTIES: &str = "properties";
+    pub const POSITION: &str = "position";
     pub const REQUIRED: &str = "required";
     pub const TYPE: &str = "type";
     pub const REF: &str = "$ref";
@@ -161,13 +162,20 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         &self,
         data: Value,
         owner_id: Identifier,
+        block_height: BlockHeight,
+        core_block_height: CoreBlockHeight,
         document_entropy: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
         match self {
-            DocumentTypeRef::V0(v0) => {
-                v0.create_document_from_data(data, owner_id, document_entropy, platform_version)
-            }
+            DocumentTypeRef::V0(v0) => v0.create_document_from_data(
+                data,
+                owner_id,
+                block_height,
+                core_block_height,
+                document_entropy,
+                platform_version,
+            ),
         }
     }
 
@@ -175,6 +183,8 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         &self,
         id: Identifier,
         owner_id: Identifier,
+        block_height: BlockHeight,
+        core_block_height: CoreBlockHeight,
         properties: BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
@@ -182,6 +192,8 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
             DocumentTypeRef::V0(v0) => v0.create_document_with_prevalidated_properties(
                 id,
                 owner_id,
+                block_height,
+                core_block_height,
                 properties,
                 platform_version,
             ),

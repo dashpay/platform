@@ -150,32 +150,59 @@
              responseClass:[GetIdentityKeysResponse class]];
 }
 
-#pragma mark getIdentityBalance(GetIdentityRequest) returns (GetIdentityBalanceResponse)
+#pragma mark getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse)
 
-/**
- * rpc getIdentitiesKeys (GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse);
- *
- * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
- */
-- (void)getIdentityBalanceWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler{
+- (void)getIdentityNonceWithRequest:(GetIdentityNonceRequest *)request handler:(void(^)(GetIdentityNonceResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetIdentityNonceWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetIdentityNonceWithRequest:(GetIdentityNonceRequest *)request handler:(void(^)(GetIdentityNonceResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getIdentityNonce"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetIdentityNonceResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getIdentityNonceWithMessage:(GetIdentityNonceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getIdentityNonce"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetIdentityNonceResponse class]];
+}
+
+#pragma mark getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse)
+
+- (void)getIdentityContractNonceWithRequest:(GetIdentityContractNonceRequest *)request handler:(void(^)(GetIdentityContractNonceResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetIdentityContractNonceWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetIdentityContractNonceWithRequest:(GetIdentityContractNonceRequest *)request handler:(void(^)(GetIdentityContractNonceResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getIdentityContractNonce"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetIdentityContractNonceResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getIdentityContractNonceWithMessage:(GetIdentityContractNonceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getIdentityContractNonce"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetIdentityContractNonceResponse class]];
+}
+
+#pragma mark getIdentityBalance(GetIdentityBalanceRequest) returns (GetIdentityBalanceResponse)
+
+- (void)getIdentityBalanceWithRequest:(GetIdentityBalanceRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler{
   [[self RPCTogetIdentityBalanceWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
-/**
- * rpc getIdentitiesKeys (GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse);
- *
- * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
- */
-- (GRPCProtoCall *)RPCTogetIdentityBalanceWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler{
+- (GRPCProtoCall *)RPCTogetIdentityBalanceWithRequest:(GetIdentityBalanceRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler{
   return [self RPCToMethod:@"getIdentityBalance"
             requestsWriter:[GRXWriter writerWithValue:request]
              responseClass:[GetIdentityBalanceResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
-/**
- * rpc getIdentitiesKeys (GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse);
- */
-- (GRPCUnaryProtoCall *)getIdentityBalanceWithMessage:(GetIdentityRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+- (GRPCUnaryProtoCall *)getIdentityBalanceWithMessage:(GetIdentityBalanceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
   return [self RPCToMethod:@"getIdentityBalance"
                    message:message
            responseHandler:handler
@@ -183,19 +210,19 @@
              responseClass:[GetIdentityBalanceResponse class]];
 }
 
-#pragma mark getIdentityBalanceAndRevision(GetIdentityRequest) returns (GetIdentityBalanceAndRevisionResponse)
+#pragma mark getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest) returns (GetIdentityBalanceAndRevisionResponse)
 
-- (void)getIdentityBalanceAndRevisionWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler{
+- (void)getIdentityBalanceAndRevisionWithRequest:(GetIdentityBalanceAndRevisionRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler{
   [[self RPCTogetIdentityBalanceAndRevisionWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetIdentityBalanceAndRevisionWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler{
+- (GRPCProtoCall *)RPCTogetIdentityBalanceAndRevisionWithRequest:(GetIdentityBalanceAndRevisionRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler{
   return [self RPCToMethod:@"getIdentityBalanceAndRevision"
             requestsWriter:[GRXWriter writerWithValue:request]
              responseClass:[GetIdentityBalanceAndRevisionResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
-- (GRPCUnaryProtoCall *)getIdentityBalanceAndRevisionWithMessage:(GetIdentityRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+- (GRPCUnaryProtoCall *)getIdentityBalanceAndRevisionWithMessage:(GetIdentityBalanceAndRevisionRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
   return [self RPCToMethod:@"getIdentityBalanceAndRevision"
                    message:message
            responseHandler:handler
@@ -323,24 +350,24 @@
              responseClass:[GetIdentitiesByPublicKeyHashesResponse class]];
 }
 
-#pragma mark getIdentityByPublicKeyHashes(GetIdentityByPublicKeyHashesRequest) returns (GetIdentityByPublicKeyHashesResponse)
+#pragma mark getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest) returns (GetIdentityByPublicKeyHashResponse)
 
-- (void)getIdentityByPublicKeyHashesWithRequest:(GetIdentityByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentityByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler{
-  [[self RPCTogetIdentityByPublicKeyHashesWithRequest:request handler:handler] start];
+- (void)getIdentityByPublicKeyHashWithRequest:(GetIdentityByPublicKeyHashRequest *)request handler:(void(^)(GetIdentityByPublicKeyHashResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetIdentityByPublicKeyHashWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetIdentityByPublicKeyHashesWithRequest:(GetIdentityByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentityByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler{
-  return [self RPCToMethod:@"getIdentityByPublicKeyHashes"
+- (GRPCProtoCall *)RPCTogetIdentityByPublicKeyHashWithRequest:(GetIdentityByPublicKeyHashRequest *)request handler:(void(^)(GetIdentityByPublicKeyHashResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getIdentityByPublicKeyHash"
             requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[GetIdentityByPublicKeyHashesResponse class]
+             responseClass:[GetIdentityByPublicKeyHashResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
-- (GRPCUnaryProtoCall *)getIdentityByPublicKeyHashesWithMessage:(GetIdentityByPublicKeyHashesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
-  return [self RPCToMethod:@"getIdentityByPublicKeyHashes"
+- (GRPCUnaryProtoCall *)getIdentityByPublicKeyHashWithMessage:(GetIdentityByPublicKeyHashRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getIdentityByPublicKeyHash"
                    message:message
            responseHandler:handler
                callOptions:callOptions
-             responseClass:[GetIdentityByPublicKeyHashesResponse class]];
+             responseClass:[GetIdentityByPublicKeyHashResponse class]];
 }
 
 #pragma mark waitForStateTransitionResult(WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse)
@@ -381,6 +408,66 @@
            responseHandler:handler
                callOptions:callOptions
              responseClass:[GetConsensusParamsResponse class]];
+}
+
+#pragma mark getProtocolVersionUpgradeState(GetProtocolVersionUpgradeStateRequest) returns (GetProtocolVersionUpgradeStateResponse)
+
+- (void)getProtocolVersionUpgradeStateWithRequest:(GetProtocolVersionUpgradeStateRequest *)request handler:(void(^)(GetProtocolVersionUpgradeStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetProtocolVersionUpgradeStateWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetProtocolVersionUpgradeStateWithRequest:(GetProtocolVersionUpgradeStateRequest *)request handler:(void(^)(GetProtocolVersionUpgradeStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getProtocolVersionUpgradeState"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetProtocolVersionUpgradeStateResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getProtocolVersionUpgradeStateWithMessage:(GetProtocolVersionUpgradeStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getProtocolVersionUpgradeState"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetProtocolVersionUpgradeStateResponse class]];
+}
+
+#pragma mark getProtocolVersionUpgradeVoteStatus(GetProtocolVersionUpgradeVoteStatusRequest) returns (GetProtocolVersionUpgradeVoteStatusResponse)
+
+- (void)getProtocolVersionUpgradeVoteStatusWithRequest:(GetProtocolVersionUpgradeVoteStatusRequest *)request handler:(void(^)(GetProtocolVersionUpgradeVoteStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetProtocolVersionUpgradeVoteStatusWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetProtocolVersionUpgradeVoteStatusWithRequest:(GetProtocolVersionUpgradeVoteStatusRequest *)request handler:(void(^)(GetProtocolVersionUpgradeVoteStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getProtocolVersionUpgradeVoteStatus"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetProtocolVersionUpgradeVoteStatusResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getProtocolVersionUpgradeVoteStatusWithMessage:(GetProtocolVersionUpgradeVoteStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getProtocolVersionUpgradeVoteStatus"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetProtocolVersionUpgradeVoteStatusResponse class]];
+}
+
+#pragma mark getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse)
+
+- (void)getEpochsInfoWithRequest:(GetEpochsInfoRequest *)request handler:(void(^)(GetEpochsInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetEpochsInfoWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetEpochsInfoWithRequest:(GetEpochsInfoRequest *)request handler:(void(^)(GetEpochsInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getEpochsInfo"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetEpochsInfoResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getEpochsInfoWithMessage:(GetEpochsInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getEpochsInfo"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetEpochsInfoResponse class]];
 }
 
 @end

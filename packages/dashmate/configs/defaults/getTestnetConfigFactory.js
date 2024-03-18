@@ -1,17 +1,16 @@
-const lodashMerge = require('lodash/merge');
-
-const {
+import lodash from 'lodash';
+import {
   NETWORK_TESTNET,
-} = require('../../src/constants');
+} from '../../src/constants.js';
+import Config from '../../src/config/Config.js';
 
-const Config = require('../../src/config/Config');
-
+const { merge: lodashMerge } = lodash;
 /**
  * @param {HomeDir} homeDir
  * @param {getBaseConfig} getBaseConfig
  * @returns {getTestnetConfig}
  */
-function getTestnetConfigFactory(homeDir, getBaseConfig) {
+export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
   /**
    * @typedef {function} getTestnetConfig
    * @returns {Config}
@@ -26,7 +25,8 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:20.0.0-beta.2',
+          image: 'dashpay/dashd:20.1.0',
+          commandArgs: [],
         },
         p2p: {
           port: 19999,
@@ -53,16 +53,14 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
         },
         drive: {
           abci: {
-            log: {
-              prettyFile: {
-                path: homeDir.joinPath('logs', 'testnet', 'drive-pretty.log'),
-              },
-              jsonFile: {
-                path: homeDir.joinPath('logs', 'testnet', 'drive-json.log'),
-              },
-            },
+            epochTime: 3600,
             validatorSet: {
               llmqType: 6,
+            },
+            chainLock: {
+              llmqType: 1,
+              dkgInterval: 24,
+              llmqSize: 50,
             },
           },
           tenderdash: {
@@ -81,8 +79,15 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
               ],
               port: 36656,
             },
+            mempool: {
+              timeoutCheckTx: '1s',
+              txEnqueueTimeout: '10ms',
+              txSendRateLimit: 10,
+              txRecvRateLimit: 12,
+            },
             rpc: {
               port: 36657,
+              timeoutBroadcastTx: '1s',
             },
             pprof: {
               port: 36060,
@@ -91,38 +96,10 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
               port: 36660,
             },
             genesis: {
-              genesis_time: '2023-10-10T10:43:20.921Z',
-              chain_id: 'dash-testnet-26',
-              initial_core_chain_locked_height: 921380,
-              consensus_params: {
-                timeout: {
-                  propose: '50000000000',
-                  propose_delta: '10000000000',
-                  vote: '500000000',
-                  vote_delta: '100000000',
-                  commit: '1000000000',
-                  bypass_commit_timeout: false,
-                },
-                block: {
-                  max_bytes: '22020096',
-                  max_gas: '-1',
-                  time_iota_ms: '5000',
-                },
-                evidence: {
-                  max_age: '100000',
-                  max_age_num_blocks: '100000',
-                  max_age_duration: '172800000000000',
-                },
-                validator: {
-                  pub_key_types: [
-                    'bls12381',
-                  ],
-                },
-                version: {
-                  app_version: '1',
-                },
-              },
+              genesis_time: '2024-03-07T13:26:00.000Z',
+              chain_id: 'dash-testnet-39',
               validator_quorum_type: 6,
+              initial_core_chain_locked_height: 984306,
             },
           },
         },
@@ -150,10 +127,9 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
       network: NETWORK_TESTNET,
     };
 
-    return new Config('testnet', lodashMerge({}, getBaseConfig().getOptions(), options));
+    return new Config('testnet', lodashMerge({}, getBaseConfig()
+      .getOptions(), options));
   }
 
   return getTestnetConfig;
 }
-
-module.exports = getTestnetConfigFactory;

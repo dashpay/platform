@@ -3,7 +3,7 @@
  * @param docker
  * @return {stopAllContainers}
  */
-function stopAllContainersFactory(docker) {
+export default function stopAllContainersFactory(docker) {
   /**
    * @typedef {stopAllContainers}
    * @param {string[]} containersIds
@@ -13,25 +13,22 @@ function stopAllContainersFactory(docker) {
    */
   async function stopAllContainers(containersIds, options = {}) {
     await Promise.all(containersIds.map(async (containerId) => {
-      // stop all containers
+      const container = docker.getContainer(containerId);
+
       try {
-        const container = docker.getContainer(containerId);
-        const { State: { Status: status } } = await container.inspect();
-
-        if (status === 'running') {
-          await container.stop();
-
-          if (options.remove) {
-            await container.remove();
-          }
+        if (options.remove) {
+          await container.remove({ force: true });
+        } else {
+          await container.kill();
         }
       } catch (e) {
-        // just do nothing
+        // Skip if container is not found or already stopped
+        if (e.statusCode !== 404 && e.statusCode !== 409) {
+          throw e;
+        }
       }
     }));
   }
 
   return stopAllContainers;
 }
-
-module.exports = stopAllContainersFactory;

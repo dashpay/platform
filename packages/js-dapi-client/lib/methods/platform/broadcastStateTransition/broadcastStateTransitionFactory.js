@@ -14,7 +14,6 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 function broadcastStateTransitionFactory(grpcTransport) {
   /**
    * Broadcast State Transaction
-   *
    * @typedef {broadcastStateTransition}
    * @param {Buffer} stateTransition
    * @param {DAPIClientOptions} [options]

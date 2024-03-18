@@ -1,8 +1,8 @@
-const { Listr } = require('listr2');
-const { Observable } = require('rxjs');
-const path = require('path');
-const CoreService = require('../../core/CoreService');
-const { TEMPLATES_DIR } = require('../../constants');
+import { Listr } from 'listr2';
+import { Observable } from 'rxjs';
+import path from 'path';
+import { TEMPLATES_DIR } from '../../constants.js';
+import CoreService from '../../core/CoreService.js';
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -18,7 +18,7 @@ const { TEMPLATES_DIR } = require('../../constants');
  * @param {Docker} docker
  * @return {reindexNodeTask}
  */
-function reindexNodeTaskFactory(
+export default function reindexNodeTaskFactory(
   dockerCompose,
   startNodeTask,
   restartNodeTask,
@@ -117,7 +117,7 @@ function reindexNodeTaskFactory(
             port: config.get('core.rpc.port'),
             user: config.get('core.rpc.user'),
             pass: config.get('core.rpc.password'),
-            host: await getConnectionHost(config, 'core'),
+            host: await getConnectionHost(config, 'core', 'core.rpc.host'),
           });
 
           const container = await getCoreContainer(config);
@@ -149,7 +149,7 @@ function reindexNodeTaskFactory(
             observer.next(`${(percent * 100).toFixed(4)}%, ${blocks} / ${headers}`);
           });
 
-          await new Promise((res) => setTimeout(res, 2000));
+          await new Promise((res) => { setTimeout(res, 2000); });
 
           observer.complete();
         }),
@@ -159,5 +159,3 @@ function reindexNodeTaskFactory(
 
   return reindexNodeTask;
 }
-
-module.exports = reindexNodeTaskFactory;

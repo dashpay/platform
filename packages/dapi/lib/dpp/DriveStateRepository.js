@@ -24,7 +24,8 @@ class DriveStateRepository {
    */
   async fetchDataContract(contractIdentifier) {
     const dataContractProtoBuffer = await this.driveClient.fetchDataContract(
-      contractIdentifier, false,
+      contractIdentifier,
+      false,
     );
 
     const dataContractResponse = GetDataContractResponse.deserializeBinary(
@@ -32,7 +33,7 @@ class DriveStateRepository {
     );
 
     return this.dpp.dataContract.createFromBuffer(
-      Buffer.from(dataContractResponse.getDataContract()),
+      Buffer.from(dataContractResponse.getV0().getDataContract()),
       { skipValidation: true },
     );
   }

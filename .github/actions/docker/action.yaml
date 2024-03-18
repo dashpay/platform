@@ -1,33 +1,46 @@
 ---
-name: "Build Docker image"
-description: "Build Docker image with Rust caching"
+name: "Build and push docker image"
+description: "Build and push docker image by digest with Rust caching"
 inputs:
-  image:
-    description: Name of image in Docker Hub, like `dashpay/drive`
+  image_name:
+    description: Name of image in Docker Hub, like `drive`
     required: true
-  dockerfile:
-    description: Path to the Dockerfile, for example `./Dockerfile`
-    default: './Dockerfile'
+  image_org:
+    description: Docker Hub organization, like `dashpay`
+    default: dashpay
+  image_version:
+    description: Docker image semver. Commit SHA if empty
+  push_tags:
+    description: Push tags to registry or digest only
+    default: "false"
   target:
     description: "Target stage within Dockerfile: dapi, drive-abci, dashmate-helper, test-suite"
-  push:
-    description: Shall we push the image to Docker Hub?
-    default: "false"
+  platform:
+    description: Platform to build for. i.e linux/amd64 or linux/arm64
+    required: true
   dockerhub_username:
     description: User name to use when pushing images to Docker Hub
   dockerhub_token:
     description: Docker Hub token to use
-  image_tag:
-    description: Docker image tag
-    default: ${{ github.head_ref || github.ref_name }}
-  platforms:
-    description: Docker image platform to build
-    default: amd64,arm64
   cache_mounts:
     description: Load cache mounts cache
+    default: |
+      cargo_registry_index
+      cargo_registry_cache
+      cargo_git
   cargo_profile:
     description: Cargo build profile, i.e release or dev
-    default: release
+    default: dev
+  bucket:
+    description: S3 bucket to use for caching, must match runner define in `runs-on`
+    default: multi-runner-cache-x1xibo9c
+  region:
+    description: S3 bucket region
+    required: true
+outputs:
+  digest:
+    value: ${{ steps.docker_build.outputs.digest }}
+    description: Docker image digest
 
 runs:
   using: composite
@@ -39,22 +52,6 @@ runs:
         password: ${{ inputs.dockerhub_token }}
       if: ${{ inputs.dockerhub_token != '' }}
 
-    - name: Set up QEMU
-      uses: docker/setup-qemu-action@v3
-      with:
-        platforms: ${{ inputs.platforms }}
-
-    - name: Format platforms for docker
-      uses: actions/github-script@v6
-      id: platforms
-      with:
-        result-encoding: string
-        script: |
-          return '${{inputs.platforms}}'
-             .split(',')
-             .map((platform) => `linux/${platform.trim()}`)
-             .join(',')
-
     - name: Set up Docker BuildX
       id: buildx
       uses: docker/setup-buildx-action@v3
@@ -62,58 +59,32 @@ runs:
         install: true
         driver-opts: env.BUILDKIT_STEP_LOG_MAX_SIZE=10485760
         cleanup: false
-        platforms: ${{ steps.platforms.outputs.result }}
         config-inline: |
           [worker.oci]
-            gc = true
-            gckeepstorage = 40000 # 40 GB
-            [[worker.oci.gcpolicy]]
-              all = true
-              keepBytes = 30000000000 # 30 GB
-              keepDuration = 864000 # 10 days
+            gc = false
 
     - name: Load Docker mount cache
-      uses: dcginfra/buildkit-cache-dance/inject@main
+      uses: dcginfra/buildkit-cache-dance/inject@s5cmd
       if: ${{ inputs.cache_mounts != '' }}
       with:
-        bucket: multi-runner-linux-x64-platform-cache-ui535z23
+        bucket: ${{ inputs.bucket }}
         mounts: ${{ inputs.cache_mounts }}
 
-    - name: Set suffix
-      uses: actions/github-script@v6
-      id: suffix
-      with:
-        result-encoding: string
-        script: |
-          const fullTag = '${{inputs.image_tag}}';
-          if (fullTag.includes('-')) {
-            const [, fullSuffix] = fullTag.split('-');
-            const [suffix] = fullSuffix.split('.');
-            return `-${suffix}`;
-          } else {
-            return '';
-          }
-
-    - name: Set Docker tags and labels
+    - name: Set Docker tags and labels from image tag
       id: docker_meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ inputs.image }}
+        images: ${{ inputs.image_org }}/${{ inputs.image_name }}
         tags: |
-          type=match,pattern=v(\d+),group=1,value=${{inputs.image_tag}}
-          type=match,pattern=v(\d+.\d+),group=1,value=${{inputs.image_tag}}
-          type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{inputs.image_tag}}
-          type=match,pattern=v(.*),group=1,value=${{inputs.image_tag}},suffix=
-        flavor: |
-          suffix=${{ steps.suffix.outputs.result }},onlatest=true
-          latest=${{ github.event_name == 'release' }}
+          type=semver,pattern={{version}},value=${{inputs.image_version}},enable=${{ inputs.image_version != '' }}
+          type=sha,format=long,enable=${{ inputs.image_version == '' }}
 
     - name: Configure docker layer cache
       uses: ./.github/actions/s3-layer-cache-settings
       id: layer_cache_settings
       with:
-        name: ${{ inputs.image }}
-        head_ref: ${{ inputs.image_tag }}
+        name: ${{ inputs.image_name }}
+        bucket: ${{ inputs.bucket }}
 
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
@@ -121,20 +92,23 @@ runs:
       with:
         context: .
         builder: ${{ steps.buildx.outputs.name }}
-        file: ${{ inputs.dockerfile }}
         target: ${{ inputs.target }}
-        tags: ${{ steps.docker_meta.outputs.tags }}
         labels: ${{ steps.docker_meta.outputs.labels }}
+        tags: ${{ inputs.push_tags == 'true' && steps.docker_meta.outputs.tags || '' }}
+        platforms: ${{ inputs.platform }}
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
-        platforms: ${{ steps.platforms.outputs.result }}
-        push: ${{ fromJSON(inputs.push) }}
+          RUSTC_WRAPPER=sccache
+          SCCACHE_BUCKET=${{ inputs.bucket }}
+          SCCACHE_REGION=${{ inputs.region }}
+          SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache
         cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
         cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
+        outputs: type=image,name=${{ inputs.image_org }}/${{ inputs.image_name }},push-by-digest=${{ inputs.push_tags != 'true' }},name-canonical=true,push=true
 
     - name: Save Docker mount cache
-      uses: dcginfra/buildkit-cache-dance/extract@main
+      uses: dcginfra/buildkit-cache-dance/extract@s5cmd
       if: ${{ inputs.cache_mounts != '' }}
       with:
-        bucket: multi-runner-linux-x64-platform-cache-ui535z23
+        bucket: ${{ inputs.bucket }}
         mounts: ${{ inputs.cache_mounts }}

@@ -1,10 +1,8 @@
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
-
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-
 const sinon = require('sinon');
+const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/getDocumentsFixture');
+const getContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
+const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
+
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
@@ -30,7 +28,7 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
   let ownerId;
   let executionContext;
 
-  beforeEach(async function beforeEach() {
+  beforeEach(async () => {
     ({
       Document,
       DataContract,
@@ -57,17 +55,9 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
 
     documentTransitions = documentTransitionsJs.map(
       (transition) => DocumentTransition.fromTransitionCreate(
-        new DocumentCreateTransition(
-          transition.toObject(), dataContract.clone(),
-        ),
+        new DocumentCreateTransition(transition.toObject(), dataContract.clone()),
       ),
     );
-
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDocuments.resolves([]);
-
-    stateRepositoryMockJs = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMockJs.fetchDocuments.resolves([]);
 
     executionContext = new StateTransitionExecutionContext();
   });
@@ -79,9 +69,7 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
     });
 
     const documentTransition = DocumentTransition.fromTransitionCreate(
-      new DocumentCreateTransition(
-        noIndexDocumentTransitions[0].toObject(), dataContract,
-      ),
+      new DocumentCreateTransition(noIndexDocumentTransitions[0].toObject(), dataContract),
     );
 
     const result = await validateDocumentsUniquenessByIndices(
@@ -233,7 +221,9 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
   it('should return valid result if Document has undefined field from index - Rust', async () => {
     const indexedDocumentJs = documentsJs[7];
     const indexedDocument = new Document(
-      indexedDocumentJs.toObject(), dataContract.clone(), indexedDocumentJs.getType(),
+      indexedDocumentJs.toObject(),
+      dataContract.clone(),
+      indexedDocumentJs.getType(),
     );
     const indexedDocumentTransitions = getDocumentTransitionsFixture({
       create: [indexedDocumentJs],
@@ -283,7 +273,9 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
   it('should return valid result if Document being created and has createdAt and updatedAt indices - Rust', async () => {
     const [, , , , , , uniqueDatesDocumentJs] = documentsJs;
     const uniqueDatesDocument = new Document(
-      uniqueDatesDocumentJs.toObject(), dataContract.clone(), uniqueDatesDocumentJs.getType(),
+      uniqueDatesDocumentJs.toObject(),
+      dataContract.clone(),
+      uniqueDatesDocumentJs.getType(),
     );
     const uniqueDatesDocumentTransitions = getDocumentTransitionsFixture({
       create: [uniqueDatesDocumentJs],
@@ -325,9 +317,7 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
 
     executionContext.enableDryRun();
     const documentTransition = DocumentTransition.fromTransitionCreate(
-      new DocumentCreateTransition(
-        noIndexDocumentTransitions[0].toObject(), dataContract,
-      ),
+      new DocumentCreateTransition(noIndexDocumentTransitions[0].toObject(), dataContract),
     );
 
     const result = await validateDocumentsUniquenessByIndices(

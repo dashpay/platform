@@ -1,40 +1,50 @@
 const crypto = require('crypto');
 
-const DashPlatformProtocol = require('@dashevo/dpp');
+const {
+  DashPlatformProtocol,
+  JsonSchemaError,
+} = require('@dashevo/wasm-dpp');
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const { expect } = require('chai');
+const dpnsContractDocumentsSchema = require('../../schema/v1/dpns-contract-documents.json');
 
-const dpnsContractDocumentsSchema = require('../../schema/dpns-contract-documents.json');
+const expectJsonSchemaError = (validationResult, errorCount = 1) => {
+  const errors = validationResult.getErrors();
+  expect(errors)
+    .to
+    .have
+    .length(errorCount);
+
+  const error = validationResult.getErrors()[0];
+  expect(error)
+    .to
+    .be
+    .instanceof(JsonSchemaError);
+
+  return error;
+};
 
 describe('DPNS Contract', () => {
   let dpp;
   let dataContract;
   let identityId;
 
-  beforeEach(async function beforeEach() {
-    const fetchContractStub = this.sinon.stub();
+  beforeEach(async () => {
+    dpp = new DashPlatformProtocol(
+      { generate: () => crypto.randomBytes(32) },
+    );
 
-    dpp = new DashPlatformProtocol({
-      stateRepository: {
-        fetchDataContract: fetchContractStub,
-      },
-    });
+    identityId = await generateRandomIdentifier();
 
-    await dpp.initialize();
-
-    identityId = generateRandomIdentifier();
-
-    dataContract = dpp.dataContract.create(identityId, dpnsContractDocumentsSchema);
-
-    fetchContractStub.resolves(dataContract);
+    dataContract = dpp.dataContract.create(identityId, BigInt(1), dpnsContractDocumentsSchema);
   });
 
-  it('should have a valid contract definition', async function shouldHaveValidContract() {
-    this.timeout(5000);
-
-    const validationResult = await dpp.dataContract.validate(dataContract);
-
-    expect(validationResult.isValid()).to.be.true();
+  it('should have a valid contract definition', async () => {
+    expect(() => dpp.dataContract.create(identityId, BigInt(1), dpnsContractDocumentsSchema))
+      .to
+      .not
+      .throw();
   });
 
   describe('documents', () => {
@@ -51,119 +61,104 @@ describe('DPNS Contract', () => {
         it('should be defined', async () => {
           delete rawPreorderDocument.saltedDomainHash;
 
-          try {
-            dpp.document.create(dataContract, identityId, 'preorder', rawPreorderDocument);
+          const document = dpp.document.create(dataContract, identityId, 'preorder', rawPreorderDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('saltedDomainHash');
-          }
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('saltedDomainHash');
         });
 
         it('should not be empty', async () => {
           rawPreorderDocument.saltedDomainHash = Buffer.alloc(0);
 
-          try {
-            dpp.document.create(dataContract, identityId, 'preorder', rawPreorderDocument);
+          const document = dpp.document.create(dataContract, identityId, 'preorder', rawPreorderDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minItems');
-            expect(error.instancePath).to.equal('/saltedDomainHash');
-          }
+          expect(error.keyword)
+            .to
+            .equal('minItems');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/saltedDomainHash');
         });
 
         it('should be not less than 32 bytes', async () => {
           rawPreorderDocument.saltedDomainHash = crypto.randomBytes(10);
 
-          try {
-            dpp.document.create(dataContract, identityId, 'preorder', rawPreorderDocument);
+          const document = dpp.document.create(dataContract, identityId, 'preorder', rawPreorderDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minItems');
-            expect(error.instancePath).to.equal('/saltedDomainHash');
-          }
+          expect(error.keyword)
+            .to
+            .equal('minItems');
+          expect(error.instancePath)
+            .to
+            .equal('/saltedDomainHash');
         });
 
         it('should be not longer than 32 bytes', async () => {
           rawPreorderDocument.saltedDomainHash = crypto.randomBytes(40);
 
-          try {
-            dpp.document.create(dataContract, identityId, 'preorder', rawPreorderDocument);
+          const document = dpp.document.create(dataContract, identityId, 'preorder', rawPreorderDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('maxItems');
-            expect(error.instancePath).to.equal('/saltedDomainHash');
-          }
+          expect(error.keyword)
+            .to
+            .equal('maxItems');
+          expect(error.instancePath)
+            .to
+            .equal('/saltedDomainHash');
         });
       });
 
       it('should not have additional properties', async () => {
         rawPreorderDocument.someOtherProperty = 42;
 
-        try {
-          dpp.document.create(dataContract, identityId, 'preorder', rawPreorderDocument);
+        const document = dpp.document.create(dataContract, identityId, 'preorder', rawPreorderDocument);
+        const validationResult = document.validate(dpp.protocolVersion);
+        const error = expectJsonSchemaError(validationResult);
 
-          expect.fail('should throw error');
-        } catch (e) {
-          expect(e.name).to.equal('InvalidDocumentError');
-          expect(e.getErrors()).to.have.a.lengthOf(1);
-
-          const [error] = e.getErrors();
-
-          expect(error.name).to.equal('JsonSchemaError');
-          expect(error.keyword).to.equal('additionalProperties');
-          expect(error.params.additionalProperty).to.equal('someOtherProperty');
-        }
+        expect(error.keyword)
+          .to
+          .equal('additionalProperties');
+        expect(error.params.additionalProperties)
+          .to
+          .deep
+          .equal(['someOtherProperty']);
       });
 
       it('should be valid', async () => {
         const preorder = dpp.document.create(dataContract, identityId, 'preorder', rawPreorderDocument);
 
-        const result = await dpp.document.validate(preorder);
+        const result = await preorder.validate(dpp.protocolVersion);
 
-        expect(result.isValid()).to.be.true();
+        expect(result.isValid())
+          .to
+          .be
+          .true();
       });
     });
 
     describe('domain', () => {
       let rawDomainDocument;
 
-      beforeEach(() => {
+      beforeEach(async () => {
         rawDomainDocument = {
           label: 'Wallet',
           normalizedLabel: 'wa11et', // lower case and base58 chars only
           normalizedParentDomainName: 'dash',
           preorderSalt: crypto.randomBytes(32),
           records: {
-            dashUniqueIdentityId: generateRandomIdentifier(),
+            dashUniqueIdentityId: await generateRandomIdentifier(),
           },
           subdomainRules: {
             allowSubdomains: false,
@@ -175,77 +170,61 @@ describe('DPNS Contract', () => {
         it('should be present', async () => {
           delete rawDomainDocument.label;
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('label');
-          }
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('label');
         });
 
         it('should follow pattern', async () => {
           rawDomainDocument.label = 'invalid label';
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('pattern');
-            expect(error.instancePath).to.equal('/label');
-          }
+          expect(error.keyword)
+            .to
+            .equal('pattern');
+          expect(error.instancePath)
+            .to
+            .equal('/label');
         });
 
         it('should be longer than 3 chars', async () => {
           rawDomainDocument.label = 'ab';
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minLength');
-            expect(error.instancePath).to.equal('/label');
-          }
+          expect(error.keyword)
+            .to
+            .equal('minLength');
+          expect(error.instancePath)
+            .to
+            .equal('/label');
         });
 
         it('should be less than 63 chars', async () => {
           rawDomainDocument.label = 'a'.repeat(64);
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult, 2);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('maxLength');
-            expect(error.instancePath).to.equal('/label');
-          }
+          expect(error.keyword)
+            .to
+            .equal('pattern');
+          expect(error.instancePath)
+            .to
+            .equal('/label');
         });
       });
 
@@ -253,58 +232,46 @@ describe('DPNS Contract', () => {
         it('should be defined', async () => {
           delete rawDomainDocument.normalizedLabel;
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('normalizedLabel');
-          }
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('normalizedLabel');
         });
 
         it('should follow pattern', async () => {
           rawDomainDocument.normalizedLabel = 'InValiD label';
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('pattern');
-            expect(error.instancePath).to.equal('/normalizedLabel');
-          }
+          expect(error.keyword)
+            .to
+            .equal('pattern');
+          expect(error.instancePath)
+            .to
+            .equal('/normalizedLabel');
         });
 
         it('should be less than 63 chars', async () => {
           rawDomainDocument.normalizedLabel = 'a'.repeat(64);
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult, 2);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('maxLength');
-            expect(error.instancePath).to.equal('/normalizedLabel');
-          }
+          expect(error.keyword)
+            .to
+            .equal('pattern');
+          expect(error.instancePath)
+            .to
+            .equal('/normalizedLabel');
         });
       });
 
@@ -312,58 +279,46 @@ describe('DPNS Contract', () => {
         it('should be defined', async () => {
           delete rawDomainDocument.normalizedParentDomainName;
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('normalizedParentDomainName');
-          }
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('normalizedParentDomainName');
         });
 
         it('should be less than 190 chars', async () => {
           rawDomainDocument.normalizedParentDomainName = 'a'.repeat(191);
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult, 2);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('maxLength');
-            expect(error.instancePath).to.equal('/normalizedParentDomainName');
-          }
+          expect(error.keyword)
+            .to
+            .equal('pattern');
+          expect(error.instancePath)
+            .to
+            .equal('/normalizedParentDomainName');
         });
 
         it('should follow pattern', async () => {
           rawDomainDocument.normalizedParentDomainName = '&'.repeat(50);
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('pattern');
-            expect(error.instancePath).to.equal('/normalizedParentDomainName');
-          }
+          expect(error.keyword)
+            .to
+            .equal('pattern');
+          expect(error.instancePath)
+            .to
+            .equal('/normalizedParentDomainName');
         });
       });
 
@@ -371,144 +326,124 @@ describe('DPNS Contract', () => {
         it('should be defined', async () => {
           delete rawDomainDocument.preorderSalt;
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('preorderSalt');
-          }
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('preorderSalt');
         });
 
         it('should not be empty', async () => {
           rawDomainDocument.preorderSalt = Buffer.alloc(0);
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minItems');
-            expect(error.instancePath).to.equal('/preorderSalt');
-          }
+          expect(error.keyword)
+            .to
+            .equal('minItems');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/preorderSalt');
         });
 
         it('should be not less than 32 bytes', async () => {
           rawDomainDocument.preorderSalt = crypto.randomBytes(10);
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minItems');
-            expect(error.instancePath).to.equal('/preorderSalt');
-          }
+          expect(error.keyword)
+            .to
+            .equal('minItems');
+          expect(error.instancePath)
+            .to
+            .equal('/preorderSalt');
         });
 
         it('should be not longer than 32 bytes', async () => {
           rawDomainDocument.preorderSalt = crypto.randomBytes(40);
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('maxItems');
-            expect(error.instancePath).to.equal('/preorderSalt');
-          }
+          expect(error.keyword)
+            .to
+            .equal('maxItems');
+          expect(error.instancePath)
+            .to
+            .equal('/preorderSalt');
         });
       });
 
       it('should not have additional properties', async () => {
-        rawDomainDocument.someOtherProperty = 42;
+        rawDomainDocument.someOtherProperty = [];
 
-        try {
-          dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+        const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
 
-          expect.fail('should throw error');
-        } catch (e) {
-          expect(e.name).to.equal('InvalidDocumentError');
-          expect(e.getErrors()).to.have.a.lengthOf(1);
+        const validationResult = document.validate(dpp.protocolVersion);
+        const error = expectJsonSchemaError(validationResult);
 
-          const [error] = e.getErrors();
-
-          expect(error.name).to.equal('JsonSchemaError');
-          expect(error.keyword).to.equal('additionalProperties');
-          expect(error.params.additionalProperty).to.equal('someOtherProperty');
-        }
+        expect(error.keyword)
+          .to
+          .equal('additionalProperties');
+        expect(error.params.additionalProperties)
+          .to
+          .deep
+          .equal(['someOtherProperty']);
       });
 
       it('should be valid', async () => {
         const domain = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
 
-        const result = await dpp.document.validate(domain);
+        const result = await domain.validate(dpp.protocolVersion);
 
-        expect(result.isValid()).to.be.true();
+        expect(result.isValid())
+          .to
+          .be
+          .true();
       });
 
       describe('Records', () => {
         it('should be defined', async () => {
           delete rawDomainDocument.records;
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('records');
-          }
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('records');
         });
 
         it('should not be empty', async () => {
           rawDomainDocument.records = {};
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minProperties');
-            expect(error.instancePath).to.equal('/records');
-          }
+          expect(error.keyword)
+            .to
+            .equal('minProperties');
+          expect(error.instancePath)
+            .to
+            .deep
+            .equal('/records');
         });
 
         it('should not have additional properties', async () => {
@@ -516,21 +451,20 @@ describe('DPNS Contract', () => {
             someOtherProperty: 42,
           };
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('additionalProperties');
-            expect(error.instancePath).to.equal('/records');
-            expect(error.params.additionalProperty).to.equal('someOtherProperty');
-          }
+          expect(error.keyword)
+            .to
+            .equal('additionalProperties');
+          expect(error.instancePath)
+            .to
+            .equal('/records');
+          expect(error.params.additionalProperties)
+            .to
+            .deep
+            .equal(['someOtherProperty']);
         });
 
         describe('Dash Identity', () => {
@@ -540,20 +474,16 @@ describe('DPNS Contract', () => {
               dashAliasIdentityId: identityId,
             };
 
-            try {
-              dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+            const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+            const validationResult = document.validate(dpp.protocolVersion);
+            const error = expectJsonSchemaError(validationResult);
 
-              expect.fail('should throw error');
-            } catch (e) {
-              expect(e.name).to.equal('InvalidDocumentError');
-              expect(e.getErrors()).to.have.a.lengthOf(1);
-
-              const [error] = e.getErrors();
-
-              expect(error.name).to.equal('JsonSchemaError');
-              expect(error.keyword).to.equal('maxProperties');
-              expect(error.instancePath).to.equal('/records');
-            }
+            expect(error.keyword)
+              .to
+              .equal('maxProperties');
+            expect(error.instancePath)
+              .to
+              .equal('/records');
           });
 
           describe('dashUniqueIdentityId', () => {
@@ -562,20 +492,11 @@ describe('DPNS Contract', () => {
                 dashUniqueIdentityId: crypto.randomBytes(30),
               };
 
-              try {
+              expect(() => {
                 dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
-
-                expect.fail('should throw error');
-              } catch (e) {
-                expect(e.name).to.equal('InvalidDocumentError');
-                expect(e.getErrors()).to.have.a.lengthOf(1);
-
-                const [error] = e.getErrors();
-
-                expect(error.name).to.equal('JsonSchemaError');
-                expect(error.keyword).to.equal('minItems');
-                expect(error.instancePath).to.equal('/records/dashUniqueIdentityId');
-              }
+              })
+                .to
+                .throw();
             });
 
             it('should no more than 32 bytes', async () => {
@@ -583,20 +504,11 @@ describe('DPNS Contract', () => {
                 dashUniqueIdentityId: crypto.randomBytes(64),
               };
 
-              try {
+              expect(() => {
                 dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
-
-                expect.fail('should throw error');
-              } catch (e) {
-                expect(e.name).to.equal('InvalidDocumentError');
-                expect(e.getErrors()).to.have.a.lengthOf(1);
-
-                const [error] = e.getErrors();
-
-                expect(error.name).to.equal('JsonSchemaError');
-                expect(error.keyword).to.equal('maxItems');
-                expect(error.instancePath).to.equal('/records/dashUniqueIdentityId');
-              }
+              })
+                .to
+                .throw();
             });
           });
 
@@ -606,20 +518,11 @@ describe('DPNS Contract', () => {
                 dashAliasIdentityId: crypto.randomBytes(30),
               };
 
-              try {
+              expect(() => {
                 dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
-
-                expect.fail('should throw error');
-              } catch (e) {
-                expect(e.name).to.equal('InvalidDocumentError');
-                expect(e.getErrors()).to.have.a.lengthOf(1);
-
-                const [error] = e.getErrors();
-
-                expect(error.name).to.equal('JsonSchemaError');
-                expect(error.keyword).to.equal('minItems');
-                expect(error.instancePath).to.equal('/records/dashAliasIdentityId');
-              }
+              })
+                .to
+                .throw();
             });
 
             it('should no more than 32 bytes', async () => {
@@ -627,20 +530,11 @@ describe('DPNS Contract', () => {
                 dashAliasIdentityId: crypto.randomBytes(64),
               };
 
-              try {
+              expect(() => {
                 dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
-
-                expect.fail('should throw error');
-              } catch (e) {
-                expect(e.name).to.equal('InvalidDocumentError');
-                expect(e.getErrors()).to.have.a.lengthOf(1);
-
-                const [error] = e.getErrors();
-
-                expect(error.name).to.equal('JsonSchemaError');
-                expect(error.keyword).to.equal('maxItems');
-                expect(error.instancePath).to.equal('/records/dashAliasIdentityId');
-              }
+              })
+                .to
+                .throw();
             });
           });
         });
@@ -650,59 +544,52 @@ describe('DPNS Contract', () => {
         it('should be defined', async () => {
           delete rawDomainDocument.subdomainRules;
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('subdomainRules');
-          }
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('subdomainRules');
         });
 
         it('should not have additional properties', async () => {
           rawDomainDocument.subdomainRules.someOtherProperty = 42;
 
-          try {
-            dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('additionalProperties');
-            expect(error.instancePath).to.equal('/subdomainRules');
-          }
+          expect(error.keyword)
+            .to
+            .equal('additionalProperties');
+          expect(error.instancePath)
+            .to
+            .equal('/subdomainRules');
+          expect(error.params.additionalProperties)
+            .to
+            .deep
+            .equal(['someOtherProperty']);
         });
 
         describe('allowSubdomains', () => {
           it('should be boolean', async () => {
             rawDomainDocument.subdomainRules.allowSubdomains = 'data';
 
-            try {
-              dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+            const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
+            const validationResult = document.validate(dpp.protocolVersion);
+            const error = expectJsonSchemaError(validationResult);
 
-              expect.fail('should throw error');
-            } catch (e) {
-              expect(e.name).to.equal('InvalidDocumentError');
-              expect(e.getErrors()).to.have.a.lengthOf(1);
-
-              const [error] = e.getErrors();
-
-              expect(error.name).to.equal('JsonSchemaError');
-              expect(error.keyword).to.equal('type');
-              expect(error.instancePath).to.equal('/subdomainRules/allowSubdomains');
-            }
+            expect(error.keyword)
+              .to
+              .equal('type');
+            expect(error.instancePath)
+              .to
+              .deep
+              .equal('/subdomainRules/allowSubdomains');
           });
         });
       });

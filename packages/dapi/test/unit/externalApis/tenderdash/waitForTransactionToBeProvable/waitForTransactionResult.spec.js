@@ -6,6 +6,7 @@ const BlockchainListener = require('../../../../../lib/externalApis/tenderdash/B
 
 const TransactionOkResult = require('../../../../../lib/externalApis/tenderdash/waitForTransactionToBeProvable/transactionResult/TransactionOkResult');
 const TransactionErrorResult = require('../../../../../lib/externalApis/tenderdash/waitForTransactionToBeProvable/transactionResult/TransactionErrorResult');
+const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 
 describe('waitForTransactionResult', () => {
   let blockchainListenerMock;
@@ -13,6 +14,7 @@ describe('waitForTransactionResult', () => {
   let topic;
   let tx;
   let height;
+  let logger;
 
   beforeEach(function beforeEach() {
     blockchainListenerMock = new EventEmitter();
@@ -26,10 +28,12 @@ describe('waitForTransactionResult', () => {
     tx = 'aGVsbG8h';
 
     height = 100;
+
+    logger = new LoggerMock(this.sinon);
   });
 
   it('should resolve TransactionOkResult when transaction result is emitted', async () => {
-    const { promise } = waitForTransactionResult(blockchainListenerMock, hashString);
+    const { promise } = waitForTransactionResult(blockchainListenerMock, hashString, logger);
 
     const result = {
       code: 0,
@@ -50,7 +54,7 @@ describe('waitForTransactionResult', () => {
   });
 
   it('should resolve TransactionErrorResult when transaction result is emitted', async () => {
-    const { promise } = waitForTransactionResult(blockchainListenerMock, hashString);
+    const { promise } = waitForTransactionResult(blockchainListenerMock, hashString, logger);
 
     const result = {
       code: 1,
@@ -71,7 +75,7 @@ describe('waitForTransactionResult', () => {
   });
 
   it('should remove listeners on detach', () => {
-    const { detach } = waitForTransactionResult(blockchainListenerMock, hashString);
+    const { detach } = waitForTransactionResult(blockchainListenerMock, hashString, logger);
 
     detach();
 

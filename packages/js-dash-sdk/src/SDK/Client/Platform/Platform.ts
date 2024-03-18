@@ -1,8 +1,6 @@
-import loadWasmDpp, { DashPlatformProtocol } from '@dashevo/wasm-dpp';
+import loadWasmDpp, { DashPlatformProtocol, getLatestProtocolVersion } from '@dashevo/wasm-dpp';
 import type { DPPModule } from '@dashevo/wasm-dpp';
 import crypto from 'crypto';
-
-import { latestVersion as latestProtocolVersion } from '@dashevo/dpp/lib/version/protocolVersion';
 
 import Client from '../Client';
 import { IStateTransitionResult } from './IStateTransitionResult';
@@ -23,9 +21,10 @@ import getIdentity from './methods/identities/get';
 import registerIdentity from './methods/identities/register';
 import topUpIdentity from './methods/identities/topUp';
 import creditTransferIdentity from './methods/identities/creditTransfer';
+import creditWithdrawal from './methods/identities/creditWithdrawal';
 import updateIdentity from './methods/identities/update';
 import createIdentityCreateTransition from './methods/identities/internal/createIdentityCreateTransition';
-import createIdentityTopUpTransition from './methods/identities/internal/createIdnetityTopUpTransition';
+import createIdentityTopUpTransition from './methods/identities/internal/createIdentityTopUpTransition';
 import createAssetLockProof from './methods/identities/internal/createAssetLockProof';
 import waitForCoreChainLockedHeight from './methods/identities/internal/waitForCoreChainLockedHeight';
 
@@ -37,6 +36,7 @@ import broadcastStateTransition from './broadcastStateTransition';
 
 import logger, { ConfigurableLogger } from '../../../logger';
 import Fetcher from './Fetcher';
+import NonceManager from './NonceManager/NonceManager';
 
 /**
  * Interface for PlatformOpts
@@ -79,6 +79,7 @@ interface Identities {
   register: Function,
   topUp: Function,
   creditTransfer: Function,
+  withdrawCredits: Function,
   update: Function,
   utils: {
     createAssetLockTransaction: Function
@@ -112,7 +113,7 @@ export class Platform {
   // @ts-ignore
   dpp: DashPlatformProtocol;
 
-  protocolVersion: number;
+  protocolVersion?: number;
 
   public documents: Records;
 
@@ -153,6 +154,8 @@ export class Platform {
 
   protected fetcher: Fetcher;
 
+  public nonceManager: NonceManager;
+
   /**
      * Construct some instance of Platform
      *
@@ -183,6 +186,7 @@ export class Platform {
       topUp: topUpIdentity.bind(this),
       creditTransfer: creditTransferIdentity.bind(this),
       update: updateIdentity.bind(this),
+      withdrawCredits: creditWithdrawal.bind(this),
       utils: {
         createAssetLockProof: createAssetLockProof.bind(this),
         createAssetLockTransaction: createAssetLockTransaction.bind(this),
@@ -196,24 +200,32 @@ export class Platform {
     const walletId = this.client.wallet ? this.client.wallet.walletId : 'noid';
     this.logger = logger.getForId(walletId);
 
-    const mappedProtocolVersion = Platform.networkToProtocolVersion.get(
-      options.network,
-    );
-
     // use protocol version from options if set
-    // use mapped one otherwise
-    // fallback to one that set in dpp as the last option
-    // eslint-disable-next-line
-    this.protocolVersion = options.driveProtocolVersion !== undefined
-      ? options.driveProtocolVersion
-      : (mappedProtocolVersion !== undefined ? mappedProtocolVersion : latestProtocolVersion);
+    if (options.driveProtocolVersion !== undefined) {
+      this.protocolVersion = options.driveProtocolVersion;
+    }
 
     this.fetcher = new Fetcher(this.client.getDAPIClient());
+    this.nonceManager = new NonceManager(this.client.getDAPIClient());
   }
 
   async initialize() {
     if (!this.dpp) {
       await Platform.initializeDppModule();
+
+      if (this.protocolVersion === undefined) {
+        // use mapped protocol version otherwise
+        // fallback to one that set in dpp as the last option
+
+        const mappedProtocolVersion = Platform.networkToProtocolVersion.get(
+          this.client.network,
+        );
+
+        this.protocolVersion = mappedProtocolVersion !== undefined
+          ? mappedProtocolVersion : getLatestProtocolVersion();
+      }
+
+      // eslint-disable-next-line
 
       this.dpp = new DashPlatformProtocol(
         {

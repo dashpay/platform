@@ -25,12 +25,14 @@ describe('Platform', () => {
     let identity;
 
     before(async () => {
-      dataContractFixture = await getDataContractFixture();
       client = await createClientWithFundedWallet(35000000);
 
       // Looks like updating the contact and keeping history requires about
       // 7 million credits in fees. Investigate this further.
       identity = await client.platform.identities.register(30000000);
+      const nextNonce = await client.platform
+        .nonceManager.bumpIdentityNonce(identity.getId());
+      dataContractFixture = await getDataContractFixture(nextNonce);
     });
 
     after(async () => {
@@ -42,7 +44,7 @@ describe('Platform', () => {
     it('should fail to create new data contract with unknown owner', async () => {
       // if no identity is specified
       // random is generated within the function
-      dataContractFixture = await getDataContractFixture();
+      dataContractFixture = await getDataContractFixture(1);
 
       let broadcastError;
 
@@ -61,7 +63,9 @@ describe('Platform', () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
-      dataContractFixture = await getDataContractFixture(identity.getId());
+      const identityNonce = await client.platform.nonceManager
+        .bumpIdentityNonce(identity.getId());
+      dataContractFixture = await getDataContractFixture(identityNonce, identity.getId());
 
       await client.platform.contracts.publish(dataContractFixture, identity);
     });
@@ -171,10 +175,12 @@ describe('Platform', () => {
           firstName: {
             type: 'string',
             maxLength: 63,
+            position: 0,
           },
           lastName: {
             type: 'string',
             maxLength: 63,
+            position: 1,
           },
         },
         required: ['firstName', '$createdAt', '$updatedAt', 'lastName'],
@@ -219,9 +225,8 @@ describe('Platform', () => {
         },
       );
 
-      const contractHistory = await client.platform.contracts.history(
-        dataContractFixture.getId(), 0, 10, 0,
-      );
+      const contractHistory = await client.platform.contracts
+        .history(dataContractFixture.getId(), 0, 10, 0);
 
       // By default, history is not really sorted, since it's a map
       const historyPairs = Object.entries(contractHistory);

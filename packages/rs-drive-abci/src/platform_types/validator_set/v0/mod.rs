@@ -10,13 +10,14 @@ use dashcore_rpc::json::QuorumInfoResult;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fmt::{Debug, Formatter};
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::proto::{abci, crypto};
 
 /// The validator set is only slightly different from a quorum as it does not contain non valid
 /// members
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct ValidatorSetV0 {
     /// The quorum hash
     pub quorum_hash: QuorumHash,
@@ -26,6 +27,24 @@ pub struct ValidatorSetV0 {
     pub members: BTreeMap<ProTxHash, ValidatorV0>,
     /// The threshold quorum public key
     pub threshold_public_key: BlsPublicKey,
+}
+
+impl Debug for ValidatorSetV0 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ValidatorSetV0")
+            .field("quorum_hash", &self.quorum_hash.to_string())
+            .field("core_height", &self.core_height)
+            .field(
+                "members",
+                &self
+                    .members
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v))
+                    .collect::<BTreeMap<String, &ValidatorV0>>(),
+            )
+            .field("threshold_public_key", &self.threshold_public_key)
+            .finish()
+    }
 }
 
 impl ValidatorSetV0 {
@@ -38,19 +57,30 @@ impl ValidatorSetV0 {
     ) -> Result<ValidatorSetUpdate, Error> {
         if self.quorum_hash != rhs.quorum_hash {
             return Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                "updating validator set doesn't match quorum hash",
+                format!(
+                    "updating validator set doesn't match quorum hash ours: {} theirs: {}",
+                    self.quorum_hash.to_string(),
+                    rhs.quorum_hash.to_string()
+                ),
             )));
         }
 
         if self.core_height != rhs.core_height {
             return Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                "updating validator set doesn't match core height",
+                format!(
+                    "updating validator set doesn't match core height ours: {} theirs: {}",
+                    self.core_height, rhs.core_height
+                ),
             )));
         }
 
         if self.threshold_public_key != rhs.threshold_public_key {
             return Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                "updating validator set doesn't match threshold public key",
+                format!(
+                    "updating validator set doesn't match threshold public key ours: {} theirs: {}",
+                    hex::encode(*self.threshold_public_key.to_bytes()),
+                    hex::encode(*rhs.threshold_public_key.to_bytes())
+                ),
             )));
         }
 
@@ -61,7 +91,10 @@ impl ValidatorSetV0 {
                 rhs.members.get(pro_tx_hash).map_or_else(
                     || {
                         Some(Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                            "validator set does not contain all same members",
+                            format!(
+                                "validator set does not contain all same members, missing {}",
+                                pro_tx_hash.to_string()
+                            ),
                         ))))
                     },
                     |new_validator_state| {

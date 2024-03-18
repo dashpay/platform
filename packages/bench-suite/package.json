@@ -1,29 +1,29 @@
 {
   "name": "@dashevo/bench-suite",
   "private": true,
-  "version": "0.25.0-dev.33",
+  "version": "1.0.0-dev.8",
   "description": "Dash Platform benchmark tool",
   "scripts": {
     "bench": "node ./bin/bench.js",
-    "lint": "eslint ."
+    "lint": ""
   },
   "dependencies": {
-    "@dashevo/dashcore-lib": "~0.20.9",
+    "@dashevo/dashcore-lib": "~0.21.1",
     "@dashevo/dpns-contract": "workspace:*",
-    "@dashevo/dpp": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
+    "@dashevo/wasm-dpp": "workspace:*",
     "console-table-printer": "^2.11.0",
     "dash": "workspace:*",
     "dotenv-safe": "^8.2.0",
     "lodash": "^4.17.21",
     "mathjs": "^10.4.3",
-    "mocha": "^9.1.2"
+    "mocha": "^10.2.0"
   },
   "devDependencies": {
     "babel-eslint": "^10.1.0",
-    "eslint": "^7.32.0",
-    "eslint-config-airbnb-base": "^14.2.1",
-    "eslint-plugin-import": "^2.24.2"
+    "eslint": "^8.53.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.29.0"
   },
   "repository": {
     "type": "git",

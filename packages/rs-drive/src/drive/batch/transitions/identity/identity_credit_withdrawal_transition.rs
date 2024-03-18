@@ -1,6 +1,8 @@
 use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
-use crate::drive::batch::DriveOperation::{DocumentOperation, IdentityOperation};
-use crate::drive::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
+use crate::drive::batch::DriveOperation::{DocumentOperation, IdentityOperation, SystemOperation};
+use crate::drive::batch::{
+    DocumentOperationType, DriveOperation, IdentityOperationType, SystemOperationType,
+};
 use crate::drive::object_size_info::{DocumentInfo, OwnedDocumentInfo};
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
@@ -15,13 +17,18 @@ impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionActi
         _platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
         let identity_id = self.identity_id();
-        let revision = self.revision();
+        let nonce = self.nonce();
+        let balance_to_remove = self.amount();
         let prepared_withdrawal_document = self.prepared_withdrawal_document_owned();
 
         let drive_operations = vec![
-            IdentityOperation(IdentityOperationType::UpdateIdentityRevision {
+            IdentityOperation(IdentityOperationType::RemoveFromIdentityBalance {
+                identity_id: identity_id.to_buffer(),
+                balance_to_remove,
+            }),
+            IdentityOperation(IdentityOperationType::UpdateIdentityNonce {
                 identity_id: identity_id.into_buffer(),
-                revision,
+                nonce,
             }),
             DocumentOperation(DocumentOperationType::AddWithdrawalDocument {
                 owned_document_info: OwnedDocumentInfo {
@@ -31,6 +38,9 @@ impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionActi
                     )),
                     owner_id: None,
                 },
+            }),
+            SystemOperation(SystemOperationType::RemoveFromSystemCredits {
+                amount: balance_to_remove,
             }),
         ];
 

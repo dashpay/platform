@@ -7,6 +7,10 @@ const {
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
 const GetConsensusParamsResponse = require('./getConsensusParamsResponse');
 
+const {
+  GetConsensusParamsRequestV0,
+} = GetConsensusParamsRequest;
+
 /**
  * @param {GrpcTransport} grpcTransport
  * @returns {getConsensusParams}
@@ -14,7 +18,6 @@ const GetConsensusParamsResponse = require('./getConsensusParamsResponse');
 function getConsensusParamsFactory(grpcTransport) {
   /**
    * Fetch Consensus params
-   *
    * @typedef getConsensusParams
    * @param {number} [height]
    * @param {prove: boolean} [options]
@@ -22,11 +25,15 @@ function getConsensusParamsFactory(grpcTransport) {
    */
   async function getConsensusParams(height = undefined, options = {}) {
     const getConsensusParamsRequest = new GetConsensusParamsRequest();
+    getConsensusParamsRequest.setV0(
+      new GetConsensusParamsRequestV0(),
+    );
+
     if (height !== undefined) {
-      getConsensusParamsRequest.setHeight(height);
+      getConsensusParamsRequest.getV0().setHeight(height);
     }
 
-    getConsensusParamsRequest.setProve(!!options.prove);
+    getConsensusParamsRequest.getV0().setProve(!!options.prove);
 
     let lastError;
 

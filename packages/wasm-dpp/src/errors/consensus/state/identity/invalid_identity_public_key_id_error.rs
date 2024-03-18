@@ -1,10 +1,8 @@
-use crate::buffer::Buffer;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::identity::invalid_identity_public_key_id_error::InvalidIdentityPublicKeyIdError;
 use dpp::consensus::ConsensusError;
 use dpp::identity::KeyID;
-use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
-use dpp::version::PlatformVersion;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidIdentityPublicKeyIdError)]

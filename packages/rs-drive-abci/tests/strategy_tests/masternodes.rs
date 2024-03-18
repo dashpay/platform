@@ -1,4 +1,3 @@
-use crate::frequency::Frequency;
 use crate::masternode_list_item_helpers::UpdateMasternodeListItem;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash, Txid};
@@ -10,6 +9,7 @@ use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
+use strategy_tests::frequency::Frequency;
 
 #[derive(Clone, Debug)]
 pub struct GenerateTestMasternodeUpdates<'a> {
@@ -486,18 +486,14 @@ pub fn generate_test_masternodes(
                         SocketAddr::new(IpAddr::V4(random_ip), old_port);
                 }
                 if update.p2p_port {
-                    hpmn_list_item_b
-                        .state
-                        .platform_p2p_port
-                        .as_mut()
-                        .map(|port| *port += 1);
+                    if let Some(port) = hpmn_list_item_b.state.platform_p2p_port.as_mut() {
+                        *port += 1
+                    }
                 }
                 if update.http_port {
-                    hpmn_list_item_b
-                        .state
-                        .platform_http_port
-                        .as_mut()
-                        .map(|port| *port += 1);
+                    if let Some(port) = hpmn_list_item_b.state.platform_http_port.as_mut() {
+                        *port += 1
+                    }
                 }
 
                 latest_masternode_list_item = hpmn_list_item_b.clone();

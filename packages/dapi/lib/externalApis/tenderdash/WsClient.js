@@ -12,7 +12,7 @@ class WsClient extends EventEmitter {
 
     this.url = `${protocol}://${host}:${port}/${path}`;
     this.isConnected = false;
-    this.autoReconnectInterval = 1000;
+    this.autoReconnectInterval = 500;
     this.subscribedQueries = new Map();
   }
 
@@ -33,16 +33,33 @@ class WsClient extends EventEmitter {
           this.connectionRetries += 1;
         }
 
-        setTimeout(this.open.bind(this), this.autoReconnectInterval);
-      } else {
-        this.disconnect();
-
         const event = {
-          type: 'connect:max_retry_exceeded',
+          type: 'connect:retry',
           address: this.url,
+          maxRetries: this.maxRetries,
+          retries: this.connectionRetries,
+          interval: this.autoReconnectInterval,
         };
 
         this.emit(event.type, event);
+
+        this.ws.removeAllListeners();
+        this.ws.terminate();
+        this.ws = null;
+        this.isConnected = false;
+
+        setTimeout(this.open.bind(this), this.autoReconnectInterval);
+      } else {
+        const event = {
+          type: 'connect:max_retry_exceeded',
+          address: this.url,
+          maxRetries: this.maxRetries,
+          retries: this.connectionRetries,
+        };
+
+        this.emit(event.type, event);
+
+        this.disconnect();
       }
     };
 
@@ -62,34 +79,38 @@ class WsClient extends EventEmitter {
     };
 
     const onCloseListener = (e) => {
-      if (e.code === 1000) { // close normal
-        this.disconnect();
+      const event = {
+        type: 'close',
+        address: this.url,
+        error: e,
+      };
 
-        return;
-      }
+      this.emit(event.type, event);
 
       reconnect();
     };
 
     const onErrorListener = (e) => {
-      switch (e.code) {
-        case 'ENOTFOUND':
-          reconnect();
-          break;
-        case 'EAI_AGAIN':
-          reconnect();
-          break;
-        case 'ECONNREFUSED':
-          reconnect();
-          break;
-        default:
-          this.disconnect();
-          this.emit('error', e);
-          break;
-      }
+      const event = {
+        type: 'error',
+        address: this.url,
+        error: e,
+      };
+
+      this.emit(event.type, event);
+
+      reconnect();
     };
 
     const onMessageListener = (rawData) => {
+      const event = {
+        type: 'message',
+        address: this.url,
+        data: rawData,
+      };
+
+      this.emit(event.type, event);
+
       const { result } = JSON.parse(rawData);
 
       if (result !== undefined && Object.keys(result).length > 0) {
@@ -154,6 +175,13 @@ class WsClient extends EventEmitter {
     } catch (e) {
       // do nothing
     }
+
+    const event = {
+      type: 'disconnect',
+      address: this.url,
+    };
+
+    this.emit(event.type, event);
 
     this.isConnected = false;
   }

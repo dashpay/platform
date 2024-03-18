@@ -4,7 +4,6 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore::hashes::Hash;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::version::PlatformVersion;
@@ -41,14 +40,14 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        if let Some(last_commited_block_info) =
+        if let Some(last_committed_block_info) =
             block_platform_state.last_committed_block_info().as_ref()
         {
-            if core_block_height == last_commited_block_info.basic_info().core_height {
+            if core_block_height == last_committed_block_info.basic_info().core_height {
                 tracing::debug!(
                     method = "update_masternode_list_v0",
                     "no update mnl at height {}",
-                    core_block_height
+                    core_block_height,
                 );
                 return Ok(()); // no need to do anything
             }
@@ -57,8 +56,10 @@ where
             method = "update_masternode_list_v0",
             "update mnl to height {} at block {}",
             core_block_height,
-            block_platform_state.core_height()
+            block_platform_state.last_committed_core_height()
         );
+        //todo: there's a weird condition that can happen if we are not on init chain, but we are
+        // in the genesis and we are not on round 0, and the core height changed
         if block_platform_state.last_committed_block_info().is_some() || is_init_chain {
             let update_state_masternode_list_outcome::v0::UpdateStateMasternodeListOutcome {
                 masternode_list_diff,

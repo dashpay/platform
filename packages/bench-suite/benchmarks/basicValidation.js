@@ -1,12 +1,9 @@
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
-const DashPlatformProtocol = require('@dashevo/dpp');
+const dpnsDocumentTypes = require('@dashevo/dpns-contract/schema/v1/dpns-contract-documents.json');
 
-const dpnsDocumentTypes = require('@dashevo/dpns-contract/schema/dpns-contract-documents');
-
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+// const { DashPlatformProtocol, Identity, Identifier, default: loadWasmDpp }  = require('@dashevo/wasm-dpp');
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
 const crypto = require('crypto');
 
@@ -54,9 +51,11 @@ module.exports = {
   async beforeAll(context) {
     context.stateRepository = new StateRepository();
 
-    context.dpp = new DashPlatformProtocol({
-      stateRepository: context.stateRepository,
-    });
+    // TODO: rework with wasm-dpp if needed and if basic validation is available
+    // await loadWasmDpp();
+    // context.dpp = new DashPlatformProtocol({
+    //   stateRepository: context.stateRepository,
+    // });
 
     await context.dpp.initialize();
 

@@ -135,6 +135,90 @@ class PlatformPromiseClient {
   }
 
   /**
+   * @param {!GetEpochsInfoRequest} getEpochsInfoRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetEpochsInfoResponse>}
+   */
+  getEpochsInfo(getEpochsInfoRequest, metadata = {}) {
+    return promisify(
+      this.client.getEpochsInfo.bind(this.client),
+    )(
+      getEpochsInfoRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetProtocolVersionUpgradeVoteStatusRequest} getProtocolVersionUpgradeVoteStatusRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetProtocolVersionUpgradeVoteStatusResponse>}
+   */
+  getProtocolVersionUpgradeVoteStatus(getProtocolVersionUpgradeVoteStatusRequest, metadata = {}) {
+    return promisify(
+      this.client.getProtocolVersionUpgradeVoteStatus.bind(this.client),
+    )(
+      getProtocolVersionUpgradeVoteStatusRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetProtocolVersionUpgradeStateRequest} getProtocolVersionUpgradeStateRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetProtocolVersionUpgradeStateResponse>}
+   */
+  getProtocolVersionUpgradeState(getProtocolVersionUpgradeStateRequest, metadata = {}) {
+    return promisify(
+      this.client.getProtocolVersionUpgradeState.bind(this.client),
+    )(
+      getProtocolVersionUpgradeStateRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetIdentityContractNonceRequest} getIdentityContractNonceRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetIdentityContractNonceResponse>}
+   */
+  getIdentityContractNonce(getIdentityContractNonceRequest, metadata = {}) {
+    return promisify(
+      this.client.getIdentityContractNonce.bind(this.client),
+    )(
+      getIdentityContractNonceRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetIdentityNonceRequest} getIdentityNonceRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetIdentityNonceResponse>}
+   */
+  getIdentityNonce(getIdentityNonceRequest, metadata = {}) {
+    return promisify(
+      this.client.getIdentityNonce.bind(this.client),
+    )(
+      getIdentityNonceRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetIdentityKeysRequest} getIdentityKeysRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetIdentityKeysResponse>}
+   */
+  getIdentityKeys(getIdentityKeysRequest, metadata = {}) {
+    return promisify(
+      this.client.getIdentityKeys.bind(this.client),
+    )(
+      getIdentityKeysRequest,
+      metadata,
+    );
+  }
+
+  /**
    * @param {string} protocolVersion
    */
   setProtocolVersion(protocolVersion) {

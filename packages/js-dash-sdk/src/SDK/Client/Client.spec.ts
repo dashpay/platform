@@ -1,7 +1,6 @@
 import { expect } from 'chai';
 import { Transaction, BlockHeader, PrivateKey } from '@dashevo/dashcore-lib';
-import stateTransitionTypes from '@dashevo/dpp/lib/stateTransition/stateTransitionTypes';
-import { IdentityPublicKey, IdentityPublicKeyWithWitness } from '@dashevo/wasm-dpp';
+import { IdentityPublicKey, IdentityPublicKeyWithWitness, StateTransitionTypes } from '@dashevo/wasm-dpp';
 import { Client } from './index';
 import 'mocha';
 
@@ -194,7 +193,7 @@ describe('Dash - Client', function suite() {
       const interceptedAssetLockProof = interceptedIdentityStateTransition.getAssetLockProof();
 
       expect(interceptedIdentityStateTransition.getType())
-        .to.be.equal(stateTransitionTypes.IDENTITY_TOP_UP);
+        .to.be.equal(StateTransitionTypes.IdentityTopUp);
 
       const transaction = new Transaction(transportMock.sendTransaction.getCall(1).args[0]);
       const isLock = createFakeInstantLock(transaction.hash);
@@ -262,7 +261,7 @@ describe('Dash - Client', function suite() {
         .platform.dpp.stateTransition.createFromBuffer(serializedSt);
 
       expect(interceptedIdentityStateTransition.getType())
-        .to.be.equal(stateTransitionTypes.IDENTITY_UPDATE);
+        .to.be.equal(StateTransitionTypes.IdentityUpdate);
       const publicKeysAdded = interceptedIdentityStateTransition.getPublicKeysToAdd();
       expect(publicKeysAdded.map((key) => key.toObject(true)))
         .to.deep.equal(publicKeysToAdd.map((key) => key.toObject(true)));
@@ -390,7 +389,8 @@ describe('Dash - Client', function suite() {
       expect(await interceptedSt.verifySignature(
         identityFixture.getPublicKeyById(2),
       )).to.be.equal(true);
-      expect(interceptedSt.getEntropy()).to.be.deep.equal(dataContractFixture.getEntropy());
+      expect(interceptedSt.getIdentityNonce()).to.be
+        .deep.equal(dataContractFixture.getIdentityNonce());
       expect(interceptedSt.getDataContract().toObject())
         .to.be.deep.equal(dataContractFixture.toObject());
     });

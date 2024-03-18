@@ -40,18 +40,16 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::KeyID;
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::{Purpose, SecurityLevel};
 #[cfg(feature = "full")]
 use dpp::prelude::IdentityPublicKey;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
 
+use crate::drive::identity::identity_contract_info_group_path_key_purpose_vec;
 use crate::drive::identity::key::fetch::KeyRequestType::{
     ContractBoundKey, ContractDocumentTypeBoundKey,
-};
-use crate::drive::identity::{
-    identity_contract_info_group_path_key_purpose_vec, identity_contract_info_group_path_vec,
 };
 #[cfg(feature = "full")]
 use grovedb::query_result_type::{
@@ -222,8 +220,11 @@ fn key_and_optional_element_to_identity_public_key_id_and_object_pair(
         return Ok((public_key.id(), Some(public_key)));
     }
 
-    let (key_id, _) = KeyID::decode_var(key.as_slice())
-        .ok_or_else(|| Error::Drive(DriveError::CorruptedSerialization("can't decode key id")))?;
+    let (key_id, _) = KeyID::decode_var(key.as_slice()).ok_or_else(|| {
+        Error::Drive(DriveError::CorruptedSerialization(String::from(
+            "can't decode key id",
+        )))
+    })?;
 
     Ok((key_id, None))
 }
@@ -866,7 +867,7 @@ impl IdentityKeysRequest {
                     query: SizedQuery {
                         query: Self::specific_keys_query(key_ids),
                         limit,
-                        offset,
+                        offset: None,
                     },
                 }
             }

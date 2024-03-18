@@ -6,9 +6,7 @@ use crate::document::factory::DocumentFactoryWASM;
 use crate::document_facade::DocumentFacadeWasm;
 use dpp::dash_platform_protocol::DashPlatformProtocol;
 use dpp::data_contract::DataContractFacade;
-use dpp::identity::IdentityFacade;
-use dpp::prelude::DataContract;
-use dpp::state_transition::state_transition_factory::StateTransitionFactory;
+
 use dpp::version::LATEST_VERSION;
 
 use crate::entropy_generator::ExternalEntropyGenerator;
@@ -45,10 +43,7 @@ impl DashPlatformProtocolWasm {
         let protocol_version = maybe_protocol_version.unwrap_or(LATEST_VERSION);
         let protocol = DashPlatformProtocol::new(protocol_version);
 
-        let data_contracts = Arc::new(
-            DataContractFacade::new(protocol_version, Some(Box::new(entropy_generator.clone())))
-                .with_js_error()?,
-        );
+        let data_contracts = Arc::new(DataContractFacade::new(protocol_version).with_js_error()?);
 
         let document_factory = DocumentFactoryWASM::new(protocol_version, Some(entropy_generator))?;
 
@@ -79,11 +74,11 @@ impl DashPlatformProtocolWasm {
     pub fn state_transition(&self) -> StateTransitionFactoryWasm {
         self.protocol.state_transition().into()
     }
-    //
-    // #[wasm_bindgen(getter = protocolVersion)]
-    // pub fn protocol_version(&self) -> u32 {
-    //     self.protocol_version
-    // }
+
+    #[wasm_bindgen(getter = protocolVersion)]
+    pub fn protocol_version(&self) -> u32 {
+        self.protocol.protocol_version
+    }
     //
     // #[wasm_bindgen(js_name = getProtocolVersion)]
     // pub fn get_protocol_version(&self) -> u32 {

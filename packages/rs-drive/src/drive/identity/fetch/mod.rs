@@ -32,11 +32,14 @@ use grovedb::{PathQuery, SizedQuery};
 #[cfg(feature = "full")]
 use std::collections::BTreeMap;
 
+#[cfg(feature = "full")]
 mod balance;
 #[cfg(feature = "full")]
 mod fetch_by_public_key_hashes;
 #[cfg(feature = "full")]
 mod full_identity;
+#[cfg(feature = "full")]
+mod nonce;
 #[cfg(feature = "full")]
 mod partial_identity;
 #[cfg(feature = "full")]
@@ -84,7 +87,7 @@ impl Drive {
         };
         let (result_items, _) = self
             .grove
-            .query_raw(&path_query, true, QueryElementResultType, transaction)
+            .query_raw(&path_query, true, true, QueryElementResultType, transaction)
             .unwrap()
             .map_err(Error::GroveDB)?;
 
@@ -115,6 +118,7 @@ impl Drive {
             .query_raw(
                 &path_query,
                 true,
+                true,
                 QueryKeyElementPairResultType,
                 transaction,
             )
@@ -127,7 +131,9 @@ impl Drive {
             .map(|key_element| {
                 if let SumItem(balance, _) = &key_element.1 {
                     let identifier: [u8; 32] = key_element.0.try_into().map_err(|_| {
-                        Error::Drive(DriveError::CorruptedSerialization("expected 32 bytes"))
+                        Error::Drive(DriveError::CorruptedSerialization(String::from(
+                            "expected 32 bytes",
+                        )))
                     })?;
                     Ok((identifier, *balance as u64))
                 } else {

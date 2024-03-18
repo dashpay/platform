@@ -52,13 +52,11 @@ pub mod ser;
 /// ```
 /// use std::collections::BTreeMap;
 ///
-/// fn main() {
-///     // The keys in this map are vectors, not strings.
-///     let mut map = BTreeMap::new();
-///     map.insert(vec![32, 64], "x86");
+/// // The keys in this map are vectors, not strings.
+/// let mut map = BTreeMap::new();
+/// map.insert(vec![32, 64], "x86");
 ///
-///     println!("{}", platform_value::to_value(map).unwrap_err());
-/// }
+/// println!("{}", platform_value::to_value(map).unwrap_err());
 /// ```
 pub fn to_value<T>(value: T) -> Result<Value, Error>
 where
@@ -81,16 +79,14 @@ where
 ///     location: String,
 /// }
 ///
-/// fn main() {
-///     // The type of `j` is `serde_json::Value`
-///     let j = platform_value!({
-///         "fingerprint": "0xF9BA143B95FF6D82",
-///         "location": "Menlo Park, CA"
-///     });
+/// // The type of `j` is `serde_json::Value`
+/// let j = platform_value!({
+///     "fingerprint": "0xF9BA143B95FF6D82",
+///     "location": "Menlo Park, CA"
+/// });
 ///
-///     let u: User = platform_value::from_value(j).unwrap();
-///     println!("{:#?}", u);
-/// }
+/// let u: User = platform_value::from_value(j).unwrap();
+/// println!("{:#?}", u);
 /// ```
 ///
 /// # Errors

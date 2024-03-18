@@ -34,12 +34,10 @@ class GrpcTransport {
 
   /**
    * Make request to DAPI node
-   *
    * @param {Function} ClientClass
    * @param {string} method
    * @param {object} requestMessage
    * @param {DAPIClientOptions} [options]
-   *
    * @returns {Promise<object>}
    */
   async request(ClientClass, method, requestMessage, options = { }) {
@@ -100,6 +98,8 @@ class GrpcTransport {
         throw responseError;
       }
 
+      // TODO: Shouldn't we call address.markAsBanned() here?
+
       if (options.retries === 0) {
         throw new MaxRetriesReachedError(responseError);
       }
@@ -123,7 +123,6 @@ class GrpcTransport {
 
   /**
    * Get last used address
-   *
    * @returns {DAPIAddress|null}
    */
   getLastUsedAddress() {
@@ -132,8 +131,7 @@ class GrpcTransport {
 
   /**
    *
-   * Get gRPC url string
-   *
+   *Get gRPC url string
    * @private
    * @param {DAPIAddress} address
    * @returns {string}

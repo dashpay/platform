@@ -1,8 +1,7 @@
-const { Listr } = require('listr2');
-const { Observable } = require('rxjs');
-
-const { NETWORK_LOCAL } = require('../../constants');
-const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
+import { Listr } from 'listr2';
+import { Observable } from 'rxjs';
+import { NETWORK_LOCAL } from '../../constants.js';
+import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
 
 /**
  *
@@ -15,7 +14,7 @@ const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
  * @param {ensureFileMountExists} ensureFileMountExists
  * @return {startNodeTask}
  */
-function startNodeTaskFactory(
+export default function startNodeTaskFactory(
   dockerCompose,
   waitForCorePeersConnected,
   waitForMasternodesSync,
@@ -46,15 +45,19 @@ function startNodeTaskFactory(
 
     // Check Drive log files are created
     if (config.get('platform.enable')) {
-      const prettyFilePath = config.get('platform.drive.abci.log.prettyFile.path');
-      ensureFileMountExists(prettyFilePath);
+      const loggers = config.get('platform.drive.abci.logs');
 
-      const jsonFilePath = config.get('platform.drive.abci.log.jsonFile.path');
-      ensureFileMountExists(jsonFilePath);
+      for (const logger of Object.values(loggers)) {
+        if (['stdout', 'stderr'].includes(logger.destination)) {
+          continue;
+        }
+
+        ensureFileMountExists(logger.destination, 0o666);
+      }
 
       const tenderdashLogFilePath = config.get('platform.drive.tenderdash.log.path');
       if (tenderdashLogFilePath !== null) {
-        ensureFileMountExists(tenderdashLogFilePath);
+        ensureFileMountExists(tenderdashLogFilePath, 0o666);
       }
     }
 
@@ -112,7 +115,7 @@ function startNodeTaskFactory(
             port: config.get('core.rpc.port'),
             user: config.get('core.rpc.user'),
             pass: config.get('core.rpc.password'),
-            host: await getConnectionHost(config, 'core'),
+            host: await getConnectionHost(config, 'core', 'core.rpc.host'),
           });
 
           return new Observable(async (observer) => {
@@ -134,5 +137,3 @@ function startNodeTaskFactory(
 
   return startNodeTask;
 }
-
-module.exports = startNodeTaskFactory;

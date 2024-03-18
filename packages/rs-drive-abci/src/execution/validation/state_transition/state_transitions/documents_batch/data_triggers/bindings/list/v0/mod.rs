@@ -2,13 +2,12 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
 use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::dpns::create_domain_data_trigger;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::feature_flags::create_feature_flag_data_trigger;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::reject::reject_data_trigger;
-use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::reward_share::create_masternode_reward_shares_data_trigger;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::withdrawals::delete_withdrawal_data_trigger;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBindingV0;
 
 use dpp::errors::ProtocolError;
-use dpp::system_data_contracts::feature_flags_contract::document_types::update_consensus_params;
-use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+use dpp::system_data_contracts::feature_flags_contract::v1::document_types::update_consensus_params;
+use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::system_data_contracts::{dashpay_contract, dpns_contract, SystemDataContract};
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
 
@@ -94,15 +93,21 @@ pub fn data_trigger_bindings_list_v0() -> Result<Vec<DataTriggerBindingV0>, Prot
         },
         DataTriggerBindingV0 {
             data_contract_id: SystemDataContract::MasternodeRewards.id(),
-            document_type: update_consensus_params::NAME.to_string(),
+            document_type: "rewardShare".to_string(),
             transition_action_type: DocumentTransitionActionType::Create,
-            data_trigger: create_masternode_reward_shares_data_trigger,
+            data_trigger: reject_data_trigger,
         },
         DataTriggerBindingV0 {
             data_contract_id: SystemDataContract::MasternodeRewards.id(),
             document_type: "rewardShare".to_string(),
             transition_action_type: DocumentTransitionActionType::Replace,
-            data_trigger: create_masternode_reward_shares_data_trigger,
+            data_trigger: reject_data_trigger,
+        },
+        DataTriggerBindingV0 {
+            data_contract_id: SystemDataContract::MasternodeRewards.id(),
+            document_type: "rewardShare".to_string(),
+            transition_action_type: DocumentTransitionActionType::Delete,
+            data_trigger: reject_data_trigger,
         },
         DataTriggerBindingV0 {
             data_contract_id: SystemDataContract::Withdrawals.id(),
