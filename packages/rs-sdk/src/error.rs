@@ -5,6 +5,7 @@ use std::time::Duration;
 use dpp::bls_signatures::BlsError;
 use dpp::version::PlatformVersionError;
 use dpp::ProtocolError;
+use rs_dapi_client::mock::MockError;
 use rs_dapi_client::DapiClientError;
 
 pub use drive_proof_verifier::error::ContextProviderError;
@@ -30,6 +31,9 @@ pub enum Error {
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
     DapiClientError(String),
+    /// DAPI mocks error
+    #[error("Dapi mocks error: {0}")]
+    DapiMocksError(#[from] MockError),
     /// Dash core error
     #[error("Dash core error: {0}")]
     CoreError(#[from] dpp::dashcore::Error),

@@ -26,7 +26,10 @@ async fn test_mock_fetch_identity() {
     let expected: Identity = Identity::from(IdentityV0::default());
     let query = expected.id();
 
-    sdk.mock().expect_fetch(query, Some(expected.clone())).await;
+    sdk.mock()
+        .expect_fetch(query, Some(expected.clone()))
+        .await
+        .unwrap();
 
     let retrieved = Identity::fetch(&sdk, query)
         .await
@@ -43,7 +46,10 @@ async fn test_mock_fetch_identity_not_found() {
 
     let id = Identifier::random();
 
-    sdk.mock().expect_fetch(id, None as Option<Identity>).await;
+    sdk.mock()
+        .expect_fetch(id, None as Option<Identity>)
+        .await
+        .unwrap();
 
     let retrieved = Identity::fetch(&sdk, id)
         .await
@@ -61,7 +67,10 @@ async fn test_mock_fetch_data_contract() {
     let expected = mock_data_contract(Some(&document_type));
     let id = expected.id();
 
-    sdk.mock().expect_fetch(id, Some(expected.clone())).await;
+    sdk.mock()
+        .expect_fetch(id, Some(expected.clone()))
+        .await
+        .unwrap();
 
     let retrieved = DataContract::fetch(&sdk, id)
         .await
@@ -88,7 +97,8 @@ async fn test_mock_fetch_document() {
     // [DocumentQuery::new_with_data_contract_id] will fetch the data contract first, so we need to define an expectation for it.
     sdk.mock()
         .expect_fetch(data_contract.id(), Some(data_contract.clone()))
-        .await;
+        .await
+        .unwrap();
 
     let query =
         DocumentQuery::new_with_data_contract_id(&sdk, data_contract.id(), document_type_name)
@@ -98,7 +108,8 @@ async fn test_mock_fetch_document() {
 
     sdk.mock()
         .expect_fetch(query.clone(), Some(expected.clone()))
-        .await;
+        .await
+        .unwrap();
 
     let retrieved = Document::fetch(&sdk, query)
         .await

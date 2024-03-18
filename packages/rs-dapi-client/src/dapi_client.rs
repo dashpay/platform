@@ -8,6 +8,7 @@ use std::time::Duration;
 use tracing::Instrument;
 
 use crate::address_list::AddressListError;
+use crate::mock::MockError;
 use crate::{
     transport::{TransportClient, TransportRequest},
     Address, AddressList, CanRetry, RequestSettings,
@@ -25,10 +26,10 @@ pub enum DapiClientError<TE> {
     /// [AddressListError] errors
     #[error("address list error: {0}")]
     AddressList(AddressListError),
-    #[cfg(feature = "mocks")]
-    /// Expectation not found
-    #[error("mock expectation not found for request: {0}")]
-    MockExpectationNotFound(String),
+
+    #[error("mock error: {0}")]
+    /// Error happened in mock client
+    Mock(#[from] MockError),
 }
 
 impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
@@ -39,7 +40,7 @@ impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
             Transport(transport_error, _) => transport_error.is_node_failure(),
             AddressList(_) => false,
             #[cfg(feature = "mocks")]
-            MockExpectationNotFound(_) => false,
+            Mock(_) => false,
         }
     }
 }

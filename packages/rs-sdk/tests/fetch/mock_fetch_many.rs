@@ -33,13 +33,15 @@ async fn test_mock_document_fetch_many() {
     // [DocumentQuery::new_with_document_id] will fetch the data contract first, so we need to define an expectation for it.
     sdk.mock()
         .expect_fetch(data_contract.id(), Some(data_contract.clone()))
-        .await;
+        .await
+        .unwrap();
 
     let query =
         DocumentQuery::new(data_contract, document_type_name).expect("create document query");
     sdk.mock()
         .expect_fetch_many(query.clone(), Some(expected.clone()))
-        .await;
+        .await
+        .unwrap();
 
     let retrieved = Document::fetch_many(&sdk, query).await.unwrap();
 
