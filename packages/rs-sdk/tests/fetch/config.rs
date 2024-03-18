@@ -138,7 +138,7 @@ impl Config {
     /// * `offline-testing` is set - use mock implementation and
     /// load existing test vectors from disk
     ///
-    /// ##
+    /// ## Arguments
     ///
     /// * namespace - namespace to use when storing mock expectations; this is used to separate
     /// expectations from different tests.
@@ -174,6 +174,8 @@ impl Config {
 
             #[cfg(feature = "generate-test-vectors")]
             let builder = {
+                // When we use namespaces, clean up the namespaced dump dir before starting
+                // to avoid mixing expectations from different test runs
                 if !namespace.is_empty() {
                     if let Err(err) = std::fs::remove_dir_all(&dump_dir) {
                         tracing::warn!(?err, ?dump_dir, "failed to remove dump dir");
