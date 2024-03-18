@@ -18,7 +18,7 @@ impl PlatformMessageSignable for &[u8] {
         public_key_type: KeyType,
         public_key_data: &[u8],
         signature: &[u8],
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    ) -> SimpleConsensusValidationResult {
         let signable_data = self;
         match public_key_type {
             KeyType::ECDSA_SECP256K1 => {
@@ -31,11 +31,11 @@ impl PlatformMessageSignable for &[u8] {
                     //     hex::encode(signable_data),
                     //     hex::encode(public_key_data)
                     // ));
-                    Ok(SimpleConsensusValidationResult::new_with_error(
+                    SimpleConsensusValidationResult::new_with_error(
                         SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())).into(),
-                    ))
+                    )
                 } else {
-                    Ok(SimpleConsensusValidationResult::default())
+                    SimpleConsensusValidationResult::default()
                 }
             }
             KeyType::BLS12_381 => {
@@ -43,61 +43,61 @@ impl PlatformMessageSignable for &[u8] {
                     Ok(public_key) => public_key,
                     Err(e) => {
                         // dbg!(format!("bls public_key could not be recovered"));
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                        return SimpleConsensusValidationResult::new_with_error(
                             SignatureError::BasicBLSError(BasicBLSError::new(e.to_string())).into(),
-                        ));
+                        );
                     }
                 };
                 let signature = match bls_signatures::Signature::from_bytes(signature) {
                     Ok(public_key) => public_key,
                     Err(e) => {
                         // dbg!(format!("bls signature could not be recovered"));
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                        return SimpleConsensusValidationResult::new_with_error(
                             SignatureError::BasicBLSError(BasicBLSError::new(e.to_string())).into(),
-                        ));
+                        );
                     }
                 };
                 if !public_key.verify(&signature, signable_data) {
-                    Ok(SimpleConsensusValidationResult::new_with_error(
+                    SimpleConsensusValidationResult::new_with_error(
                         SignatureError::BasicBLSError(BasicBLSError::new(
                             "bls signature was incorrect".to_string(),
                         ))
                         .into(),
-                    ))
+                    )
                 } else {
-                    Ok(SimpleConsensusValidationResult::default())
+                    SimpleConsensusValidationResult::default()
                 }
             }
             KeyType::ECDSA_HASH160 => {
                 if !signature.is_empty() {
-                    Ok(SimpleConsensusValidationResult::new_with_error(
+                    SimpleConsensusValidationResult::new_with_error(
                         SignatureError::SignatureShouldNotBePresentError(
                             SignatureShouldNotBePresentError::new("ecdsa_hash160 keys should not have a signature as that would reveal the public key".to_string()),
                         ).into()
-                    ))
+                    )
                 } else {
-                    Ok(SimpleConsensusValidationResult::default())
+                    SimpleConsensusValidationResult::default()
                 }
             }
             KeyType::BIP13_SCRIPT_HASH => {
                 if !signature.is_empty() {
-                    Ok(SimpleConsensusValidationResult::new_with_error(
+                    SimpleConsensusValidationResult::new_with_error(
                         SignatureError::SignatureShouldNotBePresentError(
                             SignatureShouldNotBePresentError::new("script hash keys should not have a signature as that would reveal the script".to_string())
-                        ).into()))
+                        ).into())
                 } else {
-                    Ok(SimpleConsensusValidationResult::default())
+                    SimpleConsensusValidationResult::default()
                 }
             }
             KeyType::EDDSA_25519_HASH160 => {
                 if !signature.is_empty() {
-                    Ok(SimpleConsensusValidationResult::new_with_error(
+                    SimpleConsensusValidationResult::new_with_error(
                         SignatureError::SignatureShouldNotBePresentError(
                             SignatureShouldNotBePresentError::new("eddsa hash 160 keys should not have a signature as that would reveal the script".to_string())
                         ).into()
-                    ))
+                    )
                 } else {
-                    Ok(SimpleConsensusValidationResult::default())
+                    SimpleConsensusValidationResult::default()
                 }
             }
         }

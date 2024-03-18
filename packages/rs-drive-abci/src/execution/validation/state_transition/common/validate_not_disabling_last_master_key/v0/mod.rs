@@ -14,20 +14,25 @@ pub(super) fn validate_master_key_uniqueness_v0(
     public_keys_being_added: &[IdentityPublicKeyInCreation],
     public_keys_to_disable: &[IdentityPublicKey],
 ) -> Result<SimpleConsensusValidationResult, Error> {
-    let disabling_a_master_key = public_keys_to_disable
+    let master_keys_to_disable_count = public_keys_to_disable
         .iter()
-        .any(|key| key.security_level() == SecurityLevel::MASTER);
+        .filter(|key| key.security_level() == SecurityLevel::MASTER)
+        .count();
 
-    let adding_a_master_key = public_keys_being_added
+    let master_keys_being_added_count = public_keys_being_added
         .iter()
-        .any(|key| key.security_level() == SecurityLevel::MASTER);
+        .filter(|key| key.security_level() == SecurityLevel::MASTER)
+        .count();
 
-    // let's check that if we are disabling a master key that we are also enabling one
-    if disabling_a_master_key ^ adding_a_master_key {
+    // Check that at most one master key is being disabled and at most one is being added
+    if master_keys_to_disable_count > 1
+        || master_keys_being_added_count > 1
+        || ((master_keys_to_disable_count == 1) ^ (master_keys_being_added_count == 1))
+    {
         Ok(SimpleConsensusValidationResult::new_with_error(
             BasicError::MasterPublicKeyUpdateError(MasterPublicKeyUpdateError::new(
-                adding_a_master_key,
-                disabling_a_master_key,
+                master_keys_being_added_count,
+                master_keys_to_disable_count,
             ))
             .into(),
         ))

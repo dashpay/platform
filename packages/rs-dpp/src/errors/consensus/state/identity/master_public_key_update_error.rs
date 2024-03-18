@@ -21,8 +21,8 @@ use bincode::{Decode, Encode};
 #[error("Failed to update the master public key: {description}. Ensure the operation is valid and permissible under current system rules.")]
 #[platform_serialize(unversioned)]
 pub struct MasterPublicKeyUpdateError {
-    adding: bool,
-    removing: bool,
+    adding: usize,
+    removing: usize,
     description: String,
 }
 
@@ -33,14 +33,16 @@ DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 */
 
 impl MasterPublicKeyUpdateError {
-    pub fn new(adding: bool, removing: bool) -> Self {
+    pub fn new(adding: usize, removing: usize) -> Self {
         let description = match (adding, removing) {
-            (true, false) => "Attempt to add a new key is not allowed",
-            (false, true) => "Attempt to remove the existing key is not allowed",
-            (true, true) => "Simultaneous addition and removal of keys is not supported",
-            (false, false) => "No operation specified",
-        }
-        .to_string();
+            (1, _) => "Attempt to add a new master key is not allowed unless one is being disabled"
+                .to_string(),
+            (0, _) => "Removing a master key without adding one is not allowed".to_string(),
+            (_, 1) | (_, 0) => "Attempt to add more than one master key is not allowed".to_string(),
+            (adding, removing) => format!(
+                "Attempting to add {adding} master keys while removing {removing} master keys"
+            ),
+        };
 
         Self {
             adding,
@@ -49,11 +51,11 @@ impl MasterPublicKeyUpdateError {
         }
     }
 
-    pub fn is_adding(&self) -> bool {
+    pub fn adding(&self) -> usize {
         self.adding
     }
 
-    pub fn is_removing(&self) -> bool {
+    pub fn removing(&self) -> usize {
         self.removing
     }
 }

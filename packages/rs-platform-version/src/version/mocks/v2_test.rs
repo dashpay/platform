@@ -607,7 +607,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 },
                 identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
-                    advanced_structure: None,
+                    advanced_structure: Some(0),
                     identity_signatures: Some(0),
                     balance: None,
                     nonce: Some(0),
@@ -645,7 +645,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     },
                 contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
-                    advanced_structure: Some(0),
+                    advanced_structure: None,
                     identity_signatures: None,
                     balance: None,
                     nonce: Some(0),
@@ -654,7 +654,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 },
                 contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: None,
-                    advanced_structure: Some(0),
+                    advanced_structure: None,
                     identity_signatures: None,
                     balance: None,
                     nonce: Some(0),

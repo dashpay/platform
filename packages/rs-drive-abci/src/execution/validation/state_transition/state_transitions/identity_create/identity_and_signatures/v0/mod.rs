@@ -1,4 +1,3 @@
-use crate::error::Error;
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
 use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use dpp::consensus::basic::BasicError;
@@ -22,7 +21,7 @@ pub(crate) trait IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 
         &self,
         signable_bytes: Vec<u8>,
         execution_context: &mut StateTransitionExecutionContext,
-    ) -> Result<SimpleConsensusValidationResult, Error>;
+    ) -> SimpleConsensusValidationResult;
 }
 
 impl IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 for IdentityCreateTransition {
@@ -30,24 +29,19 @@ impl IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 for Identity
         &self,
         signable_bytes: Vec<u8>,
         execution_context: &mut StateTransitionExecutionContext,
-    ) -> Result<SimpleConsensusValidationResult, Error> {
-        let mut validation_result = SimpleConsensusValidationResult::default();
+    ) -> SimpleConsensusValidationResult {
         for key in self.public_keys().iter() {
             let result = signable_bytes.as_slice().verify_signature(
                 key.key_type(),
                 key.data().as_slice(),
                 key.signature().as_slice(),
-            )?;
+            );
             execution_context.add_operation(ValidationOperation::SignatureVerification(
                 SignatureVerificationOperation::new(key.key_type()),
             ));
             if !result.is_valid() {
-                validation_result.add_errors(result.errors);
+                return result;
             }
-        }
-
-        if !validation_result.is_valid() {
-            return Ok(validation_result);
         }
 
         // We should validate that the identity id is created from the asset lock proof
@@ -55,12 +49,10 @@ impl IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 for Identity
         let identifier_from_outpoint = match self.asset_lock_proof().create_identifier() {
             Ok(identifier) => identifier,
             Err(_) => {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    ConsensusError::BasicError(
-                        BasicError::IdentityAssetLockTransactionOutputNotFoundError(
-                            IdentityAssetLockTransactionOutputNotFoundError::new(
-                                self.asset_lock_proof().output_index() as usize,
-                            ),
+                return ConsensusValidationResult::new_with_error(ConsensusError::BasicError(
+                    BasicError::IdentityAssetLockTransactionOutputNotFoundError(
+                        IdentityAssetLockTransactionOutputNotFoundError::new(
+                            self.asset_lock_proof().output_index() as usize,
                         ),
                     ),
                 ))
@@ -68,16 +60,14 @@ impl IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 for Identity
         };
 
         if identifier_from_outpoint != self.identity_id() {
-            return Ok(ConsensusValidationResult::new_with_error(
-                ConsensusError::BasicError(BasicError::InvalidIdentifierError(
-                    InvalidIdentifierError::new(
-                        "identity_id".to_string(),
-                        "does not match created identifier from asset lock".to_string(),
-                    ),
+            return ConsensusValidationResult::new_with_error(ConsensusError::BasicError(
+                BasicError::InvalidIdentifierError(InvalidIdentifierError::new(
+                    "identity_id".to_string(),
+                    "does not match created identifier from asset lock".to_string(),
                 )),
             ));
         }
 
-        Ok(validation_result)
+        SimpleConsensusValidationResult::new()
     }
 }
