@@ -3,7 +3,7 @@ use tokio::task::JoinHandle;
 
 /// Spawn a blocking tokio task with name if tokio_unstable flag is set
 pub fn spawn_blocking_task_with_name_if_supported<Function, Output>(
-    name: &str,
+    _sometimes_used_name: &str,
     function: Function,
 ) -> io::Result<JoinHandle<Output>>
 where
@@ -13,7 +13,7 @@ where
     #[cfg(all(tokio_unstable, feature = "console"))]
     {
         tokio::task::Builder::new()
-            .name(name)
+            .name(_sometimes_used_name)
             .spawn_blocking(function)
     }
 
