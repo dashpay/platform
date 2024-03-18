@@ -370,6 +370,12 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                 // In this case we don't care about the created at
                 let original_document_created_at = original_document.created_at();
 
+                let original_document_created_at_block_height =
+                    original_document.created_at_block_height();
+
+                let original_document_created_at_core_block_height =
+                    original_document.created_at_core_block_height();
+
                 let validation_result = Self::check_ownership_of_old_replaced_document_v0(
                     document_replace_transition,
                     original_document,
@@ -400,7 +406,9 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                     DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
                         document_replace_transition,
                         original_document_created_at,
-                        block_info.time_ms,
+                        original_document_created_at_block_height,
+                        original_document_created_at_core_block_height,
+                        block_info,
                         |_identifier| Ok(data_contract_fetch_info.clone()),
                     )?;
 

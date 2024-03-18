@@ -9,6 +9,7 @@ use dpp::platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
 use dpp::document::Document;
+use dpp::prelude::{BlockHeight, CoreBlockHeight};
 
 use dpp::ProtocolError;
 
@@ -39,6 +40,18 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
     fn created_at(&self) -> Option<TimestampMillis> {
         match self {
             DocumentCreateTransitionAction::V0(v0) => v0.created_at,
+        }
+    }
+
+    fn created_at_block_height(&self) -> Option<BlockHeight> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.created_at_block_height,
+        }
+    }
+
+    fn created_at_core_block_height(&self) -> Option<CoreBlockHeight> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.created_at_core_block_height,
         }
     }
 

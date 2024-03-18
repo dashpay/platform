@@ -92,7 +92,7 @@ impl SpecializedDocumentFactory {
     ) -> Result<Document, ProtocolError> {
         match self {
             SpecializedDocumentFactory::V0(v0) => {
-                v0.create_document(owner_id, document_type_name, data)
+                v0.create_document_without_time_based_properties(owner_id, document_type_name, data)
             }
         }
     }

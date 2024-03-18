@@ -9,6 +9,7 @@ use dpp::ProtocolError;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::prelude::{BlockHeight, CoreBlockHeight};
 
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
 
@@ -21,6 +22,10 @@ pub struct DocumentCreateTransitionActionV0 {
     pub base: DocumentBaseTransitionAction,
     /// The creation time of the document
     pub created_at: Option<TimestampMillis>,
+    /// The creation block height of the document
+    pub created_at_block_height: Option<BlockHeight>,
+    /// The creation core block height of the document
+    pub created_at_core_block_height: Option<CoreBlockHeight>,
     /// Document properties
     pub data: BTreeMap<String, Value>,
 }
@@ -31,8 +36,12 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
     fn base(&self) -> &DocumentBaseTransitionAction;
     /// base owned
     fn base_owned(self) -> DocumentBaseTransitionAction;
-    /// created at
+    /// created at time
     fn created_at(&self) -> Option<TimestampMillis>;
+    /// created at block height
+    fn created_at_block_height(&self) -> Option<BlockHeight>;
+    /// created at core block height
+    fn created_at_core_block_height(&self) -> Option<CoreBlockHeight>;
     /// data
     fn data(&self) -> &BTreeMap<String, Value>;
     /// data mut
@@ -88,6 +97,8 @@ impl DocumentFromCreateTransitionActionV0 for Document {
         let DocumentCreateTransitionActionV0 {
             base,
             created_at,
+            created_at_block_height,
+            created_at_core_block_height,
             data,
         } = v0;
 
@@ -116,6 +127,10 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                         revision: document_type.initial_revision(),
                         created_at: *created_at,
                         updated_at: *created_at,
+                        created_at_block_height: *created_at_block_height,
+                        updated_at_block_height: *created_at_block_height,
+                        created_at_core_block_height: *created_at_core_block_height,
+                        updated_at_core_block_height: *created_at_core_block_height,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {
@@ -136,6 +151,8 @@ impl DocumentFromCreateTransitionActionV0 for Document {
         let DocumentCreateTransitionActionV0 {
             base,
             created_at,
+            created_at_block_height,
+            created_at_core_block_height,
             data,
         } = v0;
 
@@ -164,6 +181,10 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                         revision: document_type.initial_revision(),
                         created_at,
                         updated_at: created_at,
+                        created_at_block_height,
+                        updated_at_block_height: created_at_block_height,
+                        created_at_core_block_height,
+                        updated_at_core_block_height: created_at_core_block_height,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {

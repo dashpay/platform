@@ -111,6 +111,8 @@ mod tests {
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
                 random(),
+                random(),
+                random(),
                 platform_version,
             )
             .expect("should create document");
@@ -184,6 +186,8 @@ mod tests {
             .create_document_from_data(
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
+                random(),
+                random(),
                 random(),
                 platform_version,
             )
@@ -278,6 +282,8 @@ mod tests {
             .create_document_from_data(
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
+                random(),
+                random(),
                 random(),
                 platform_version,
             )
@@ -386,6 +392,8 @@ mod tests {
             .create_document_from_data(
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
+                random(),
+                random(),
                 random(),
                 platform_version,
             )
@@ -898,7 +906,7 @@ mod tests {
             .serialize_consume(document_type, platform_version)
             .expect("expected to serialize document");
 
-        assert_eq!(document_serialized.len(), 120);
+        assert_eq!(document_serialized.len(), 119);
         let original_fees = apply_person(
             &drive,
             &contract,
@@ -913,10 +921,10 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
-            //Explanation for 1236
+            //Explanation for 1237
 
             //todo
-            1238
+            1237
         } else {
             //Explanation for 959
 
@@ -932,13 +940,13 @@ mod tests {
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 224
+            // Value -> 223
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   118 for item serialized bytes (verified above)
+            //   117 for item serialized bytes (verified above)
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -1051,7 +1059,7 @@ mod tests {
 
             //// 359 + 179 + 145 + 278
 
-            962
+            961
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1074,14 +1082,14 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 25940733);
+            assert_eq!(*removed_credits, 25913567);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 960); // we refunded 960 instead of 962
+            assert_eq!(refund_equivalent_bytes, 959); // we refunded 959 instead of 962
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1119,7 +1127,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        let expected_added_bytes = if using_history { 313 } else { 1 };
+        let expected_added_bytes = if using_history { 312 } else { 1 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
@@ -1189,7 +1197,7 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        let expected_added_bytes = if using_history { 1238 } else { 962 };
+        let expected_added_bytes = if using_history { 1237 } else { 961 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
             // let's delete it, just to make sure everything is working.
@@ -1209,14 +1217,14 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 25940733);
+            assert_eq!(*removed_credits, 25913567);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 960); // we refunded 960 instead of 1011
+            assert_eq!(refund_equivalent_bytes, 959); // we refunded 959 instead of 1011
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1384,10 +1392,10 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
-            //Explanation for 1238
+            //Explanation for 1237
 
             //todo
-            1238
+            1237
         } else {
             //Explanation for 959
 
@@ -1409,7 +1417,7 @@ mod tests {
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   117 for item serialized bytes
+            //   116 for item serialized bytes
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -1522,7 +1530,7 @@ mod tests {
 
             // 360 + 179 + 145 + 278 = 960
 
-            962
+            961
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1543,7 +1551,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        let expected_added_bytes = if using_history { 1239 } else { 963 };
+        let expected_added_bytes = if using_history { 1238 } else { 962 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
