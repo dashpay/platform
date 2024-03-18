@@ -41,43 +41,43 @@ pub struct DocumentV0 {
     /// The document's properties (data).
     #[cfg_attr(feature = "document-serde-conversion", serde(flatten))]
     pub properties: BTreeMap<String, Value>,
-    /// The document revision.
+    /// The document revision, if the document is mutable.
     #[cfg_attr(
         feature = "document-serde-conversion",
         serde(rename = "$revision", default)
     )]
     pub revision: Option<Revision>,
-    /// The time in milliseconds that the document was created
+    /// The time in milliseconds that the document was created, if it is set as required by the document type schema.
     #[cfg_attr(
         feature = "document-serde-conversion",
         serde(rename = "$createdAt", default)
     )]
     pub created_at: Option<TimestampMillis>,
-    /// The time in milliseconds that the document was last updated
+    /// The time in milliseconds that the document was last updated, if it is set as required by the document type schema.
     #[cfg_attr(
         feature = "document-serde-conversion",
         serde(rename = "$updatedAt", default)
     )]
     pub updated_at: Option<TimestampMillis>,
-    /// The block that the document was created
+    /// The block that the document was created, if it is set as required by the document type schema.
     #[cfg_attr(
         feature = "document-serde-conversion",
         serde(rename = "$createdAtBlockHeight", default)
     )]
     pub created_at_block_height: Option<BlockHeight>,
-    /// The block that the document was last updated
+    /// The block that the document was last updated, if it is set as required by the document type schema.
     #[cfg_attr(
         feature = "document-serde-conversion",
         serde(rename = "$updatedAtBlockHeight", default)
     )]
     pub updated_at_block_height: Option<BlockHeight>,
-    /// The core block that the document was created
+    /// The core block that the document was created, if it is set as required by the document type schema.
     #[cfg_attr(
         feature = "document-serde-conversion",
         serde(rename = "$createdAtCoreBlockHeight", default)
     )]
     pub created_at_core_block_height: Option<CoreBlockHeight>,
-    /// The core block that the document was last updated
+    /// The core block that the document was last updated, if it is set as required by the document type schema.
     #[cfg_attr(
         feature = "document-serde-conversion",
         serde(rename = "$updatedAtCoreBlockHeight", default)

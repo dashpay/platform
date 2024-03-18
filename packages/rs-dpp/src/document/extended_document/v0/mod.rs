@@ -170,30 +170,38 @@ impl ExtendedDocumentV0 {
         self.document.revision()
     }
 
+    /// Returns an optional block timestamp at which the document was created.
+    /// It will be None if it is not required by the schema.
     pub fn created_at(&self) -> Option<TimestampMillis> {
         self.document.created_at()
     }
 
+    /// Returns an optional block timestamp at which the document was updated.
+    /// It will be None if it is not required by the schema.
     pub fn updated_at(&self) -> Option<TimestampMillis> {
         self.document.updated_at()
     }
 
     /// Returns an optional block height at which the document was created.
+    /// It will be None if it is not required by the schema.
     pub fn created_at_block_height(&self) -> Option<BlockHeight> {
         self.document.created_at_block_height()
     }
 
     /// Returns an optional block height at which the document was last updated.
+    /// It will be None if it is not required by the schema.
     pub fn updated_at_block_height(&self) -> Option<BlockHeight> {
         self.document.updated_at_block_height()
     }
 
     /// Returns an optional core block height at which the document was created.
+    /// It will be None if it is not required by the schema.
     pub fn created_at_core_block_height(&self) -> Option<CoreBlockHeight> {
         self.document.created_at_core_block_height()
     }
 
     /// Returns an optional core block height at which the document was last updated.
+    /// It will be None if it is not required by the schema.
     pub fn updated_at_core_block_height(&self) -> Option<CoreBlockHeight> {
         self.document.updated_at_core_block_height()
     }

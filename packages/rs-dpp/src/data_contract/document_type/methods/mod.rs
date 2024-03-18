@@ -70,8 +70,36 @@ pub trait DocumentTypeV0Methods {
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError>;
 
-    /// Creates a document at the current time based on document type information
-    /// Properties set here must be pre validated
+    /// Creates a document at the current time based on specified document type information.
+    /// This function requires that all properties provided are pre-validated according to
+    /// the document's schema requirements.
+    ///
+    /// # Parameters:
+    /// - `id`: An identifier for the document. Unique within the context of the document's type.
+    /// - `owner_id`: The identifier of the entity that will own this document.
+    /// - `block_height`: The block height at which this document is considered to have been created.
+    ///    While this value is recorded in the document, it is ignored when the document is broadcasted
+    ///    to the network. This is because the actual block height at the time of broadcast may differ.
+    ///    This parameter is included to fulfill schema requirements that specify a block height; you may
+    ///    use the current block height, a placeholder value of 0, or any other value as necessary.
+    /// - `core_block_height`: Similar to `block_height`, this represents the core network's block height
+    ///    at the document's creation time. It is handled the same way as `block_height` regarding broadcast
+    ///    and schema requirements.
+    /// - `properties`: A collection of properties for the document, structured as a `BTreeMap<String, Value>`.
+    ///    These must be pre-validated to match the document's schema definitions.
+    /// - `platform_version`: A reference to the current version of the platform for which the document is created.
+    ///
+    /// # Returns:
+    /// A `Result<Document, ProtocolError>`, which is `Ok` if the document was successfully created, or an error
+    /// indicating what went wrong during the creation process.
+    ///
+    /// # Note:
+    /// The `block_height` and `core_block_height` are primarily included for schema compliance and local record-keeping.
+    /// These values are not used when the document is broadcasted to the network, as the network assigns its own block
+    /// heights upon receipt and processing of the document. After broadcasting, it is recommended to update these fields
+    /// in their created_at/updated_at variants as well as the base created_at/updated_at in the client-side
+    /// representation of the document to reflect the values returned by the network. The base created_at/updated_at
+    /// uses current time when creating the local document and is also ignored as it is also set network side.
     fn create_document_with_prevalidated_properties(
         &self,
         id: Identifier,

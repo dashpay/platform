@@ -13,7 +13,10 @@ use std::collections::BTreeMap;
 
 use std::string::ToString;
 
-use crate::{data_contract::DataContract, document, errors::ProtocolError};
+#[cfg(feature = "state-transition-value-conversion")]
+use crate::data_contract::DataContract;
+
+use crate::{document, errors::ProtocolError};
 
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;

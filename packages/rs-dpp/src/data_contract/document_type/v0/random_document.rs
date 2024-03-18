@@ -26,6 +26,41 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 impl CreateRandomDocument for DocumentTypeV0 {
+    /// Creates a random Document using a seed if given, otherwise entropy.
+    fn random_document(
+        &self,
+        seed: Option<u64>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, ProtocolError> {
+        let mut rng = match seed {
+            None => StdRng::from_entropy(),
+            Some(seed_value) => StdRng::seed_from_u64(seed_value),
+        };
+        self.random_document_with_rng(&mut rng, platform_version)
+    }
+
+    /// Creates a document with a random id, owner id, and properties using StdRng.
+    fn random_document_with_rng(
+        &self,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, ProtocolError> {
+        let owner_id = Identifier::random_with_rng(rng);
+        let entropy = Bytes32::random_with_rng(rng);
+
+        self.random_document_with_params(
+            owner_id,
+            entropy,
+            None,
+            None,
+            None,
+            DocumentFieldFillType::FillIfNotRequired,
+            DocumentFieldFillSize::AnyDocumentFillSize,
+            rng,
+            platform_version,
+        )
+    }
+
     /// Creates `count` Documents with random data using a seed if given, otherwise entropy.
     fn random_documents(
         &self,
@@ -54,56 +89,6 @@ impl CreateRandomDocument for DocumentTypeV0 {
         Ok(vec)
     }
 
-    /// Creates `count` Documents with random data using the random number generator given.
-    fn random_documents_with_params(
-        &self,
-        count: u32,
-        identities: &[Identity],
-        time_ms: Option<TimestampMillis>,
-        block_height: Option<BlockHeight>,
-        core_block_height: Option<CoreBlockHeight>,
-        document_field_fill_type: DocumentFieldFillType,
-        document_field_fill_size: DocumentFieldFillSize,
-        rng: &mut StdRng,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<(Document, Identity, Bytes32)>, ProtocolError> {
-        let mut vec = vec![];
-        for _i in 0..count {
-            let identity_num = rng.gen_range(0..identities.len());
-            let identity = identities.get(identity_num).unwrap().clone();
-            let entropy = Bytes32::random_with_rng(rng);
-            vec.push((
-                self.random_document_with_params(
-                    identity.id(),
-                    entropy,
-                    time_ms,
-                    block_height,
-                    core_block_height,
-                    document_field_fill_type,
-                    document_field_fill_size,
-                    rng,
-                    platform_version,
-                )?,
-                identity,
-                entropy,
-            ));
-        }
-        Ok(vec)
-    }
-
-    /// Creates a random Document using a seed if given, otherwise entropy.
-    fn random_document(
-        &self,
-        seed: Option<u64>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
-        let mut rng = match seed {
-            None => StdRng::from_entropy(),
-            Some(seed_value) => StdRng::seed_from_u64(seed_value),
-        };
-        self.random_document_with_rng(&mut rng, platform_version)
-    }
-
     /// Creates a document with a random id, owner id, and properties using StdRng.
     fn random_document_with_identifier_and_entropy(
         &self,
@@ -122,28 +107,6 @@ impl CreateRandomDocument for DocumentTypeV0 {
             None,
             document_field_fill_type,
             document_field_fill_size,
-            rng,
-            platform_version,
-        )
-    }
-
-    /// Creates a document with a random id, owner id, and properties using StdRng.
-    fn random_document_with_rng(
-        &self,
-        rng: &mut StdRng,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
-        let owner_id = Identifier::random_with_rng(rng);
-        let entropy = Bytes32::random_with_rng(rng);
-
-        self.random_document_with_params(
-            owner_id,
-            entropy,
-            None,
-            None,
-            None,
-            DocumentFieldFillType::FillIfNotRequired,
-            DocumentFieldFillSize::AnyDocumentFillSize,
             rng,
             platform_version,
         )
@@ -296,5 +259,42 @@ impl CreateRandomDocument for DocumentTypeV0 {
                 received: version,
             }),
         }
+    }
+
+    /// Creates `count` Documents with random data using the random number generator given.
+    fn random_documents_with_params(
+        &self,
+        count: u32,
+        identities: &[Identity],
+        time_ms: Option<TimestampMillis>,
+        block_height: Option<BlockHeight>,
+        core_block_height: Option<CoreBlockHeight>,
+        document_field_fill_type: DocumentFieldFillType,
+        document_field_fill_size: DocumentFieldFillSize,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<(Document, Identity, Bytes32)>, ProtocolError> {
+        let mut vec = vec![];
+        for _i in 0..count {
+            let identity_num = rng.gen_range(0..identities.len());
+            let identity = identities.get(identity_num).unwrap().clone();
+            let entropy = Bytes32::random_with_rng(rng);
+            vec.push((
+                self.random_document_with_params(
+                    identity.id(),
+                    entropy,
+                    time_ms,
+                    block_height,
+                    core_block_height,
+                    document_field_fill_type,
+                    document_field_fill_size,
+                    rng,
+                    platform_version,
+                )?,
+                identity,
+                entropy,
+            ));
+        }
+        Ok(vec)
     }
 }
