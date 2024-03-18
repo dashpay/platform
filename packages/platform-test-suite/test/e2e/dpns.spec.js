@@ -185,7 +185,7 @@ describe('DPNS', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(broadcastError.code).to.be.equal(4009);
+      expect(broadcastError.code).to.be.equal(40105);
       expect(broadcastError.message).to.match(/Document \w* has duplicate unique properties \["normalizedParentDomainName", "normalizedLabel"] with other documents/);
     });
 
