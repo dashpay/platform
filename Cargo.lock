@@ -2069,7 +2069,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.5",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -2299,7 +2299,7 @@ source = "git+https://github.com/fominok/jsonschema-rs?branch=feat-unevaluated-p
 dependencies = [
  "ahash 0.7.7",
  "anyhow",
- "base64 0.21.7",
+ "base64 0.13.1",
  "bytecount",
  "fancy-regex",
  "fraction",
@@ -3205,7 +3205,7 @@ checksum = "c55e02e35260070b6f716a2423c2ff1c3bb1642ddca6f99e1f26d06268a0e2d2"
 dependencies = [
  "bytes",
  "heck",
- "itertools 0.11.0",
+ "itertools 0.10.5",
  "log",
  "multimap",
  "once_cell",
@@ -3239,7 +3239,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "efb6c9a1dd1def8e2124d17e83a20af56f1570d6c2d2bd9e266ccb768df3840e"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.48",
@@ -4275,8 +4275,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "0.14.0-dev.8"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#86ba24b8f6d92e6eb24c7d6aff39f9f733d307ba"
+version = "0.14.0-dev.9"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#af64c65d94ef233053be8616e4c92f571fb5aae0"
 dependencies = [
  "bytes",
  "futures",
@@ -4296,8 +4296,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "0.14.0-dev.8"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#86ba24b8f6d92e6eb24c7d6aff39f9f733d307ba"
+version = "0.14.0-dev.9"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#af64c65d94ef233053be8616e4c92f571fb5aae0"
 dependencies = [
  "bytes",
  "chrono",
@@ -4316,8 +4316,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto-compiler"
-version = "0.14.0-dev.8"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#86ba24b8f6d92e6eb24c7d6aff39f9f733d307ba"
+version = "0.14.0-dev.9"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#af64c65d94ef233053be8616e4c92f571fb5aae0"
 dependencies = [
  "fs_extra",
  "prost-build 0.12.3",
