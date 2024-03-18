@@ -150,6 +150,17 @@ impl Config {
             false => self.dump_dir.join(sanitize_filename::sanitize(namespace)),
         };
 
+        if dump_dir.is_relative() {
+            panic!(
+                "dump dir must be absolute path to avoid mistakes, got: {}",
+                dump_dir.display()
+            );
+        }
+
+        if dump_dir.as_os_str().eq("/") {
+            panic!("cannot use namespace with root dump dir");
+        }
+
         // offline testing takes precedence over network testing
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
@@ -163,7 +174,13 @@ impl Config {
 
             #[cfg(feature = "generate-test-vectors")]
             let builder = {
-                std::fs::create_dir_all(&dump_dir).expect("create dump dir");
+                if !namespace.is_empty() {
+                    if let Err(err) = std::fs::remove_dir_all(&dump_dir) {
+                        tracing::warn!(?err, ?dump_dir, "failed to remove dump dir");
+                    }
+                    std::fs::create_dir_all(&dump_dir).expect("create dump dir");
+                }
+
                 builder.with_dump_dir(&dump_dir)
             };
 
