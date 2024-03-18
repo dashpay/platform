@@ -38,6 +38,10 @@ pub enum ProofError {
     #[error("unknown contract in documents batch transition error: {0}")]
     UnknownContract(String),
 
+    /// The metadata we got back from platform is incorrect
+    #[error("invalid metadata: {0}")]
+    InvalidMetadata(String),
+
     /// We are trying to callback to retrieve a contract, but there was an error
     #[error("the contract could not be retrieved during verification: {0}")]
     ErrorRetrievingContract(String),
@@ -75,5 +79,6 @@ fn get_error_code(error: &ProofError) -> u32 {
         ProofError::InvalidTransition(_) => 6008,
         ProofError::UnknownContract(_) => 6009,
         ProofError::ErrorRetrievingContract(_) => 6010,
+        ProofError::InvalidMetadata(_) => 6011,
     }
 }

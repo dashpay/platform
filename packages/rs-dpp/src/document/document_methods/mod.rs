@@ -42,8 +42,14 @@ pub trait DocumentMethodsV0 {
 
     fn increment_revision(&mut self) -> Result<(), ProtocolError>;
 
-    /// Returns if the documents are equal but ignoring the timestamp
-    fn is_equal_ignoring_timestamps(
+    /// Checks to see if a document is equal without time based fields.
+    /// Since these fields are set on the network this function can be useful to make sure that
+    /// fields that were supplied have not changed, while ignoring those that are set network side.
+    /// Time based fields that are ignored are
+    ///     created_at/updated_at
+    ///     created_at_block_height/updated_at_block_height
+    ///     created_at_core_block_height/updated_at_core_block_height
+    fn is_equal_ignoring_time_based_fields(
         &self,
         rhs: &Self,
         platform_version: &PlatformVersion,

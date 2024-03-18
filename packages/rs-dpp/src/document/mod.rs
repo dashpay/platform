@@ -179,7 +179,7 @@ impl DocumentMethodsV0 for Document {
         Ok(())
     }
 
-    fn is_equal_ignoring_timestamps(
+    fn is_equal_ignoring_time_based_fields(
         &self,
         rhs: &Self,
         platform_version: &PlatformVersion,
@@ -192,9 +192,9 @@ impl DocumentMethodsV0 for Document {
                     .document_method_versions
                     .is_equal_ignoring_timestamps
                 {
-                    0 => Ok(document_v0.is_equal_ignoring_timestamps_v0(rhs_v0)),
+                    0 => Ok(document_v0.is_equal_ignoring_time_based_fields_v0(rhs_v0)),
                     version => Err(ProtocolError::UnknownVersionMismatch {
-                        method: "DocumentMethodV0::is_equal_ignoring_timestamps".to_string(),
+                        method: "DocumentMethodV0::is_equal_ignoring_time_based_fields".to_string(),
                         known_versions: vec![0],
                         received: version,
                     }),

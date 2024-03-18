@@ -667,7 +667,9 @@ impl Strategy {
                             .random_documents_with_params(
                                 count as u32,
                                 current_identities,
-                                block_info.time_ms,
+                                Some(block_info.time_ms),
+                                Some(block_info.height),
+                                Some(block_info.core_height),
                                 *fill_type,
                                 *fill_size,
                                 rng,
@@ -761,7 +763,9 @@ impl Strategy {
                                 .random_documents_with_params(
                                     count as u32,
                                     &held_identity,
-                                    block_info.time_ms,
+                                    Some(block_info.time_ms),
+                                    Some(block_info.height),
+                                    Some(block_info.core_height),
                                     *fill_type,
                                     *fill_size,
                                     rng,
@@ -773,7 +777,9 @@ impl Strategy {
                                 .random_documents_with_params(
                                     count as u32,
                                     current_identities,
-                                    block_info.time_ms,
+                                    Some(block_info.time_ms),
+                                    Some(block_info.height),
+                                    Some(block_info.core_height),
                                     *fill_type,
                                     *fill_size,
                                     rng,

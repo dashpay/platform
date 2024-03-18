@@ -1,5 +1,5 @@
 use crate::block::epoch::{Epoch, EPOCH_0};
-use crate::prelude::TimestampMillis;
+use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
@@ -20,10 +20,10 @@ pub struct BlockInfo {
     pub time_ms: TimestampMillis,
 
     /// Block height
-    pub height: u64,
+    pub height: BlockHeight,
 
     /// Core height
-    pub core_height: u32,
+    pub core_height: CoreBlockHeight,
 
     /// Current fee epoch
     pub epoch: Epoch,
