@@ -37,10 +37,10 @@ impl Drive {
         let estimated_layer_count = match purpose {
             Purpose::AUTHENTICATION => ApproximateElements(4),
             Purpose::ENCRYPTION => {
-                unreachable!()
+                return;
             }
             Purpose::DECRYPTION => {
-                unreachable!()
+                return;
             }
             Purpose::TRANSFER => ApproximateElements(1),
             Purpose::SYSTEM => ApproximateElements(1),
@@ -50,10 +50,10 @@ impl Drive {
         let estimated_layer_sizes = match purpose {
             Purpose::AUTHENTICATION => AllSubtrees(1, NoSumTrees, None),
             Purpose::ENCRYPTION => {
-                unreachable!()
+                return;
             }
             Purpose::DECRYPTION => {
-                unreachable!()
+                return;
             }
             Purpose::TRANSFER => AllReference(1, KEY_REFERENCE_SIZE, None),
             Purpose::SYSTEM => AllReference(1, KEY_REFERENCE_SIZE, None),

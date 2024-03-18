@@ -5,7 +5,7 @@ mod tests {
     use strategy_tests::frequency::Frequency;
 
     use crate::strategy::{FailureStrategy, NetworkStrategy};
-    use strategy_tests::{StartIdentities, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
 
@@ -47,10 +47,14 @@ mod tests {
                 )],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -67,7 +71,7 @@ mod tests {
                 dont_finalize_block: false,
                 expect_every_block_errors_with_codes: vec![],
                 rounds_before_successful_block: None,
-                expect_specific_block_errors_with_codes: HashMap::from([(3, vec![1067])]), //missing position (we skipped pos 6)
+                expect_specific_block_errors_with_codes: HashMap::from([(3, vec![10411])]), //missing position (we skipped pos 6)
             }),
             query_testing: None,
             verify_state_transition_results: true,
@@ -124,10 +128,8 @@ mod tests {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                identities_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },

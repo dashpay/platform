@@ -151,6 +151,7 @@ pub struct DriveAbciStateTransitionCommonValidationVersions {
     pub validate_identity_public_key_ids_exist_in_state: FeatureVersion,
     pub validate_state_transition_identity_signed: FeatureVersion,
     pub validate_unique_identity_public_key_hashes_in_state: FeatureVersion,
+    pub validate_master_key_uniqueness: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

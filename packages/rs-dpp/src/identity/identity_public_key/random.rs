@@ -1,6 +1,6 @@
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 
-use crate::identity::{IdentityPublicKey, KeyCount, KeyID};
+use crate::identity::{IdentityPublicKey, KeyCount, KeyID, KeyType, Purpose, SecurityLevel};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
@@ -237,6 +237,58 @@ impl IdentityPublicKey {
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "IdentityPublicKey::random_key_with_rng".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Generates a random key based on the platform version.
+    ///
+    /// # Parameters
+    ///
+    /// * `id`: The `KeyID` for the generated key.
+    /// * `rng`: A mutable reference to a random number generator of type `StdRng`.
+    /// * `used_key_matrix`: An optional tuple that contains the count of keys that have already been used
+    ///                      and a mutable reference to a matrix (or vector) that tracks which keys have been used.
+    /// * `platform_version`: The platform version which determines the structure of the identity key.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self, ProtocolError>`: If successful, returns an instance of `Self`.
+    ///                                  In case of an error, it returns a `ProtocolError`.
+    ///
+    /// # Errors
+    ///
+    /// * `ProtocolError::PublicKeyGenerationError`: This error is returned if too many keys have already been created.
+    /// * `ProtocolError::UnknownVersionMismatch`: This error is returned if the provided platform version is not recognized.
+    ///
+    pub fn random_key_with_known_attributes(
+        id: KeyID,
+        rng: &mut StdRng,
+        purpose: Purpose,
+        security_level: SecurityLevel,
+        key_type: KeyType,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_key_structure_version
+        {
+            0 => {
+                let (key, private_key) = IdentityPublicKeyV0::random_key_with_known_attributes(
+                    id,
+                    rng,
+                    purpose,
+                    security_level,
+                    key_type,
+                    platform_version,
+                )?;
+                Ok((key.into(), private_key))
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "IdentityPublicKey::random_key_with_known_attributes".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

@@ -57,9 +57,9 @@ pub trait StateTransitionIdentitySigned: StateTransitionLike {
             ));
         }
 
-        if public_key.purpose() != Purpose::AUTHENTICATION {
+        if public_key.purpose() != self.purpose_requirement() {
             return Err(ProtocolError::WrongPublicKeyPurposeError(
-                WrongPublicKeyPurposeError::new(public_key.purpose(), Purpose::AUTHENTICATION),
+                WrongPublicKeyPurposeError::new(public_key.purpose(), self.purpose_requirement()),
             ));
         }
         Ok(())
@@ -85,7 +85,7 @@ pub trait StateTransitionIdentitySigned: StateTransitionLike {
     /// Returns minimal key security level that can be used to sign this ST.
     /// Override this method if the ST requires a different security level.
     fn security_level_requirement(&self) -> Vec<SecurityLevel>;
-    
+
     /// The purpose requirement for the signing key
     /// The default is authentication
     /// However for Withdrawals and Fund Transfers the requirement is TRANSFER

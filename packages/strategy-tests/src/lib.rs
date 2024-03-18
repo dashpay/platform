@@ -12,7 +12,7 @@ use dpp::data_contract::{DataContract, DataContractFactory};
 
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
-use dpp::identity::{Identity, KeyType, PartialIdentity, Purpose, SecurityLevel};
+use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
@@ -53,6 +53,8 @@ pub mod frequency;
 pub mod operations;
 pub mod transitions;
 
+pub type KeyMaps = BTreeMap<Purpose, BTreeMap<SecurityLevel, Vec<KeyType>>>;
+
 /// Represents a comprehensive strategy used for simulations or testing in a blockchain context.
 ///
 /// The `Strategy` struct encapsulates various operations, state transitions, and data contracts to provide a structured plan or set of procedures for specific purposes such as simulations, automated tests, or other blockchain-related workflows.
@@ -91,7 +93,7 @@ pub struct Strategy {
     )>,
     pub operations: Vec<Operation>,
     pub start_identities: StartIdentities,
-    pub identities_inserts: Frequency,
+    pub identities_inserts: IdentityInsertInfo,
     pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
 }
@@ -111,6 +113,24 @@ pub struct StartIdentities {
     pub starting_balances: Option<u64>,
 }
 
+/// Identities to register on the first block of the strategy
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+pub struct IdentityInsertInfo {
+    pub frequency: Frequency,
+    pub start_keys: u8,
+    pub extra_keys: KeyMaps,
+}
+
+impl Default for IdentityInsertInfo {
+    fn default() -> Self {
+        Self {
+            frequency: Default::default(),
+            start_keys: 5,
+            extra_keys: Default::default(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct RandomDocumentQuery<'a> {
     pub data_contract: &'a DataContract,
@@ -127,7 +147,7 @@ struct StrategyInSerializationFormat {
     pub contracts_with_updates: Vec<(Vec<u8>, Option<BTreeMap<u64, Vec<u8>>>)>,
     pub operations: Vec<Vec<u8>>,
     pub start_identities: StartIdentities,
-    pub identities_inserts: Frequency,
+    pub identities_inserts: IdentityInsertInfo,
     pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
 }
@@ -337,6 +357,7 @@ impl Strategy {
             let mut new_transitions = crate::transitions::create_identities_state_transitions(
                 self.start_identities.number_of_identities.into(), // number of identities
                 self.start_identities.keys_per_identity.into(),    // number of keys per identity
+                &self.identities_inserts.extra_keys,
                 signer,
                 rng,
                 create_asset_lock,
@@ -348,12 +369,13 @@ impl Strategy {
         // Add identities_inserts
         // Don't do this on first block because we need to skip utxo refresh
         if block_info.height > config.start_block_height {
-            let frequency = &self.identities_inserts;
+            let frequency = &self.identities_inserts.frequency;
             if frequency.check_hit(rng) {
                 let count = frequency.events(rng);
                 let mut new_transitions = crate::transitions::create_identities_state_transitions(
-                    count, // number of identities
-                    3,     // number of keys per identity
+                    count,                                       // number of identities
+                    self.identities_inserts.start_keys as KeyID, // number of keys per identity
+                    &self.identities_inserts.extra_keys,
                     signer,
                     rng,
                     create_asset_lock,
@@ -1570,10 +1592,7 @@ mod tests {
                 keys_per_identity: 3,
                 starting_balances: None,
             },
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+            identities_inserts: Default::default(),
             identity_contract_nonce_gaps: None,
             signer: Some(simple_signer),
         };

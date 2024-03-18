@@ -10,7 +10,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use bincode::{Decode, Encode};
 
 #[derive(
-Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error("Invalid public key purpose {public_key_purpose}. The state transition requires {allowed_key_purpose}")]
 #[platform_serialize(unversioned)]
@@ -25,10 +25,7 @@ pub struct InvalidSignaturePublicKeyPurposeError {
 }
 
 impl InvalidSignaturePublicKeyPurposeError {
-    pub fn new(
-        public_key_purpose: Purpose,
-        allowed_key_purpose: Purpose,
-    ) -> Self {
+    pub fn new(public_key_purpose: Purpose, allowed_key_purpose: Purpose) -> Self {
         Self {
             public_key_purpose,
             allowed_key_purpose,
@@ -45,8 +42,6 @@ impl InvalidSignaturePublicKeyPurposeError {
 
 impl From<InvalidSignaturePublicKeyPurposeError> for ConsensusError {
     fn from(err: InvalidSignaturePublicKeyPurposeError) -> Self {
-        Self::SignatureError(SignatureError::InvalidSignaturePublicKeyPurposeError(
-            err,
-        ))
+        Self::SignatureError(SignatureError::InvalidSignaturePublicKeyPurposeError(err))
     }
 }

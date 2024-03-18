@@ -1,4 +1,4 @@
-use crate::identity::Purpose::{AUTHENTICATION, DECRYPTION, ENCRYPTION, SYSTEM, VOTING, TRANSFER};
+use crate::identity::Purpose::{AUTHENTICATION, DECRYPTION, ENCRYPTION, SYSTEM, TRANSFER, VOTING};
 use anyhow::bail;
 use bincode::{Decode, Encode};
 #[cfg(feature = "cbor")]
@@ -31,12 +31,31 @@ pub enum Purpose {
     ENCRYPTION = 1,
     /// this key cannot be used for signing documents
     DECRYPTION = 2,
-    /// this key cannot be used for signing documents
+    /// this key is used to sign credit transfer and withdrawal state transitions
     TRANSFER = 3,
     /// this key cannot be used for signing documents
     SYSTEM = 4,
     /// this key cannot be used for signing documents
     VOTING = 5,
+}
+
+impl From<Purpose> for [u8; 1] {
+    fn from(purpose: Purpose) -> Self {
+        [purpose as u8]
+    }
+}
+
+impl From<Purpose> for &'static [u8; 1] {
+    fn from(purpose: Purpose) -> Self {
+        match purpose {
+            AUTHENTICATION => &[0],
+            ENCRYPTION => &[1],
+            DECRYPTION => &[2],
+            TRANSFER => &[3],
+            SYSTEM => &[4],
+            VOTING => &[5],
+        }
+    }
 }
 
 impl TryFrom<u8> for Purpose {

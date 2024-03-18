@@ -21,9 +21,7 @@ impl StateTransitionIdentitySigned for IdentityCreditWithdrawalTransition {
 
     fn purpose_requirement(&self) -> Purpose {
         match self {
-            IdentityCreditWithdrawalTransition::V0(transition) => {
-                transition.purpose_requirement()
-            }
+            IdentityCreditWithdrawalTransition::V0(transition) => transition.purpose_requirement(),
         }
     }
 
