@@ -12,6 +12,7 @@ use dpp::{
     document::Document,
     identity::{accessors::IdentityGettersV0, IdentityV0},
     prelude::{DataContract, Identifier, Identity},
+    version::PlatformVersion,
 };
 use rs_sdk::{
     platform::{DocumentQuery, Fetch},
@@ -30,6 +31,35 @@ async fn test_mock_fetch_identity() {
         .expect_fetch(query, Some(expected.clone()))
         .await
         .unwrap();
+
+    let retrieved = Identity::fetch(&sdk, query)
+        .await
+        .unwrap()
+        .expect("object should exist");
+
+    assert_eq!(retrieved, expected);
+}
+
+#[tokio::test]
+/// When I define mock expectation twice for the same request, second call ends with error
+async fn test_mock_fetch_duplicate_expectation() {
+    let sdk = Sdk::new_mock();
+
+    let expected: Identity = Identity::from(IdentityV0::default());
+    let expected2 =
+        Identity::random_identity(3, Some(2), PlatformVersion::latest()).expect("random identity");
+
+    let query = expected.id();
+
+    sdk.mock()
+        .expect_fetch(query, Some(expected.clone()))
+        .await
+        .expect("first expectation should be added correctly");
+
+    sdk.mock()
+        .expect_fetch(query, Some(expected2))
+        .await
+        .expect_err("conflicting expectation should fail");
 
     let retrieved = Identity::fetch(&sdk, query)
         .await

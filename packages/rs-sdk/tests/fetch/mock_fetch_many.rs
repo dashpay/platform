@@ -28,6 +28,12 @@ async fn test_mock_document_fetch_many() {
         .expect("document should be created");
     let expected = BTreeMap::from([(expected_doc.id(), Some(expected_doc.clone()))]);
 
+    // document that should not be returned, as it will be defined as a duplicate
+    let not_expected_doc = document_type
+        .random_document(None, sdk.version())
+        .expect("document 2 should be created");
+    let not_expected = BTreeMap::from([(not_expected_doc.id(), Some(not_expected_doc))]);
+
     let document_type_name = document_type.name();
 
     // [DocumentQuery::new_with_document_id] will fetch the data contract first, so we need to define an expectation for it.
@@ -42,6 +48,11 @@ async fn test_mock_document_fetch_many() {
         .expect_fetch_many(query.clone(), Some(expected.clone()))
         .await
         .unwrap();
+
+    sdk.mock()
+        .expect_fetch_many(query.clone(), Some(not_expected))
+        .await
+        .expect_err("duplicate expectations are not allowed");
 
     let retrieved = Document::fetch_many(&sdk, query).await.unwrap();
 
