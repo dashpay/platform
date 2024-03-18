@@ -57,7 +57,6 @@ use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGetter
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
-#[cfg(feature = "state-transition-signing")]
 use crate::identity::Purpose;
 #[cfg(any(
     feature = "state-transition-signing",

@@ -10,7 +10,7 @@ use crate::data_contract::DataContract;
 use crate::document::{property_names, Document, DocumentV0Getters};
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
-use platform_value::{Error, Value};
+use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::ops::Deref;
 

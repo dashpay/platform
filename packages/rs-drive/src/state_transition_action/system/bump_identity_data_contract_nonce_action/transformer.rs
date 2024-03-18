@@ -1,7 +1,6 @@
 use dpp::platform_value::Identifier;
 use dpp::prelude::UserFeeIncrease;
 
-use dpp::ProtocolError;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;

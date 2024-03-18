@@ -19,17 +19,17 @@ impl StateTransitionIdentitySigned for IdentityCreditTransferTransition {
         }
     }
 
-    fn purpose_requirement(&self) -> Purpose {
-        match self {
-            IdentityCreditTransferTransition::V0(transition) => transition.purpose_requirement(),
-        }
-    }
-
     fn security_level_requirement(&self) -> Vec<SecurityLevel> {
         match self {
             IdentityCreditTransferTransition::V0(transition) => {
                 transition.security_level_requirement()
             }
+        }
+    }
+
+    fn purpose_requirement(&self) -> Purpose {
+        match self {
+            IdentityCreditTransferTransition::V0(transition) => transition.purpose_requirement(),
         }
     }
 }

@@ -22,7 +22,8 @@ use crate::state_transition::StateTransitionLike;
     feature = "state-transition-signing",
     feature = "state-transition-validation"
 ))]
-use crate::identity::{IdentityPublicKey, Purpose};
+use crate::identity::IdentityPublicKey;
+use crate::identity::Purpose;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::*,
