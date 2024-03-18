@@ -137,7 +137,19 @@ impl Config {
     /// new test vectors during execution
     /// * `offline-testing` is set - use mock implementation and
     /// load existing test vectors from disk
-    pub async fn setup_api(&self) -> Arc<rs_sdk::Sdk> {
+    ///
+    /// ##
+    ///
+    /// * namespace - namespace to use when storing mock expectations; this is used to separate
+    /// expectations from different tests.
+    ///
+    /// When empty string is provided, expectations are stored in the root of the dump directory.
+    pub async fn setup_api(&self, namespace: &str) -> Arc<rs_sdk::Sdk> {
+        let dump_dir = match namespace.is_empty() {
+            true => self.dump_dir.clone(),
+            false => self.dump_dir.join(sanitize_filename::sanitize(namespace)),
+        };
+
         // offline testing takes precedence over network testing
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
@@ -150,7 +162,10 @@ impl Config {
             );
 
             #[cfg(feature = "generate-test-vectors")]
-            let builder = builder.with_dump_dir(&self.dump_dir);
+            let builder = {
+                std::fs::create_dir_all(&dump_dir).expect("create dump dir");
+                builder.with_dump_dir(&dump_dir)
+            };
 
             builder.build().expect("cannot initialize api")
         };
@@ -164,8 +179,8 @@ impl Config {
 
             mock_sdk
                 .mock()
-                .quorum_info_dir(&self.dump_dir)
-                .load_expectations(&self.dump_dir)
+                .quorum_info_dir(&dump_dir)
+                .load_expectations(&dump_dir)
                 .await
                 .expect("load expectations");
 
