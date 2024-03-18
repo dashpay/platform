@@ -8,7 +8,6 @@ use std::time::Duration;
 use tracing::Instrument;
 
 use crate::address_list::AddressListError;
-use crate::mock::MockError;
 use crate::{
     transport::{TransportClient, TransportRequest},
     Address, AddressList, CanRetry, RequestSettings,
@@ -27,9 +26,10 @@ pub enum DapiClientError<TE> {
     #[error("address list error: {0}")]
     AddressList(AddressListError),
 
+    #[cfg(feature = "mocks")]
     #[error("mock error: {0}")]
     /// Error happened in mock client
-    Mock(#[from] MockError),
+    Mock(#[from] crate::mock::MockError),
 }
 
 impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
