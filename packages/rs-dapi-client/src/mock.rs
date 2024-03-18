@@ -42,12 +42,12 @@ impl MockDapiClient {
     }
 
     /// Add a new expectation for a request
-    pub fn expect<R>(&mut self, request: &R, response: &R::Response) -> &mut Self
+    pub fn expect<R>(&mut self, request: &R, response: &R::Response) -> Result<&mut Self, MockError>
     where
         R: TransportRequest + Mockable,
         R::Response: Mockable,
     {
-        let key = self.expectations.add(request, response);
+        let key = self.expectations.add(request, response)?;
 
         tracing::trace!(
             %key,
@@ -56,7 +56,7 @@ impl MockDapiClient {
             "mock added expectation"
         );
 
-        self
+        Ok(self)
     }
 
     /// Load expectation from file.
@@ -84,7 +84,12 @@ impl MockDapiClient {
         })?;
 
         let (request, response) = data.deserialize();
-        self.expect(&request, &response);
+        self.expect(&request, &response).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("unable to add expectation: {}", e),
+            )
+        })?;
         Ok((request, response))
     }
 }
@@ -113,10 +118,11 @@ impl DapiRequestExecutor for MockDapiClient {
         return if let Some(response) = response {
             Ok(response)
         } else {
-            Err(DapiClientError::MockExpectationNotFound(format!(
+            Err(MockError::MockExpectationNotFound(format!(
                 "unexpected mock request with key {}, use MockDapiClient::expect(): {:?}",
                 key, request
-            )))
+            ))
+            .into())
         };
     }
 }
@@ -149,12 +155,7 @@ impl Key {
 
         let mut e = sha2::Sha256::new();
         e.update(encoded);
-        let key = e.finalize().try_into().map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("invalid key generated: {}", e),
-            )
-        })?;
+        let key = e.finalize().into();
 
         Ok(Self(key))
     }
@@ -175,7 +176,20 @@ impl Display for Key {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+/// Mock errors
+pub enum MockError {
+    #[error("mock expectation not found for request: {0}")]
+    /// Expectation not found
+    MockExpectationNotFound(String),
+
+    #[error("expectation already defined for request: {0}")]
+    /// Expectation already defined for request
+    MockExpectationConflict(String),
+}
+
 #[derive(Debug)]
+/// Wrapper that encapsulated serialized form of expected response for a request
 struct ExpectedResponse(Vec<u8>);
 
 impl ExpectedResponse {
@@ -199,14 +213,26 @@ struct Expectations {
 impl Expectations {
     /// Add expected request and provide given response.
     ///
-    /// If the expectation already exists, it will be silently replaced.
-    pub fn add<I: Mockable, O: Mockable>(&mut self, request: &I, response: &O) -> Key {
+    /// If the expectation already exists, error is returned.
+    pub fn add<I: Mockable + Debug, O: Mockable>(
+        &mut self,
+        request: &I,
+        response: &O,
+    ) -> Result<Key, MockError> {
         let key = Key::new(request);
         let value = ExpectedResponse::serialize(response);
 
+        if self.expectations.contains_key(&key) {
+            return Err(MockError::MockExpectationConflict(format!(
+                "expectation with key {} already defined for {} request",
+                key,
+                std::any::type_name::<I>(),
+            )));
+        }
+
         self.expectations.insert(key.clone(), value);
 
-        key
+        Ok(key)
     }
 
     /// Get the response for a given request.
