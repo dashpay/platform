@@ -50,13 +50,24 @@ export async function createIdentityCreateTransition(
   const keyThree = new IdentityPublicKey(1);
   keyThree.setId(2);
   keyThree.setData(identityThirdPublicKey.toBuffer());
-  keyThree.setPurpose(IdentityPublicKey.PURPOSES.TRANSFER);
   keyThree.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.CRITICAL);
+
+  // Transfer key
+
+  const { privateKey: identityTransferPrivateKey } = account.identities
+    .getIdentityHDKeyByIndex(identityIndex, 3);
+  const identityTransferPublicKey = identityTransferPrivateKey.toPublicKey();
+
+  const transferKey = new IdentityPublicKey(1);
+  transferKey.setId(3);
+  transferKey.setPurpose(IdentityPublicKey.PURPOSES.TRANSFER);
+  transferKey.setData(identityTransferPublicKey.toBuffer());
+  transferKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.CRITICAL);
 
   // Create Identity
   const identity = dpp.identity.create(
     assetLockProof.createIdentifier(),
-    [keyOne, keyTwo, keyThree],
+    [keyOne, keyTwo, keyThree, transferKey],
   );
 
   // Create ST
