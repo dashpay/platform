@@ -21,14 +21,12 @@ pub struct DriveAbciQueryVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciQueryIdentityVersions {
     pub identity: FeatureVersionBounds,
-    pub identities: FeatureVersionBounds,
     pub keys: FeatureVersionBounds,
     pub identity_nonce: FeatureVersionBounds,
     pub identity_contract_nonce: FeatureVersionBounds,
     pub balance: FeatureVersionBounds,
     pub balance_and_revision: FeatureVersionBounds,
     pub identity_by_public_key_hash: FeatureVersionBounds,
-    pub identities_by_public_key_hashes: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
