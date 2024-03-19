@@ -623,7 +623,7 @@ describe('Platform', () => {
         expect(identity.getPublicKeyById(2)).to.exist();
 
         const newPublicKeyObject = newPublicKey.toObject(true);
-        const expectedPublicKey = identity.getPublicKeyById(3).toObject(true);
+        const expectedPublicKey = identity.getPublicKeyById(4).toObject(true);
         delete expectedPublicKey.disabledAt;
         expect(expectedPublicKey).to.deep.equal(
           newPublicKeyObject,
