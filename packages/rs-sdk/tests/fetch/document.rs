@@ -16,7 +16,7 @@ async fn document_read() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("document_read").await;
 
     let data_contract_id = cfg.existing_data_contract_id;
 
@@ -58,7 +58,7 @@ async fn document_read_no_contract() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("document_read_no_contract").await;
 
     let data_contract_id = Identifier::from_bytes(&[0; 32]).expect("create Identifier");
 
@@ -82,7 +82,7 @@ async fn document_read_no_document() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("document_read_no_document").await;
 
     let data_contract_id = cfg.existing_data_contract_id;
     let document_id = [0; 32].into();
@@ -110,7 +110,7 @@ async fn document_list_drive_query() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("document_list_drive_query").await;
 
     let data_contract_id = cfg.existing_data_contract_id;
 
@@ -155,7 +155,7 @@ async fn document_list_document_query() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("document_list_document_query").await;
 
     let data_contract_id = cfg.existing_data_contract_id;
 
