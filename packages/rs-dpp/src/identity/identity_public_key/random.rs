@@ -339,6 +339,33 @@ impl IdentityPublicKey {
         }
     }
 
+    /// Generates a random ECDSA master-level authentication public key along with its corresponding private key.
+    ///
+    /// This method constructs a random ECDSA (using the secp256k1 curve) high-level authentication public key
+    /// and returns both the public key and its corresponding private key.
+    ///
+    /// # Parameters
+    ///
+    /// * `id`: The `KeyID` for the generated key.
+    /// * `seed`: A seed that will create a random number generator `StdRng`.
+    ///
+    /// # Returns
+    ///
+    /// * `(Self, Vec<u8>)`: A tuple where the first element is an instance of the `IdentityPublicKey` struct,
+    ///                      and the second element is the corresponding private key.
+    ///
+    pub fn random_ecdsa_master_authentication_key(
+        id: KeyID,
+        seed: Option<u64>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        let mut rng = match seed {
+            None => StdRng::from_entropy(),
+            Some(seed_value) => StdRng::seed_from_u64(seed_value),
+        };
+        Self::random_ecdsa_master_authentication_key_with_rng(id, &mut rng, platform_version)
+    }
+
     /// Generates a random ECDSA critical-level authentication public key along with its corresponding private key.
     ///
     /// This method constructs a random ECDSA (using the secp256k1 curve) high-level authentication public key
@@ -559,6 +586,9 @@ impl IdentityPublicKey {
         used_key_matrix[0] = true;
         used_key_matrix[1] = true;
         used_key_matrix[2] = true;
+        used_key_matrix[4] = true; //also a master key
+        used_key_matrix[8] = true; //also a master key
+        used_key_matrix[12] = true; //also a master key
         main_keys.extend((3..key_count).map(|i| {
             Self::random_authentication_key_with_private_key_with_rng(
                 i,

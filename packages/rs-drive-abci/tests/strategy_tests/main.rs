@@ -551,7 +551,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864802180)
+        assert_eq!(balance, 99864800180)
     }
 
     #[test]
@@ -1141,7 +1141,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "d6f1369c78f11f13ecfa1a747d82bf1eb3f1c5aebb8e688e9cd2fa5c8155a766".to_string()
+            "8e1e8d1ae51b3fc8a9e4acd0d312c9494943f2b7a5b957cc1379ab246ebd678d".to_string()
         )
     }
 
@@ -1736,7 +1736,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "c77136b56880a531a95f5b262d14692cd54a74a3034f5b40b945ffe246808d05".to_string()
+            "665ec5018021b0a14a25b7ac6de780edc943a73adb3dc7e2eb623959a08056c3".to_string()
         )
     }
 
@@ -1861,7 +1861,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "561a3fae1ce8ffba4c2872eb5d4f9b967add422df4ebd04a06715e6bf320ec66".to_string()
+            "3f1cfdfd2e1019e941434cc841282fbc156ee19062569e393a51af621447c7a7".to_string()
         )
     }
 
@@ -2196,7 +2196,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 421);
+        assert_eq!(outcome.identities.len() as u64, 470);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -2325,7 +2325,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 86);
+        assert_eq!(outcome.identities.len() as u64, 90);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances

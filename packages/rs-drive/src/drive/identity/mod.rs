@@ -305,12 +305,12 @@ pub(crate) fn identity_query_keys_security_level_tree_path_vec(
 /// identity query keys full tree path
 #[cfg(feature = "full")]
 /// Identity query keys full tree path
-pub(crate) fn identity_query_keys_for_withdrawal_full_tree_path(identity_id: &[u8]) -> [&[u8]; 4] {
+pub(crate) fn identity_query_keys_for_transfer_full_tree_path(identity_id: &[u8]) -> [&[u8]; 4] {
     [
         Into::<&[u8; 1]>::into(RootTree::Identities),
         identity_id,
         Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeyReferences),
-        Into::<&[u8; 1]>::into(Purpose::AUTHENTICATION),
+        Into::<&[u8; 1]>::into(Purpose::TRANSFER),
     ]
 }
 

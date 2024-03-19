@@ -33,8 +33,8 @@ impl Drive {
             )?;
         }
 
-        // There are 4 Purposes: Authentication, Encryption, Decryption, Withdrawal
-        for purpose in Purpose::authentication_withdraw() {
+        // There are 4 Purposes: Authentication, Encryption, Decryption, Transfer
+        for purpose in Purpose::authentication_and_transfer() {
             self.batch_insert_empty_tree(
                 identity_query_key_tree,
                 DriveKeyInfo::Key(vec![purpose as u8]),
