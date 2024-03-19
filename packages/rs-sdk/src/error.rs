@@ -30,6 +30,10 @@ pub enum Error {
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
     DapiClientError(String),
+    #[cfg(feature = "mocks")]
+    /// DAPI mocks error
+    #[error("Dapi mocks error: {0}")]
+    DapiMocksError(#[from] rs_dapi_client::mock::MockError),
     /// Dash core error
     #[error("Dash core error: {0}")]
     CoreError(#[from] dpp::dashcore::Error),

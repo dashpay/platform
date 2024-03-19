@@ -25,10 +25,11 @@ pub enum DapiClientError<TE> {
     /// [AddressListError] errors
     #[error("address list error: {0}")]
     AddressList(AddressListError),
+
     #[cfg(feature = "mocks")]
-    /// Expectation not found
-    #[error("mock expectation not found for request: {0}")]
-    MockExpectationNotFound(String),
+    #[error("mock error: {0}")]
+    /// Error happened in mock client
+    Mock(#[from] crate::mock::MockError),
 }
 
 impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
@@ -39,7 +40,7 @@ impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
             Transport(transport_error, _) => transport_error.is_node_failure(),
             AddressList(_) => false,
             #[cfg(feature = "mocks")]
-            MockExpectationNotFound(_) => false,
+            Mock(_) => false,
         }
     }
 }

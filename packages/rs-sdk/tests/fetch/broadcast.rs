@@ -19,7 +19,7 @@ mod online {
         const TIMEOUT: std::time::Duration = std::time::Duration::from_millis(400);
 
         let cfg = Config::new();
-        let sdk = cfg.setup_api().await;
+        let sdk = cfg.setup_api("test_wait_timeout").await;
         let sdk_ref: &Sdk = sdk.as_ref();
 
         let request: WaitForStateTransitionResultRequest = WaitForStateTransitionResultRequestV0 {

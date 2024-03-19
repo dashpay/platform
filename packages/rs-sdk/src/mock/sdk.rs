@@ -8,6 +8,7 @@ use dapi_grpc::{
 };
 use dpp::version::PlatformVersion;
 use drive_proof_verifier::{error::ContextProviderError, FromProof, MockContextProvider};
+use rs_dapi_client::mock::MockError;
 use rs_dapi_client::{
     mock::{Key, MockDapiClient},
     transport::TransportRequest,
@@ -175,7 +176,7 @@ impl MockDashPlatformSdk {
             })?
             .deserialize();
 
-        self.dapi.lock().await.expect(&data.0, &data.1);
+        self.dapi.lock().await.expect(&data.0, &data.1)?;
         Ok(())
     }
 
@@ -195,8 +196,8 @@ impl MockDashPlatformSdk {
     ///
     /// ## Returns
     ///
-    /// * Some(O): If the object is expected to exist.
-    /// * None: If the object is expected to not exist.
+    /// * Reference to self on success, to allow chaining
+    /// * Error when expectation cannot be set or is already defined for this request
     ///
     /// ## Panics
     ///
@@ -217,7 +218,7 @@ impl MockDashPlatformSdk {
     ///     // Define query that will be sent
     ///     let query = expected.id();
     ///     // Expect that in response to `query`, `expected` will be returned
-    ///     api.mock().expect_fetch(query, Some(expected.clone())).await;
+    ///     api.mock().expect_fetch(query, Some(expected.clone())).await.unwrap();
     ///
     ///     // Fetch the identity
     ///     let retrieved = dpp::prelude::Identity::fetch(&api, query)
@@ -233,14 +234,14 @@ impl MockDashPlatformSdk {
         &mut self,
         query: Q,
         object: Option<O>,
-    ) -> &mut Self
+    ) -> Result<&mut Self, Error>
     where
         <<O as Fetch>::Request as TransportRequest>::Response: Default,
     {
         let grpc_request = query.query(self.prove).expect("query must be correct");
-        self.expect(grpc_request, object).await;
+        self.expect(grpc_request, object).await?;
 
-        self
+        Ok(self)
     }
 
     /// Expect a [FetchMany] request and return provided object.
@@ -260,8 +261,8 @@ impl MockDashPlatformSdk {
     ///
     /// ## Returns
     ///
-    /// * `Some(Vec<O>)`: If the objects are expected to exist.
-    /// * `None`: If the objects are expected to not exist.
+    /// * Reference to self on success, to allow chaining
+    /// * Error when expectation cannot be set or is already defined for this request
     ///
     /// ## Panics
     ///
@@ -280,7 +281,7 @@ impl MockDashPlatformSdk {
         &mut self,
         query: Q,
         objects: Option<BTreeMap<K, Option<O>>>,
-    ) -> &mut Self
+    ) -> Result<&mut Self, Error>
     where
         BTreeMap<K, Option<O>>: MockResponse,
         <<O as FetchMany<K>>::Request as TransportRequest>::Response: Default,
@@ -291,9 +292,9 @@ impl MockDashPlatformSdk {
             > + Sync,
     {
         let grpc_request = query.query(self.prove).expect("query must be correct");
-        self.expect(grpc_request, objects).await;
+        self.expect(grpc_request, objects).await?;
 
-        self
+        Ok(self)
     }
 
     /// Save expectations for a request.
@@ -301,10 +302,22 @@ impl MockDashPlatformSdk {
         &mut self,
         grpc_request: I,
         returned_object: Option<O>,
-    ) where
+    ) -> Result<(), Error>
+    where
         I::Response: Default,
     {
         let key = Key::new(&grpc_request);
+
+        // detect duplicates
+        if self.from_proof_expectations.contains_key(&key) {
+            return Err(MockError::MockExpectationConflict(format!(
+                "proof expectation key {} already defined for {} request: {:?}",
+                key,
+                std::any::type_name::<I>(),
+                grpc_request
+            ))
+            .into());
+        }
 
         // This expectation will work for from_proof
         self.from_proof_expectations
@@ -312,38 +325,10 @@ impl MockDashPlatformSdk {
 
         // This expectation will work for execute
         let mut dapi_guard = self.dapi.lock().await;
-        // We don't really care about the response, as it will be mocked by from_proof
-        dapi_guard.expect(&grpc_request, &Default::default());
-    }
+        // We don't really care about the response, as it will be mocked by from_proof, so we provide default()
+        dapi_guard.expect(&grpc_request, &Default::default())?;
 
-    /// Wrapper around [FromProof] that uses mock expectations instead of executing [FromProof] trait.
-    #[allow(dead_code)]
-    #[deprecated(note = "This function is marked as unused.")]
-    pub(crate) fn parse_proof<I, O: FromProof<I>>(
-        &self,
-        request: O::Request,
-        response: O::Response,
-    ) -> Result<Option<O>, drive_proof_verifier::Error>
-    where
-        O::Request: Mockable,
-        Option<O>: MockResponse,
-        // O: FromProof<<O as FromProof<I>>::Request>,
-    {
-        let key = Key::new(&request);
-
-        let data = match self.from_proof_expectations.get(&key) {
-            Some(d) => Option::<O>::mock_deserialize(self, d),
-            None => {
-                let version = self.version();
-                let provider = self.quorum_provider.as_ref()
-                    .ok_or(ContextProviderError::InvalidQuorum(
-                     "expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
-                    ))?;
-                O::maybe_from_proof(request, response, version, provider)?
-            }
-        };
-
-        Ok(data)
+        Ok(())
     }
 
     /// Wrapper around [FromProof] that uses mock expectations instead of executing [FromProof] trait.

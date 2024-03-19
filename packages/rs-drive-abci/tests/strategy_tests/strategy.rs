@@ -393,7 +393,7 @@ impl NetworkStrategy {
         Ok(state_transitions)
     }
 
-    pub fn contract_state_transitions(
+    pub fn initial_contract_state_transitions(
         &mut self,
         current_identities: &Vec<Identity>,
         signer: &SimpleSigner,
@@ -464,7 +464,7 @@ impl NetworkStrategy {
             .collect()
     }
 
-    pub fn contract_update_state_transitions(
+    pub fn initial_contract_update_state_transitions(
         &mut self,
         current_identities: &Vec<Identity>,
         block_height: u64,
@@ -512,7 +512,7 @@ impl NetworkStrategy {
 
     // TODO: this belongs to `DocumentOp`, also randomization details are common for all operations
     // and could be moved out of here
-    pub fn state_transitions_for_block(
+    pub fn operations_based_transitions(
         &self,
         platform: &Platform<MockCoreRPCLike>,
         block_info: &BlockInfo,
@@ -946,6 +946,7 @@ impl NetworkStrategy {
                                         strategy_tests::transitions::create_identity_update_transition_add_keys(
                                             random_identity,
                                             *count,
+                                            0,
                                             identity_nonce_counter,
                                             signer,
                                             rng,
@@ -1031,7 +1032,7 @@ impl NetworkStrategy {
         (operations, finalize_block_operations)
     }
 
-    pub fn state_transitions_for_block_with_new_identities(
+    pub fn state_transitions_for_block(
         &mut self,
         platform: &Platform<MockCoreRPCLike>,
         block_info: &BlockInfo,
@@ -1063,7 +1064,7 @@ impl NetworkStrategy {
 
         if block_info.height == 1 {
             // add contracts on block 1
-            let mut contract_state_transitions = self.contract_state_transitions(
+            let mut contract_state_transitions = self.initial_contract_state_transitions(
                 current_identities,
                 signer,
                 contract_nonce_counter,
@@ -1074,7 +1075,7 @@ impl NetworkStrategy {
         } else {
             // Don't do any state transitions on block 1
             let (mut document_state_transitions, mut add_to_finalize_block_operations) = self
-                .state_transitions_for_block(
+                .operations_based_transitions(
                     platform,
                     block_info,
                     current_identities,
@@ -1089,7 +1090,7 @@ impl NetworkStrategy {
 
             // There can also be contract updates
 
-            let mut contract_update_state_transitions = self.contract_update_state_transitions(
+            let mut contract_update_state_transitions = self.initial_contract_update_state_transitions(
                 current_identities,
                 block_info.height,
                 signer,
