@@ -11,9 +11,6 @@ const testProofStructure = require('../../../lib/test/testProofStructure');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
 const {
-  Core: {
-    PrivateKey,
-  },
   PlatformProtocol: {
     Identifier,
   },
@@ -127,26 +124,9 @@ describe('Platform', () => {
         describe('Proofs', () => {
           let identity;
           let identityAtKey5;
-          let identityAtKey6;
-          let identityAtKey8;
-          let nonIncludedIdentityPubKeyHash;
-          let identity6PublicKeyHash;
-          let identity8PublicKeyHash;
 
           before(async () => {
             identityAtKey5 = await dashClient.platform.identities.register(150000);
-
-            identityAtKey6 = await dashClient.platform.identities.register(150000);
-
-            identityAtKey8 = await dashClient.platform.identities.register(150000);
-
-            // await waitForBalanceToChange(walletAccount);
-
-            nonIncludedIdentityPubKeyHash = new PrivateKey().toPublicKey().hash;
-
-            // Public key hashes
-            identity6PublicKeyHash = identityAtKey6.getPublicKeyById(0).hash();
-            identity8PublicKeyHash = identityAtKey8.getPublicKeyById(0).hash();
           });
 
           it('should be able to get and verify proof that identity exists with getIdentity', async () => {

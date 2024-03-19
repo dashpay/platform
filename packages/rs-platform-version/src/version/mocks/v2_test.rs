@@ -707,11 +707,6 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
-                identities: FeatureVersionBounds {
-                    min_version: 0,
-                    max_version: 0,
-                    default_current_version: 0,
-                },
                 keys: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
@@ -738,11 +733,6 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 identity_by_public_key_hash: FeatureVersionBounds {
-                    min_version: 0,
-                    max_version: 0,
-                    default_current_version: 0,
-                },
-                identities_by_public_key_hashes: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
