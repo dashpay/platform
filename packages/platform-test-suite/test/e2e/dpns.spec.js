@@ -107,7 +107,7 @@ describe('DPNS', () => {
 
       expect(broadcastError).to.exist();
       expect(broadcastError.message).to.be.equal('Action is not allowed');
-      expect(broadcastError.code).to.equal(4001);
+      expect(broadcastError.code).to.equal(40500);
     });
 
     it('should not be able to delete domain', async () => {
@@ -123,7 +123,7 @@ describe('DPNS', () => {
 
       expect(broadcastError).to.exist();
       expect(broadcastError.message).to.be.equal('Action is not allowed');
-      expect(broadcastError.code).to.equal(4001);
+      expect(broadcastError.code).to.equal(40500);
     });
   });
 
@@ -153,7 +153,7 @@ describe('DPNS', () => {
 
       expect(broadcastError).to.exist();
       expect(broadcastError.message).to.be.equal('Can\'t create top level domain for this identity');
-      expect(broadcastError.code).to.equal(4001);
+      expect(broadcastError.code).to.equal(40500);
     });
 
     it('should be able to register a second level domain', async () => {
@@ -185,7 +185,7 @@ describe('DPNS', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(broadcastError.code).to.be.equal(4009);
+      expect(broadcastError.code).to.be.equal(40105);
       expect(broadcastError.message).to.match(/Document \w* has duplicate unique properties \["normalizedParentDomainName", "normalizedLabel"] with other documents/);
     });
 
@@ -206,7 +206,7 @@ describe('DPNS', () => {
 
       expect(broadcastError).to.exist();
       expect(broadcastError.message).to.be.equal('Parent domain is not present');
-      expect(broadcastError.code).to.equal(4001);
+      expect(broadcastError.code).to.equal(40500);
     });
 
     it('should be able to search a domain', async () => {
@@ -251,7 +251,7 @@ describe('DPNS', () => {
 
       expect(broadcastError).to.exist();
       expect(broadcastError.message).to.be.equal('Action is not allowed');
-      expect(broadcastError.code).to.equal(4001);
+      expect(broadcastError.code).to.equal(40500);
     });
 
     it('should not be able to delete domain', async () => {
@@ -267,7 +267,7 @@ describe('DPNS', () => {
 
       expect(broadcastError).to.exist();
       expect(broadcastError.message).to.be.equal('Action is not allowed');
-      expect(broadcastError.code).to.equal(4001);
+      expect(broadcastError.code).to.equal(40500);
     });
 
     it('should not be able to register two domains with same `dashAliasIdentityId` record');

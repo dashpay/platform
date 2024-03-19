@@ -1,7 +1,7 @@
-pub(crate) mod identity_and_signatures;
+pub(crate) mod advanced_structure;
+mod basic_structure;
 mod nonce;
 mod state;
-mod structure;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
@@ -18,8 +18,8 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
+use crate::execution::validation::state_transition::identity_update::basic_structure::v0::IdentityUpdateStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::identity_update::state::v0::IdentityUpdateStateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::identity_update::structure::v0::IdentityUpdateStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::processor::v0::{
     StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0,
 };

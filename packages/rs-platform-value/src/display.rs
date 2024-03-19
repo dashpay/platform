@@ -52,8 +52,8 @@ impl Value {
                 "identifier {}",
                 bs58::encode(identifier.as_slice()).into_string()
             ),
-            Value::EnumU8(_) => todo!(),
-            Value::EnumString(_) => todo!(),
+            Value::EnumU8(_) => "enum u8".to_string(),
+            Value::EnumString(_) => "enum string".to_string(),
         }
     }
 
@@ -109,8 +109,8 @@ impl Value {
                 "identifier {}",
                 bs58::encode(identifier.as_slice()).into_string()
             ),
-            Value::EnumU8(_) => todo!(),
-            Value::EnumString(_) => todo!(),
+            Value::EnumU8(_) => "enum u8".to_string(),
+            Value::EnumString(_) => "enum string".to_string(),
         }
     }
 }

@@ -3,12 +3,14 @@ use dpp::consensus::basic::document::InvalidDocumentTransitionIdError;
 use dpp::document::Document;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransition;
+use dpp::state_transition::documents_batch_transition::document_transition::{
+    DocumentTransition, DocumentTransitionV0Methods,
+};
 
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::StateTransitionLike;
 
-use dpp::validation::SimpleConsensusValidationResult;
+use dpp::validation::ConsensusValidationResult;
 
 use dpp::version::PlatformVersion;
 
@@ -18,6 +20,8 @@ use crate::execution::validation::state_transition::state_transitions::documents
 use crate::execution::validation::state_transition::state_transitions::documents_batch::action_validation::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::documents_batch::action_validation::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use drive::state_transition_action::StateTransitionAction;
+use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::execution::ExecutionError;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchStateTransitionStructureValidationV0
@@ -26,7 +30,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
         &self,
         action: &DocumentsBatchTransitionAction,
         platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, Error>;
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
 impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransition {
@@ -34,7 +38,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
         &self,
         action: &DocumentsBatchTransitionAction,
         platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, Error> {
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         // We should validate that all newly created documents have valid ids
         for transition in self.transitions() {
             if let DocumentTransition::Create(create_transition) = transition {
@@ -48,8 +52,19 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
 
                 let id = create_transition.base().id();
                 if generated_document_id != id {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        InvalidDocumentTransitionIdError::new(generated_document_id, id).into(),
+                    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                        BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                            transition.base(),
+                            self.owner_id(),
+                            self.user_fee_increase(),
+                        ),
+                    );
+
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        bump_action,
+                        vec![
+                            InvalidDocumentTransitionIdError::new(generated_document_id, id).into(),
+                        ],
                     ));
                 }
             }
@@ -61,19 +76,40 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
                 DocumentTransitionAction::CreateAction(create_action) => {
                     let result = create_action.validate_structure(platform_version)?;
                     if !result.is_valid() {
-                        return Ok(result);
+                        let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                            BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the create action"), self.owner_id(), self.user_fee_increase()),
+                        );
+
+                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            bump_action,
+                            result.errors,
+                        ));
                     }
                 }
                 DocumentTransitionAction::ReplaceAction(replace_action) => {
                     let result = replace_action.validate_structure(platform_version)?;
                     if !result.is_valid() {
-                        return Ok(result);
+                        let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                            BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the create action"), self.owner_id(), self.user_fee_increase()),
+                        );
+
+                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            bump_action,
+                            result.errors,
+                        ));
                     }
                 }
                 DocumentTransitionAction::DeleteAction(delete_action) => {
                     let result = delete_action.validate_structure(platform_version)?;
                     if !result.is_valid() {
-                        return Ok(result);
+                        let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                            BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the create action"), self.owner_id(), self.user_fee_increase()),
+                        );
+
+                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            bump_action,
+                            result.errors,
+                        ));
                     }
                 }
                 DocumentTransitionAction::BumpIdentityDataContractNonce(_) => {
@@ -83,6 +119,6 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
                 }
             }
         }
-        Ok(SimpleConsensusValidationResult::new())
+        Ok(ConsensusValidationResult::new())
     }
 }

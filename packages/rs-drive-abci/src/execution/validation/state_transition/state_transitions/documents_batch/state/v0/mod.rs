@@ -95,7 +95,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                             ))?,
                             owner_id,
                             state_transition_action.user_fee_increase(),
-                        )?,
+                        ),
                     ),
                 );
             } else if platform.config.execution.use_document_triggers {
@@ -136,7 +136,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                             ))?,
                             owner_id,
                             state_transition_action.user_fee_increase(),
-                        )?,
+                        ),
                     ));
                 } else {
                     validated_transitions.push(transition);

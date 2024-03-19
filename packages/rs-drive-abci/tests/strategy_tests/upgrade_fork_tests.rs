@@ -16,8 +16,7 @@ mod tests {
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
     use platform_version::version::mocks::v3_test::TEST_PROTOCOL_VERSION_3;
-    use strategy_tests::frequency::Frequency;
-    use strategy_tests::{StartIdentities, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
     #[test]
     fn run_chain_version_upgrade() {
@@ -36,10 +35,8 @@ mod tests {
                         contracts_with_updates: vec![],
                         operations: vec![],
                         start_identities: StartIdentities::default(),
-                        identities_inserts: Frequency {
-                            times_per_block_range: Default::default(),
-                            chance_per_block: None,
-                        },
+                        identities_inserts: IdentityInsertInfo::default(),
+
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -279,10 +276,8 @@ mod tests {
                         contracts_with_updates: vec![],
                         operations: vec![],
                         start_identities: StartIdentities::default(),
-                        identities_inserts: Frequency {
-                            times_per_block_range: Default::default(),
-                            chance_per_block: None,
-                        },
+                        identities_inserts: IdentityInsertInfo::default(),
+
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -511,10 +506,8 @@ mod tests {
                         contracts_with_updates: vec![],
                         operations: vec![],
                         start_identities: StartIdentities::default(),
-                        identities_inserts: Frequency {
-                            times_per_block_range: Default::default(),
-                            chance_per_block: None,
-                        },
+                        identities_inserts: IdentityInsertInfo::default(),
+
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -740,10 +733,8 @@ mod tests {
                         contracts_with_updates: vec![],
                         operations: vec![],
                         start_identities: StartIdentities::default(),
-                        identities_inserts: Frequency {
-                            times_per_block_range: Default::default(),
-                            chance_per_block: None,
-                        },
+                        identities_inserts: IdentityInsertInfo::default(),
+
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -900,10 +891,8 @@ mod tests {
                         contracts_with_updates: vec![],
                         operations: vec![],
                         start_identities: StartIdentities::default(),
-                        identities_inserts: Frequency {
-                            times_per_block_range: Default::default(),
-                            chance_per_block: None,
-                        },
+                        identities_inserts: IdentityInsertInfo::default(),
+
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -1060,10 +1049,8 @@ mod tests {
                         contracts_with_updates: vec![],
                         operations: vec![],
                         start_identities: StartIdentities::default(),
-                        identities_inserts: Frequency {
-                            times_per_block_range: Default::default(),
-                            chance_per_block: None,
-                        },
+                        identities_inserts: IdentityInsertInfo::default(),
+
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -1162,10 +1149,8 @@ mod tests {
                         contracts_with_updates: vec![],
                         operations: vec![],
                         start_identities: StartIdentities::default(),
-                        identities_inserts: Frequency {
-                            times_per_block_range: Default::default(),
-                            chance_per_block: None,
-                        },
+                        identities_inserts: IdentityInsertInfo::default(),
+
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },

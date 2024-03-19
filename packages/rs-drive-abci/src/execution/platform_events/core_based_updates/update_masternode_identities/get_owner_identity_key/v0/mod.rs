@@ -16,7 +16,7 @@ where
         Ok(IdentityPublicKeyV0 {
             id: key_id,
             key_type: KeyType::ECDSA_HASH160,
-            purpose: Purpose::WITHDRAW,
+            purpose: Purpose::TRANSFER,
             security_level: SecurityLevel::CRITICAL,
             read_only: true,
             data: BinaryData::new(payout_address.to_vec()),

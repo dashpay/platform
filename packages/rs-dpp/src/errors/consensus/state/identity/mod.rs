@@ -12,5 +12,6 @@ pub mod invalid_asset_lock_proof_value;
 pub mod invalid_identity_contract_nonce_error;
 pub mod invalid_identity_public_key_id_error;
 pub mod invalid_identity_revision_error;
+pub mod master_public_key_update_error;
 pub mod max_identity_public_key_limit_reached_error;
 pub mod missing_identity_public_key_ids_error;

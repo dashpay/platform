@@ -154,7 +154,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     None
                 };
 
-                //
+                // Validating signatures
                 let result = state_transition.validate_identity_and_signatures(
                     platform.drive,
                     action.as_ref(),
@@ -162,7 +162,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     &mut state_transition_execution_context,
                     platform_version,
                 )?;
-                // Validating signatures
+
                 if !result.is_valid() {
                     return Ok(
                         ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(

@@ -7,6 +7,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::ProtocolError;
 
 use crate::error::execution::ExecutionError;
 use dpp::serialization::Signable;
@@ -19,7 +20,7 @@ use drive::state_transition_action::StateTransitionAction;
 
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext};
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{ValidateStateTransitionIdentitySignature};
-use crate::execution::validation::state_transition::state_transitions::identity_update::identity_and_signatures::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
+use crate::execution::validation::state_transition::state_transitions::identity_update::advanced_structure::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_create::identity_and_signatures::v0::IdentityCreateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_top_up::identity_retrieval::v0::IdentityTopUpStateTransitionIdentityRetrievalV0;
 use crate::execution::validation::state_transition::ValidationMode;
@@ -114,7 +115,16 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         // Next we have advanced structure validation, this is structure validation that does not require
         // state but isn't checked on check_tx. If advanced structure fails identity nonces or identity
         // contract nonces will be bumped
-        let consensus_result = state_transition.validate_advanced_structure(platform_version)?;
+        let identity = maybe_identity
+            .as_ref()
+            .ok_or(ProtocolError::CorruptedCodeExecution(
+                "the identity should always be known on advanced structure validation".to_string(),
+            ))?;
+        let consensus_result = state_transition.validate_advanced_structure(
+            identity,
+            &mut state_transition_execution_context,
+            platform_version,
+        )?;
 
         if !consensus_result.is_valid() {
             return consensus_result.map_result(|action| {
@@ -141,11 +151,15 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
                 transaction,
             )?;
             if !state_transition_action_result.is_valid_with_data() {
-                return Ok(
-                    ConsensusValidationResult::<ExecutionEvent>::new_with_errors(
-                        state_transition_action_result.errors,
-                    ),
-                );
+                return state_transition_action_result.map_result(|action| {
+                    ExecutionEvent::create_from_state_transition_action(
+                        action,
+                        maybe_identity,
+                        platform.state.last_committed_block_epoch_ref(),
+                        state_transition_execution_context,
+                        platform_version,
+                    )
+                });
             }
             state_transition_action_result.into_data()?
         };
@@ -157,7 +171,15 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
             platform_version,
         )?;
         if !result.is_valid() {
-            return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+            return result.map_result(|action| {
+                ExecutionEvent::create_from_state_transition_action(
+                    action,
+                    maybe_identity,
+                    platform.state.last_committed_block_epoch_ref(),
+                    state_transition_execution_context,
+                    platform_version,
+                )
+            });
         }
 
         Some(action)
@@ -273,6 +295,8 @@ pub(crate) trait StateTransitionAdvancedStructureValidationV0 {
     /// * `Result<SimpleConsensusValidationResult, Error>` - A result with either a SimpleConsensusValidationResult or an Error.
     fn validate_advanced_structure(
         &self,
+        identity: &PartialIdentity,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
@@ -325,7 +349,7 @@ pub(crate) trait StateTransitionStructureKnownInStateValidationV0 {
         platform: &PlatformStateRef,
         action: &StateTransitionAction,
         platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, Error>;
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
     /// This means we should transform into the action before validation of the structure
     fn requires_advance_structure_validation_from_state(&self) -> bool {
@@ -499,14 +523,49 @@ impl StateTransitionBalanceValidationV0 for StateTransition {
 
 impl StateTransitionAdvancedStructureValidationV0 for StateTransition {
     fn has_advanced_structure_validation(&self) -> bool {
-        false
+        matches!(self, StateTransition::IdentityUpdate(_))
     }
 
     fn validate_advanced_structure(
         &self,
-        _platform_version: &PlatformVersion,
+        identity: &PartialIdentity,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        Ok(ConsensusValidationResult::<StateTransitionAction>::new())
+        match self {
+            StateTransition::IdentityUpdate(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .identity_update_state_transition
+                    .advanced_structure
+                {
+                    Some(0) => {
+                        let signable_bytes: Vec<u8> = self.signable_bytes()?;
+                        st.validate_identity_update_state_transition_signatures_v0(
+                            signable_bytes,
+                            identity,
+                            execution_context,
+                        )
+                    }
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "identity update transition: validate_advanced_structure"
+                                .to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "identity update transition: validate_advanced_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
+            _ => Ok(ConsensusValidationResult::<StateTransitionAction>::new()),
+        }
     }
 }
 
@@ -516,12 +575,12 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
         platform: &PlatformStateRef,
         action: &StateTransitionAction,
         platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, Error> {
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
             StateTransition::DocumentsBatch(st) => {
                 st.validate_advanced_structure_from_state(platform, action, platform_version)
             }
-            _ => Ok(SimpleConsensusValidationResult::new()),
+            _ => Ok(ConsensusValidationResult::new()),
         }
     }
 
@@ -558,53 +617,18 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                     )?
                     .map(Some))
             }
-            StateTransition::IdentityUpdate(st) => {
-                match platform_version
-                    .drive_abci
-                    .validation_and_processing
-                    .state_transitions
-                    .identity_update_state_transition
-                    .identity_signatures
-                {
-                    Some(0) => {
-                        let signable_bytes: Vec<u8> = self.signable_bytes()?;
-                        let mut validation_result = self
-                            .validate_state_transition_identity_signed(
-                                drive,
-                                action,
-                                true,
-                                tx,
-                                execution_context,
-                                platform_version,
-                            )?;
-                        if !validation_result.is_valid() {
-                            Ok(validation_result.map(Some))
-                        } else {
-                            let partial_identity = validation_result.data_as_borrowed()?;
-                            let result = st
-                                .validate_identity_update_state_transition_signatures_v0(
-                                    signable_bytes,
-                                    partial_identity,
-                                    execution_context,
-                                )?;
-                            validation_result.merge(result);
-                            Ok(validation_result.map(Some))
-                        }
-                    }
-                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
-                        method: "identity update transition: validate_identity_and_signatures"
-                            .to_string(),
-                        known_versions: vec![0],
-                    })),
-                    Some(version) => {
-                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                            method: "identity update transition: validate_identity_and_signatures"
-                                .to_string(),
-                            known_versions: vec![0],
-                            received: version,
-                        }))
-                    }
-                }
+            StateTransition::IdentityUpdate(_) => {
+                //Basic signature verification
+                Ok(self
+                    .validate_state_transition_identity_signed(
+                        drive,
+                        action,
+                        true,
+                        tx,
+                        execution_context,
+                        platform_version,
+                    )?
+                    .map(Some))
             }
             StateTransition::IdentityCreate(st) => {
                 match platform_version
@@ -623,7 +647,7 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                         let result = st.validate_identity_create_state_transition_signatures_v0(
                             signable_bytes,
                             execution_context,
-                        )?;
+                        );
 
                         validation_result.merge(result);
                         validation_result.set_data(None);

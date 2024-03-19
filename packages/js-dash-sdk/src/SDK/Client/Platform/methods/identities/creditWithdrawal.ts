@@ -43,7 +43,7 @@ export async function creditWithdrawal(
   amount: number,
   to: string,
   options: WithdrawalOptions = {
-    signingKeyIndex: 2,
+    signingKeyIndex: 3,
   },
 ): Promise<Metadata> {
   await this.initialize();
