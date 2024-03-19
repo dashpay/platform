@@ -1,3 +1,49 @@
+## [1.0.0-dev.9](https://github.com/dashpay/platform/compare/v1.0.0-dev.8...v1.0.0-dev.9) (2024-03-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** don't allow duplicate mock expectations (#1788)
+* **platform:** created at block height and variants (#1784)
+
+### Features
+
+* created at updated at from block time ([#1780](https://github.com/dashpay/platform/issues/1780))
+* **dapi:** use broadcast_tx instead of deprecated broadcast_tx_sync ([#1775](https://github.com/dashpay/platform/issues/1775))
+* identity state transition validation fixes ([#1786](https://github.com/dashpay/platform/issues/1786))
+* **platform:** created at block height and variants ([#1784](https://github.com/dashpay/platform/issues/1784))
+* query retry on race condition ([#1776](https://github.com/dashpay/platform/issues/1776))
+* updated descriptions and function names in strategy tests plus readme file ([#1785](https://github.com/dashpay/platform/issues/1785))
+
+
+### Bug Fixes
+
+* **drive:** internal error on querying proofs ([#1747](https://github.com/dashpay/platform/issues/1747))
+* identity add keys in strategy tests ([#1727](https://github.com/dashpay/platform/issues/1727))
+* **sdk:** don't allow duplicate mock expectations ([#1788](https://github.com/dashpay/platform/issues/1788))
+
+
+### Code Refactoring
+
+* make strategy start identities a new struct ([#1764](https://github.com/dashpay/platform/issues/1764))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** readme fixes ([#1624](https://github.com/dashpay/platform/issues/1624))
+* fix npm audit for follow-redirects package ([#1781](https://github.com/dashpay/platform/issues/1781))
+
+
+### Build System
+
+* rs-tenderdash-abci 0.14.0-dev.9 ([#1782](https://github.com/dashpay/platform/issues/1782))
+
+
+### Continuous Integration
+
+* enforce warnings as errors ([#1783](https://github.com/dashpay/platform/issues/1783))
+* update doc build branch in action config ([#1748](https://github.com/dashpay/platform/issues/1748))
+
 ## [1.0.0-dev.8](https://github.com/dashpay/platform/compare/v1.0.0-dev.7...v1.0.0-dev.8) (2024-03-14)
 
 
