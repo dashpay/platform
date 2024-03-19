@@ -50,6 +50,7 @@ export async function createIdentityCreateTransition(
   const keyThree = new IdentityPublicKey(1);
   keyThree.setId(2);
   keyThree.setData(identityThirdPublicKey.toBuffer());
+  keyThree.setPurpose(IdentityPublicKey.PURPOSES.TRANSFER);
   keyThree.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.CRITICAL);
 
   // Create Identity
