@@ -292,7 +292,8 @@ pub fn create_identity_update_transition_add_keys(
 ) -> (StateTransition, (Identifier, Vec<IdentityPublicKey>)) {
     identity.bump_revision();
 
-    let start_id = (identity.public_keys().len() as u32 + keys_already_added_this_block_count) as KeyID;
+    let start_id =
+        (identity.public_keys().len() as u32 + keys_already_added_this_block_count) as KeyID;
 
     let keys = IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(
         start_id,
@@ -665,7 +666,8 @@ pub fn create_identities_state_transitions(
                 });
 
             // Attempt to create an asset lock
-            match create_asset_lock(200000) {
+            let dash = 1;
+            match create_asset_lock(dash * 100000000) {
                 Some((proof, private_key)) => {
                     let pk = private_key.to_bytes();
                     match IdentityCreateTransition::try_from_identity_with_signer(

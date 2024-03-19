@@ -42,7 +42,7 @@ use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
 use rand::{thread_rng, Rng};
-use tracing::{error, info};
+use tracing::error;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -371,7 +371,7 @@ impl Strategy {
         rng: &mut StdRng,
         config: &StrategyConfig,
         platform_version: &PlatformVersion,
-    ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
+    ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>, Vec<Identity>) {
         let mut finalize_block_operations = vec![];
 
         // Get identity state transitions
@@ -386,16 +386,13 @@ impl Strategy {
             Ok(transitions) => transitions,
             Err(e) => {
                 error!("identity_state_transitions_for_block error: {}", e);
-                return (vec![], finalize_block_operations);
+                return (vec![], finalize_block_operations, vec![]);
             }
         };
 
         // Create state_transitions vec and identities vec based on identity_state_transitions outcome
-        let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
+        let (identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
-
-        // Append the new identities to current_identities
-        current_identities.append(&mut identities);
 
         // Do we also need to add identities to the identity_nonce_counter?
 
@@ -441,7 +438,7 @@ impl Strategy {
             state_transitions.append(&mut initial_contract_update_state_transitions);
         }
 
-        (state_transitions, finalize_block_operations)
+        (state_transitions, finalize_block_operations, identities)
     }
 
     /// Processes strategy operations to generate state transitions specific to operations for a given block.
@@ -556,16 +553,23 @@ impl Strategy {
                         documents
                             .into_iter()
                             .for_each(|(document, identity, entropy)| {
-                                let identity_contract_nonce = contract_nonce_counter
-                                    .entry((identity.id(), contract.id()))
-                                    .or_insert(1);
+                                let identity_contract_nonce = if contract.owner_id() == identity.id() {
+                                    contract_nonce_counter
+                                        .entry((identity.id(), contract.id()))
+                                        .or_insert(1)
+                                } else {
+                                    contract_nonce_counter
+                                        .entry((identity.id(), contract.id()))
+                                        .or_default()
+                                };
+                        
                                 let gap = self
                                     .identity_contract_nonce_gaps
                                     .as_ref()
                                     .map_or(0, |gap_amount| gap_amount.events_if_hit(rng))
                                     as u64;
                                 *identity_contract_nonce += 1 + gap;
-
+                        
                                 let document_create_transition: DocumentCreateTransition =
                                     DocumentCreateTransitionV0 {
                                         base: DocumentBaseTransitionV0 {
