@@ -363,11 +363,7 @@ impl IdentityPublicKey {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
         };
-        Self::random_ecdsa_master_authentication_key_with_rng(
-            id,
-            &mut rng,
-            platform_version,
-        )
+        Self::random_ecdsa_master_authentication_key_with_rng(id, &mut rng, platform_version)
     }
 
     /// Generates a random ECDSA critical-level authentication public key along with its corresponding private key.

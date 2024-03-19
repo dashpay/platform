@@ -1347,12 +1347,9 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(567);
 
-        let (master_key, master_private_key) = IdentityPublicKey::random_ecdsa_master_authentication_key(
-            0,
-            Some(3),
-            platform_version,
-        )
-            .expect("expected to get key pair");
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(3), platform_version)
+                .expect("expected to get key pair");
 
         signer.add_key(master_key.clone(), master_private_key.clone());
 
@@ -1379,7 +1376,7 @@ mod tests {
 
         let identity: Identity = IdentityV0 {
             id: identifier,
-            public_keys: BTreeMap::from([(0, master_key.clone()),(1, key.clone())]),
+            public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
             balance: 1000000000,
             revision: 0,
         }
@@ -1535,12 +1532,9 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(567);
 
-        let (master_key, master_private_key) = IdentityPublicKey::random_ecdsa_master_authentication_key(
-            0,
-            Some(3),
-            platform_version,
-        )
-            .expect("expected to get key pair");
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(3), platform_version)
+                .expect("expected to get key pair");
 
         signer.add_key(master_key.clone(), master_private_key.clone());
 
@@ -1567,7 +1561,7 @@ mod tests {
 
         let identity: Identity = IdentityV0 {
             id: identifier,
-            public_keys: BTreeMap::from([(0, master_key.clone()),(1, key.clone())]),
+            public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
             balance: 1000000000,
             revision: 0,
         }
@@ -1674,13 +1668,9 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(567);
 
-
-        let (master_key, master_private_key) = IdentityPublicKey::random_ecdsa_master_authentication_key(
-            0,
-            Some(3),
-            platform_version,
-        )
-            .expect("expected to get key pair");
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(3), platform_version)
+                .expect("expected to get key pair");
 
         signer.add_key(master_key.clone(), master_private_key.clone());
 
@@ -1707,7 +1697,7 @@ mod tests {
 
         let identity: Identity = IdentityV0 {
             id: identifier,
-            public_keys: BTreeMap::from([(0, master_key.clone()),(1, key.clone())]),
+            public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
             balance: 1000000000,
             revision: 0,
         }
@@ -1938,12 +1928,9 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(567);
 
-        let (master_key, master_private_key) = IdentityPublicKey::random_ecdsa_master_authentication_key(
-            0,
-            Some(3),
-            platform_version,
-        )
-            .expect("expected to get key pair");
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(3), platform_version)
+                .expect("expected to get key pair");
 
         signer.add_key(master_key.clone(), master_private_key.clone());
 
@@ -1970,7 +1957,7 @@ mod tests {
 
         let identity: Identity = IdentityV0 {
             id: identifier,
-            public_keys: BTreeMap::from([(0, master_key.clone()),(1, key.clone())]),
+            public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
             balance: 1000000000,
             revision: 0,
         }
@@ -2062,12 +2049,9 @@ mod tests {
 
         let mut signer = SimpleSigner::default();
 
-        let (master_key, master_private_key) = IdentityPublicKey::random_ecdsa_master_authentication_key(
-            0,
-            Some(4),
-            platform_version,
-        )
-            .expect("expected to get key pair");
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(4), platform_version)
+                .expect("expected to get key pair");
 
         signer.add_key(master_key.clone(), master_private_key.clone());
 
@@ -2086,7 +2070,7 @@ mod tests {
 
         let identity: Identity = IdentityV0 {
             id: identifier,
-            public_keys: BTreeMap::from([(0, master_key.clone()),(1, key.clone())]),
+            public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
             balance: 1000000000,
             revision: 0,
         }
