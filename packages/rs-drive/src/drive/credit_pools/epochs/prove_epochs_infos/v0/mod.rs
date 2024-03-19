@@ -55,7 +55,7 @@ impl Drive {
         query.set_subquery(subquery);
         let path_query = PathQuery::new(
             pools_vec_path(),
-            // The multipler must be equal to requested keys count
+            // The multiplier must be equal to requested keys count
             SizedQuery::new(query, Some(count * 5), None),
         );
 
