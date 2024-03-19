@@ -80,12 +80,12 @@ mod tests {
     use dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, ExtendedQuorumDetails};
     use dashcore_rpc::json::AssetUnlockStatusResult;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-    use strategy_tests::StartIdentities;
     use std::sync::{Arc, Mutex};
     use strategy_tests::operations::DocumentAction::DocumentActionReplace;
     use strategy_tests::operations::{
         DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
     };
+    use strategy_tests::StartIdentities;
 
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
     use dpp::dashcore::bls_sig_utils::BLSSignature;
@@ -1151,7 +1151,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "b91e7b8759189050aa92a00dc5fb240689bb0a58e3a2388c80f8d18156d4eb0b".to_string()
+            "6e2987b90789a80ebd2afbc7fc6f86925e504c5f06aad2fbe3982c12d8fbea8b".to_string()
         )
     }
 
@@ -1722,7 +1722,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "af96b62e5b41ff40791e3c909979c4143590873bddddbcc3f781ac644eb688b1".to_string()
+            "8797928259c0545f1f12d945b56db05c9e3f9a9511be8e984ef6e505dad50135".to_string()
         )
     }
 
@@ -1843,7 +1843,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "9aaf2d490aecf00a23dfaf39140ef97a9f239371f5a66b57f9ab15fa38d81fe4".to_string()
+            "e98075d5d775e0ae9eca7d4c062999076185ff7e71910a65fb0dc10d4bbffd7f".to_string()
         )
     }
 

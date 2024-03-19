@@ -870,7 +870,7 @@ pub(crate) fn continue_chain_for_strategy(
             .get(i as usize)
             .unwrap();
         let (state_transitions, finalize_block_operations) = strategy
-            .state_transitions_for_block_with_new_identities(
+            .state_transitions_for_block(
                 platform,
                 &block_info,
                 &mut current_identities,

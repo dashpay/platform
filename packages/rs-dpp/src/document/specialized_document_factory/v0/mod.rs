@@ -21,7 +21,7 @@ use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
-use crate::prelude::TimestampMillis;
+use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::documents_batch_transition::{
     document_transition::{
@@ -89,7 +89,38 @@ impl SpecializedDocumentFactoryV0 {
             entropy_generator,
         }
     }
+
     pub fn create_document(
+        &self,
+        data_contract: &DataContract,
+        owner_id: Identifier,
+        block_time: BlockHeight,
+        core_block_height: CoreBlockHeight,
+        document_type_name: String,
+        data: Value,
+    ) -> Result<Document, ProtocolError> {
+        let platform_version = PlatformVersion::get(self.protocol_version)?;
+        if !data_contract.has_document_type_for_name(&document_type_name) {
+            return Err(DataContractError::InvalidDocumentTypeError(
+                InvalidDocumentTypeError::new(document_type_name, data_contract.id()),
+            )
+            .into());
+        }
+
+        let document_entropy = self.entropy_generator.generate()?;
+
+        let document_type = data_contract.document_type_for_name(document_type_name.as_str())?;
+
+        document_type.create_document_from_data(
+            data,
+            owner_id,
+            block_time,
+            core_block_height,
+            document_entropy,
+            platform_version,
+        )
+    }
+    pub fn create_document_without_time_based_properties(
         &self,
         owner_id: Identifier,
         document_type_name: String,
@@ -112,7 +143,14 @@ impl SpecializedDocumentFactoryV0 {
             .data_contract
             .document_type_for_name(document_type_name.as_str())?;
 
-        document_type.create_document_from_data(data, owner_id, document_entropy, platform_version)
+        document_type.create_document_from_data(
+            data,
+            owner_id,
+            0,
+            0,
+            document_entropy,
+            platform_version,
+        )
     }
     #[cfg(feature = "extended-document")]
     pub fn create_extended_document(
@@ -141,6 +179,8 @@ impl SpecializedDocumentFactoryV0 {
         let document = document_type.create_document_from_data(
             data,
             owner_id,
+            0,
+            0,
             document_entropy,
             platform_version,
         )?;

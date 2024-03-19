@@ -86,11 +86,11 @@ impl Drive {
             count += historical_contract_ids.len();
         }
         if !document_queries.is_empty() {
-            path_queries.extend(
-                document_queries
-                    .iter()
-                    .map(|drive_query| drive_query.construct_path_query()),
-            );
+            path_queries.extend(document_queries.iter().map(|drive_query| {
+                let mut path_query = drive_query.construct_path_query();
+                path_query.query.limit = None;
+                path_query
+            }));
             count += document_queries.len();
         }
         let verbose = match count {

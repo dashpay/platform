@@ -48,8 +48,12 @@ where
             core_rpc: &self.core_rpc,
         };
 
-        let state_transition_execution_event =
-            process_state_transition(&platform_ref, state_transition, Some(transaction))?;
+        let state_transition_execution_event = process_state_transition(
+            &platform_ref,
+            self.state.load().last_block_info(),
+            state_transition,
+            Some(transaction),
+        )?;
 
         if state_transition_execution_event.is_valid() {
             let execution_event = state_transition_execution_event.into_data()?;

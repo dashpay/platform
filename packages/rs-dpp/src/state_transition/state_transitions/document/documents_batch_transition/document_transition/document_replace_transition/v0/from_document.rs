@@ -28,7 +28,6 @@ impl DocumentReplaceTransitionV0 {
                     document: Box::new(document.clone()),
                 }))
             })?,
-            updated_at: document.updated_at(),
             data: document.properties_consumed(),
         })
     }

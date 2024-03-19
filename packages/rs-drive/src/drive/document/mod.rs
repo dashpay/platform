@@ -33,7 +33,7 @@
 //! Namely functions to return the paths to certain objects and the path sizes.
 //!
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "full")]
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 #[cfg(feature = "full")]
 use crate::drive::flags::StorageFlags;
