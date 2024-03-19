@@ -124,7 +124,7 @@ pub struct StrategyConfig {
 pub struct StartIdentities {
     pub number_of_identities: u8,
     pub keys_per_identity: u8,
-    pub starting_balances: Option<f64>, // starting balance in Dash
+    pub starting_balances: u64, // starting balance in duffs
 }
 
 /// Identities to register on the first block of the strategy
@@ -1310,7 +1310,7 @@ impl Strategy {
     pub fn identity_state_transitions_for_block(
         &self,
         block_info: &BlockInfo,
-        amount: Option<f64>,
+        amount: u64,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
         create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
@@ -1323,15 +1323,11 @@ impl Strategy {
         if block_info.height == config.start_block_height
             && self.start_identities.number_of_identities > 0
         {
-            let mut duffs_amount = 100_000_000; // default to 1 dash
-            if let Some(dash_amount) = amount {
-                duffs_amount = (dash_amount * 100_000_000.0) as u64;
-            };
             let mut new_transitions = crate::transitions::create_identities_state_transitions(
                 self.start_identities.number_of_identities.into(), // number of identities
                 self.start_identities.keys_per_identity.into(),    // number of keys per identity
                 &self.identities_inserts.extra_keys,
-                duffs_amount,
+                amount,
                 signer,
                 rng,
                 create_asset_lock,
@@ -1726,7 +1722,7 @@ mod tests {
             start_identities: StartIdentities {
                 number_of_identities: 2,
                 keys_per_identity: 3,
-                starting_balances: None,
+                starting_balances: 100_000_000,
             },
             identities_inserts: Default::default(),
             identity_contract_nonce_gaps: None,
