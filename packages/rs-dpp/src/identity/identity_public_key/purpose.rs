@@ -91,7 +91,7 @@ impl Purpose {
         [AUTHENTICATION, ENCRYPTION, DECRYPTION, TRANSFER]
     }
     /// Just the authentication and withdraw purposes
-    pub fn authentication_withdraw() -> [Purpose; 2] {
+    pub fn authentication_and_transfer() -> [Purpose; 2] {
         [AUTHENTICATION, TRANSFER]
     }
     /// Just the encryption and decryption purposes

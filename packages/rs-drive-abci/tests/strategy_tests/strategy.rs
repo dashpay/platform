@@ -1090,13 +1090,14 @@ impl NetworkStrategy {
 
             // There can also be contract updates
 
-            let mut contract_update_state_transitions = self.initial_contract_update_state_transitions(
-                current_identities,
-                block_info.height,
-                signer,
-                contract_nonce_counter,
-                platform_version,
-            );
+            let mut contract_update_state_transitions = self
+                .initial_contract_update_state_transitions(
+                    current_identities,
+                    block_info.height,
+                    signer,
+                    contract_nonce_counter,
+                    platform_version,
+                );
             state_transitions.append(&mut contract_update_state_transitions);
         }
 

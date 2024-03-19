@@ -34,7 +34,6 @@ use dpp::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTran
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
 use dpp::NativeBlsModule;
-use drive::drive::identity::key;
 use rand::prelude::{IteratorRandom, StdRng};
 use simple_signer::signer::SimpleSigner;
 
@@ -293,7 +292,8 @@ pub fn create_identity_update_transition_add_keys(
 ) -> (StateTransition, (Identifier, Vec<IdentityPublicKey>)) {
     identity.bump_revision();
 
-    let start_id = (identity.public_keys().len() as u32 + keys_already_added_this_block_count) as KeyID;
+    let start_id =
+        (identity.public_keys().len() as u32 + keys_already_added_this_block_count) as KeyID;
 
     let keys = IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(
         start_id,

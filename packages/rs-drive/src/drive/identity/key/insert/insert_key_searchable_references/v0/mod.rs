@@ -3,7 +3,7 @@ use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::identity::{
     identity_key_location_within_identity_vec,
     identity_query_keys_for_authentication_full_tree_path,
-    identity_query_keys_for_withdrawal_full_tree_path, identity_query_keys_purpose_tree_path,
+    identity_query_keys_for_transfer_full_tree_path, identity_query_keys_purpose_tree_path,
 };
 use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
@@ -118,7 +118,7 @@ impl Drive {
             Purpose::TRANSFER => {
                 // Now let's set the reference
                 let reference_path =
-                    identity_query_keys_for_withdrawal_full_tree_path(identity_id.as_slice());
+                    identity_query_keys_for_transfer_full_tree_path(identity_id.as_slice());
                 let key_reference = identity_key_location_within_identity_vec(key_id_bytes);
                 self.batch_insert(
                     PathFixedSizeKeyRefElement((

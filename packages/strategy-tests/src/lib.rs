@@ -42,7 +42,7 @@ use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
 use rand::{thread_rng, Rng};
-use tracing::{error, info};
+use tracing::error;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -987,18 +987,17 @@ impl Strategy {
                                     if identities_count == 0 {
                                         break;
                                     }
-                                
+
                                     // Select a random identity from the current_identities
                                     let random_index = thread_rng().gen_range(0..identities_count);
                                     let random_identity = &mut current_identities[random_index];
-                                
+
                                     // Get keys already added
                                     let keys_already_added = keys_already_added_count_map.get(&random_identity.id())
                                         .expect("Expected to get keys_already_added in IdentityAddKeys ST creation");
-                                
+
                                     // Create transition
-                                    let (state_transition, keys_to_add_at_end_block) = 
-                                        crate::transitions::create_identity_update_transition_add_keys(
+                                    let (state_transition, keys_to_add_at_end_block) = crate::transitions::create_identity_update_transition_add_keys(
                                             random_identity,
                                             *keys_count,
                                             *keys_already_added,
@@ -1016,7 +1015,10 @@ impl Strategy {
                                     ));
 
                                     // Increment keys_already_added count
-                                    keys_already_added_count_map.insert(random_identity.id(), keys_already_added + *keys_count as u32);
+                                    keys_already_added_count_map.insert(
+                                        random_identity.id(),
+                                        keys_already_added + *keys_count as u32,
+                                    );
                                 }
                             }
                             IdentityUpdateOp::IdentityUpdateDisableKey(keys_count) => {
@@ -1334,8 +1336,8 @@ impl Strategy {
             if frequency.check_hit(rng) {
                 let count = frequency.events(rng);
                 let mut new_transitions = crate::transitions::create_identities_state_transitions(
-                    count, // number of identities
-                    self.identities_inserts.start_keys as KeyID,     // number of keys per identity
+                    count,                                       // number of identities
+                    self.identities_inserts.start_keys as KeyID, // number of keys per identity
                     &self.identities_inserts.extra_keys,
                     signer,
                     rng,

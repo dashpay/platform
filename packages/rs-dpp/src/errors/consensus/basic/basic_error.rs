@@ -46,6 +46,7 @@ use crate::consensus::basic::identity::{
     InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError,
     InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
     MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
+    TooManyMasterPublicKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
@@ -277,6 +278,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     MissingMasterPublicKeyError(MissingMasterPublicKeyError),
+
+    #[error(transparent)]
+    TooManyMasterPublicKeyError(TooManyMasterPublicKeyError),
 
     #[error(transparent)]
     MasterPublicKeyUpdateError(MasterPublicKeyUpdateError),
