@@ -9,38 +9,31 @@ use dpp::state_transition::data_contract_create_transition::DataContractCreateTr
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-use dpp::ProtocolError;
 
 impl BumpIdentityNonceAction {
     /// from identity update
-    pub fn from_identity_update_transition(
-        value: IdentityUpdateTransition,
-    ) -> Result<Self, ProtocolError> {
+    pub fn from_identity_update_transition(value: IdentityUpdateTransition) -> Self {
         match value {
             IdentityUpdateTransition::V0(v0) => {
-                Ok(BumpIdentityNonceActionV0::try_from_identity_update(v0)?.into())
+                BumpIdentityNonceActionV0::from_identity_update(v0).into()
             }
         }
     }
 
     /// from borrowed identity update
-    pub fn from_borrowed_identity_update_transition(
-        value: &IdentityUpdateTransition,
-    ) -> Result<Self, ProtocolError> {
+    pub fn from_borrowed_identity_update_transition(value: &IdentityUpdateTransition) -> Self {
         match value {
             IdentityUpdateTransition::V0(v0) => {
-                Ok(BumpIdentityNonceActionV0::try_from_borrowed_identity_update(v0)?.into())
+                BumpIdentityNonceActionV0::from_borrowed_identity_update(v0).into()
             }
         }
     }
 
     /// from identity update action
-    pub fn from_identity_update_transition_action(
-        value: IdentityUpdateTransitionAction,
-    ) -> Result<Self, ProtocolError> {
+    pub fn from_identity_update_transition_action(value: IdentityUpdateTransitionAction) -> Self {
         match value {
             IdentityUpdateTransitionAction::V0(v0) => {
-                Ok(BumpIdentityNonceActionV0::try_from_identity_update_action(v0)?.into())
+                BumpIdentityNonceActionV0::from_identity_update_action(v0).into()
             }
         }
     }
@@ -48,21 +41,19 @@ impl BumpIdentityNonceAction {
     /// from borrowed identity update action
     pub fn from_borrowed_identity_update_transition_action(
         value: &IdentityUpdateTransitionAction,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         match value {
             IdentityUpdateTransitionAction::V0(v0) => {
-                Ok(BumpIdentityNonceActionV0::try_from_borrowed_identity_update_action(v0)?.into())
+                BumpIdentityNonceActionV0::from_borrowed_identity_update_action(v0).into()
             }
         }
     }
 
     /// from data contract create transition
-    pub fn from_data_contract_create_transition(
-        value: DataContractCreateTransition,
-    ) -> Result<Self, ProtocolError> {
+    pub fn from_data_contract_create_transition(value: DataContractCreateTransition) -> Self {
         match value {
             DataContractCreateTransition::V0(v0) => {
-                Ok(BumpIdentityNonceActionV0::try_from_contract_create(v0)?.into())
+                BumpIdentityNonceActionV0::from_contract_create(v0).into()
             }
         }
     }
@@ -70,21 +61,19 @@ impl BumpIdentityNonceAction {
     /// from borrowed data contract create transition
     pub fn from_borrowed_data_contract_create_transition(
         value: &DataContractCreateTransition,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         match value {
             DataContractCreateTransition::V0(v0) => {
-                Ok(BumpIdentityNonceActionV0::try_from_borrowed_contract_create(v0)?.into())
+                BumpIdentityNonceActionV0::from_borrowed_contract_create(v0).into()
             }
         }
     }
 
     /// from data contract create transition action
-    pub fn from_data_contract_create_action(
-        value: DataContractCreateTransitionAction,
-    ) -> Result<Self, ProtocolError> {
+    pub fn from_data_contract_create_action(value: DataContractCreateTransitionAction) -> Self {
         match value {
             DataContractCreateTransitionAction::V0(v0) => {
-                Ok(BumpIdentityNonceActionV0::try_from_contract_create_action(v0)?.into())
+                BumpIdentityNonceActionV0::from_contract_create_action(v0).into()
             }
         }
     }
@@ -92,10 +81,10 @@ impl BumpIdentityNonceAction {
     /// from borrowed data contract create transition action
     pub fn from_borrowed_data_contract_create_action(
         value: &DataContractCreateTransitionAction,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         match value {
             DataContractCreateTransitionAction::V0(v0) => {
-                Ok(BumpIdentityNonceActionV0::try_from_borrowed_contract_create_action(v0)?.into())
+                BumpIdentityNonceActionV0::from_borrowed_contract_create_action(v0).into()
             }
         }
     }
@@ -103,10 +92,10 @@ impl BumpIdentityNonceAction {
     /// from identity transfer
     pub fn from_identity_credit_transfer_transition(
         value: IdentityCreditTransferTransition,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         match value {
             IdentityCreditTransferTransition::V0(v0) => {
-                Ok(BumpIdentityNonceActionV0::try_from_identity_credit_transfer(v0)?.into())
+                BumpIdentityNonceActionV0::from_identity_credit_transfer(v0).into()
             }
         }
     }
@@ -114,21 +103,21 @@ impl BumpIdentityNonceAction {
     /// from borrowed identity transfer
     pub fn from_borrowed_identity_credit_transfer_transition(
         value: &IdentityCreditTransferTransition,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         match value {
-            IdentityCreditTransferTransition::V0(v0) => Ok(
-                BumpIdentityNonceActionV0::try_from_borrowed_identity_credit_transfer(v0)?.into(),
-            ),
+            IdentityCreditTransferTransition::V0(v0) => {
+                BumpIdentityNonceActionV0::from_borrowed_identity_credit_transfer(v0).into()
+            }
         }
     }
 
     /// from identity transfer action
     pub fn from_identity_credit_transfer_transition_action(
         value: IdentityCreditTransferTransitionAction,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         match value {
             IdentityCreditTransferTransitionAction::V0(v0) => {
-                Ok(BumpIdentityNonceActionV0::try_from_identity_credit_transfer_action(v0)?.into())
+                BumpIdentityNonceActionV0::from_identity_credit_transfer_action(v0).into()
             }
         }
     }
@@ -136,22 +125,21 @@ impl BumpIdentityNonceAction {
     /// from borrowed identity transfer action
     pub fn from_borrowed_identity_credit_transfer_transition_action(
         value: &IdentityCreditTransferTransitionAction,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         match value {
-            IdentityCreditTransferTransitionAction::V0(v0) => Ok(
-                BumpIdentityNonceActionV0::try_from_borrowed_identity_credit_transfer_action(v0)?
-                    .into(),
-            ),
+            IdentityCreditTransferTransitionAction::V0(v0) => {
+                BumpIdentityNonceActionV0::from_borrowed_identity_credit_transfer_action(v0).into()
+            }
         }
     }
 
     /// from identity withdrawal
     pub fn from_identity_credit_withdrawal_transition(
         value: IdentityCreditWithdrawalTransition,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         match value {
             IdentityCreditWithdrawalTransition::V0(v0) => {
-                Ok(BumpIdentityNonceActionV0::try_from_identity_credit_withdrawal(v0)?.into())
+                BumpIdentityNonceActionV0::from_identity_credit_withdrawal(v0).into()
             }
         }
     }
@@ -159,34 +147,34 @@ impl BumpIdentityNonceAction {
     /// from borrowed identity withdrawal
     pub fn from_borrowed_identity_credit_withdrawal_transition(
         value: &IdentityCreditWithdrawalTransition,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         match value {
-            IdentityCreditWithdrawalTransition::V0(v0) => Ok(
-                BumpIdentityNonceActionV0::try_from_borrowed_identity_credit_withdrawal(v0)?.into(),
-            ),
+            IdentityCreditWithdrawalTransition::V0(v0) => {
+                BumpIdentityNonceActionV0::from_borrowed_identity_credit_withdrawal(v0).into()
+            }
         }
     }
 
     /// from identity withdrawal action
     pub fn from_identity_credit_withdrawal_transition_action(
         value: IdentityCreditWithdrawalTransitionAction,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         match value {
-            IdentityCreditWithdrawalTransitionAction::V0(v0) => Ok(
-                BumpIdentityNonceActionV0::try_from_identity_credit_withdrawal_action(v0)?.into(),
-            ),
+            IdentityCreditWithdrawalTransitionAction::V0(v0) => {
+                BumpIdentityNonceActionV0::from_identity_credit_withdrawal_action(v0).into()
+            }
         }
     }
 
     /// from borrowed identity withdrawal action
     pub fn from_borrowed_identity_credit_withdrawal_transition_action(
         value: &IdentityCreditWithdrawalTransitionAction,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         match value {
-            IdentityCreditWithdrawalTransitionAction::V0(v0) => Ok(
-                BumpIdentityNonceActionV0::try_from_borrowed_identity_credit_withdrawal_action(v0)?
-                    .into(),
-            ),
+            IdentityCreditWithdrawalTransitionAction::V0(v0) => {
+                BumpIdentityNonceActionV0::from_borrowed_identity_credit_withdrawal_action(v0)
+                    .into()
+            }
         }
     }
 }

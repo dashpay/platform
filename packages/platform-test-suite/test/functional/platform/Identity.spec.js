@@ -66,7 +66,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(4029);
+      expect(broadcastError.getCause().getCode()).to.equal(40212);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
         InvalidAssetLockProofValueError,
       );
@@ -104,7 +104,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(1042);
+      expect(broadcastError.getCause().getCode()).to.equal(10513);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
         InvalidInstantAssetLockProofSignatureError,
       );
@@ -158,7 +158,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(1033);
+      expect(broadcastError.getCause().getCode()).to.equal(10504);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
         IdentityAssetLockTransactionOutPointAlreadyExistsError,
       );
@@ -209,7 +209,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(2009);
+      expect(broadcastError.getCause().getCode()).to.equal(20009);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
         BasicECDSAError,
       );
@@ -585,7 +585,7 @@ describe('Platform', () => {
       it('should be able to add public key to the identity', async () => {
         const identityBeforeUpdate = identity.toObject();
 
-        expect(identityBeforeUpdate.publicKeys[3]).to.not.exist();
+        const nextKeyId = identityBeforeUpdate.publicKeys.length;
 
         const account = await client.platform.client.getWalletAccount();
         const identityIndex = await account.getUnusedIdentityIndex();
@@ -597,7 +597,7 @@ describe('Platform', () => {
         const identityPublicKey = identityPrivateKey.toPublicKey().toBuffer();
 
         const newPublicKey = new IdentityPublicKeyWithWitness(1);
-        newPublicKey.setId(3);
+        newPublicKey.setId(nextKeyId);
         newPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
         newPublicKey.setData(identityPublicKey);
 
@@ -623,7 +623,7 @@ describe('Platform', () => {
         expect(identity.getPublicKeyById(2)).to.exist();
 
         const newPublicKeyObject = newPublicKey.toObject(true);
-        const expectedPublicKey = identity.getPublicKeyById(3).toObject(true);
+        const expectedPublicKey = identity.getPublicKeyById(4).toObject(true);
         delete expectedPublicKey.disabledAt;
         expect(expectedPublicKey).to.deep.equal(
           newPublicKeyObject,

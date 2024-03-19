@@ -17,7 +17,6 @@ use crate::consensus::state::document::duplicate_unique_index_error::DuplicateUn
 use crate::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 use crate::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
 use crate::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
-use crate::consensus::state::identity::identity_public_key_disabled_at_window_violation_error::IdentityPublicKeyDisabledAtWindowViolationError;
 use crate::consensus::state::identity::identity_public_key_is_disabled_error::IdentityPublicKeyIsDisabledError;
 use crate::consensus::state::identity::identity_public_key_is_read_only_error::IdentityPublicKeyIsReadOnlyError;
 use crate::consensus::state::identity::invalid_identity_public_key_id_error::InvalidIdentityPublicKeyIdError;
@@ -28,6 +27,7 @@ use crate::consensus::state::identity::{
     IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
 };
 use crate::consensus::ConsensusError;
+use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use crate::consensus::state::identity::invalid_asset_lock_proof_value::InvalidAssetLockProofValueError;
 use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
@@ -80,11 +80,6 @@ pub enum StateError {
     ),
 
     #[error(transparent)]
-    IdentityPublicKeyDisabledAtWindowViolationError(
-        IdentityPublicKeyDisabledAtWindowViolationError,
-    ),
-
-    #[error(transparent)]
     IdentityPublicKeyIsReadOnlyError(IdentityPublicKeyIsReadOnlyError),
 
     #[error(transparent)]
@@ -125,6 +120,9 @@ pub enum StateError {
 
     #[error(transparent)]
     DataContractConfigUpdateError(DataContractConfigUpdateError),
+
+    #[error(transparent)]
+    DocumentTypeUpdateError(DocumentTypeUpdateError),
 }
 
 impl From<StateError> for ConsensusError {

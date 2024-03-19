@@ -48,9 +48,6 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
             .collect::<Result<Vec<_>, ProtocolError>>()?;
         let disable_public_keys =
             remove_integer_list_or_default(&mut raw_object, property_names::DISABLE_PUBLIC_KEYS)?;
-        let public_keys_disabled_at = raw_object
-            .remove_optional_integer(property_names::PUBLIC_KEYS_DISABLED_AT)
-            .map_err(ProtocolError::ValueError)?;
 
         Ok(IdentityUpdateTransitionV0 {
             signature,
@@ -60,7 +57,6 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
             nonce,
             add_public_keys,
             disable_public_keys,
-            public_keys_disabled_at,
             user_fee_increase,
         })
     }
@@ -119,8 +115,6 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
         value.remove_optional_value_if_empty_array(property_names::ADD_PUBLIC_KEYS)?;
 
         value.remove_optional_value_if_empty_array(property_names::DISABLE_PUBLIC_KEYS)?;
-
-        value.remove_optional_value_if_null(property_names::PUBLIC_KEYS_DISABLED_AT)?;
 
         Ok(value)
     }

@@ -1,8 +1,9 @@
 use crate::error::Error;
 
 use dpp::consensus::signature::{
-    IdentityNotFoundError, InvalidSignaturePublicKeySecurityLevelError,
-    InvalidStateTransitionSignatureError, PublicKeySecurityLevelNotMetError,
+    IdentityNotFoundError, InvalidSignaturePublicKeyPurposeError,
+    InvalidSignaturePublicKeySecurityLevelError, InvalidStateTransitionSignatureError,
+    PublicKeySecurityLevelNotMetError,
 };
 
 use dpp::identity::PartialIdentity;
@@ -79,23 +80,38 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
 
         let security_levels = match self {
             StateTransition::DocumentsBatch(_) => {
-                let action = action.ok_or(ProtocolError::CorruptedCodeExecution(
-                    "we expect a state transition action when validating the signature of the documents batch transition".to_string(),
-                ))?;
-                let StateTransitionAction::DocumentsBatchAction(documents_batch_action) = action
-                else {
-                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "we expect a documents batch state transition action when validating the signature of the documents batch transition",
-                    )));
-                };
-                documents_batch_action.contract_based_security_level_requirement()
+                // We will have an action during consensus validation, but not on mempool check_tx
+                if let Some(action) = action {
+                    let StateTransitionAction::DocumentsBatchAction(documents_batch_action) =
+                        action
+                    else {
+                        return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                                "we expect a documents batch state transition action when validating the signature of the documents batch transition",
+                            )));
+                    };
+                    documents_batch_action.contract_based_security_level_requirement()
+                } else {
+                    // In this case we just validate the transition
+                    // If it is not valid during consensus validation because the key wasn't the
+                    // right level then we will disable the key as it most likely is an attack
+                    self.security_level_requirement()
+                        .ok_or(ProtocolError::CorruptedCodeExecution(
+                            "state_transition does not have security level".to_string(),
+                        ))
+                }
             }
             _ => self
                 .security_level_requirement()
                 .ok_or(ProtocolError::CorruptedCodeExecution(
-                    "state_transition does not have a owner Id to verify".to_string(),
+                    "state_transition does not have security level".to_string(),
                 )),
         }?;
+
+        let purpose = self
+            .purpose_requirement()
+            .ok_or(ProtocolError::CorruptedCodeExecution(
+                "state_transition does not have a key purpose requirement".to_string(),
+            ))?;
 
         let key_request = IdentityKeysRequest::new_specific_key_query(owner_id.as_bytes(), key_id);
 
@@ -137,6 +153,13 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
         if !SUPPORTED_KEY_TYPES.contains(&public_key.key_type()) {
             validation_result.add_error(SignatureError::InvalidIdentityPublicKeyTypeError(
                 InvalidIdentityPublicKeyTypeError::new(public_key.key_type()),
+            ));
+            return Ok(validation_result);
+        }
+
+        if purpose != public_key.purpose() {
+            validation_result.add_error(SignatureError::InvalidSignaturePublicKeyPurposeError(
+                InvalidSignaturePublicKeyPurposeError::new(public_key.purpose(), purpose),
             ));
             return Ok(validation_result);
         }

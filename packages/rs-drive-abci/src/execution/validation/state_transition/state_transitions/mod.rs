@@ -23,6 +23,7 @@ pub mod data_contract_create;
 pub mod data_contract_update;
 
 /// The validation mode we are using
+#[derive(Clone, Copy, Debug)]
 pub enum ValidationMode {
     /// The basic checktx before the state transition is put into mempool
     CheckTx,
@@ -30,4 +31,15 @@ pub enum ValidationMode {
     RecheckTx,
     /// The validation of the validator
     Validator,
+}
+
+impl ValidationMode {
+    /// Can this validation mode alter cache on drive?
+    pub fn can_alter_cache(&self) -> bool {
+        match self {
+            ValidationMode::CheckTx => false,
+            ValidationMode::RecheckTx => false,
+            ValidationMode::Validator => true,
+        }
+    }
 }

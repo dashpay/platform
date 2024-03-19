@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
+use dpp::ProtocolError;
 
 use crate::drive::contract::DataContractFetchInfo;
 
@@ -25,6 +26,10 @@ pub struct DocumentBaseTransitionActionV0 {
 pub trait DocumentBaseTransitionActionAccessorsV0 {
     /// The document Id
     fn id(&self) -> Identifier;
+
+    /// Is a field required on the document type?
+    fn document_type_field_is_required(&self, field: &str) -> Result<bool, ProtocolError>;
+
     /// Name of document type found int the data contract associated with the `data_contract_id`
     fn document_type_name(&self) -> &String;
     /// document type name owned

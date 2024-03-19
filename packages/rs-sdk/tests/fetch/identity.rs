@@ -17,7 +17,7 @@ async fn test_identity_read() {
     let cfg = Config::new();
     let id: dpp::prelude::Identifier = cfg.existing_identity_id;
 
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_identity_read").await;
 
     let identity = Identity::fetch(&sdk, id)
         .await
@@ -33,7 +33,7 @@ async fn test_identity_read_by_key() {
     let cfg = Config::new();
     let id = cfg.existing_identity_id;
 
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_identity_read_by_key").await;
 
     let identity = Identity::fetch(&sdk, id)
         .await
@@ -63,7 +63,7 @@ async fn test_identity_balance_read() {
     let cfg = Config::new();
     let id: dpp::prelude::Identifier = cfg.existing_identity_id;
 
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_identity_balance_read").await;
 
     let balance = IdentityBalance::fetch(&sdk, id)
         .await
@@ -81,7 +81,7 @@ async fn test_identity_balance_revision_read() {
     let cfg = Config::new();
     let id: dpp::prelude::Identifier = cfg.existing_identity_id;
 
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_identity_balance_revision_read").await;
 
     let (balance, revision) = IdentityBalanceAndRevision::fetch(&sdk, id)
         .await
@@ -99,7 +99,7 @@ async fn test_identity_public_keys_all_read() {
     let cfg = Config::new();
     let id: dpp::prelude::Identifier = cfg.existing_identity_id;
 
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_identity_public_keys_all_read").await;
 
     let public_keys = IdentityPublicKey::fetch_many(&sdk, id)
         .await

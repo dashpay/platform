@@ -869,16 +869,15 @@ pub(crate) fn continue_chain_for_strategy(
             .validator_set
             .get(i as usize)
             .unwrap();
-        let (state_transitions, finalize_block_operations) = strategy
-            .state_transitions_for_block_with_new_identities(
-                platform,
-                &block_info,
-                &mut current_identities,
-                &mut current_identity_nonce_counter,
-                &mut current_identity_contract_nonce_counter,
-                &mut signer,
-                &mut rng,
-            );
+        let (state_transitions, finalize_block_operations) = strategy.state_transitions_for_block(
+            platform,
+            &block_info,
+            &mut current_identities,
+            &mut current_identity_nonce_counter,
+            &mut current_identity_contract_nonce_counter,
+            &mut signer,
+            &mut rng,
+        );
 
         state_transitions_per_block.insert(block_height, state_transitions.clone());
 

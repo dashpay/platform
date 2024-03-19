@@ -58,6 +58,7 @@ pub struct DPPValidationVersions {
     pub validate_time_in_block_time_window: FeatureVersion,
     pub json_schema_validator: JsonSchemaValidatorVersions,
     pub data_contract: DataContractValidationVersions,
+    pub document_type: DocumentTypeValidationVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -68,6 +69,11 @@ pub struct DataContractValidationVersions {
     pub validate_index_naming_duplicates: FeatureVersion,
     pub validate_not_defined_properties: FeatureVersion,
     pub validate_property_definition: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DocumentTypeValidationVersions {
+    pub validate_update: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -214,6 +220,7 @@ pub struct DocumentVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DocumentMethodVersions {
+    pub is_equal_ignoring_timestamps: FeatureVersion,
     pub hash: FeatureVersion,
     pub get_raw_for_contract: FeatureVersion,
     pub get_raw_for_document_type: FeatureVersion,

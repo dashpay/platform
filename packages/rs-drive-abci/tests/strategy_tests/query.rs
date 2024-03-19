@@ -311,7 +311,7 @@ mod tests {
 
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
 
-    use strategy_tests::Strategy;
+    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
 
@@ -345,11 +345,9 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -445,11 +443,9 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -546,11 +542,9 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },

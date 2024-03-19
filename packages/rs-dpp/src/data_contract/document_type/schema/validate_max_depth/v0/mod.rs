@@ -190,7 +190,7 @@ mod test {
         let err = get_ref_error(result);
         assert_eq!(
             err.message(),
-            "invalid ref for max depth '#/$defs/object': value error: structure error: unable to get property $defs in $defs.object"
+            "invalid ref for max depth '#/$defs/object': value decoding error: StructureError(\"unable to get property $defs in $defs.object\")"
                 .to_string()
         );
     }
@@ -220,7 +220,7 @@ mod test {
         let err = get_ref_error(result);
         assert_eq!(
             err.message(),
-            "invalid ref for max depth 'https://json-schema.org/some': Generic Error: only local references are allowed"
+            "invalid ref for max depth 'https://json-schema.org/some': invalid uri error: only local uri references are allowed"
                 .to_string()
         );
     }
@@ -250,7 +250,7 @@ mod test {
         let err = get_ref_error(result);
         assert_eq!(
             err.message(),
-            "invalid ref for max depth '': Generic Error: only local references are allowed"
+            "invalid ref for max depth '': invalid uri error: only local uri references are allowed"
                 .to_string()
         );
     }

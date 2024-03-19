@@ -57,19 +57,30 @@ impl ValidatorSetV0 {
     ) -> Result<ValidatorSetUpdate, Error> {
         if self.quorum_hash != rhs.quorum_hash {
             return Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                "updating validator set doesn't match quorum hash",
+                format!(
+                    "updating validator set doesn't match quorum hash ours: {} theirs: {}",
+                    self.quorum_hash.to_string(),
+                    rhs.quorum_hash.to_string()
+                ),
             )));
         }
 
         if self.core_height != rhs.core_height {
             return Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                "updating validator set doesn't match core height",
+                format!(
+                    "updating validator set doesn't match core height ours: {} theirs: {}",
+                    self.core_height, rhs.core_height
+                ),
             )));
         }
 
         if self.threshold_public_key != rhs.threshold_public_key {
             return Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                "updating validator set doesn't match threshold public key",
+                format!(
+                    "updating validator set doesn't match threshold public key ours: {} theirs: {}",
+                    hex::encode(*self.threshold_public_key.to_bytes()),
+                    hex::encode(*rhs.threshold_public_key.to_bytes())
+                ),
             )));
         }
 
@@ -80,7 +91,10 @@ impl ValidatorSetV0 {
                 rhs.members.get(pro_tx_hash).map_or_else(
                     || {
                         Some(Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                            "validator set does not contain all same members",
+                            format!(
+                                "validator set does not contain all same members, missing {}",
+                                pro_tx_hash.to_string()
+                            ),
                         ))))
                     },
                     |new_validator_state| {
