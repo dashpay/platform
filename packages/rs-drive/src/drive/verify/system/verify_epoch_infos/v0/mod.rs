@@ -220,14 +220,14 @@ impl Drive {
                 let Some(Element::Item(encoded_protocol_version, _)) = protocol_version_element
                 else {
                     return Some(Err(Error::Drive(DriveError::UnexpectedElementType(
-                        "start time must be an item",
+                        "protocol version must be an item",
                     ))));
                 };
 
                 let protocol_version_bytes: [u8; 4] =
                     match encoded_protocol_version.as_slice().try_into().map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(
-                            "core block height must be 4 bytes for a u32".to_string(),
+                            "protocol version must be 4 bytes for a u32".to_string(),
                         ))
                     }) {
                         Ok(value) => value,
