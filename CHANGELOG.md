@@ -4,16 +4,14 @@
 ### ⚠ BREAKING CHANGES
 
 * **sdk:** don't allow duplicate mock expectations (#1788)
-* **platform:** created at block height and variants (#1784)
+* created_at and updated_at from block time (#1780)
+* created_at_block_height and variants (#1784)
+
 
 ### Features
 
-* created at updated at from block time ([#1780](https://github.com/dashpay/platform/issues/1780))
-* **dapi:** use broadcast_tx instead of deprecated broadcast_tx_sync ([#1775](https://github.com/dashpay/platform/issues/1775))
-* identity state transition validation fixes ([#1786](https://github.com/dashpay/platform/issues/1786))
-* **platform:** created at block height and variants ([#1784](https://github.com/dashpay/platform/issues/1784))
-* query retry on race condition ([#1776](https://github.com/dashpay/platform/issues/1776))
-* updated descriptions and function names in strategy tests plus readme file ([#1785](https://github.com/dashpay/platform/issues/1785))
+* created_at and updated_at from block time ([#1780](https://github.com/dashpay/platform/issues/1780))
+* created_at_block_height and variants ([#1784](https://github.com/dashpay/platform/issues/1784))
 
 
 ### Bug Fixes
@@ -21,18 +19,22 @@
 * **drive:** internal error on querying proofs ([#1747](https://github.com/dashpay/platform/issues/1747))
 * identity add keys in strategy tests ([#1727](https://github.com/dashpay/platform/issues/1727))
 * **sdk:** don't allow duplicate mock expectations ([#1788](https://github.com/dashpay/platform/issues/1788))
+* query retry on race condition ([#1776](https://github.com/dashpay/platform/issues/1776))
+* identity state transition validation fixes ([#1786](https://github.com/dashpay/platform/issues/1786))
 
 
 ### Code Refactoring
 
 * make strategy start identities a new struct ([#1764](https://github.com/dashpay/platform/issues/1764))
-
+* updated descriptions and function names in strategy tests plus readme file ([#1785](https://github.com/dashpay/platform/issues/1785))
+  
 
 ### Miscellaneous Chores
 
 * **dashmate:** readme fixes ([#1624](https://github.com/dashpay/platform/issues/1624))
 * fix npm audit for follow-redirects package ([#1781](https://github.com/dashpay/platform/issues/1781))
-
+* **dapi:** use broadcast_tx instead of deprecated broadcast_tx_sync ([#1775](https://github.com/dashpay/platform/issues/1775))
+  
 
 ### Build System
 
