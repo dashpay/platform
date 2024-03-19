@@ -123,7 +123,7 @@ pub struct StrategyConfig {
 pub struct StartIdentities {
     pub number_of_identities: u8,
     pub keys_per_identity: u8,
-    pub starting_balances: Option<u64>,
+    pub starting_balances: Option<f64>, // starting balance in Dash
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -377,6 +377,7 @@ impl Strategy {
         // Get identity state transitions
         let identity_state_transitions = match self.identity_state_transitions_for_block(
             block_info,
+            self.start_identities.starting_balances,
             signer,
             rng,
             create_asset_lock,
@@ -1288,6 +1289,7 @@ impl Strategy {
     pub fn identity_state_transitions_for_block(
         &self,
         block_info: &BlockInfo,
+        amount: Option<f64>,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
         create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
@@ -1300,9 +1302,14 @@ impl Strategy {
         if block_info.height == config.start_block_height
             && self.start_identities.number_of_identities > 0
         {
+            let mut duffs_amount = 100_000_000; // default to 1 dash
+            if let Some(dash_amount) = amount {
+                duffs_amount = (dash_amount * 100_000_000.0) as u64;
+            };
             let mut new_transitions = crate::transitions::create_identities_state_transitions(
                 self.start_identities.number_of_identities.into(), // number of identities
                 self.start_identities.keys_per_identity.into(),    // number of keys per identity
+                duffs_amount,
                 signer,
                 rng,
                 create_asset_lock,
@@ -1320,6 +1327,7 @@ impl Strategy {
                 let mut new_transitions = crate::transitions::create_identities_state_transitions(
                     count, // number of identities
                     3,     // number of keys per identity
+                    200000, // 0.002 dash
                     signer,
                     rng,
                     create_asset_lock,
