@@ -80,7 +80,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
         match result {
             Err(ProtocolError::ConsensusError(consensus_error)) => {
                 let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self)?,
+                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
                 );
 
                 Ok(ConsensusValidationResult::new_with_data_and_errors(

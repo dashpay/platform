@@ -24,7 +24,7 @@ use dpp::data_contract::{DataContract, DataContractFactory};
 
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
-use dpp::identity::{Identity, KeyType, PartialIdentity, Purpose, SecurityLevel};
+use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
@@ -42,7 +42,7 @@ use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
 use rand::{thread_rng, Rng};
-use tracing::{error, info};
+use tracing::error;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -64,6 +64,7 @@ use simple_signer::signer::SimpleSigner;
 pub mod frequency;
 pub mod operations;
 pub mod transitions;
+pub type KeyMaps = BTreeMap<Purpose, BTreeMap<SecurityLevel, Vec<KeyType>>>;
 
 /// Defines a detailed strategy for conducting simulations or tests on Dash Platform.
 ///
@@ -106,7 +107,7 @@ pub struct Strategy {
     )>,
     pub operations: Vec<Operation>,
     pub start_identities: StartIdentities,
-    pub identities_inserts: Frequency,
+    pub identities_inserts: IdentityInsertInfo,
     pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
 }
@@ -126,6 +127,24 @@ pub struct StartIdentities {
     pub starting_balances: Option<u64>,
 }
 
+/// Identities to register on the first block of the strategy
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+pub struct IdentityInsertInfo {
+    pub frequency: Frequency,
+    pub start_keys: u8,
+    pub extra_keys: KeyMaps,
+}
+
+impl Default for IdentityInsertInfo {
+    fn default() -> Self {
+        Self {
+            frequency: Default::default(),
+            start_keys: 5,
+            extra_keys: Default::default(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct RandomDocumentQuery<'a> {
     pub data_contract: &'a DataContract,
@@ -142,7 +161,7 @@ struct StrategyInSerializationFormat {
     pub contracts_with_updates: Vec<(Vec<u8>, Option<BTreeMap<u64, Vec<u8>>>)>,
     pub operations: Vec<Vec<u8>>,
     pub start_identities: StartIdentities,
-    pub identities_inserts: Frequency,
+    pub identities_inserts: IdentityInsertInfo,
     pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
 }
@@ -968,18 +987,17 @@ impl Strategy {
                                     if identities_count == 0 {
                                         break;
                                     }
-                                
+
                                     // Select a random identity from the current_identities
                                     let random_index = thread_rng().gen_range(0..identities_count);
                                     let random_identity = &mut current_identities[random_index];
-                                
+
                                     // Get keys already added
                                     let keys_already_added = keys_already_added_count_map.get(&random_identity.id())
                                         .expect("Expected to get keys_already_added in IdentityAddKeys ST creation");
-                                
+
                                     // Create transition
-                                    let (state_transition, keys_to_add_at_end_block) = 
-                                        crate::transitions::create_identity_update_transition_add_keys(
+                                    let (state_transition, keys_to_add_at_end_block) = crate::transitions::create_identity_update_transition_add_keys(
                                             random_identity,
                                             *keys_count,
                                             *keys_already_added,
@@ -997,7 +1015,10 @@ impl Strategy {
                                     ));
 
                                     // Increment keys_already_added count
-                                    keys_already_added_count_map.insert(random_identity.id(), keys_already_added + *keys_count as u32);
+                                    keys_already_added_count_map.insert(
+                                        random_identity.id(),
+                                        keys_already_added + *keys_count as u32,
+                                    );
                                 }
                             }
                             IdentityUpdateOp::IdentityUpdateDisableKey(keys_count) => {
@@ -1299,6 +1320,7 @@ impl Strategy {
             let mut new_transitions = crate::transitions::create_identities_state_transitions(
                 self.start_identities.number_of_identities.into(), // number of identities
                 self.start_identities.keys_per_identity.into(),    // number of keys per identity
+                &self.identities_inserts.extra_keys,
                 signer,
                 rng,
                 create_asset_lock,
@@ -1310,12 +1332,13 @@ impl Strategy {
         // Add identities_inserts
         // Don't do this on first block because we need to skip utxo refresh
         if block_info.height > config.start_block_height {
-            let frequency = &self.identities_inserts;
+            let frequency = &self.identities_inserts.frequency;
             if frequency.check_hit(rng) {
                 let count = frequency.events(rng);
                 let mut new_transitions = crate::transitions::create_identities_state_transitions(
-                    count, // number of identities
-                    3,     // number of keys per identity
+                    count,                                       // number of identities
+                    self.identities_inserts.start_keys as KeyID, // number of keys per identity
+                    &self.identities_inserts.extra_keys,
                     signer,
                     rng,
                     create_asset_lock,
@@ -1687,10 +1710,7 @@ mod tests {
                 keys_per_identity: 3,
                 starting_balances: None,
             },
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+            identities_inserts: Default::default(),
             identity_contract_nonce_gaps: None,
             signer: Some(simple_signer),
         };

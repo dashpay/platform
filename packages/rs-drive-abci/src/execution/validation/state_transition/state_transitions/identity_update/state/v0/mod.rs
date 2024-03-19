@@ -18,6 +18,7 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::common::validate_identity_public_key_contract_bounds::validate_identity_public_keys_contract_bounds;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_dont_exist_in_state::validate_identity_public_key_ids_dont_exist_in_state;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_exist_in_state::validate_identity_public_key_ids_exist_in_state;
+use crate::execution::validation::state_transition::common::validate_not_disabling_last_master_key::validate_master_key_uniqueness;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_not_in_state;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_update) trait IdentityUpdateStateTransitionStateValidationV0
@@ -60,7 +61,7 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
 
         if !validation_result.is_valid() {
             let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                BumpIdentityNonceAction::from_borrowed_identity_update_transition(self)?,
+                BumpIdentityNonceAction::from_borrowed_identity_update_transition(self),
             );
 
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -83,7 +84,7 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
 
         if !validation_result.is_valid() {
             let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                BumpIdentityNonceAction::from_borrowed_identity_update_transition(self)?,
+                BumpIdentityNonceAction::from_borrowed_identity_update_transition(self),
             );
 
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -108,7 +109,7 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
 
         if !validation_result.is_valid() {
             let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                BumpIdentityNonceAction::from_borrowed_identity_update_transition(self)?,
+                BumpIdentityNonceAction::from_borrowed_identity_update_transition(self),
             );
 
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
@@ -118,8 +119,7 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
         }
 
         if !self.public_key_ids_to_disable().is_empty() {
-            // We need to validate that all keys removed existed
-            validation_result.add_errors(
+            let validation_result_and_keys_to_disable =
                 validate_identity_public_key_ids_exist_in_state(
                     self.identity_id(),
                     self.public_key_ids_to_disable(),
@@ -127,13 +127,29 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
                     &mut state_transition_execution_context,
                     tx,
                     platform_version,
-                )?
-                .errors,
-            );
+                )?;
+            // We need to validate that all keys removed existed
+            if !validation_result_and_keys_to_disable.is_valid() {
+                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
+                    BumpIdentityNonceAction::from_borrowed_identity_update_transition(self),
+                );
 
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    validation_result_and_keys_to_disable.errors,
+                ));
+            }
+
+            let keys_to_disable = validation_result_and_keys_to_disable.into_data()?;
+
+            let validation_result = validate_master_key_uniqueness(
+                self.public_keys_to_add(),
+                keys_to_disable.as_slice(),
+                platform_version,
+            )?;
             if !validation_result.is_valid() {
                 let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                    BumpIdentityNonceAction::from_borrowed_identity_update_transition(self)?,
+                    BumpIdentityNonceAction::from_borrowed_identity_update_transition(self),
                 );
 
                 return Ok(ConsensusValidationResult::new_with_data_and_errors(

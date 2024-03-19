@@ -131,7 +131,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
         _platform: &PlatformStateRef,
         action: &StateTransitionAction,
         platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, Error> {
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match platform_version
             .drive_abci
             .validation_and_processing

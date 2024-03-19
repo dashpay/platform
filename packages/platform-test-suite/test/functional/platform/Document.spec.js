@@ -196,7 +196,7 @@ describe('Platform', () => {
       expect(broadcastError.code)
         .to
         .be
-        .equal(4009);
+        .equal(40105);
       expect(broadcastError.message)
         .to
         .match(/Document \w* has duplicate unique properties \["\$ownerId", "firstName"] with other documents/);

@@ -15,7 +15,9 @@ use dpp::serialization::PlatformMessageSignable;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
-use dpp::validation::SimpleConsensusValidationResult;
+use dpp::validation::ConsensusValidationResult;
+use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceAction;
+use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition) trait IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0
 {
@@ -24,7 +26,7 @@ pub(in crate::execution::validation::state_transition) trait IdentityUpdateState
         signable_bytes: Vec<u8>,
         partial_identity: &PartialIdentity,
         execution_context: &mut StateTransitionExecutionContext,
-    ) -> Result<SimpleConsensusValidationResult, Error>;
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
 impl IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0 for IdentityUpdateTransition {
@@ -33,23 +35,7 @@ impl IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0 for Identity
         signable_bytes: Vec<u8>,
         partial_identity: &PartialIdentity,
         execution_context: &mut StateTransitionExecutionContext,
-    ) -> Result<SimpleConsensusValidationResult, Error> {
-        let mut result = SimpleConsensusValidationResult::default();
-
-        for key in self.public_keys_to_add().iter() {
-            let validation_result = signable_bytes.as_slice().verify_signature(
-                key.key_type(),
-                key.data().as_slice(),
-                key.signature().as_slice(),
-            )?;
-            execution_context.add_operation(ValidationOperation::SignatureVerification(
-                SignatureVerificationOperation::new(key.key_type()),
-            ));
-            if !validation_result.is_valid() {
-                result.add_errors(validation_result.errors);
-            }
-        }
-
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let Some(revision) = partial_identity.revision else {
             return Err(Error::Execution(CorruptedCodeExecution(
                 "revision should exist",
@@ -58,12 +44,43 @@ impl IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0 for Identity
 
         // Check revision
         if revision + 1 != self.revision() {
-            result.add_error(StateError::InvalidIdentityRevisionError(
-                InvalidIdentityRevisionError::new(self.identity_id(), revision),
+            let bump_action = StateTransitionAction::BumpIdentityNonceAction(
+                BumpIdentityNonceAction::from_borrowed_identity_update_transition(self),
+            );
+
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action,
+                vec![
+                    StateError::InvalidIdentityRevisionError(InvalidIdentityRevisionError::new(
+                        self.identity_id(),
+                        revision,
+                    ))
+                    .into(),
+                ],
             ));
-            return Ok(result);
         }
 
-        Ok(result)
+        for key in self.public_keys_to_add().iter() {
+            let validation_result = signable_bytes.as_slice().verify_signature(
+                key.key_type(),
+                key.data().as_slice(),
+                key.signature().as_slice(),
+            );
+            execution_context.add_operation(ValidationOperation::SignatureVerification(
+                SignatureVerificationOperation::new(key.key_type()),
+            ));
+            if !validation_result.is_valid() {
+                let bump_action = StateTransitionAction::BumpIdentityNonceAction(
+                    BumpIdentityNonceAction::from_borrowed_identity_update_transition(self),
+                );
+
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    validation_result.errors,
+                ));
+            }
+        }
+
+        Ok(ConsensusValidationResult::new())
     }
 }

@@ -591,6 +591,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     validate_identity_public_key_ids_exist_in_state: 0,
                     validate_state_transition_identity_signed: 0,
                     validate_unique_identity_public_key_hashes_in_state: 0,
+                    validate_master_key_uniqueness: 0,
                 },
                 identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
@@ -603,7 +604,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
                 identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
-                    advanced_structure: None,
+                    advanced_structure: Some(0),
                     identity_signatures: Some(0),
                     balance: None,
                     nonce: Some(0),

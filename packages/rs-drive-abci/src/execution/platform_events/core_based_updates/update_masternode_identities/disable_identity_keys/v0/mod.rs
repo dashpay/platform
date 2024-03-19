@@ -4,7 +4,7 @@ use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::Purpose::WITHDRAW;
+use dpp::identity::Purpose::TRANSFER;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::batch::DriveOperation::IdentityOperation;
@@ -62,7 +62,7 @@ where
             )?
             .into_iter()
             .filter_map(|(key_id, key)| {
-                if key.is_disabled() || key.purpose() == WITHDRAW {
+                if key.is_disabled() || key.purpose() == TRANSFER {
                     None // Don't disable withdrawal keys
                 } else {
                     Some(key_id)
