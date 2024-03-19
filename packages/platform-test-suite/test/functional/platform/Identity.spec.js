@@ -585,7 +585,7 @@ describe('Platform', () => {
       it('should be able to add public key to the identity', async () => {
         const identityBeforeUpdate = identity.toObject();
 
-        expect(identityBeforeUpdate.publicKeys[3]).to.not.exist();
+        const nextKeyId = identityBeforeUpdate.publicKeys.length;
 
         const account = await client.platform.client.getWalletAccount();
         const identityIndex = await account.getUnusedIdentityIndex();
@@ -597,7 +597,7 @@ describe('Platform', () => {
         const identityPublicKey = identityPrivateKey.toPublicKey().toBuffer();
 
         const newPublicKey = new IdentityPublicKeyWithWitness(1);
-        newPublicKey.setId(3);
+        newPublicKey.setId(nextKeyId);
         newPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
         newPublicKey.setData(identityPublicKey);
 
