@@ -9,12 +9,13 @@ use dpp::ProtocolError;
 
 use dpp::dashcore::secp256k1::SecretKey;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
-use dpp::data_contract::DataContract;
+use dpp::data_contract::{DataContract, DataContractFactory};
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
-    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, OperationType,
+    DataContractUpdateAction, DataContractUpdateOp, DocumentAction, DocumentOp,
+    FinalizeBlockOperation, IdentityUpdateOp, OperationType,
 };
 
 use dpp::document::DocumentV0Getters;
@@ -46,8 +47,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::str::FromStr;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::v0::DocumentTypeV0;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::platform_value::BinaryData;
+use dpp::platform_value::{BinaryData, Value};
+use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 use dpp::state_transition::documents_batch_transition::document_create_transition::{DocumentCreateTransition, DocumentCreateTransitionV0};
@@ -1015,16 +1018,110 @@ impl NetworkStrategy {
                             );
                         operations.push(state_transition);
                     }
-                    // OperationType::ContractCreate(new_fields_optional_count_range, new_fields_required_count_range, new_index_count_range, document_type_count)
-                    // if !current_identities.is_empty() => {
-                    //     DataContract::;
-                    //
-                    //     DocumentType::random_document()
-                    // }
-                    // OperationType::ContractUpdate(DataContractNewDocumentTypes(count))
-                    //     if !current_identities.is_empty() => {
-                    //
-                    // }
+                    OperationType::ContractCreate(params, doc_type_range)
+                        if !current_identities.is_empty() =>
+                    {
+                        let contract_factory = match DataContractFactory::new(
+                            platform_version.protocol_version,
+                        ) {
+                            Ok(contract_factory) => contract_factory,
+                            Err(e) => {
+                                panic!("Failed to get DataContractFactory while creating random contract: {e}");
+                            }
+                        };
+
+                        // Create `count` ContractCreate transitions and push to operations vec
+                        for _ in 0..count {
+                            // Get the contract owner_id from loaded_identity and loaded_identity nonce
+                            let identity = &current_identities[0];
+                            let identity_nonce =
+                                identity_nonce_counter.entry(identity.id()).or_default();
+                            *identity_nonce += 1;
+                            let owner_id = identity.id();
+
+                            // Generate a contract id
+                            let contract_id = DataContract::generate_data_contract_id_v0(
+                                owner_id,
+                                *identity_nonce,
+                            );
+
+                            // Create `doc_type_count` doc types
+                            let doc_types =
+                                    Value::Map(
+                                        doc_type_range
+                                            .clone()
+                                            .filter_map(|_| match DocumentTypeV0::random_document_type(
+                                                params.clone(),
+                                                contract_id,
+                                                rng,
+                                                platform_version,
+                                            ) {
+                                                Ok(new_document_type) => {
+                                                    let mut doc_type_clone =
+                                                        new_document_type.schema().clone();
+                                                    let name = doc_type_clone.remove("title").expect(
+                                                        "Expected to get a doc type title in ContractCreate",
+                                                    );
+                                                    Some((
+                                                        Value::Text(name.to_string()),
+                                                        doc_type_clone,
+                                                    ))
+                                                }
+                                                Err(e) => {
+                                                    panic!(
+                                                    "Error generating random document type: {:?}",
+                                                    e
+                                                );
+                                                }
+                                            })
+                                            .collect(),
+                                    );
+
+                            let created_data_contract = match contract_factory.create(
+                                owner_id,
+                                *identity_nonce,
+                                doc_types,
+                                None,
+                                None,
+                            ) {
+                                Ok(contract) => contract,
+                                Err(e) => {
+                                    panic!("Failed to create random data contract: {e}");
+                                }
+                            };
+
+                            let transition = match contract_factory
+                                .create_data_contract_create_transition(created_data_contract)
+                            {
+                                Ok(transition) => transition,
+                                Err(e) => {
+                                    panic!("Failed to create ContractCreate transition: {e}");
+                                }
+                            };
+
+                            // Sign transition
+                            let public_key = identity
+                                .get_first_public_key_matching(
+                                    Purpose::AUTHENTICATION,
+                                    HashSet::from([SecurityLevel::CRITICAL]),
+                                    HashSet::from([KeyType::ECDSA_SECP256K1]),
+                                )
+                                .expect("Expected to get identity public key in ContractCreate");
+                            let mut state_transition =
+                                StateTransition::DataContractCreate(transition);
+                            if let Err(e) = state_transition.sign_external(
+                                public_key,
+                                signer,
+                                None::<
+                                    fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>,
+                                >,
+                            ) {
+                                panic!("Error signing state transition: {:?}", e);
+                            }
+
+                            operations.push(state_transition);
+                        }
+                    }
                     _ => {}
                 }
             }
