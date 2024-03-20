@@ -625,6 +625,7 @@ pub fn create_identities_state_transitions(
     count: u16,
     key_count: KeyID,
     extra_keys: &KeyMaps,
+    balance: u64,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
     create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
@@ -693,7 +694,7 @@ pub fn create_identities_state_transitions(
                 });
 
             // Attempt to create an asset lock
-            match create_asset_lock(200000) {
+            match create_asset_lock(balance) {
                 Some((proof, private_key)) => {
                     let pk = private_key.to_bytes();
                     match IdentityCreateTransition::try_from_identity_with_signer(
