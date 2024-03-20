@@ -390,7 +390,11 @@ impl Strategy {
         rng: &mut StdRng,
         config: &StrategyConfig,
         platform_version: &PlatformVersion,
-    ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>, Vec<Identity>) {
+    ) -> (
+        Vec<StateTransition>,
+        Vec<FinalizeBlockOperation>,
+        Vec<Identity>,
+    ) {
         let mut finalize_block_operations = vec![];
 
         // Get identity state transitions
@@ -573,23 +577,24 @@ impl Strategy {
                         documents
                             .into_iter()
                             .for_each(|(document, identity, entropy)| {
-                                let identity_contract_nonce = if contract.owner_id() == identity.id() {
-                                    contract_nonce_counter
-                                        .entry((identity.id(), contract.id()))
-                                        .or_insert(1)
-                                } else {
-                                    contract_nonce_counter
-                                        .entry((identity.id(), contract.id()))
-                                        .or_default()
-                                };
-                        
+                                let identity_contract_nonce =
+                                    if contract.owner_id() == identity.id() {
+                                        contract_nonce_counter
+                                            .entry((identity.id(), contract.id()))
+                                            .or_insert(1)
+                                    } else {
+                                        contract_nonce_counter
+                                            .entry((identity.id(), contract.id()))
+                                            .or_default()
+                                    };
+
                                 let gap = self
                                     .identity_contract_nonce_gaps
                                     .as_ref()
                                     .map_or(0, |gap_amount| gap_amount.events_if_hit(rng))
                                     as u64;
                                 *identity_contract_nonce += 1 + gap;
-                        
+
                                 let document_create_transition: DocumentCreateTransition =
                                     DocumentCreateTransitionV0 {
                                         base: DocumentBaseTransitionV0 {
@@ -1449,7 +1454,7 @@ impl Strategy {
                             document_op.contract = contract.clone();
                             let document_type = contract.document_type_cloned_for_name(document_op.document_type.name())
                                 .expect("Expected to get a document type for name while creating initial strategy contracts");
-                            document_op.document_type = document_type;    
+                            document_op.document_type = document_type;
                         }
                     }
                 }
