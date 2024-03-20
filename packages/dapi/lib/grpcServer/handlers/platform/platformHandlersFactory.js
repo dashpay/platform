@@ -135,6 +135,7 @@ function platformHandlersFactory(
   return {
     broadcastStateTransition: wrappedBroadcastStateTransition,
     getIdentity: wrapInErrorHandler(unimplementedHandlerFactory('getIdentity')),
+    getIdentities: wrapInErrorHandler(unimplementedHandlerFactory('getIdentities')),
     getIdentityBalance: wrapInErrorHandler(unimplementedHandlerFactory('getIdentityBalance')),
     getIdentityBalanceAndRevision: wrapInErrorHandler(unimplementedHandlerFactory('getIdentityBalanceAndRevision')),
     getIdentityKeys: wrapInErrorHandler(unimplementedHandlerFactory('getIdentityKeys')),

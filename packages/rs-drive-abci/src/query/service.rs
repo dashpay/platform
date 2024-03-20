@@ -13,15 +13,16 @@ use dapi_grpc::platform::v0::{
     GetConsensusParamsResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
     GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
     GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEpochsInfoResponse, GetIdentityBalanceAndRevisionRequest,
-    GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
-    GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
-    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
-    GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
-    GetIdentityResponse, GetProofsRequest, GetProofsResponse,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
-    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
-    WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
+    GetEpochsInfoResponse, GetIdentitiesRequest, GetIdentitiesResponse,
+    GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
+    GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest,
+    GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
+    GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
+    GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
+    GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeVoteStatusResponse, WaitForStateTransitionResultRequest,
+    WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use dpp::version::PlatformVersion;
@@ -177,6 +178,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_identity,
             "get_identity",
+        )
+        .await
+    }
+
+    async fn get_identities(
+        &self,
+        request: Request<GetIdentitiesRequest>,
+    ) -> Result<Response<GetIdentitiesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identities,
+            "get_identities",
         )
         .await
     }

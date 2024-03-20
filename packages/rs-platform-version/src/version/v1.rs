@@ -736,6 +736,11 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                identities: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
             },
             data_contract_based_queries: DriveAbciQueryDataContractVersions {
                 data_contract: FeatureVersionBounds {

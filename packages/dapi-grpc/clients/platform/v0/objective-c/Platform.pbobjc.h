@@ -51,6 +51,11 @@ CF_EXTERN_C_BEGIN
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos;
+@class GetIdentitiesRequest_GetIdentitiesRequestV0;
+@class GetIdentitiesResponse_GetIdentitiesResponseV0;
+@class GetIdentitiesResponse_Identities;
+@class GetIdentitiesResponse_IdentityEntry;
+@class GetIdentitiesResponse_IdentityValue;
 @class GetIdentityBalanceAndRevisionRequest_GetIdentityBalanceAndRevisionRequestV0;
 @class GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevisionResponseV0;
 @class GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevisionResponseV0_BalanceAndRevision;
@@ -495,6 +500,147 @@ GPB_FINAL @interface GetIdentityResponse_GetIdentityResponseV0 : GPBMessage
  * Clears whatever value was set for the oneof 'result'.
  **/
 void GetIdentityResponse_GetIdentityResponseV0_ClearResultOneOfCase(GetIdentityResponse_GetIdentityResponseV0 *message);
+
+#pragma mark - GetIdentitiesRequest
+
+typedef GPB_ENUM(GetIdentitiesRequest_FieldNumber) {
+  GetIdentitiesRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentitiesRequest_Version_OneOfCase) {
+  GetIdentitiesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentitiesRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetIdentitiesRequest : GPBMessage
+
+@property(nonatomic, readonly) GetIdentitiesRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesRequest_GetIdentitiesRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentitiesRequest_ClearVersionOneOfCase(GetIdentitiesRequest *message);
+
+#pragma mark - GetIdentitiesRequest_GetIdentitiesRequestV0
+
+typedef GPB_ENUM(GetIdentitiesRequest_GetIdentitiesRequestV0_FieldNumber) {
+  GetIdentitiesRequest_GetIdentitiesRequestV0_FieldNumber_IdsArray = 1,
+  GetIdentitiesRequest_GetIdentitiesRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetIdentitiesRequest_GetIdentitiesRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *idsArray;
+/** The number of items in @c idsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger idsArray_Count;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetIdentitiesResponse
+
+typedef GPB_ENUM(GetIdentitiesResponse_FieldNumber) {
+  GetIdentitiesResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentitiesResponse_Version_OneOfCase) {
+  GetIdentitiesResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentitiesResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetIdentitiesResponse : GPBMessage
+
+@property(nonatomic, readonly) GetIdentitiesResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesResponse_GetIdentitiesResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentitiesResponse_ClearVersionOneOfCase(GetIdentitiesResponse *message);
+
+#pragma mark - GetIdentitiesResponse_IdentityValue
+
+typedef GPB_ENUM(GetIdentitiesResponse_IdentityValue_FieldNumber) {
+  GetIdentitiesResponse_IdentityValue_FieldNumber_Value = 1,
+};
+
+GPB_FINAL @interface GetIdentitiesResponse_IdentityValue : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *value;
+
+@end
+
+#pragma mark - GetIdentitiesResponse_IdentityEntry
+
+typedef GPB_ENUM(GetIdentitiesResponse_IdentityEntry_FieldNumber) {
+  GetIdentitiesResponse_IdentityEntry_FieldNumber_Key = 1,
+  GetIdentitiesResponse_IdentityEntry_FieldNumber_Value = 2,
+};
+
+GPB_FINAL @interface GetIdentitiesResponse_IdentityEntry : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *key;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesResponse_IdentityValue *value;
+/** Test to see if @c value has been set. */
+@property(nonatomic, readwrite) BOOL hasValue;
+
+@end
+
+#pragma mark - GetIdentitiesResponse_Identities
+
+typedef GPB_ENUM(GetIdentitiesResponse_Identities_FieldNumber) {
+  GetIdentitiesResponse_Identities_FieldNumber_IdentityEntriesArray = 1,
+};
+
+GPB_FINAL @interface GetIdentitiesResponse_Identities : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetIdentitiesResponse_IdentityEntry*> *identityEntriesArray;
+/** The number of items in @c identityEntriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger identityEntriesArray_Count;
+
+@end
+
+#pragma mark - GetIdentitiesResponse_GetIdentitiesResponseV0
+
+typedef GPB_ENUM(GetIdentitiesResponse_GetIdentitiesResponseV0_FieldNumber) {
+  GetIdentitiesResponse_GetIdentitiesResponseV0_FieldNumber_Identities = 1,
+  GetIdentitiesResponse_GetIdentitiesResponseV0_FieldNumber_Proof = 2,
+  GetIdentitiesResponse_GetIdentitiesResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetIdentitiesResponse_GetIdentitiesResponseV0_Result_OneOfCase) {
+  GetIdentitiesResponse_GetIdentitiesResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentitiesResponse_GetIdentitiesResponseV0_Result_OneOfCase_Identities = 1,
+  GetIdentitiesResponse_GetIdentitiesResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetIdentitiesResponse_GetIdentitiesResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetIdentitiesResponse_GetIdentitiesResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesResponse_Identities *identities;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetIdentitiesResponse_GetIdentitiesResponseV0_ClearResultOneOfCase(GetIdentitiesResponse_GetIdentitiesResponseV0 *message);
 
 #pragma mark - GetIdentityNonceResponse
 
