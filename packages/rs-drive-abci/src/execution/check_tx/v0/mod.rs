@@ -18,7 +18,6 @@ use dpp::consensus::ConsensusError;
 #[cfg(test)]
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::platform_types::platform_state::PlatformState;
-use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
 #[cfg(test)]
