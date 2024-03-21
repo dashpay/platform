@@ -73,7 +73,7 @@ where
 
         for raw_state_transition in raw_state_transitions {
             let execution_result = self
-                .process_raw_state_transition(
+                .process_raw_state_transition_v0(
                     raw_state_transition,
                     block_info,
                     &platform_ref,
@@ -106,7 +106,7 @@ where
         Ok(processing_result)
     }
 
-    fn process_raw_state_transition(
+    fn process_raw_state_transition_v0(
         &self,
         raw_state_transition: &[u8],
         block_info: &BlockInfo,
