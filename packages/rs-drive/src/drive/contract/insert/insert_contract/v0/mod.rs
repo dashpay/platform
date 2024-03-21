@@ -15,11 +15,11 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
+use crate::error::contract::DataContractError;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::{HashMap, HashSet};
-use crate::error::contract::DataContractError;
 
 impl Drive {
     /// Insert a contract.
@@ -42,9 +42,12 @@ impl Drive {
             None
         };
 
-        let serialized_contract = contract.serialize_to_bytes_with_platform_version(platform_version)?;
+        let serialized_contract =
+            contract.serialize_to_bytes_with_platform_version(platform_version)?;
 
-        if serialized_contract.len() as u32 > platform_version.dpp.contract_versions.max_serialized_size {
+        if serialized_contract.len() as u32
+            > platform_version.dpp.contract_versions.max_serialized_size
+        {
             // This should normally be caught by DPP, but there is a rare possibility that the
             // re-serialized size is bigger than the original serialized data contract.
             return Err(Error::DataContract(DataContractError::ContractTooBig(format!("Trying to insert a data contract of size {} that is over the max allowed insertion size {}", serialized_contract.len(), platform_version.dpp.contract_versions.max_serialized_size))));
