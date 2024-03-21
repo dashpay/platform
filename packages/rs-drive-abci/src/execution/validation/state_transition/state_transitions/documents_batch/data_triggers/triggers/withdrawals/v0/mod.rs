@@ -33,7 +33,8 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn delete_withdrawal_data_trigger_v0(
+#[inline(always)]
+pub(super) fn delete_withdrawal_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,

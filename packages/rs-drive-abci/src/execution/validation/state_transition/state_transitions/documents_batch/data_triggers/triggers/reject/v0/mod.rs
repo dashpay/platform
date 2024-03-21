@@ -22,7 +22,8 @@ use crate::error::execution::ExecutionError;
 ///
 /// A `SimpleValidationResult` containing either a `DataTriggerActionError` indicating the failure of the trigger
 /// or an empty result indicating the success of the trigger.
-pub fn reject_data_trigger_v0(
+#[inline(always)]
+pub(super) fn reject_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let data_contract_fetch_info = document_transition

@@ -16,6 +16,7 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// Validate that a document would be unique in the state
+    #[inline(always)]
     pub(super) fn validate_document_uniqueness_v0(
         &self,
         contract: &DataContract,

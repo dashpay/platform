@@ -12,7 +12,8 @@ use std::collections::HashMap;
 impl Drive {
     /// The operations for adding new keys to an identity
     /// This should not be called for adding new keys to a masternode
-    pub fn add_new_keys_to_identity_operations_v0(
+    #[inline(always)]
+    pub(super) fn add_new_keys_to_identity_operations_v0(
         &self,
         identity_id: [u8; 32],
         unique_keys_to_add: Vec<IdentityPublicKey>,

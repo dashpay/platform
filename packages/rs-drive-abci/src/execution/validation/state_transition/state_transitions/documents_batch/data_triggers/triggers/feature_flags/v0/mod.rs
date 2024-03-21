@@ -31,7 +31,8 @@ use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn create_feature_flag_data_trigger_v0(
+#[inline(always)]
+pub(super) fn create_feature_flag_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     _platform_version: &PlatformVersion,

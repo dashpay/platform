@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 
 impl Drive {
     /// Fetch all the keys of every kind for a specific Identity
+    #[inline(always)]
     pub(super) fn fetch_all_identity_keys_v0(
         &self,
         identity_id: [u8; 32],
@@ -26,6 +27,7 @@ impl Drive {
     }
 
     /// Operations for fetching all the keys of every kind for a specific Identity
+    #[inline(always)]
     pub(super) fn fetch_all_identity_keys_operations_v0(
         &self,
         identity_id: [u8; 32],

@@ -34,6 +34,7 @@ where
     /// This function may return an `Error` variant if there is a problem with updating the state cache
     /// and quorums or storing the ephemeral data.
     ///
+    #[inline(always)]
     pub(super) fn update_state_cache_v0(
         &self,
         extended_block_info: ExtendedBlockInfo,
