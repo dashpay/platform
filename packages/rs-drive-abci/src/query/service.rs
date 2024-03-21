@@ -13,7 +13,7 @@ use dapi_grpc::platform::v0::{
     GetConsensusParamsResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
     GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
     GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEpochsInfoResponse, GetIdentitiesRequest, GetIdentitiesResponse,
+    GetEpochsInfoResponse, GetPartialIdentitiesRequest, GetPartialIdentitiesResponse,
     GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
     GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest,
     GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
@@ -182,10 +182,10 @@ impl PlatformService for QueryService {
         .await
     }
 
-    async fn get_identities(
+    async fn get_partial_identities(
         &self,
-        request: Request<GetIdentitiesRequest>,
-    ) -> Result<Response<GetIdentitiesResponse>, Status> {
+        request: Request<GetPartialIdentitiesRequest>,
+    ) -> Result<Response<GetPartialIdentitiesResponse>, Status> {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identities,

@@ -3,10 +3,10 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_identities_request::GetIdentitiesRequestV0;
-use dapi_grpc::platform::v0::get_identities_response;
-use dapi_grpc::platform::v0::get_identities_response::{
-    get_identities_response_v0, GetIdentitiesResponseV0, IdentityEntry,
+use dapi_grpc::platform::v0::get_partial_identities_request::GetPartialIdentitiesRequestV0;
+use dapi_grpc::platform::v0::get_partial_identities_response;
+use dapi_grpc::platform::v0::get_partial_identities_response::{
+    get_partial_identities_response_v0, GetPartialIdentitiesResponseV0, IdentityEntry,
 };
 use dpp::platform_value::Bytes32;
 use dpp::serialization::PlatformSerializable;
@@ -17,10 +17,10 @@ use dpp::{check_validation_result_with_data, ProtocolError};
 impl<C> Platform<C> {
     pub(super) fn query_identities_v0(
         &self,
-        GetIdentitiesRequestV0 { ids, prove }: GetIdentitiesRequestV0,
+        GetPartialIdentitiesRequestV0 { ids, prove }: GetPartialIdentitiesRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetIdentitiesResponseV0>, Error> {
+    ) -> Result<QueryValidationResult<GetPartialIdentitiesResponseV0>, Error> {
         let identity_ids = check_validation_result_with_data!(ids
             .into_iter()
             .map(|identity_id_vec| {
@@ -41,8 +41,8 @@ impl<C> Platform<C> {
                 &platform_version.drive,
             )?;
 
-            GetIdentitiesResponseV0 {
-                result: Some(get_identities_response_v0::Result::Proof(
+            GetPartialIdentitiesResponseV0 {
+                result: Some(get_partial_identities_response_v0::Result::Proof(
                     self.response_proof_v0(platform_state, proof),
                 )),
                 metadata: Some(self.response_metadata_v0(platform_state)),
@@ -61,8 +61,8 @@ impl<C> Platform<C> {
                         key: key.to_vec(),
                         value: maybe_identity
                             .map(|identity| {
-                                Ok::<get_identities_response::IdentityValue, ProtocolError>(
-                                    get_identities_response::IdentityValue {
+                                Ok::<get_partial_identities_response::IdentityValue, ProtocolError>(
+                                    get_partial_identities_response::IdentityValue {
                                         value: identity.serialize_consume_to_bytes()?,
                                     },
                                 )
@@ -72,9 +72,9 @@ impl<C> Platform<C> {
                 })
                 .collect::<Result<Vec<IdentityEntry>, ProtocolError>>()?;
 
-            GetIdentitiesResponseV0 {
-                result: Some(get_identities_response_v0::Result::Identities(
-                    get_identities_response::Identities {
+            GetPartialIdentitiesResponseV0 {
+                result: Some(get_partial_identities_response_v0::Result::Identities(
+                    get_partial_identities_response::Identities {
                         identity_entries: identities,
                     },
                 )),
