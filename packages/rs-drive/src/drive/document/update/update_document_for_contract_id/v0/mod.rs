@@ -19,6 +19,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Updates a serialized document given a contract id and returns the associated fee.
+    #[inline(always)]
     pub(super) fn update_document_for_contract_id_v0(
         &self,
         serialized_document: &[u8],

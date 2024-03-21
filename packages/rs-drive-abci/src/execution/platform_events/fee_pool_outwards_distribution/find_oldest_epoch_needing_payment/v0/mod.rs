@@ -25,7 +25,9 @@ impl<C> Platform<C> {
             return Ok(None);
         }
 
-        let unpaid_epoch_index = self.drive.get_unpaid_epoch_index_v0(transaction)?;
+        let unpaid_epoch_index = self
+            .drive
+            .get_unpaid_epoch_index(transaction, platform_version)?;
 
         // We pay for previous epochs only
         if unpaid_epoch_index == current_epoch_index {

@@ -12,7 +12,8 @@ where
     C: CoreRPCLike,
 {
     /// Verify the chain lock through core v0
-    pub fn verify_chain_lock_through_core_v0(
+    #[inline(always)]
+    pub(super) fn verify_chain_lock_through_core_v0(
         &self,
         chain_lock: &ChainLock,
         submit: bool,

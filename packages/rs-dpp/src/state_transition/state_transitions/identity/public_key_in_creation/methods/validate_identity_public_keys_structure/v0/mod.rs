@@ -42,6 +42,7 @@ impl IdentityPublicKeyInCreation {
     /// This validation will validate the count of new keys, that there are no duplicates either by
     /// id or by data. This is done before signature and state validation to remove potential
     /// attack vectors.
+    #[inline(always)]
     pub(super) fn validate_identity_public_keys_structure_v0(
         identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
         in_create_identity: bool,

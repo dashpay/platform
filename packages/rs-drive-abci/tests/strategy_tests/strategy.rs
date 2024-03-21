@@ -14,8 +14,7 @@ use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
-    DataContractUpdateAction, DataContractUpdateOp, DocumentAction, DocumentOp,
-    FinalizeBlockOperation, IdentityUpdateOp, OperationType,
+    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, OperationType,
 };
 
 use dpp::document::DocumentV0Getters;
@@ -50,7 +49,6 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::v0::DocumentTypeV0;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::{BinaryData, Value};
-use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 use dpp::state_transition::documents_batch_transition::document_create_transition::{DocumentCreateTransition, DocumentCreateTransitionV0};

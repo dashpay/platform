@@ -34,6 +34,7 @@ impl Drive {
     ///
     /// * Contains a validation result indicating if the data is unique or not, or
     /// * An error that occurred during the operation.
+    #[inline(always)]
     pub(super) fn validate_uniqueness_of_data_v0(
         &self,
         request: UniquenessOfDataRequest,

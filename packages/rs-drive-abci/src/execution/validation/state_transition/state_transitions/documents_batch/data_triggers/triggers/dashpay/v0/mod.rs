@@ -33,7 +33,8 @@ const BLOCKS_SIZE_WINDOW: u32 = 8;
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn create_contact_request_data_trigger_v0(
+#[inline(always)]
+pub(super) fn create_contact_request_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,

@@ -23,6 +23,7 @@ use std::collections::{HashMap, HashSet};
 
 impl Drive {
     /// Insert a contract.
+    #[inline(always)]
     pub(super) fn insert_contract_v0(
         &self,
         contract: &DataContract,
@@ -114,6 +115,7 @@ impl Drive {
     /// The operations for adding a contract.
     /// These operations add a contract to storage using `add_contract_to_storage`
     /// and insert the empty trees which will be necessary to later insert documents.
+    #[inline(always)]
     pub(super) fn insert_contract_add_operations_v0(
         &self,
         contract_element: Element,

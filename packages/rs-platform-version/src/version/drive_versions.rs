@@ -361,6 +361,7 @@ pub struct DriveCreditPoolMethodVersions {
     pub epochs: DriveCreditPoolEpochsMethodVersions,
     pub pending_epoch_refunds: DriveCreditPoolPendingEpochRefundsMethodVersions,
     pub storage_fee_distribution_pool: DriveCreditPoolStorageFeeDistributionPoolMethodVersions,
+    pub unpaid_epoch: DriveCreditPoolUnpaidEpochMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -380,6 +381,11 @@ pub struct DriveCreditPoolEpochsMethodVersions {
     pub get_epochs_proposer_block_count: FeatureVersion,
     pub add_update_pending_epoch_refunds_operations: FeatureVersion,
     pub is_epochs_proposers_tree_empty: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveCreditPoolUnpaidEpochMethodVersions {
+    pub get_unpaid_epoch_index: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

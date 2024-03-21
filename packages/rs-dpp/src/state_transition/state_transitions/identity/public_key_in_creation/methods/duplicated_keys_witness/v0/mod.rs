@@ -4,6 +4,7 @@ use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation
 use std::collections::HashMap;
 
 impl IdentityPublicKeyInCreation {
+    #[inline(always)]
     pub(super) fn duplicated_keys_witness_v0(
         public_keys: &[IdentityPublicKeyInCreation],
     ) -> Vec<KeyID> {

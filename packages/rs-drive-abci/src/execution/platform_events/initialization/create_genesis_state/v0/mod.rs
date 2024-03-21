@@ -65,7 +65,8 @@ const DPNS_DASH_TLD_PREORDER_SALT: [u8; 32] = [
 
 impl<C> Platform<C> {
     /// Creates trees and populates them with necessary identities, contracts and documents
-    pub fn create_genesis_state_v0(
+    #[inline(always)]
+    pub(super) fn create_genesis_state_v0(
         &self,
         genesis_time: TimestampMillis,
         system_identity_public_keys: SystemIdentityPublicKeys,

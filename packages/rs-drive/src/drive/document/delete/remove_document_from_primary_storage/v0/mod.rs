@@ -21,6 +21,7 @@ use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Removes the document from primary storage.
+    #[inline(always)]
     pub(super) fn remove_document_from_primary_storage_v0(
         &self,
         document_id: [u8; 32],

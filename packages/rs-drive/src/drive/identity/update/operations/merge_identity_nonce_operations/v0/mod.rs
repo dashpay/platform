@@ -201,7 +201,7 @@ mod tests {
             .expect("expected to insert identity");
 
         drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 1,
                 &BlockInfo::default(),
@@ -227,7 +227,7 @@ mod tests {
         let transaction = drive.grove.start_transaction();
 
         drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 2,
                 &BlockInfo::default(),
@@ -247,7 +247,7 @@ mod tests {
         let transaction = drive.grove.start_transaction();
 
         let (result, _) = drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 0,
                 &BlockInfo::default(),
@@ -269,7 +269,7 @@ mod tests {
         let transaction = drive.grove.start_transaction();
 
         let (result, _) = drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 10,
                 &BlockInfo::default(),
@@ -282,7 +282,7 @@ mod tests {
         assert!(result.error_message().is_none());
 
         let (result, _) = drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 9,
                 &BlockInfo::default(),
@@ -295,7 +295,7 @@ mod tests {
         assert!(result.error_message().is_none());
 
         let (result, _) = drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 8,
                 &BlockInfo::default(),
@@ -308,7 +308,7 @@ mod tests {
         assert!(result.error_message().is_none());
 
         let (result, _) = drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 3,
                 &BlockInfo::default(),
@@ -321,7 +321,7 @@ mod tests {
         assert!(result.error_message().is_none());
 
         let (result, _) = drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 12,
                 &BlockInfo::default(),
@@ -334,7 +334,7 @@ mod tests {
         assert!(result.error_message().is_none());
 
         let (result, _) = drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 11,
                 &BlockInfo::default(),
@@ -347,7 +347,7 @@ mod tests {
         assert!(result.error_message().is_none());
 
         let (result, _) = drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 11,
                 &BlockInfo::default(),
@@ -363,7 +363,7 @@ mod tests {
         );
 
         let (result, _) = drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 12,
                 &BlockInfo::default(),
@@ -376,7 +376,7 @@ mod tests {
         assert_eq!(result.error_message(), Some("nonce already present at tip"));
 
         let (result, _) = drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 0,
                 &BlockInfo::default(),
@@ -389,7 +389,7 @@ mod tests {
         assert_eq!(result.error_message(), Some("nonce is an invalid value"));
 
         let (result, _) = drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 12 + 25,
                 &BlockInfo::default(),
@@ -402,7 +402,7 @@ mod tests {
         assert_eq!(result.error_message(), Some("nonce too far in future"));
 
         let (result, _) = drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 12 + 24, // 36
                 &BlockInfo::default(),
@@ -415,7 +415,7 @@ mod tests {
         assert!(result.error_message().is_none());
 
         let (result, _) = drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 13,
                 &BlockInfo::default(),
@@ -428,7 +428,7 @@ mod tests {
         assert!(result.error_message().is_none());
 
         let (result, _) = drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 12,
                 &BlockInfo::default(),
@@ -441,7 +441,7 @@ mod tests {
         assert_eq!(result.error_message(), Some("nonce too far in past"));
 
         let (result, _) = drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 8,
                 &BlockInfo::default(),
@@ -454,7 +454,7 @@ mod tests {
         assert_eq!(result.error_message(), Some("nonce too far in past"));
 
         let (result, _) = drive
-            .merge_identity_nonce_v0(
+            .merge_identity_nonce(
                 identity.id().to_buffer(),
                 IdentityNonce::MAX,
                 &BlockInfo::default(),

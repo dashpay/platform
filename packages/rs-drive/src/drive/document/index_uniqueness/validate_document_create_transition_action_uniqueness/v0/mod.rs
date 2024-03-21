@@ -19,6 +19,7 @@ use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Validate that a document create transition action would be unique in the state
+    #[inline(always)]
     pub(super) fn validate_document_create_transition_action_uniqueness_v0(
         &self,
         contract: &DataContract,

@@ -20,6 +20,7 @@ impl Drive {
     /// # Returns
     ///
     /// * `Result<(), Error>` - If successful, returns `Ok(())`. If an error occurs during the operation, returns an `Error`.
+    #[inline(always)]
     pub(super) fn add_to_system_credits_v0(
         &self,
         amount: u64,
