@@ -3,6 +3,7 @@ const getDataContractFactory = require('./getDataContract/getDataContractFactory
 const getDataContractHistoryFactory = require('./getDataContractHistory/getDataContractHistoryFactory');
 const getDocumentsFactory = require('./getDocuments/getDocumentsFactory');
 const getIdentityFactory = require('./getIdentity/getIdentityFactory');
+const getIdentityByPublicKeyHashFactory = require('./getIdentityByPublicKeyHash/getIdentityByPublicKeyHashFactory');
 const getPartialIdentitiesFactory = require('./getPartialIdentities/getPartialIdentitiesFactory');
 const waitForStateTransitionResultFactory = require('./waitForStateTransitionResult/waitForStateTransitionResultFactory');
 const getConsensusParamsFactory = require('./getConsensusParams/getConsensusParamsFactory');
@@ -23,6 +24,7 @@ class PlatformMethodsFacade {
     this.getDataContractHistory = getDataContractHistoryFactory(grpcTransport);
     this.getDocuments = getDocumentsFactory(grpcTransport);
     this.getIdentity = getIdentityFactory(grpcTransport);
+    this.getIdentityByPublicKeyHash = getIdentityByPublicKeyHashFactory(grpcTransport);
     this.getPartialIdentities = getPartialIdentitiesFactory(grpcTransport);
     this.waitForStateTransitionResult = waitForStateTransitionResultFactory(grpcTransport);
     this.getConsensusParams = getConsensusParamsFactory(grpcTransport);
