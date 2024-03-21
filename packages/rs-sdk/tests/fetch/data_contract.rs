@@ -96,7 +96,7 @@ async fn test_data_contract_history_read() {
     let cfg = Config::new();
     let id = cfg.existing_data_contract_id;
 
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_data_contract_history_read").await;
 
     let result = DataContractHistory::fetch(
         &sdk,
