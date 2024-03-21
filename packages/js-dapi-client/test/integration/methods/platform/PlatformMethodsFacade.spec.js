@@ -4,6 +4,7 @@ const {
     GetDataContractResponse,
     GetDocumentsResponse,
     GetIdentityResponse,
+    GetPartialIdentitiesResponse,
     GetEpochsInfoResponse,
     GetProtocolVersionUpgradeVoteStatusResponse,
     GetProtocolVersionUpgradeStateResponse,
@@ -24,6 +25,7 @@ const PlatformMethodsFacade = require('../../../../lib/methods/platform/Platform
 
 const { WaitForStateTransitionResultResponseV0 } = WaitForStateTransitionResultResponse;
 const { GetIdentityResponseV0 } = GetIdentityResponse;
+const { GetPartialIdentitiesResponseV0 } = GetPartialIdentitiesResponse;
 const { GetDocumentsResponseV0 } = GetDocumentsResponse;
 const { GetDataContractResponseV0 } = GetDataContractResponse;
 const { GetEpochsInfoResponseV0 } = GetEpochsInfoResponse;
@@ -109,6 +111,34 @@ describe('PlatformMethodsFacade', () => {
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.getIdentity('41nthkqvHBLnqiMkSbsdTNANzYu9bgdv4etKoRUunY1M');
+
+      expect(grpcTransportMock.request).to.be.calledOnce();
+    });
+  });
+
+  describe('#getPartialIdentities', () => {
+    it('should get partial Identities', async () => {
+      const { Identities, IdentityEntry, IdentityValue } = GetPartialIdentitiesResponse;
+
+      const response = new GetPartialIdentitiesResponse();
+      response.setV0(
+        new GetPartialIdentitiesResponseV0()
+          .setMetadata(new ResponseMetadata())
+          .setIdentities(
+            new Identities()
+              .setIdentityEntriesList([
+                new IdentityEntry()
+                  .setValue(new IdentityValue()
+                    .setValue((await getIdentityFixture()).toBuffer())),
+              ]),
+          ),
+      );
+
+      grpcTransportMock.request.resolves(response);
+
+      await platformMethods.getPartialIdentities([
+        Buffer.from('41nthkqvHBLnqiMkSbsdTNANzYu9bgdv4etKoRUunY1M', 'base64'),
+      ]);
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });
