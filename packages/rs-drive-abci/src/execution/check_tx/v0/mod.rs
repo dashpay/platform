@@ -11,6 +11,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
+use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 
@@ -93,6 +94,32 @@ where
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
+        if raw_tx.len() as u64
+            > platform_version
+                .dpp
+                .state_transitions
+                .max_state_transition_size
+        {
+            // The state transition is too big
+            let consensus_error =
+                ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(
+                    StateTransitionMaxSizeExceededError::new(
+                        raw_tx.len() as u64,
+                        platform_version
+                            .dpp
+                            .state_transitions
+                            .max_state_transition_size,
+                    ),
+                ));
+            tracing::debug!(
+                ?consensus_error,
+                "State transition too big on check tx (starts with {})",
+                hex::encode(raw_tx.split_at(80).0)
+            );
+
+            return Ok(ValidationResult::new_with_error(consensus_error));
+        }
+
         let state_transition = match StateTransition::deserialize_from_bytes(raw_tx) {
             Ok(state_transition) => state_transition,
             Err(err) => {

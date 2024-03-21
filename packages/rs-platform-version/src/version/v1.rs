@@ -894,6 +894,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             },
         },
         state_transitions: StateTransitionVersions {
+            max_state_transition_size: 20000,
             documents: DocumentTransitionVersions {
                 documents_batch_transition: DocumentsBatchTransitionVersions {
                     validation: DocumentsBatchTransitionValidationVersions {
@@ -911,6 +912,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             },
         },
         contract_versions: ContractVersions {
+            max_serialized_size: 65000,
             contract_serialization_version: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,

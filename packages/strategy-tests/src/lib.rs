@@ -124,7 +124,7 @@ pub struct StrategyConfig {
 pub struct StartIdentities {
     pub number_of_identities: u8,
     pub keys_per_identity: u8,
-    pub starting_balances: Option<u64>,
+    pub starting_balances: u64, // starting balance in duffs
 }
 
 /// Identities to register on the first block of the strategy
@@ -390,12 +390,17 @@ impl Strategy {
         rng: &mut StdRng,
         config: &StrategyConfig,
         platform_version: &PlatformVersion,
-    ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
+    ) -> (
+        Vec<StateTransition>,
+        Vec<FinalizeBlockOperation>,
+        Vec<Identity>,
+    ) {
         let mut finalize_block_operations = vec![];
 
         // Get identity state transitions
         let identity_state_transitions = match self.identity_state_transitions_for_block(
             block_info,
+            self.start_identities.starting_balances,
             signer,
             rng,
             create_asset_lock,
@@ -405,16 +410,13 @@ impl Strategy {
             Ok(transitions) => transitions,
             Err(e) => {
                 error!("identity_state_transitions_for_block error: {}", e);
-                return (vec![], finalize_block_operations);
+                return (vec![], finalize_block_operations, vec![]);
             }
         };
 
         // Create state_transitions vec and identities vec based on identity_state_transitions outcome
-        let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
+        let (identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
-
-        // Append the new identities to current_identities
-        current_identities.append(&mut identities);
 
         // Do we also need to add identities to the identity_nonce_counter?
 
@@ -460,7 +462,7 @@ impl Strategy {
             state_transitions.append(&mut initial_contract_update_state_transitions);
         }
 
-        (state_transitions, finalize_block_operations)
+        (state_transitions, finalize_block_operations, identities)
     }
 
     /// Processes strategy operations to generate state transitions specific to operations for a given block.
@@ -575,9 +577,17 @@ impl Strategy {
                         documents
                             .into_iter()
                             .for_each(|(document, identity, entropy)| {
-                                let identity_contract_nonce = contract_nonce_counter
-                                    .entry((identity.id(), contract.id()))
-                                    .or_default();
+                                let identity_contract_nonce =
+                                    if contract.owner_id() == identity.id() {
+                                        contract_nonce_counter
+                                            .entry((identity.id(), contract.id()))
+                                            .or_insert(1)
+                                    } else {
+                                        contract_nonce_counter
+                                            .entry((identity.id(), contract.id()))
+                                            .or_default()
+                                    };
+
                                 let gap = self
                                     .identity_contract_nonce_gaps
                                     .as_ref()
@@ -1305,6 +1315,7 @@ impl Strategy {
     pub fn identity_state_transitions_for_block(
         &self,
         block_info: &BlockInfo,
+        amount: u64,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
         create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
@@ -1321,6 +1332,7 @@ impl Strategy {
                 self.start_identities.number_of_identities.into(), // number of identities
                 self.start_identities.keys_per_identity.into(),    // number of keys per identity
                 &self.identities_inserts.extra_keys,
+                amount,
                 signer,
                 rng,
                 create_asset_lock,
@@ -1339,6 +1351,7 @@ impl Strategy {
                     count,                                       // number of identities
                     self.identities_inserts.start_keys as KeyID, // number of keys per identity
                     &self.identities_inserts.extra_keys,
+                    200000, // 0.002 dash
                     signer,
                     rng,
                     create_asset_lock,
@@ -1399,6 +1412,7 @@ impl Strategy {
         self.contracts_with_updates
             .iter_mut()
             .map(|(created_contract, contract_updates)| {
+                // Select a random identity from current_identities to be the contract owner
                 let identity_num = rng.gen_range(0..current_identities.len());
                 let identity = current_identities
                     .get(identity_num)
@@ -1408,9 +1422,11 @@ impl Strategy {
 
                 let contract = created_contract.data_contract_mut();
 
+                // Get and bump the identity nonce
                 let identity_nonce = identity_nonce_counter.entry(identity.id).or_default();
                 *identity_nonce += 1;
 
+                // Set the contract ID and owner ID with the random identity
                 contract.set_owner_id(identity.id);
                 let old_id = contract.id();
                 let new_id =
@@ -1419,6 +1435,7 @@ impl Strategy {
 
                 id_mapping.insert(old_id, new_id); // Store the mapping
 
+                // If there are contract updates, use the mapping to update their ID and owner ID too
                 if let Some(contract_updates) = contract_updates {
                     for (_, updated_contract) in contract_updates.iter_mut() {
                         let updated_contract_data = updated_contract.data_contract_mut();
@@ -1433,10 +1450,12 @@ impl Strategy {
                 // Update any document transitions that registered to the old contract id
                 for op in self.operations.iter_mut() {
                     if let OperationType::Document(document_op) = &mut op.op_type {
-                        document_op.contract = contract.clone();
-                        let document_type = contract.document_type_cloned_for_name(document_op.document_type.name())
-                            .expect("Expected to get a document type for name while creating initial strategy contracts");
-                        document_op.document_type = document_type;
+                        if document_op.contract.id() == old_id {
+                            document_op.contract = contract.clone();
+                            let document_type = contract.document_type_cloned_for_name(document_op.document_type.name())
+                                .expect("Expected to get a document type for name while creating initial strategy contracts");
+                            document_op.document_type = document_type;
+                        }
                     }
                 }
 
@@ -1444,7 +1463,7 @@ impl Strategy {
                     contract.clone(),
                     *identity_nonce,
                     &identity,
-                    2, // key id 1 should always be a high or critical auth key in these tests
+                    2,
                     signer,
                     platform_version,
                     None,
@@ -1708,7 +1727,7 @@ mod tests {
             start_identities: StartIdentities {
                 number_of_identities: 2,
                 keys_per_identity: 3,
-                starting_balances: None,
+                starting_balances: 100_000_000,
             },
             identities_inserts: Default::default(),
             identity_contract_nonce_gaps: None,
