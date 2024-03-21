@@ -11,13 +11,14 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
-use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 
 #[cfg(test)]
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
 #[cfg(test)]
@@ -26,7 +27,6 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 #[cfg(test)]
 use drive::grovedb::Transaction;
-use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 
 impl<C> Platform<C>
 where
@@ -95,12 +95,11 @@ where
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
-
         if raw_tx.len() as u64
             > platform_version
-            .dpp
-            .state_transitions
-            .max_state_transition_size
+                .dpp
+                .state_transitions
+                .max_state_transition_size
         {
             // The state transition is too big
             let consensus_error =
@@ -113,7 +112,11 @@ where
                             .max_state_transition_size,
                     ),
                 ));
-            tracing::debug!(?consensus_error, "State transition too big on check tx (starts with {})", hex::encode(raw_tx.split_at(80).0));
+            tracing::debug!(
+                ?consensus_error,
+                "State transition too big on check tx (starts with {})",
+                hex::encode(raw_tx.split_at(80).0)
+            );
 
             return Ok(ValidationResult::new_with_error(consensus_error));
         }

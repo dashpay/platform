@@ -209,7 +209,11 @@ where
         failed_tx_count,
         "Prepared proposal with {} transition{} for height: {}, round: {} in {} ms",
         valid_tx_count + invalid_paid_tx_count,
-        if valid_tx_count + invalid_paid_tx_count > 0 {"s"} else {""},
+        if valid_tx_count + invalid_paid_tx_count > 0 {
+            "s"
+        } else {
+            ""
+        },
         request.height,
         request.round,
         elapsed_time_ms,
