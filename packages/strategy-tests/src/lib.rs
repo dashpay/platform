@@ -24,7 +24,7 @@ use dpp::data_contract::{DataContract, DataContractFactory};
 
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
-use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
+use dpp::identity::{Identity, KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
@@ -418,7 +418,9 @@ impl Strategy {
         let (identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
 
-        // Do we also need to add identities to the identity_nonce_counter?
+        for identity in &identities {
+            identity_nonce_counter.insert(identity.id(), 1);
+        }
 
         // Add initial contracts for contracts_with_updates on first block of strategy
         if block_info.height == config.start_block_height {
@@ -1328,10 +1330,25 @@ impl Strategy {
         if block_info.height == config.start_block_height
             && self.start_identities.number_of_identities > 0
         {
+            // Make sure we insert a key for transfers
+            let mut key_maps: KeyMaps = [(
+                Purpose::TRANSFER,
+                [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
+            )]
+            .into();
+            let mut new_key_count = self.start_identities.keys_per_identity - 1;
+
+            // Also an authentication key with critical security level for documents
+            key_maps.insert(
+                Purpose::AUTHENTICATION,
+                [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
+            );
+            new_key_count -= 1;
+
             let mut new_transitions = crate::transitions::create_identities_state_transitions(
-                self.start_identities.number_of_identities.into(), // number of identities
-                self.start_identities.keys_per_identity.into(),    // number of keys per identity
-                &self.identities_inserts.extra_keys,
+                self.start_identities.number_of_identities.into(),
+                new_key_count.into(),
+                &key_maps,
                 amount,
                 signer,
                 rng,
@@ -1346,11 +1363,27 @@ impl Strategy {
         if block_info.height > config.start_block_height {
             let frequency = &self.identities_inserts.frequency;
             if frequency.check_hit(rng) {
-                let count = frequency.events(rng);
+                let count = frequency.events(rng); // number of identities to create
+
+                // Make sure we insert a key for transfers
+                let mut key_maps: KeyMaps = [(
+                    Purpose::TRANSFER,
+                    [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
+                )]
+                .into();
+                let mut new_key_count = self.identities_inserts.start_keys - 1;
+
+                // Also an authentication key with critical security level for documents
+                key_maps.insert(
+                    Purpose::AUTHENTICATION,
+                    [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
+                );
+                new_key_count -= 1;
+
                 let mut new_transitions = crate::transitions::create_identities_state_transitions(
-                    count,                                       // number of identities
-                    self.identities_inserts.start_keys as KeyID, // number of keys per identity
-                    &self.identities_inserts.extra_keys,
+                    count,
+                    new_key_count.into(),
+                    &key_maps,
                     200000, // 0.002 dash
                     signer,
                     rng,
