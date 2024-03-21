@@ -45,8 +45,9 @@ impl Drive {
         let serialized_contract =
             contract.serialize_to_bytes_with_platform_version(platform_version)?;
 
-        if serialized_contract.len() as u32
-            > platform_version.dpp.contract_versions.max_serialized_size
+        if serialized_contract.len() as u64 > u32::MAX as u64
+            || serialized_contract.len() as u32
+                > platform_version.dpp.contract_versions.max_serialized_size
         {
             // This should normally be caught by DPP, but there is a rare possibility that the
             // re-serialized size is bigger than the original serialized data contract.
