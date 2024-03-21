@@ -7,6 +7,7 @@ use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
+use crate::error::contract::DataContractError;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -76,6 +77,16 @@ impl Drive {
         let serialized_contract = contract
             .serialize_to_bytes_with_platform_version(platform_version)
             .map_err(Error::Protocol)?;
+
+        if serialized_contract.len() as u64 > u32::MAX as u64
+            || serialized_contract.len() as u32
+                > platform_version.dpp.contract_versions.max_serialized_size
+        {
+            // This should normally be caught by DPP, but there is a rare possibility that the
+            // re-serialized size is bigger than the original serialized data contract.
+            return Err(Error::DataContract(DataContractError::ContractTooBig(format!("Trying to insert a data contract of size {} that is over the max allowed insertion size {}", serialized_contract.len(), platform_version.dpp.contract_versions.max_serialized_size))));
+        }
+
         self.apply_contract_with_serialization_operations(
             contract,
             serialized_contract,

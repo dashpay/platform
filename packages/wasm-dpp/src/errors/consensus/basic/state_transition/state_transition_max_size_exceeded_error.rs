@@ -17,14 +17,14 @@ impl From<&StateTransitionMaxSizeExceededError> for StateTransitionMaxSizeExceed
 
 #[wasm_bindgen(js_class=StateTransitionMaxSizeExceededError)]
 impl StateTransitionMaxSizeExceededErrorWasm {
-    #[wasm_bindgen(js_name=getActualSizeKBytes)]
-    pub fn get_actual_size_kbytes(&self) -> usize {
-        self.inner.actual_size_kbytes()
+    #[wasm_bindgen(js_name=getActualSizeBytes)]
+    pub fn get_actual_size_bytes(&self) -> u64 {
+        self.inner.actual_size_bytes()
     }
 
-    #[wasm_bindgen(js_name=getMaxSizeKBytes)]
-    pub fn get_max_size_kbytes(&self) -> usize {
-        self.inner.max_size_kbytes()
+    #[wasm_bindgen(js_name=getMaxSizeBytes)]
+    pub fn get_max_size_bytes(&self) -> u64 {
+        self.inner.max_size_bytes()
     }
 
     #[wasm_bindgen(js_name=getCode)]
