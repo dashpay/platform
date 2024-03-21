@@ -68,7 +68,7 @@ const {
 const {
   BroadcastStateTransitionResponse: ProtocBroadcastStateTransitionResponse,
   GetIdentityResponse: ProtocGetIdentityResponse,
-  GetIdentitiesResponse: ProtocGetPartialIdentitiesResponse,
+  GetPartialIdentitiesResponse: ProtocGetPartialIdentitiesResponse,
   GetDataContractResponse: ProtocGetDataContractResponse,
   GetDataContractHistoryResponse: ProtocGetDataContractHistoryResponse,
   GetDocumentsResponse: ProtocGetDocumentsResponse,
@@ -251,7 +251,6 @@ class PlatformPromiseClient {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
-
     return this.client.getPartialIdentities(
       getPartialIdentitiesRequest,
       convertObjectToMetadata(metadata),
