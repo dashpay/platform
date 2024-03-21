@@ -1,6 +1,6 @@
 const AbstractResponse = require('../response/AbstractResponse');
 
-class GetIdentitiesByPublicKeyHashesResponse extends AbstractResponse {
+class GetPartialIdentitiesResponse extends AbstractResponse {
   /**
    * @param {Buffer[]} identities
    * @param {Metadata} metadata
@@ -21,14 +21,14 @@ class GetIdentitiesByPublicKeyHashesResponse extends AbstractResponse {
 
   /**
    * @param proto
-   * @returns {GetIdentitiesByPublicKeyHashesResponse}
+   * @returns {GetPartialIdentitiesResponse}
    */
   static createFromProto(proto) {
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(proto);
 
     const identitiesList = proto.getV0().getIdentities();
 
-    return new GetIdentitiesByPublicKeyHashesResponse(
+    return new GetPartialIdentitiesResponse(
       identitiesList !== undefined
         ? identitiesList.getIdentityEntriesList()
           .map((identity) => {
@@ -43,4 +43,4 @@ class GetIdentitiesByPublicKeyHashesResponse extends AbstractResponse {
   }
 }
 
-module.exports = GetIdentitiesByPublicKeyHashesResponse;
+module.exports = GetPartialIdentitiesResponse;

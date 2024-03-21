@@ -3,9 +3,9 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_identities_request::Version as RequestVersion;
-use dapi_grpc::platform::v0::get_identities_response::Version as ResponseVersion;
-use dapi_grpc::platform::v0::{GetIdentitiesRequest, GetIdentitiesResponse};
+use dapi_grpc::platform::v0::get_partial_identities_request::Version as RequestVersion;
+use dapi_grpc::platform::v0::get_partial_identities_response::Version as ResponseVersion;
+use dapi_grpc::platform::v0::{GetPartialIdentitiesRequest, GetPartialIdentitiesResponse};
 use dpp::version::PlatformVersion;
 
 mod v0;
@@ -14,10 +14,10 @@ impl<C> Platform<C> {
     /// Querying of an identity by a public key hash
     pub fn query_identities(
         &self,
-        GetIdentitiesRequest { version }: GetIdentitiesRequest,
+        GetPartialIdentitiesRequest { version }: GetPartialIdentitiesRequest,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetIdentitiesResponse>, Error> {
+    ) -> Result<QueryValidationResult<GetPartialIdentitiesResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::DecodingError("could not decode identities query".to_string()),
@@ -49,7 +49,7 @@ impl<C> Platform<C> {
                 let result =
                     self.query_identities_v0(request_v0, platform_state, platform_version)?;
 
-                Ok(result.map(|response_v0| GetIdentitiesResponse {
+                Ok(result.map(|response_v0| GetPartialIdentitiesResponse {
                     version: Some(ResponseVersion::V0(response_v0)),
                 }))
             }

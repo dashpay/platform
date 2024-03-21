@@ -709,11 +709,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
-                identities: FeatureVersionBounds {
-                    min_version: 0,
-                    max_version: 0,
-                    default_current_version: 0,
-                },
                 keys: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
@@ -744,7 +739,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
-                identities_by_public_key_hashes: FeatureVersionBounds {
+                identities: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,

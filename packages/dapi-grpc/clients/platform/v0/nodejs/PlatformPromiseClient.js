@@ -28,14 +28,16 @@ const {
             BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
             GetIdentityRequest: PBJSGetIdentityRequest,
             GetIdentityResponse: PBJSGetIdentityResponse,
+            GetPartialIdentitiesRequest: PBJSGetPartialIdentitiesRequest,
+            GetPartialIdentitiesResponse: PBJSGetPartialIdentitiesResponse,
             GetDataContractRequest: PBJSGetDataContractRequest,
             GetDataContractResponse: PBJSGetDataContractResponse,
             GetDataContractHistoryRequest: PBJSGetDataContractHistoryRequest,
             GetDataContractHistoryResponse: PBJSGetDataContractHistoryResponse,
             GetDocumentsRequest: PBJSGetDocumentsRequest,
             GetDocumentsResponse: PBJSGetDocumentsResponse,
-            GetIdentitiesByPublicKeyHashesRequest: PBJSGetIdentitiesByPublicKeyHashesRequest,
-            GetIdentitiesByPublicKeyHashesResponse: PBJSGetIdentitiesByPublicKeyHashesResponse,
+            GetIdentityByPublicKeyHashRequest: PBJSGetIdentityByPublicKeyHashRequest,
+            GetIdentityByPublicKeyHashResponse: PBJSGetIdentityByPublicKeyHashResponse,
             WaitForStateTransitionResultRequest: PBJSWaitForStateTransitionResultRequest,
             WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
             GetConsensusParamsRequest: PBJSGetConsensusParamsRequest,
@@ -66,10 +68,11 @@ const {
 const {
   BroadcastStateTransitionResponse: ProtocBroadcastStateTransitionResponse,
   GetIdentityResponse: ProtocGetIdentityResponse,
+  GetPartialIdentitiesResponse: ProtocGetPartialIdentitiesResponse,
   GetDataContractResponse: ProtocGetDataContractResponse,
   GetDataContractHistoryResponse: ProtocGetDataContractHistoryResponse,
   GetDocumentsResponse: ProtocGetDocumentsResponse,
-  GetIdentitiesByPublicKeyHashesResponse: ProtocGetIdentitiesByPublicKeyHashesResponse,
+  GetIdentityByPublicKeyHashResponse: ProtocGetIdentityByPublicKeyHashResponse,
   WaitForStateTransitionResultResponse: ProtocWaitForStateTransitionResultResponse,
   GetConsensusParamsResponse: ProtocGetConsensusParamsResponse,
   GetEpochsInfoResponse: ProtocGetEpochsInfoResponse,
@@ -113,6 +116,10 @@ class PlatformPromiseClient {
       this.client.getIdentity.bind(this.client),
     );
 
+    this.client.getPartialIdentities = promisify(
+      this.client.getPartialIdentities.bind(this.client),
+    );
+
     this.client.getDataContract = promisify(
       this.client.getDataContract.bind(this.client),
     );
@@ -125,8 +132,8 @@ class PlatformPromiseClient {
       this.client.getDocuments.bind(this.client),
     );
 
-    this.client.getIdentitiesByPublicKeyHashes = promisify(
-      this.client.getIdentitiesByPublicKeyHashes.bind(this.client),
+    this.client.getIdentityByPublicKeyHash = promisify(
+      this.client.getIdentityByPublicKeyHash.bind(this.client),
     );
 
     this.client.waitForStateTransitionResult = promisify(
@@ -222,6 +229,40 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetIdentityRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetPartialIdentitiesRequest} getPartialIdentitiesRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @returns {Promise<!GetPartialIdentitiesResponse>}
+   */
+  getPartialIdentities(
+    getPartialIdentitiesRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+    return this.client.getPartialIdentities(
+      getPartialIdentitiesRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetPartialIdentitiesResponse,
+              PBJSGetPartialIdentitiesResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetPartialIdentitiesRequest,
             ),
           ),
         ],
@@ -327,13 +368,13 @@ class PlatformPromiseClient {
   }
 
   /**
-   * @param {!GetIdentitiesByPublicKeyHashesRequest} getIdentitiesByPublicKeyHashesRequest
+   * @param {!GetIdentityByPublicKeyHashRequest} getIdentityByPublicKeyHashRequest
    * @param {?Object<string, string>} metadata
    * @param {CallOptions} [options={}]
-   * @returns {Promise<!GetIdentitiesByPublicKeyHashesResponse>}
+   * @returns {Promise<!GetIdentityByPublicKeyHashResponse>}
    */
-  getIdentitiesByPublicKeyHashes(
-    getIdentitiesByPublicKeyHashesRequest,
+  getIdentityByPublicKeyHash(
+    getIdentityByPublicKeyHashRequest,
     metadata = {},
     options = {},
   ) {
@@ -341,18 +382,18 @@ class PlatformPromiseClient {
       throw new Error('metadata must be an object');
     }
 
-    return this.client.getIdentitiesByPublicKeyHashes(
-      getIdentitiesByPublicKeyHashesRequest,
+    return this.client.getIdentityByPublicKeyHash(
+      getIdentityByPublicKeyHashRequest,
       convertObjectToMetadata(metadata),
       {
         interceptors: [
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
-              ProtocGetIdentitiesByPublicKeyHashesResponse,
-              PBJSGetIdentitiesByPublicKeyHashesResponse,
+              ProtocGetIdentityByPublicKeyHashResponse,
+              PBJSGetIdentityByPublicKeyHashResponse,
             ),
             protobufToJsonFactory(
-              PBJSGetIdentitiesByPublicKeyHashesRequest,
+              PBJSGetIdentityByPublicKeyHashRequest,
             ),
           ),
         ],

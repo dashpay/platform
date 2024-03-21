@@ -3,20 +3,20 @@ const { BytesValue } = require('google-protobuf/google/protobuf/wrappers_pb');
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const {
   v0: {
-    GetIdentitiesByPublicKeyHashesResponse,
+    GetPartialIdentitiesResponse,
     ResponseMetadata,
     Proof: ProofResponse,
   },
 } = require('@dashevo/dapi-grpc');
 
-const GetIdentitiesByPublicKeyHashesResponseClass = require('../../../../../lib/methods/platform/getIdentitiesByPublicKeyHashes/GetIdentitiesByPublicKeyHashesResponse');
+const GetPartialIdentitiesResponseClass = require('../../../../../lib/methods/platform/getPartialIdentities/GetPartialIdentitiesResponse');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const InvalidResponseError = require('../../../../../lib/methods/platform/response/errors/InvalidResponseError');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
 const Proof = require('../../../../../lib/methods/platform/response/Proof');
 const Metadata = require('../../../../../lib/methods/platform/response/Metadata');
 
-describe('GetIdentitiesByPublicKeyHashesResponse', () => {
+describe('GetPartialIdentitiesResponse', () => {
   let getIdentitiesResponse;
   let metadataFixture;
   let identityFixture;
@@ -29,12 +29,11 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
     proofFixture = getProofFixture();
 
     const {
-      IdentitiesByPublicKeyHashes,
-      PublicKeyHashIdentityEntry,
-      GetIdentitiesByPublicKeyHashesResponseV0,
-    } = GetIdentitiesByPublicKeyHashesResponse;
+      Identities, IdentityEntry, IdentityValue,
+      GetPartialIdentitiesResponseV0,
+    } = GetPartialIdentitiesResponse;
 
-    proto = new GetIdentitiesByPublicKeyHashesResponse();
+    proto = new GetPartialIdentitiesResponse();
 
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
@@ -43,17 +42,16 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     proto.setV0(
-      new GetIdentitiesByPublicKeyHashesResponseV0().setIdentities(
-        new IdentitiesByPublicKeyHashes()
+      new GetPartialIdentitiesResponseV0().setIdentities(
+        new Identities()
           .setIdentityEntriesList([
-            new PublicKeyHashIdentityEntry()
-              .setPublicKeyHash(Buffer.alloc(20))
-              .setValue(new BytesValue().setValue(identityFixture.toBuffer())),
+            new IdentityEntry()
+              .setValue(new IdentityValue().setValue(identityFixture.toBuffer())),
           ]),
       ).setMetadata(metadata),
     );
 
-    getIdentitiesResponse = new GetIdentitiesByPublicKeyHashesResponseClass(
+    getIdentitiesResponse = new GetPartialIdentitiesResponseClass(
       [identityFixture.toBuffer()],
       new Metadata(metadataFixture),
     );
@@ -68,7 +66,7 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
   });
 
   it('should return proof', () => {
-    getIdentitiesResponse = new GetIdentitiesByPublicKeyHashesResponseClass(
+    getIdentitiesResponse = new GetPartialIdentitiesResponseClass(
       [],
       new Metadata(metadataFixture),
       new Proof(proofFixture),
@@ -85,9 +83,9 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
   });
 
   it('should create an instance from proto', () => {
-    getIdentitiesResponse = GetIdentitiesByPublicKeyHashesResponseClass.createFromProto(proto);
+    getIdentitiesResponse = GetPartialIdentitiesResponseClass.createFromProto(proto);
     expect(getIdentitiesResponse).to.be.an.instanceOf(
-      GetIdentitiesByPublicKeyHashesResponseClass,
+      GetPartialIdentitiesResponseClass,
     );
     expect(getIdentitiesResponse.getIdentities()).to.deep.equal([identityFixture.toBuffer()]);
 
@@ -111,9 +109,9 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
 
     proto.getV0().setProof(proofProto);
 
-    getIdentitiesResponse = GetIdentitiesByPublicKeyHashesResponseClass.createFromProto(proto);
+    getIdentitiesResponse = GetPartialIdentitiesResponseClass.createFromProto(proto);
     expect(getIdentitiesResponse).to.be.an.instanceOf(
-      GetIdentitiesByPublicKeyHashesResponseClass,
+      GetPartialIdentitiesResponseClass,
     );
     expect(getIdentitiesResponse.getIdentities()).to.deep.members([]);
     expect(getIdentitiesResponse.getMetadata()).to.deep.equal(metadataFixture);
@@ -134,7 +132,7 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
     proto.getV0().setMetadata(undefined);
 
     try {
-      getIdentitiesResponse = GetIdentitiesByPublicKeyHashesResponseClass.createFromProto(proto);
+      getIdentitiesResponse = GetPartialIdentitiesResponseClass.createFromProto(proto);
 
       expect.fail('should throw InvalidResponseError');
     } catch (e) {
