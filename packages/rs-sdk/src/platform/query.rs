@@ -110,27 +110,18 @@ impl Query<proto::GetDataContractsRequest> for Vec<Identifier> {
     }
 }
 
-// impl Query<GetDataContractHistoryRequest> for LimitQuery<(Identifier, u64)> {
-//     fn query(self, prove: bool) -> Result<GetDataContractHistoryRequest, Error> {
-//         LimitQuery {
-//             query: Some(self.query),
-//             limit: self.limit,
-//         }.query(prove)
-//     }
-// }
-
-impl Query<proto::GetDataContractHistoryRequest> for (Identifier, u64) {
+impl Query<proto::GetDataContractHistoryRequest> for LimitQuery<(Identifier, u64)> {
     fn query(self, prove: bool) -> Result<proto::GetDataContractHistoryRequest, Error> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
-        let (id, start_at_ms) = self;
+        let (id, start_at_ms) = self.query;
 
         Ok(proto::GetDataContractHistoryRequest {
             version: Some(proto::get_data_contract_history_request::Version::V0(
                 proto::get_data_contract_history_request::GetDataContractHistoryRequestV0 {
                     id: id.to_vec(),
-                    limit: Some(10),
+                    limit: self.limit,
                     offset: None,
                     start_at_ms,
                     prove,

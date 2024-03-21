@@ -92,7 +92,6 @@ async fn test_data_contracts_2_nx() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_data_contract_history_read() {
-    // use dpp::data_contract::accessors::v0::DataContractV0Getters;
     let cfg = Config::new();
     let id = cfg.existing_data_contract_id;
 
