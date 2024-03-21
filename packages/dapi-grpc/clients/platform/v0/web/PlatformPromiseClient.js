@@ -7,8 +7,8 @@ class PlatformPromiseClient {
    * @param {?Object} credentials
    * @param {?Object} options
    */
-  constructor(hostname, credentials , options = {}) {
-    this.client = new PlatformClient(hostname, options)
+  constructor(hostname, credentials, options = {}) {
+    this.client = new PlatformClient(hostname, options);
 
     this.protocolVersion = undefined;
   }
@@ -37,6 +37,20 @@ class PlatformPromiseClient {
       this.client.getIdentity.bind(this.client),
     )(
       getIdentityRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetPartialIdentitiesRequest} getPartialIdentitiesRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetPartialIdentitiesResponse>}
+   */
+  getPartialIdentities(getPartialIdentitiesRequest, metadata = {}) {
+    return promisify(
+      this.client.getPartialIdentities.bind(this.client),
+    )(
+      getPartialIdentitiesRequest,
       metadata,
     );
   }

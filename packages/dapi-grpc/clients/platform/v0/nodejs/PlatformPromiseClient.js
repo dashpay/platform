@@ -28,6 +28,8 @@ const {
             BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
             GetIdentityRequest: PBJSGetIdentityRequest,
             GetIdentityResponse: PBJSGetIdentityResponse,
+            GetPartialIdentitiesRequest: PBJSGetPartialIdentitiesRequest,
+            GetPartialIdentitiesResponse: PBJSGetPartialIdentitiesResponse,
             GetDataContractRequest: PBJSGetDataContractRequest,
             GetDataContractResponse: PBJSGetDataContractResponse,
             GetDataContractHistoryRequest: PBJSGetDataContractHistoryRequest,
@@ -66,6 +68,7 @@ const {
 const {
   BroadcastStateTransitionResponse: ProtocBroadcastStateTransitionResponse,
   GetIdentityResponse: ProtocGetIdentityResponse,
+  GetIdentitiesResponse: ProtocGetPartialIdentitiesResponse,
   GetDataContractResponse: ProtocGetDataContractResponse,
   GetDataContractHistoryResponse: ProtocGetDataContractHistoryResponse,
   GetDocumentsResponse: ProtocGetDocumentsResponse,
@@ -111,6 +114,10 @@ class PlatformPromiseClient {
 
     this.client.getIdentity = promisify(
       this.client.getIdentity.bind(this.client),
+    );
+
+    this.client.getPartialIdentities = promisify(
+      this.client.getPartialIdentities.bind(this.client),
     );
 
     this.client.getDataContract = promisify(
@@ -222,6 +229,41 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetIdentityRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetPartialIdentitiesRequest} getPartialIdentitiesRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @returns {Promise<!GetPartialIdentitiesResponse>}
+   */
+  getPartialIdentities(
+    getPartialIdentitiesRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getPartialIdentities(
+      getPartialIdentitiesRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetPartialIdentitiesResponse,
+              PBJSGetPartialIdentitiesResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetPartialIdentitiesRequest,
             ),
           ),
         ],

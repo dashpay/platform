@@ -298,18 +298,18 @@ pub mod get_identity_response {
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetIdentitiesRequest {
-    #[prost(oneof = "get_identities_request::Version", tags = "1")]
-    pub version: ::core::option::Option<get_identities_request::Version>,
+pub struct GetPartialIdentitiesRequest {
+    #[prost(oneof = "get_partial_identities_request::Version", tags = "1")]
+    pub version: ::core::option::Option<get_partial_identities_request::Version>,
 }
-/// Nested message and enum types in `GetIdentitiesRequest`.
-pub mod get_identities_request {
+/// Nested message and enum types in `GetPartialIdentitiesRequest`.
+pub mod get_partial_identities_request {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
     #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct GetIdentitiesRequestV0 {
+    pub struct GetPartialIdentitiesRequestV0 {
         #[prost(bytes = "vec", repeated, tag = "1")]
         #[serde(with = "crate::deserialization::vec_base64string")]
         pub ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
@@ -322,7 +322,7 @@ pub mod get_identities_request {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Version {
         #[prost(message, tag = "1")]
-        V0(GetIdentitiesRequestV0),
+        V0(GetPartialIdentitiesRequestV0),
     }
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
@@ -330,12 +330,12 @@ pub mod get_identities_request {
 #[derive(::dapi_grpc_macros::Mockable)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetIdentitiesResponse {
-    #[prost(oneof = "get_identities_response::Version", tags = "1")]
-    pub version: ::core::option::Option<get_identities_response::Version>,
+pub struct GetPartialIdentitiesResponse {
+    #[prost(oneof = "get_partial_identities_response::Version", tags = "1")]
+    pub version: ::core::option::Option<get_partial_identities_response::Version>,
 }
-/// Nested message and enum types in `GetIdentitiesResponse`.
-pub mod get_identities_response {
+/// Nested message and enum types in `GetPartialIdentitiesResponse`.
+pub mod get_partial_identities_response {
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
     #[derive(::dapi_grpc_macros::Mockable)]
@@ -370,14 +370,14 @@ pub mod get_identities_response {
     #[derive(::dapi_grpc_macros::Mockable)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct GetIdentitiesResponseV0 {
+    pub struct GetPartialIdentitiesResponseV0 {
         #[prost(message, optional, tag = "3")]
         pub metadata: ::core::option::Option<super::ResponseMetadata>,
-        #[prost(oneof = "get_identities_response_v0::Result", tags = "1, 2")]
-        pub result: ::core::option::Option<get_identities_response_v0::Result>,
+        #[prost(oneof = "get_partial_identities_response_v0::Result", tags = "1, 2")]
+        pub result: ::core::option::Option<get_partial_identities_response_v0::Result>,
     }
-    /// Nested message and enum types in `GetIdentitiesResponseV0`.
-    pub mod get_identities_response_v0 {
+    /// Nested message and enum types in `GetPartialIdentitiesResponseV0`.
+    pub mod get_partial_identities_response_v0 {
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
         #[allow(clippy::derive_partial_eq_without_eq)]
@@ -395,7 +395,7 @@ pub mod get_identities_response {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Version {
         #[prost(message, tag = "1")]
-        V0(GetIdentitiesResponseV0),
+        V0(GetPartialIdentitiesResponseV0),
     }
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
@@ -2154,11 +2154,11 @@ pub mod platform_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        pub async fn get_identities(
+        pub async fn get_partial_identities(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetIdentitiesRequest>,
+            request: impl tonic::IntoRequest<super::GetPartialIdentitiesRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetIdentitiesResponse>,
+            tonic::Response<super::GetPartialIdentitiesResponse>,
             tonic::Status,
         > {
             self.inner
@@ -2172,14 +2172,14 @@ pub mod platform_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/org.dash.platform.dapi.v0.Platform/getIdentities",
+                "/org.dash.platform.dapi.v0.Platform/getPartialIdentities",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "org.dash.platform.dapi.v0.Platform",
-                        "getIdentities",
+                        "getPartialIdentities",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -2685,11 +2685,11 @@ pub mod platform_server {
             tonic::Response<super::GetIdentityResponse>,
             tonic::Status,
         >;
-        async fn get_identities(
+        async fn get_partial_identities(
             &self,
-            request: tonic::Request<super::GetIdentitiesRequest>,
+            request: tonic::Request<super::GetPartialIdentitiesRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetIdentitiesResponse>,
+            tonic::Response<super::GetPartialIdentitiesResponse>,
             tonic::Status,
         >;
         async fn get_identity_keys(
@@ -2978,25 +2978,25 @@ pub mod platform_server {
                     };
                     Box::pin(fut)
                 }
-                "/org.dash.platform.dapi.v0.Platform/getIdentities" => {
+                "/org.dash.platform.dapi.v0.Platform/getPartialIdentities" => {
                     #[allow(non_camel_case_types)]
-                    struct getIdentitiesSvc<T: Platform>(pub Arc<T>);
+                    struct getPartialIdentitiesSvc<T: Platform>(pub Arc<T>);
                     impl<
                         T: Platform,
-                    > tonic::server::UnaryService<super::GetIdentitiesRequest>
-                    for getIdentitiesSvc<T> {
-                        type Response = super::GetIdentitiesResponse;
+                    > tonic::server::UnaryService<super::GetPartialIdentitiesRequest>
+                    for getPartialIdentitiesSvc<T> {
+                        type Response = super::GetPartialIdentitiesResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetIdentitiesRequest>,
+                            request: tonic::Request<super::GetPartialIdentitiesRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).get_identities(request).await
+                                (*inner).get_partial_identities(request).await
                             };
                             Box::pin(fut)
                         }
@@ -3008,7 +3008,7 @@ pub mod platform_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = getIdentitiesSvc(inner);
+                        let method = getPartialIdentitiesSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

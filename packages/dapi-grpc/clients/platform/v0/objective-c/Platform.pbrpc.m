@@ -110,24 +110,24 @@
              responseClass:[GetIdentityResponse class]];
 }
 
-#pragma mark getIdentities(GetIdentitiesRequest) returns (GetIdentitiesResponse)
+#pragma mark getPartialIdentities(GetPartialIdentitiesRequest) returns (GetPartialIdentitiesResponse)
 
-- (void)getIdentitiesWithRequest:(GetIdentitiesRequest *)request handler:(void(^)(GetIdentitiesResponse *_Nullable response, NSError *_Nullable error))handler{
-  [[self RPCTogetIdentitiesWithRequest:request handler:handler] start];
+- (void)getPartialIdentitiesWithRequest:(GetPartialIdentitiesRequest *)request handler:(void(^)(GetPartialIdentitiesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetPartialIdentitiesWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetIdentitiesWithRequest:(GetIdentitiesRequest *)request handler:(void(^)(GetIdentitiesResponse *_Nullable response, NSError *_Nullable error))handler{
-  return [self RPCToMethod:@"getIdentities"
+- (GRPCProtoCall *)RPCTogetPartialIdentitiesWithRequest:(GetPartialIdentitiesRequest *)request handler:(void(^)(GetPartialIdentitiesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getPartialIdentities"
             requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[GetIdentitiesResponse class]
+             responseClass:[GetPartialIdentitiesResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
-- (GRPCUnaryProtoCall *)getIdentitiesWithMessage:(GetIdentitiesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
-  return [self RPCToMethod:@"getIdentities"
+- (GRPCUnaryProtoCall *)getPartialIdentitiesWithMessage:(GetPartialIdentitiesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getPartialIdentities"
                    message:message
            responseHandler:handler
                callOptions:callOptions
-             responseClass:[GetIdentitiesResponse class]];
+             responseClass:[GetPartialIdentitiesResponse class]];
 }
 
 #pragma mark getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse)

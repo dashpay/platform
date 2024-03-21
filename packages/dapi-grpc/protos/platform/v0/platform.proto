@@ -10,7 +10,7 @@ service Platform {
   rpc broadcastStateTransition(BroadcastStateTransitionRequest)
       returns (BroadcastStateTransitionResponse);
   rpc getIdentity(GetIdentityRequest) returns (GetIdentityResponse);
-  rpc getIdentities(GetIdentitiesRequest) returns (GetIdentitiesResponse);
+  rpc getPartialIdentities(GetPartialIdentitiesRequest) returns (GetPartialIdentitiesResponse);
   rpc getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
   rpc getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse);
   rpc getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse);
@@ -129,17 +129,17 @@ message GetIdentityResponse {
   oneof version { GetIdentityResponseV0 v0 = 1; }
 }
 
-message GetIdentitiesRequest {
+message GetPartialIdentitiesRequest {
 
-  message GetIdentitiesRequestV0 {
+  message GetPartialIdentitiesRequestV0 {
     repeated bytes ids = 1;
     bool prove = 2;
   }
 
-  oneof version { GetIdentitiesRequestV0 v0 = 1; }
+  oneof version { GetPartialIdentitiesRequestV0 v0 = 1; }
 }
 
-message GetIdentitiesResponse {
+message GetPartialIdentitiesResponse {
 
   message IdentityValue { bytes value = 1; }
 
@@ -150,7 +150,7 @@ message GetIdentitiesResponse {
 
   message Identities { repeated IdentityEntry identity_entries = 1; }
 
-  message GetIdentitiesResponseV0 {
+  message GetPartialIdentitiesResponseV0 {
     oneof result {
       Identities identities = 1;
       Proof proof = 2;
@@ -158,7 +158,7 @@ message GetIdentitiesResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version { GetIdentitiesResponseV0 v0 = 1; }
+  oneof version { GetPartialIdentitiesResponseV0 v0 = 1; }
 }
 
 message GetIdentityNonceResponse {

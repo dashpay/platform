@@ -153,35 +153,35 @@ $root.org = (function() {
                          */
 
                         /**
-                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentities}.
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getPartialIdentities}.
                          * @memberof org.dash.platform.dapi.v0.Platform
-                         * @typedef getIdentitiesCallback
+                         * @typedef getPartialIdentitiesCallback
                          * @type {function}
                          * @param {Error|null} error Error, if any
-                         * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse} [response] GetIdentitiesResponse
+                         * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse} [response] GetPartialIdentitiesResponse
                          */
 
                         /**
-                         * Calls getIdentities.
-                         * @function getIdentities
+                         * Calls getPartialIdentities.
+                         * @function getPartialIdentities
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @instance
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesRequest} request GetIdentitiesRequest message or plain object
-                         * @param {org.dash.platform.dapi.v0.Platform.getIdentitiesCallback} callback Node-style callback called with the error, if any, and GetIdentitiesResponse
+                         * @param {org.dash.platform.dapi.v0.IGetPartialIdentitiesRequest} request GetPartialIdentitiesRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getPartialIdentitiesCallback} callback Node-style callback called with the error, if any, and GetPartialIdentitiesResponse
                          * @returns {undefined}
                          * @variation 1
                          */
-                        Object.defineProperty(Platform.prototype.getIdentities = function getIdentities(request, callback) {
-                            return this.rpcCall(getIdentities, $root.org.dash.platform.dapi.v0.GetIdentitiesRequest, $root.org.dash.platform.dapi.v0.GetIdentitiesResponse, request, callback);
-                        }, "name", { value: "getIdentities" });
+                        Object.defineProperty(Platform.prototype.getPartialIdentities = function getPartialIdentities(request, callback) {
+                            return this.rpcCall(getPartialIdentities, $root.org.dash.platform.dapi.v0.GetPartialIdentitiesRequest, $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse, request, callback);
+                        }, "name", { value: "getPartialIdentities" });
 
                         /**
-                         * Calls getIdentities.
-                         * @function getIdentities
+                         * Calls getPartialIdentities.
+                         * @function getPartialIdentities
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @instance
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesRequest} request GetIdentitiesRequest message or plain object
-                         * @returns {Promise<org.dash.platform.dapi.v0.GetIdentitiesResponse>} Promise
+                         * @param {org.dash.platform.dapi.v0.IGetPartialIdentitiesRequest} request GetPartialIdentitiesRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetPartialIdentitiesResponse>} Promise
                          * @variation 2
                          */
 
@@ -4635,24 +4635,24 @@ $root.org = (function() {
                         return GetIdentityResponse;
                     })();
 
-                    v0.GetIdentitiesRequest = (function() {
+                    v0.GetPartialIdentitiesRequest = (function() {
 
                         /**
-                         * Properties of a GetIdentitiesRequest.
+                         * Properties of a GetPartialIdentitiesRequest.
                          * @memberof org.dash.platform.dapi.v0
-                         * @interface IGetIdentitiesRequest
-                         * @property {org.dash.platform.dapi.v0.GetIdentitiesRequest.IGetIdentitiesRequestV0|null} [v0] GetIdentitiesRequest v0
+                         * @interface IGetPartialIdentitiesRequest
+                         * @property {org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.IGetPartialIdentitiesRequestV0|null} [v0] GetPartialIdentitiesRequest v0
                          */
 
                         /**
-                         * Constructs a new GetIdentitiesRequest.
+                         * Constructs a new GetPartialIdentitiesRequest.
                          * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a GetIdentitiesRequest.
-                         * @implements IGetIdentitiesRequest
+                         * @classdesc Represents a GetPartialIdentitiesRequest.
+                         * @implements IGetPartialIdentitiesRequest
                          * @constructor
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesRequest=} [properties] Properties to set
+                         * @param {org.dash.platform.dapi.v0.IGetPartialIdentitiesRequest=} [properties] Properties to set
                          */
-                        function GetIdentitiesRequest(properties) {
+                        function GetPartialIdentitiesRequest(properties) {
                             if (properties)
                                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                     if (properties[keys[i]] != null)
@@ -4660,89 +4660,89 @@ $root.org = (function() {
                         }
 
                         /**
-                         * GetIdentitiesRequest v0.
-                         * @member {org.dash.platform.dapi.v0.GetIdentitiesRequest.IGetIdentitiesRequestV0|null|undefined} v0
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * GetPartialIdentitiesRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.IGetPartialIdentitiesRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest
                          * @instance
                          */
-                        GetIdentitiesRequest.prototype.v0 = null;
+                        GetPartialIdentitiesRequest.prototype.v0 = null;
 
                         // OneOf field names bound to virtual getters and setters
                         var $oneOfFields;
 
                         /**
-                         * GetIdentitiesRequest version.
+                         * GetPartialIdentitiesRequest version.
                          * @member {"v0"|undefined} version
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest
                          * @instance
                          */
-                        Object.defineProperty(GetIdentitiesRequest.prototype, "version", {
+                        Object.defineProperty(GetPartialIdentitiesRequest.prototype, "version", {
                             get: $util.oneOfGetter($oneOfFields = ["v0"]),
                             set: $util.oneOfSetter($oneOfFields)
                         });
 
                         /**
-                         * Creates a new GetIdentitiesRequest instance using the specified properties.
+                         * Creates a new GetPartialIdentitiesRequest instance using the specified properties.
                          * @function create
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesRequest=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesRequest} GetIdentitiesRequest instance
+                         * @param {org.dash.platform.dapi.v0.IGetPartialIdentitiesRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesRequest} GetPartialIdentitiesRequest instance
                          */
-                        GetIdentitiesRequest.create = function create(properties) {
-                            return new GetIdentitiesRequest(properties);
+                        GetPartialIdentitiesRequest.create = function create(properties) {
+                            return new GetPartialIdentitiesRequest(properties);
                         };
 
                         /**
-                         * Encodes the specified GetIdentitiesRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesRequest.verify|verify} messages.
+                         * Encodes the specified GetPartialIdentitiesRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.verify|verify} messages.
                          * @function encode
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesRequest} message GetIdentitiesRequest message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetPartialIdentitiesRequest} message GetPartialIdentitiesRequest message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        GetIdentitiesRequest.encode = function encode(message, writer) {
+                        GetPartialIdentitiesRequest.encode = function encode(message, writer) {
                             if (!writer)
                                 writer = $Writer.create();
                             if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
-                                $root.org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                $root.org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                             return writer;
                         };
 
                         /**
-                         * Encodes the specified GetIdentitiesRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesRequest.verify|verify} messages.
+                         * Encodes the specified GetPartialIdentitiesRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.verify|verify} messages.
                          * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesRequest} message GetIdentitiesRequest message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetPartialIdentitiesRequest} message GetPartialIdentitiesRequest message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        GetIdentitiesRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                        GetPartialIdentitiesRequest.encodeDelimited = function encodeDelimited(message, writer) {
                             return this.encode(message, writer).ldelim();
                         };
 
                         /**
-                         * Decodes a GetIdentitiesRequest message from the specified reader or buffer.
+                         * Decodes a GetPartialIdentitiesRequest message from the specified reader or buffer.
                          * @function decode
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                          * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesRequest} GetIdentitiesRequest
+                         * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesRequest} GetPartialIdentitiesRequest
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        GetIdentitiesRequest.decode = function decode(reader, length) {
+                        GetPartialIdentitiesRequest.decode = function decode(reader, length) {
                             if (!(reader instanceof $Reader))
                                 reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesRequest();
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPartialIdentitiesRequest();
                             while (reader.pos < end) {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
                                 case 1:
-                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0.decode(reader, reader.uint32());
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0.decode(reader, reader.uint32());
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -4753,37 +4753,37 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Decodes a GetIdentitiesRequest message from the specified reader or buffer, length delimited.
+                         * Decodes a GetPartialIdentitiesRequest message from the specified reader or buffer, length delimited.
                          * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesRequest} GetIdentitiesRequest
+                         * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesRequest} GetPartialIdentitiesRequest
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        GetIdentitiesRequest.decodeDelimited = function decodeDelimited(reader) {
+                        GetPartialIdentitiesRequest.decodeDelimited = function decodeDelimited(reader) {
                             if (!(reader instanceof $Reader))
                                 reader = new $Reader(reader);
                             return this.decode(reader, reader.uint32());
                         };
 
                         /**
-                         * Verifies a GetIdentitiesRequest message.
+                         * Verifies a GetPartialIdentitiesRequest message.
                          * @function verify
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest
                          * @static
                          * @param {Object.<string,*>} message Plain object to verify
                          * @returns {string|null} `null` if valid, otherwise the reason why it is not
                          */
-                        GetIdentitiesRequest.verify = function verify(message) {
+                        GetPartialIdentitiesRequest.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
                             var properties = {};
                             if (message.v0 != null && message.hasOwnProperty("v0")) {
                                 properties.version = 1;
                                 {
-                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0.verify(message.v0);
+                                    var error = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0.verify(message.v0);
                                     if (error)
                                         return "v0." + error;
                                 }
@@ -4792,40 +4792,40 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Creates a GetIdentitiesRequest message from a plain object. Also converts values to their respective internal types.
+                         * Creates a GetPartialIdentitiesRequest message from a plain object. Also converts values to their respective internal types.
                          * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest
                          * @static
                          * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesRequest} GetIdentitiesRequest
+                         * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesRequest} GetPartialIdentitiesRequest
                          */
-                        GetIdentitiesRequest.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesRequest)
+                        GetPartialIdentitiesRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetPartialIdentitiesRequest)
                                 return object;
-                            var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesRequest();
+                            var message = new $root.org.dash.platform.dapi.v0.GetPartialIdentitiesRequest();
                             if (object.v0 != null) {
                                 if (typeof object.v0 !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesRequest.v0: object expected");
-                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0.fromObject(object.v0);
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0.fromObject(object.v0);
                             }
                             return message;
                         };
 
                         /**
-                         * Creates a plain object from a GetIdentitiesRequest message. Also converts values to other types if specified.
+                         * Creates a plain object from a GetPartialIdentitiesRequest message. Also converts values to other types if specified.
                          * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest
                          * @static
-                         * @param {org.dash.platform.dapi.v0.GetIdentitiesRequest} message GetIdentitiesRequest
+                         * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesRequest} message GetPartialIdentitiesRequest
                          * @param {$protobuf.IConversionOptions} [options] Conversion options
                          * @returns {Object.<string,*>} Plain object
                          */
-                        GetIdentitiesRequest.toObject = function toObject(message, options) {
+                        GetPartialIdentitiesRequest.toObject = function toObject(message, options) {
                             if (!options)
                                 options = {};
                             var object = {};
                             if (message.v0 != null && message.hasOwnProperty("v0")) {
-                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0.toObject(message.v0, options);
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0.toObject(message.v0, options);
                                 if (options.oneofs)
                                     object.version = "v0";
                             }
@@ -4833,35 +4833,35 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Converts this GetIdentitiesRequest to JSON.
+                         * Converts this GetPartialIdentitiesRequest to JSON.
                          * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest
                          * @instance
                          * @returns {Object.<string,*>} JSON object
                          */
-                        GetIdentitiesRequest.prototype.toJSON = function toJSON() {
+                        GetPartialIdentitiesRequest.prototype.toJSON = function toJSON() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
 
-                        GetIdentitiesRequest.GetIdentitiesRequestV0 = (function() {
+                        GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0 = (function() {
 
                             /**
-                             * Properties of a GetIdentitiesRequestV0.
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
-                             * @interface IGetIdentitiesRequestV0
-                             * @property {Array.<Uint8Array>|null} [ids] GetIdentitiesRequestV0 ids
-                             * @property {boolean|null} [prove] GetIdentitiesRequestV0 prove
+                             * Properties of a GetPartialIdentitiesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest
+                             * @interface IGetPartialIdentitiesRequestV0
+                             * @property {Array.<Uint8Array>|null} [ids] GetPartialIdentitiesRequestV0 ids
+                             * @property {boolean|null} [prove] GetPartialIdentitiesRequestV0 prove
                              */
 
                             /**
-                             * Constructs a new GetIdentitiesRequestV0.
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
-                             * @classdesc Represents a GetIdentitiesRequestV0.
-                             * @implements IGetIdentitiesRequestV0
+                             * Constructs a new GetPartialIdentitiesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest
+                             * @classdesc Represents a GetPartialIdentitiesRequestV0.
+                             * @implements IGetPartialIdentitiesRequestV0
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesRequest.IGetIdentitiesRequestV0=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.IGetPartialIdentitiesRequestV0=} [properties] Properties to set
                              */
-                            function GetIdentitiesRequestV0(properties) {
+                            function GetPartialIdentitiesRequestV0(properties) {
                                 this.ids = [];
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
@@ -4870,43 +4870,43 @@ $root.org = (function() {
                             }
 
                             /**
-                             * GetIdentitiesRequestV0 ids.
+                             * GetPartialIdentitiesRequestV0 ids.
                              * @member {Array.<Uint8Array>} ids
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0
                              * @instance
                              */
-                            GetIdentitiesRequestV0.prototype.ids = $util.emptyArray;
+                            GetPartialIdentitiesRequestV0.prototype.ids = $util.emptyArray;
 
                             /**
-                             * GetIdentitiesRequestV0 prove.
+                             * GetPartialIdentitiesRequestV0 prove.
                              * @member {boolean} prove
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0
                              * @instance
                              */
-                            GetIdentitiesRequestV0.prototype.prove = false;
+                            GetPartialIdentitiesRequestV0.prototype.prove = false;
 
                             /**
-                             * Creates a new GetIdentitiesRequestV0 instance using the specified properties.
+                             * Creates a new GetPartialIdentitiesRequestV0 instance using the specified properties.
                              * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesRequest.IGetIdentitiesRequestV0=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0} GetIdentitiesRequestV0 instance
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.IGetPartialIdentitiesRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0} GetPartialIdentitiesRequestV0 instance
                              */
-                            GetIdentitiesRequestV0.create = function create(properties) {
-                                return new GetIdentitiesRequestV0(properties);
+                            GetPartialIdentitiesRequestV0.create = function create(properties) {
+                                return new GetPartialIdentitiesRequestV0(properties);
                             };
 
                             /**
-                             * Encodes the specified GetIdentitiesRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0.verify|verify} messages.
+                             * Encodes the specified GetPartialIdentitiesRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesRequest.IGetIdentitiesRequestV0} message GetIdentitiesRequestV0 message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.IGetPartialIdentitiesRequestV0} message GetPartialIdentitiesRequestV0 message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            GetIdentitiesRequestV0.encode = function encode(message, writer) {
+                            GetPartialIdentitiesRequestV0.encode = function encode(message, writer) {
                                 if (!writer)
                                     writer = $Writer.create();
                                 if (message.ids != null && message.ids.length)
@@ -4918,33 +4918,33 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Encodes the specified GetIdentitiesRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0.verify|verify} messages.
+                             * Encodes the specified GetPartialIdentitiesRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesRequest.IGetIdentitiesRequestV0} message GetIdentitiesRequestV0 message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.IGetPartialIdentitiesRequestV0} message GetPartialIdentitiesRequestV0 message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            GetIdentitiesRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                            GetPartialIdentitiesRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
                                 return this.encode(message, writer).ldelim();
                             };
 
                             /**
-                             * Decodes a GetIdentitiesRequestV0 message from the specified reader or buffer.
+                             * Decodes a GetPartialIdentitiesRequestV0 message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0} GetIdentitiesRequestV0
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0} GetPartialIdentitiesRequestV0
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            GetIdentitiesRequestV0.decode = function decode(reader, length) {
+                            GetPartialIdentitiesRequestV0.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
@@ -4965,30 +4965,30 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Decodes a GetIdentitiesRequestV0 message from the specified reader or buffer, length delimited.
+                             * Decodes a GetPartialIdentitiesRequestV0 message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0} GetIdentitiesRequestV0
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0} GetPartialIdentitiesRequestV0
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            GetIdentitiesRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                            GetPartialIdentitiesRequestV0.decodeDelimited = function decodeDelimited(reader) {
                                 if (!(reader instanceof $Reader))
                                     reader = new $Reader(reader);
                                 return this.decode(reader, reader.uint32());
                             };
 
                             /**
-                             * Verifies a GetIdentitiesRequestV0 message.
+                             * Verifies a GetPartialIdentitiesRequestV0 message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
                              */
-                            GetIdentitiesRequestV0.verify = function verify(message) {
+                            GetPartialIdentitiesRequestV0.verify = function verify(message) {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
                                 if (message.ids != null && message.hasOwnProperty("ids")) {
@@ -5005,20 +5005,20 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Creates a GetIdentitiesRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * Creates a GetPartialIdentitiesRequestV0 message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0} GetIdentitiesRequestV0
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0} GetPartialIdentitiesRequestV0
                              */
-                            GetIdentitiesRequestV0.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0)
+                            GetPartialIdentitiesRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0();
+                                var message = new $root.org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0();
                                 if (object.ids) {
                                     if (!Array.isArray(object.ids))
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0.ids: array expected");
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0.ids: array expected");
                                     message.ids = [];
                                     for (var i = 0; i < object.ids.length; ++i)
                                         if (typeof object.ids[i] === "string")
@@ -5032,15 +5032,15 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Creates a plain object from a GetIdentitiesRequestV0 message. Also converts values to other types if specified.
+                             * Creates a plain object from a GetPartialIdentitiesRequestV0 message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0} message GetIdentitiesRequestV0
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0} message GetPartialIdentitiesRequestV0
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
-                            GetIdentitiesRequestV0.toObject = function toObject(message, options) {
+                            GetPartialIdentitiesRequestV0.toObject = function toObject(message, options) {
                                 if (!options)
                                     options = {};
                                 var object = {};
@@ -5059,40 +5059,40 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Converts this GetIdentitiesRequestV0 to JSON.
+                             * Converts this GetPartialIdentitiesRequestV0 to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest.GetIdentitiesRequestV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesRequest.GetPartialIdentitiesRequestV0
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
-                            GetIdentitiesRequestV0.prototype.toJSON = function toJSON() {
+                            GetPartialIdentitiesRequestV0.prototype.toJSON = function toJSON() {
                                 return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                             };
 
-                            return GetIdentitiesRequestV0;
+                            return GetPartialIdentitiesRequestV0;
                         })();
 
-                        return GetIdentitiesRequest;
+                        return GetPartialIdentitiesRequest;
                     })();
 
-                    v0.GetIdentitiesResponse = (function() {
+                    v0.GetPartialIdentitiesResponse = (function() {
 
                         /**
-                         * Properties of a GetIdentitiesResponse.
+                         * Properties of a GetPartialIdentitiesResponse.
                          * @memberof org.dash.platform.dapi.v0
-                         * @interface IGetIdentitiesResponse
-                         * @property {org.dash.platform.dapi.v0.GetIdentitiesResponse.IGetIdentitiesResponseV0|null} [v0] GetIdentitiesResponse v0
+                         * @interface IGetPartialIdentitiesResponse
+                         * @property {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IGetPartialIdentitiesResponseV0|null} [v0] GetPartialIdentitiesResponse v0
                          */
 
                         /**
-                         * Constructs a new GetIdentitiesResponse.
+                         * Constructs a new GetPartialIdentitiesResponse.
                          * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a GetIdentitiesResponse.
-                         * @implements IGetIdentitiesResponse
+                         * @classdesc Represents a GetPartialIdentitiesResponse.
+                         * @implements IGetPartialIdentitiesResponse
                          * @constructor
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesResponse=} [properties] Properties to set
+                         * @param {org.dash.platform.dapi.v0.IGetPartialIdentitiesResponse=} [properties] Properties to set
                          */
-                        function GetIdentitiesResponse(properties) {
+                        function GetPartialIdentitiesResponse(properties) {
                             if (properties)
                                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                     if (properties[keys[i]] != null)
@@ -5100,89 +5100,89 @@ $root.org = (function() {
                         }
 
                         /**
-                         * GetIdentitiesResponse v0.
-                         * @member {org.dash.platform.dapi.v0.GetIdentitiesResponse.IGetIdentitiesResponseV0|null|undefined} v0
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * GetPartialIdentitiesResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IGetPartialIdentitiesResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                          * @instance
                          */
-                        GetIdentitiesResponse.prototype.v0 = null;
+                        GetPartialIdentitiesResponse.prototype.v0 = null;
 
                         // OneOf field names bound to virtual getters and setters
                         var $oneOfFields;
 
                         /**
-                         * GetIdentitiesResponse version.
+                         * GetPartialIdentitiesResponse version.
                          * @member {"v0"|undefined} version
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                          * @instance
                          */
-                        Object.defineProperty(GetIdentitiesResponse.prototype, "version", {
+                        Object.defineProperty(GetPartialIdentitiesResponse.prototype, "version", {
                             get: $util.oneOfGetter($oneOfFields = ["v0"]),
                             set: $util.oneOfSetter($oneOfFields)
                         });
 
                         /**
-                         * Creates a new GetIdentitiesResponse instance using the specified properties.
+                         * Creates a new GetPartialIdentitiesResponse instance using the specified properties.
                          * @function create
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesResponse=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse} GetIdentitiesResponse instance
+                         * @param {org.dash.platform.dapi.v0.IGetPartialIdentitiesResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse} GetPartialIdentitiesResponse instance
                          */
-                        GetIdentitiesResponse.create = function create(properties) {
-                            return new GetIdentitiesResponse(properties);
+                        GetPartialIdentitiesResponse.create = function create(properties) {
+                            return new GetPartialIdentitiesResponse(properties);
                         };
 
                         /**
-                         * Encodes the specified GetIdentitiesResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.verify|verify} messages.
+                         * Encodes the specified GetPartialIdentitiesResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.verify|verify} messages.
                          * @function encode
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesResponse} message GetIdentitiesResponse message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetPartialIdentitiesResponse} message GetPartialIdentitiesResponse message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        GetIdentitiesResponse.encode = function encode(message, writer) {
+                        GetPartialIdentitiesResponse.encode = function encode(message, writer) {
                             if (!writer)
                                 writer = $Writer.create();
                             if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
-                                $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                             return writer;
                         };
 
                         /**
-                         * Encodes the specified GetIdentitiesResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.verify|verify} messages.
+                         * Encodes the specified GetPartialIdentitiesResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.verify|verify} messages.
                          * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesResponse} message GetIdentitiesResponse message or plain object to encode
+                         * @param {org.dash.platform.dapi.v0.IGetPartialIdentitiesResponse} message GetPartialIdentitiesResponse message or plain object to encode
                          * @param {$protobuf.Writer} [writer] Writer to encode to
                          * @returns {$protobuf.Writer} Writer
                          */
-                        GetIdentitiesResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                        GetPartialIdentitiesResponse.encodeDelimited = function encodeDelimited(message, writer) {
                             return this.encode(message, writer).ldelim();
                         };
 
                         /**
-                         * Decodes a GetIdentitiesResponse message from the specified reader or buffer.
+                         * Decodes a GetPartialIdentitiesResponse message from the specified reader or buffer.
                          * @function decode
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                          * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse} GetIdentitiesResponse
+                         * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse} GetPartialIdentitiesResponse
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        GetIdentitiesResponse.decode = function decode(reader, length) {
+                        GetPartialIdentitiesResponse.decode = function decode(reader, length) {
                             if (!(reader instanceof $Reader))
                                 reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse();
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse();
                             while (reader.pos < end) {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
                                 case 1:
-                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0.decode(reader, reader.uint32());
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0.decode(reader, reader.uint32());
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -5193,37 +5193,37 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Decodes a GetIdentitiesResponse message from the specified reader or buffer, length delimited.
+                         * Decodes a GetPartialIdentitiesResponse message from the specified reader or buffer, length delimited.
                          * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                          * @static
                          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse} GetIdentitiesResponse
+                         * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse} GetPartialIdentitiesResponse
                          * @throws {Error} If the payload is not a reader or valid buffer
                          * @throws {$protobuf.util.ProtocolError} If required fields are missing
                          */
-                        GetIdentitiesResponse.decodeDelimited = function decodeDelimited(reader) {
+                        GetPartialIdentitiesResponse.decodeDelimited = function decodeDelimited(reader) {
                             if (!(reader instanceof $Reader))
                                 reader = new $Reader(reader);
                             return this.decode(reader, reader.uint32());
                         };
 
                         /**
-                         * Verifies a GetIdentitiesResponse message.
+                         * Verifies a GetPartialIdentitiesResponse message.
                          * @function verify
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                          * @static
                          * @param {Object.<string,*>} message Plain object to verify
                          * @returns {string|null} `null` if valid, otherwise the reason why it is not
                          */
-                        GetIdentitiesResponse.verify = function verify(message) {
+                        GetPartialIdentitiesResponse.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
                             var properties = {};
                             if (message.v0 != null && message.hasOwnProperty("v0")) {
                                 properties.version = 1;
                                 {
-                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0.verify(message.v0);
+                                    var error = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0.verify(message.v0);
                                     if (error)
                                         return "v0." + error;
                                 }
@@ -5232,40 +5232,40 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Creates a GetIdentitiesResponse message from a plain object. Also converts values to their respective internal types.
+                         * Creates a GetPartialIdentitiesResponse message from a plain object. Also converts values to their respective internal types.
                          * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                          * @static
                          * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse} GetIdentitiesResponse
+                         * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse} GetPartialIdentitiesResponse
                          */
-                        GetIdentitiesResponse.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesResponse)
+                        GetPartialIdentitiesResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse)
                                 return object;
-                            var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse();
+                            var message = new $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse();
                             if (object.v0 != null) {
                                 if (typeof object.v0 !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesResponse.v0: object expected");
-                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0.fromObject(object.v0);
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0.fromObject(object.v0);
                             }
                             return message;
                         };
 
                         /**
-                         * Creates a plain object from a GetIdentitiesResponse message. Also converts values to other types if specified.
+                         * Creates a plain object from a GetPartialIdentitiesResponse message. Also converts values to other types if specified.
                          * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                          * @static
-                         * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse} message GetIdentitiesResponse
+                         * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse} message GetPartialIdentitiesResponse
                          * @param {$protobuf.IConversionOptions} [options] Conversion options
                          * @returns {Object.<string,*>} Plain object
                          */
-                        GetIdentitiesResponse.toObject = function toObject(message, options) {
+                        GetPartialIdentitiesResponse.toObject = function toObject(message, options) {
                             if (!options)
                                 options = {};
                             var object = {};
                             if (message.v0 != null && message.hasOwnProperty("v0")) {
-                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0.toObject(message.v0, options);
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0.toObject(message.v0, options);
                                 if (options.oneofs)
                                     object.version = "v0";
                             }
@@ -5273,32 +5273,32 @@ $root.org = (function() {
                         };
 
                         /**
-                         * Converts this GetIdentitiesResponse to JSON.
+                         * Converts this GetPartialIdentitiesResponse to JSON.
                          * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                          * @instance
                          * @returns {Object.<string,*>} JSON object
                          */
-                        GetIdentitiesResponse.prototype.toJSON = function toJSON() {
+                        GetPartialIdentitiesResponse.prototype.toJSON = function toJSON() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
 
-                        GetIdentitiesResponse.IdentityValue = (function() {
+                        GetPartialIdentitiesResponse.IdentityValue = (function() {
 
                             /**
                              * Properties of an IdentityValue.
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                              * @interface IIdentityValue
                              * @property {Uint8Array|null} [value] IdentityValue value
                              */
 
                             /**
                              * Constructs a new IdentityValue.
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                              * @classdesc Represents an IdentityValue.
                              * @implements IIdentityValue
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityValue=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentityValue=} [properties] Properties to set
                              */
                             function IdentityValue(properties) {
                                 if (properties)
@@ -5310,7 +5310,7 @@ $root.org = (function() {
                             /**
                              * IdentityValue value.
                              * @member {Uint8Array} value
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue
                              * @instance
                              */
                             IdentityValue.prototype.value = $util.newBuffer([]);
@@ -5318,21 +5318,21 @@ $root.org = (function() {
                             /**
                              * Creates a new IdentityValue instance using the specified properties.
                              * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityValue=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue} IdentityValue instance
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentityValue=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue} IdentityValue instance
                              */
                             IdentityValue.create = function create(properties) {
                                 return new IdentityValue(properties);
                             };
 
                             /**
-                             * Encodes the specified IdentityValue message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue.verify|verify} messages.
+                             * Encodes the specified IdentityValue message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityValue} message IdentityValue message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentityValue} message IdentityValue message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
@@ -5345,11 +5345,11 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Encodes the specified IdentityValue message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue.verify|verify} messages.
+                             * Encodes the specified IdentityValue message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityValue} message IdentityValue message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentityValue} message IdentityValue message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
@@ -5360,18 +5360,18 @@ $root.org = (function() {
                             /**
                              * Decodes an IdentityValue message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue} IdentityValue
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue} IdentityValue
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
                             IdentityValue.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
@@ -5389,10 +5389,10 @@ $root.org = (function() {
                             /**
                              * Decodes an IdentityValue message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue} IdentityValue
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue} IdentityValue
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
@@ -5405,7 +5405,7 @@ $root.org = (function() {
                             /**
                              * Verifies an IdentityValue message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
@@ -5422,15 +5422,15 @@ $root.org = (function() {
                             /**
                              * Creates an IdentityValue message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue} IdentityValue
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue} IdentityValue
                              */
                             IdentityValue.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue)
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue();
+                                var message = new $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue();
                                 if (object.value != null)
                                     if (typeof object.value === "string")
                                         $util.base64.decode(object.value, message.value = $util.newBuffer($util.base64.length(object.value)), 0);
@@ -5442,9 +5442,9 @@ $root.org = (function() {
                             /**
                              * Creates a plain object from an IdentityValue message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue} message IdentityValue
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue} message IdentityValue
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
@@ -5468,7 +5468,7 @@ $root.org = (function() {
                             /**
                              * Converts this IdentityValue to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
@@ -5479,23 +5479,23 @@ $root.org = (function() {
                             return IdentityValue;
                         })();
 
-                        GetIdentitiesResponse.IdentityEntry = (function() {
+                        GetPartialIdentitiesResponse.IdentityEntry = (function() {
 
                             /**
                              * Properties of an IdentityEntry.
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                              * @interface IIdentityEntry
                              * @property {Uint8Array|null} [key] IdentityEntry key
-                             * @property {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityValue|null} [value] IdentityEntry value
+                             * @property {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentityValue|null} [value] IdentityEntry value
                              */
 
                             /**
                              * Constructs a new IdentityEntry.
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                              * @classdesc Represents an IdentityEntry.
                              * @implements IIdentityEntry
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityEntry=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentityEntry=} [properties] Properties to set
                              */
                             function IdentityEntry(properties) {
                                 if (properties)
@@ -5507,15 +5507,15 @@ $root.org = (function() {
                             /**
                              * IdentityEntry key.
                              * @member {Uint8Array} key
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry
                              * @instance
                              */
                             IdentityEntry.prototype.key = $util.newBuffer([]);
 
                             /**
                              * IdentityEntry value.
-                             * @member {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityValue|null|undefined} value
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @member {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentityValue|null|undefined} value
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry
                              * @instance
                              */
                             IdentityEntry.prototype.value = null;
@@ -5523,21 +5523,21 @@ $root.org = (function() {
                             /**
                              * Creates a new IdentityEntry instance using the specified properties.
                              * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityEntry=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry} IdentityEntry instance
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentityEntry=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry} IdentityEntry instance
                              */
                             IdentityEntry.create = function create(properties) {
                                 return new IdentityEntry(properties);
                             };
 
                             /**
-                             * Encodes the specified IdentityEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.verify|verify} messages.
+                             * Encodes the specified IdentityEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityEntry} message IdentityEntry message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentityEntry} message IdentityEntry message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
@@ -5547,16 +5547,16 @@ $root.org = (function() {
                                 if (message.key != null && Object.hasOwnProperty.call(message, "key"))
                                     writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.key);
                                 if (message.value != null && Object.hasOwnProperty.call(message, "value"))
-                                    $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue.encode(message.value, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                    $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue.encode(message.value, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                 return writer;
                             };
 
                             /**
-                             * Encodes the specified IdentityEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.verify|verify} messages.
+                             * Encodes the specified IdentityEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityEntry} message IdentityEntry message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentityEntry} message IdentityEntry message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
@@ -5567,18 +5567,18 @@ $root.org = (function() {
                             /**
                              * Decodes an IdentityEntry message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry} IdentityEntry
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry} IdentityEntry
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
                             IdentityEntry.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
@@ -5586,7 +5586,7 @@ $root.org = (function() {
                                         message.key = reader.bytes();
                                         break;
                                     case 2:
-                                        message.value = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue.decode(reader, reader.uint32());
+                                        message.value = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue.decode(reader, reader.uint32());
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -5599,10 +5599,10 @@ $root.org = (function() {
                             /**
                              * Decodes an IdentityEntry message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry} IdentityEntry
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry} IdentityEntry
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
@@ -5615,7 +5615,7 @@ $root.org = (function() {
                             /**
                              * Verifies an IdentityEntry message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
@@ -5627,7 +5627,7 @@ $root.org = (function() {
                                     if (!(message.key && typeof message.key.length === "number" || $util.isString(message.key)))
                                         return "key: buffer expected";
                                 if (message.value != null && message.hasOwnProperty("value")) {
-                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue.verify(message.value);
+                                    var error = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue.verify(message.value);
                                     if (error)
                                         return "value." + error;
                                 }
@@ -5637,15 +5637,15 @@ $root.org = (function() {
                             /**
                              * Creates an IdentityEntry message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry} IdentityEntry
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry} IdentityEntry
                              */
                             IdentityEntry.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry)
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry();
+                                var message = new $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry();
                                 if (object.key != null)
                                     if (typeof object.key === "string")
                                         $util.base64.decode(object.key, message.key = $util.newBuffer($util.base64.length(object.key)), 0);
@@ -5653,8 +5653,8 @@ $root.org = (function() {
                                         message.key = object.key;
                                 if (object.value != null) {
                                     if (typeof object.value !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.value: object expected");
-                                    message.value = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue.fromObject(object.value);
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry.value: object expected");
+                                    message.value = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue.fromObject(object.value);
                                 }
                                 return message;
                             };
@@ -5662,9 +5662,9 @@ $root.org = (function() {
                             /**
                              * Creates a plain object from an IdentityEntry message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry} message IdentityEntry
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry} message IdentityEntry
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
@@ -5685,14 +5685,14 @@ $root.org = (function() {
                                 if (message.key != null && message.hasOwnProperty("key"))
                                     object.key = options.bytes === String ? $util.base64.encode(message.key, 0, message.key.length) : options.bytes === Array ? Array.prototype.slice.call(message.key) : message.key;
                                 if (message.value != null && message.hasOwnProperty("value"))
-                                    object.value = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue.toObject(message.value, options);
+                                    object.value = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityValue.toObject(message.value, options);
                                 return object;
                             };
 
                             /**
                              * Converts this IdentityEntry to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
@@ -5703,22 +5703,22 @@ $root.org = (function() {
                             return IdentityEntry;
                         })();
 
-                        GetIdentitiesResponse.Identities = (function() {
+                        GetPartialIdentitiesResponse.Identities = (function() {
 
                             /**
                              * Properties of an Identities.
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                              * @interface IIdentities
-                             * @property {Array.<org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityEntry>|null} [identityEntries] Identities identityEntries
+                             * @property {Array.<org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentityEntry>|null} [identityEntries] Identities identityEntries
                              */
 
                             /**
                              * Constructs a new Identities.
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
                              * @classdesc Represents an Identities.
                              * @implements IIdentities
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentities=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentities=} [properties] Properties to set
                              */
                             function Identities(properties) {
                                 this.identityEntries = [];
@@ -5730,8 +5730,8 @@ $root.org = (function() {
 
                             /**
                              * Identities identityEntries.
-                             * @member {Array.<org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityEntry>} identityEntries
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @member {Array.<org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentityEntry>} identityEntries
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities
                              * @instance
                              */
                             Identities.prototype.identityEntries = $util.emptyArray;
@@ -5739,21 +5739,21 @@ $root.org = (function() {
                             /**
                              * Creates a new Identities instance using the specified properties.
                              * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentities=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities} Identities instance
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentities=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities} Identities instance
                              */
                             Identities.create = function create(properties) {
                                 return new Identities(properties);
                             };
 
                             /**
-                             * Encodes the specified Identities message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.verify|verify} messages.
+                             * Encodes the specified Identities message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentities} message Identities message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentities} message Identities message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
@@ -5762,16 +5762,16 @@ $root.org = (function() {
                                     writer = $Writer.create();
                                 if (message.identityEntries != null && message.identityEntries.length)
                                     for (var i = 0; i < message.identityEntries.length; ++i)
-                                        $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.encode(message.identityEntries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                        $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry.encode(message.identityEntries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                                 return writer;
                             };
 
                             /**
-                             * Encodes the specified Identities message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.verify|verify} messages.
+                             * Encodes the specified Identities message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentities} message Identities message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentities} message Identities message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
@@ -5782,25 +5782,25 @@ $root.org = (function() {
                             /**
                              * Decodes an Identities message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities} Identities
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities} Identities
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
                             Identities.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
                                     case 1:
                                         if (!(message.identityEntries && message.identityEntries.length))
                                             message.identityEntries = [];
-                                        message.identityEntries.push($root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.decode(reader, reader.uint32()));
+                                        message.identityEntries.push($root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry.decode(reader, reader.uint32()));
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -5813,10 +5813,10 @@ $root.org = (function() {
                             /**
                              * Decodes an Identities message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities} Identities
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities} Identities
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
@@ -5829,7 +5829,7 @@ $root.org = (function() {
                             /**
                              * Verifies an Identities message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
@@ -5841,7 +5841,7 @@ $root.org = (function() {
                                     if (!Array.isArray(message.identityEntries))
                                         return "identityEntries: array expected";
                                     for (var i = 0; i < message.identityEntries.length; ++i) {
-                                        var error = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.verify(message.identityEntries[i]);
+                                        var error = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry.verify(message.identityEntries[i]);
                                         if (error)
                                             return "identityEntries." + error;
                                     }
@@ -5852,23 +5852,23 @@ $root.org = (function() {
                             /**
                              * Creates an Identities message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities} Identities
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities} Identities
                              */
                             Identities.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities)
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities();
+                                var message = new $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities();
                                 if (object.identityEntries) {
                                     if (!Array.isArray(object.identityEntries))
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.identityEntries: array expected");
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities.identityEntries: array expected");
                                     message.identityEntries = [];
                                     for (var i = 0; i < object.identityEntries.length; ++i) {
                                         if (typeof object.identityEntries[i] !== "object")
-                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.identityEntries: object expected");
-                                        message.identityEntries[i] = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.fromObject(object.identityEntries[i]);
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities.identityEntries: object expected");
+                                        message.identityEntries[i] = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry.fromObject(object.identityEntries[i]);
                                     }
                                 }
                                 return message;
@@ -5877,9 +5877,9 @@ $root.org = (function() {
                             /**
                              * Creates a plain object from an Identities message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities} message Identities
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities} message Identities
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
@@ -5892,7 +5892,7 @@ $root.org = (function() {
                                 if (message.identityEntries && message.identityEntries.length) {
                                     object.identityEntries = [];
                                     for (var j = 0; j < message.identityEntries.length; ++j)
-                                        object.identityEntries[j] = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.toObject(message.identityEntries[j], options);
+                                        object.identityEntries[j] = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IdentityEntry.toObject(message.identityEntries[j], options);
                                 }
                                 return object;
                             };
@@ -5900,7 +5900,7 @@ $root.org = (function() {
                             /**
                              * Converts this Identities to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
@@ -5911,26 +5911,26 @@ $root.org = (function() {
                             return Identities;
                         })();
 
-                        GetIdentitiesResponse.GetIdentitiesResponseV0 = (function() {
+                        GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0 = (function() {
 
                             /**
-                             * Properties of a GetIdentitiesResponseV0.
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
-                             * @interface IGetIdentitiesResponseV0
-                             * @property {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentities|null} [identities] GetIdentitiesResponseV0 identities
-                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentitiesResponseV0 proof
-                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentitiesResponseV0 metadata
+                             * Properties of a GetPartialIdentitiesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
+                             * @interface IGetPartialIdentitiesResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentities|null} [identities] GetPartialIdentitiesResponseV0 identities
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetPartialIdentitiesResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetPartialIdentitiesResponseV0 metadata
                              */
 
                             /**
-                             * Constructs a new GetIdentitiesResponseV0.
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
-                             * @classdesc Represents a GetIdentitiesResponseV0.
-                             * @implements IGetIdentitiesResponseV0
+                             * Constructs a new GetPartialIdentitiesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse
+                             * @classdesc Represents a GetPartialIdentitiesResponseV0.
+                             * @implements IGetPartialIdentitiesResponseV0
                              * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IGetIdentitiesResponseV0=} [properties] Properties to set
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IGetPartialIdentitiesResponseV0=} [properties] Properties to set
                              */
-                            function GetIdentitiesResponseV0(properties) {
+                            function GetPartialIdentitiesResponseV0(properties) {
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -5938,69 +5938,69 @@ $root.org = (function() {
                             }
 
                             /**
-                             * GetIdentitiesResponseV0 identities.
-                             * @member {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentities|null|undefined} identities
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0
+                             * GetPartialIdentitiesResponseV0 identities.
+                             * @member {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IIdentities|null|undefined} identities
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0
                              * @instance
                              */
-                            GetIdentitiesResponseV0.prototype.identities = null;
+                            GetPartialIdentitiesResponseV0.prototype.identities = null;
 
                             /**
-                             * GetIdentitiesResponseV0 proof.
+                             * GetPartialIdentitiesResponseV0 proof.
                              * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0
                              * @instance
                              */
-                            GetIdentitiesResponseV0.prototype.proof = null;
+                            GetPartialIdentitiesResponseV0.prototype.proof = null;
 
                             /**
-                             * GetIdentitiesResponseV0 metadata.
+                             * GetPartialIdentitiesResponseV0 metadata.
                              * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0
                              * @instance
                              */
-                            GetIdentitiesResponseV0.prototype.metadata = null;
+                            GetPartialIdentitiesResponseV0.prototype.metadata = null;
 
                             // OneOf field names bound to virtual getters and setters
                             var $oneOfFields;
 
                             /**
-                             * GetIdentitiesResponseV0 result.
+                             * GetPartialIdentitiesResponseV0 result.
                              * @member {"identities"|"proof"|undefined} result
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0
                              * @instance
                              */
-                            Object.defineProperty(GetIdentitiesResponseV0.prototype, "result", {
+                            Object.defineProperty(GetPartialIdentitiesResponseV0.prototype, "result", {
                                 get: $util.oneOfGetter($oneOfFields = ["identities", "proof"]),
                                 set: $util.oneOfSetter($oneOfFields)
                             });
 
                             /**
-                             * Creates a new GetIdentitiesResponseV0 instance using the specified properties.
+                             * Creates a new GetPartialIdentitiesResponseV0 instance using the specified properties.
                              * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IGetIdentitiesResponseV0=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0} GetIdentitiesResponseV0 instance
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IGetPartialIdentitiesResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0} GetPartialIdentitiesResponseV0 instance
                              */
-                            GetIdentitiesResponseV0.create = function create(properties) {
-                                return new GetIdentitiesResponseV0(properties);
+                            GetPartialIdentitiesResponseV0.create = function create(properties) {
+                                return new GetPartialIdentitiesResponseV0(properties);
                             };
 
                             /**
-                             * Encodes the specified GetIdentitiesResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0.verify|verify} messages.
+                             * Encodes the specified GetPartialIdentitiesResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0.verify|verify} messages.
                              * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IGetIdentitiesResponseV0} message GetIdentitiesResponseV0 message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IGetPartialIdentitiesResponseV0} message GetPartialIdentitiesResponseV0 message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            GetIdentitiesResponseV0.encode = function encode(message, writer) {
+                            GetPartialIdentitiesResponseV0.encode = function encode(message, writer) {
                                 if (!writer)
                                     writer = $Writer.create();
                                 if (message.identities != null && Object.hasOwnProperty.call(message, "identities"))
-                                    $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.encode(message.identities, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities.encode(message.identities, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                                 if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
                                     $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                 if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
@@ -6009,38 +6009,38 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Encodes the specified GetIdentitiesResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0.verify|verify} messages.
+                             * Encodes the specified GetPartialIdentitiesResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0.verify|verify} messages.
                              * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IGetIdentitiesResponseV0} message GetIdentitiesResponseV0 message or plain object to encode
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.IGetPartialIdentitiesResponseV0} message GetPartialIdentitiesResponseV0 message or plain object to encode
                              * @param {$protobuf.Writer} [writer] Writer to encode to
                              * @returns {$protobuf.Writer} Writer
                              */
-                            GetIdentitiesResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                            GetPartialIdentitiesResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
                                 return this.encode(message, writer).ldelim();
                             };
 
                             /**
-                             * Decodes a GetIdentitiesResponseV0 message from the specified reader or buffer.
+                             * Decodes a GetPartialIdentitiesResponseV0 message from the specified reader or buffer.
                              * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                              * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0} GetIdentitiesResponseV0
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0} GetPartialIdentitiesResponseV0
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            GetIdentitiesResponseV0.decode = function decode(reader, length) {
+                            GetPartialIdentitiesResponseV0.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0();
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
                                     case 1:
-                                        message.identities = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.decode(reader, reader.uint32());
+                                        message.identities = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities.decode(reader, reader.uint32());
                                         break;
                                     case 2:
                                         message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
@@ -6057,37 +6057,37 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Decodes a GetIdentitiesResponseV0 message from the specified reader or buffer, length delimited.
+                             * Decodes a GetPartialIdentitiesResponseV0 message from the specified reader or buffer, length delimited.
                              * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0
                              * @static
                              * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0} GetIdentitiesResponseV0
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0} GetPartialIdentitiesResponseV0
                              * @throws {Error} If the payload is not a reader or valid buffer
                              * @throws {$protobuf.util.ProtocolError} If required fields are missing
                              */
-                            GetIdentitiesResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                            GetPartialIdentitiesResponseV0.decodeDelimited = function decodeDelimited(reader) {
                                 if (!(reader instanceof $Reader))
                                     reader = new $Reader(reader);
                                 return this.decode(reader, reader.uint32());
                             };
 
                             /**
-                             * Verifies a GetIdentitiesResponseV0 message.
+                             * Verifies a GetPartialIdentitiesResponseV0 message.
                              * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0
                              * @static
                              * @param {Object.<string,*>} message Plain object to verify
                              * @returns {string|null} `null` if valid, otherwise the reason why it is not
                              */
-                            GetIdentitiesResponseV0.verify = function verify(message) {
+                            GetPartialIdentitiesResponseV0.verify = function verify(message) {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
                                 var properties = {};
                                 if (message.identities != null && message.hasOwnProperty("identities")) {
                                     properties.result = 1;
                                     {
-                                        var error = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.verify(message.identities);
+                                        var error = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities.verify(message.identities);
                                         if (error)
                                             return "identities." + error;
                                     }
@@ -6111,52 +6111,52 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Creates a GetIdentitiesResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * Creates a GetPartialIdentitiesResponseV0 message from a plain object. Also converts values to their respective internal types.
                              * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0
                              * @static
                              * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0} GetIdentitiesResponseV0
+                             * @returns {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0} GetPartialIdentitiesResponseV0
                              */
-                            GetIdentitiesResponseV0.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0)
+                            GetPartialIdentitiesResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0)
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0();
+                                var message = new $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0();
                                 if (object.identities != null) {
                                     if (typeof object.identities !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0.identities: object expected");
-                                    message.identities = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.fromObject(object.identities);
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0.identities: object expected");
+                                    message.identities = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities.fromObject(object.identities);
                                 }
                                 if (object.proof != null) {
                                     if (typeof object.proof !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0.proof: object expected");
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0.proof: object expected");
                                     message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
                                 }
                                 if (object.metadata != null) {
                                     if (typeof object.metadata !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0.metadata: object expected");
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0.metadata: object expected");
                                     message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
                                 }
                                 return message;
                             };
 
                             /**
-                             * Creates a plain object from a GetIdentitiesResponseV0 message. Also converts values to other types if specified.
+                             * Creates a plain object from a GetPartialIdentitiesResponseV0 message. Also converts values to other types if specified.
                              * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0
                              * @static
-                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0} message GetIdentitiesResponseV0
+                             * @param {org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0} message GetPartialIdentitiesResponseV0
                              * @param {$protobuf.IConversionOptions} [options] Conversion options
                              * @returns {Object.<string,*>} Plain object
                              */
-                            GetIdentitiesResponseV0.toObject = function toObject(message, options) {
+                            GetPartialIdentitiesResponseV0.toObject = function toObject(message, options) {
                                 if (!options)
                                     options = {};
                                 var object = {};
                                 if (options.defaults)
                                     object.metadata = null;
                                 if (message.identities != null && message.hasOwnProperty("identities")) {
-                                    object.identities = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.toObject(message.identities, options);
+                                    object.identities = $root.org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.Identities.toObject(message.identities, options);
                                     if (options.oneofs)
                                         object.result = "identities";
                                 }
@@ -6171,20 +6171,20 @@ $root.org = (function() {
                             };
 
                             /**
-                             * Converts this GetIdentitiesResponseV0 to JSON.
+                             * Converts this GetPartialIdentitiesResponseV0 to JSON.
                              * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.GetIdentitiesResponseV0
+                             * @memberof org.dash.platform.dapi.v0.GetPartialIdentitiesResponse.GetPartialIdentitiesResponseV0
                              * @instance
                              * @returns {Object.<string,*>} JSON object
                              */
-                            GetIdentitiesResponseV0.prototype.toJSON = function toJSON() {
+                            GetPartialIdentitiesResponseV0.prototype.toJSON = function toJSON() {
                                 return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                             };
 
-                            return GetIdentitiesResponseV0;
+                            return GetPartialIdentitiesResponseV0;
                         })();
 
-                        return GetIdentitiesResponse;
+                        return GetPartialIdentitiesResponse;
                     })();
 
                     v0.GetIdentityNonceResponse = (function() {

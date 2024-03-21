@@ -28,8 +28,6 @@
 @class GetDocumentsResponse;
 @class GetEpochsInfoRequest;
 @class GetEpochsInfoResponse;
-@class GetIdentitiesRequest;
-@class GetIdentitiesResponse;
 @class GetIdentityBalanceAndRevisionRequest;
 @class GetIdentityBalanceAndRevisionResponse;
 @class GetIdentityBalanceRequest;
@@ -44,6 +42,8 @@
 @class GetIdentityNonceResponse;
 @class GetIdentityRequest;
 @class GetIdentityResponse;
+@class GetPartialIdentitiesRequest;
+@class GetPartialIdentitiesResponse;
 @class GetProofsRequest;
 @class GetProofsResponse;
 @class GetProtocolVersionUpgradeStateRequest;
@@ -90,9 +90,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getIdentityWithMessage:(GetIdentityRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getIdentities(GetIdentitiesRequest) returns (GetIdentitiesResponse)
+#pragma mark getPartialIdentities(GetPartialIdentitiesRequest) returns (GetPartialIdentitiesResponse)
 
-- (GRPCUnaryProtoCall *)getIdentitiesWithMessage:(GetIdentitiesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+- (GRPCUnaryProtoCall *)getPartialIdentitiesWithMessage:(GetPartialIdentitiesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse)
 
@@ -180,11 +180,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetIdentityWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
-#pragma mark getIdentities(GetIdentitiesRequest) returns (GetIdentitiesResponse)
+#pragma mark getPartialIdentities(GetPartialIdentitiesRequest) returns (GetPartialIdentitiesResponse)
 
-- (void)getIdentitiesWithRequest:(GetIdentitiesRequest *)request handler:(void(^)(GetIdentitiesResponse *_Nullable response, NSError *_Nullable error))handler;
+- (void)getPartialIdentitiesWithRequest:(GetPartialIdentitiesRequest *)request handler:(void(^)(GetPartialIdentitiesResponse *_Nullable response, NSError *_Nullable error))handler;
 
-- (GRPCProtoCall *)RPCTogetIdentitiesWithRequest:(GetIdentitiesRequest *)request handler:(void(^)(GetIdentitiesResponse *_Nullable response, NSError *_Nullable error))handler;
+- (GRPCProtoCall *)RPCTogetPartialIdentitiesWithRequest:(GetPartialIdentitiesRequest *)request handler:(void(^)(GetPartialIdentitiesResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse)

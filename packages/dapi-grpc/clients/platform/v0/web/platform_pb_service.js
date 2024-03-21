@@ -28,13 +28,13 @@ Platform.getIdentity = {
   responseType: platform_pb.GetIdentityResponse
 };
 
-Platform.getIdentities = {
-  methodName: "getIdentities",
+Platform.getPartialIdentities = {
+  methodName: "getPartialIdentities",
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetIdentitiesRequest,
-  responseType: platform_pb.GetIdentitiesResponse
+  requestType: platform_pb.GetPartialIdentitiesRequest,
+  responseType: platform_pb.GetPartialIdentitiesResponse
 };
 
 Platform.getIdentityKeys = {
@@ -250,11 +250,11 @@ PlatformClient.prototype.getIdentity = function getIdentity(requestMessage, meta
   };
 };
 
-PlatformClient.prototype.getIdentities = function getIdentities(requestMessage, metadata, callback) {
+PlatformClient.prototype.getPartialIdentities = function getPartialIdentities(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
-  var client = grpc.unary(Platform.getIdentities, {
+  var client = grpc.unary(Platform.getPartialIdentities, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
