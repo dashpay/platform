@@ -40,7 +40,8 @@ impl Drive {
     /// A `Result` containing a vector of `LowLevelDriveOperation` which represents the operations
     /// performed during the re-enabling process, or an `Error` if the process fails.
     ///
-    pub fn re_enable_identity_keys_operations_v0(
+    #[inline(always)]
+    pub(super) fn re_enable_identity_keys_operations_v0(
         &self,
         identity_id: [u8; 32],
         key_ids: Vec<KeyID>,

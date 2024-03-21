@@ -12,6 +12,7 @@ use integer_encoding::VarInt;
 
 impl Drive {
     /// Sets the next protocol version
+    #[inline(always)]
     pub(super) fn set_next_protocol_version_operations_v0(
         &self,
         protocol_version: ProtocolVersion,

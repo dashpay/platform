@@ -31,6 +31,7 @@ pub trait DataContractValidationMethodsV0 {
 }
 
 impl DataContract {
+    #[inline(always)]
     pub(super) fn validate_document_properties_v0(
         &self,
         name: &str,
@@ -75,6 +76,7 @@ impl DataContract {
     }
 
     // TODO: Move to document
+    #[inline(always)]
     pub(super) fn validate_document_v0(
         &self,
         name: &str,

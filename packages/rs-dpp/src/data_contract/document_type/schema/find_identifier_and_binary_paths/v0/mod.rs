@@ -6,12 +6,14 @@ use indexmap::IndexMap;
 use std::collections::BTreeSet;
 
 impl DocumentTypeV0 {
+    #[inline(always)]
     pub(super) fn find_identifier_and_binary_paths_v0(
         properties: &IndexMap<String, DocumentProperty>,
     ) -> (BTreeSet<String>, BTreeSet<String>) {
         Self::find_identifier_and_binary_paths_inner(properties, "")
     }
 
+    #[inline(always)]
     fn find_identifier_and_binary_paths_inner(
         properties: &IndexMap<String, DocumentProperty>,
         current_path: &str,

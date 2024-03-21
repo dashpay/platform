@@ -40,6 +40,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the contract application or fee calculation fails.
+    #[inline(always)]
     pub(super) fn apply_contract_v0(
         &self,
         contract: &DataContract,
@@ -63,6 +64,7 @@ impl Drive {
     /// Gets the operations for applying a contract
     /// If the contract already exists, we get operations for an update
     /// Otherwise we get operations for an insert
+    #[inline(always)]
     pub(super) fn apply_contract_operations_v0(
         &self,
         contract: &DataContract,

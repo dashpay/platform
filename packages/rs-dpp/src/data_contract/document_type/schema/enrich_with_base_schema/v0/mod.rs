@@ -10,7 +10,8 @@ pub const PROPERTY_SCHEMA: &str = "$schema";
 
 const TIMESTAMPS: [&str; 2] = ["$createdAt", "$updatedAt"];
 
-pub fn enrich_with_base_schema_v0(
+#[inline(always)]
+pub(super) fn enrich_with_base_schema_v0(
     mut schema: Value,
     schema_defs: Option<Value>,
 ) -> Result<Value, DataContractError> {
