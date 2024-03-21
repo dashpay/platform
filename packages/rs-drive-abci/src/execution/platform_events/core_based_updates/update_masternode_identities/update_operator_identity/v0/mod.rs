@@ -14,7 +14,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dpp::identity::Purpose::WITHDRAW;
+use dpp::identity::Purpose::TRANSFER;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::version::PlatformVersion;
@@ -59,7 +59,7 @@ where
             .ok_or_else(|| {
                 Error::Execution(ExecutionError::CorruptedCachedState(format!(
                     "expected masternode {} to be in state",
-                    pro_tx_hash.to_string()
+                    pro_tx_hash
                 )))
             })?;
 
@@ -191,7 +191,7 @@ where
                     let key = IdentityPublicKeyV0 {
                         id: new_key_id,
                         key_type: KeyType::ECDSA_HASH160,
-                        purpose: WITHDRAW,
+                        purpose: TRANSFER,
                         security_level: SecurityLevel::CRITICAL,
                         read_only: true,
                         data: BinaryData::new(new_operator_payout_address.to_vec()),

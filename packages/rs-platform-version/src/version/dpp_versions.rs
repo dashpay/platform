@@ -16,6 +16,7 @@ pub struct DPPVersion {
 
 #[derive(Clone, Debug, Default)]
 pub struct StateTransitionVersions {
+    pub max_state_transition_size: u64,
     pub documents: DocumentTransitionVersions,
     pub identities: IdentityTransitionVersions,
 }
@@ -130,6 +131,10 @@ pub struct DocumentFeatureVersionBounds {
 
 #[derive(Clone, Debug, Default)]
 pub struct ContractVersions {
+    /// The maximum that we can store a data contract in the state. There is a possibility that a client
+    /// sends a state transition serialized in a specific version and that the system re-serializes it
+    /// to the current version, and in so doing increases it's size.
+    pub max_serialized_size: u32,
     /// This is how we serialize and deserialize a contract
     pub contract_serialization_version: FeatureVersionBounds,
     /// This is the structure of the Contract as it is defined for code paths
@@ -220,6 +225,7 @@ pub struct DocumentVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DocumentMethodVersions {
+    pub is_equal_ignoring_timestamps: FeatureVersion,
     pub hash: FeatureVersion,
     pub get_raw_for_contract: FeatureVersion,
     pub get_raw_for_document_type: FeatureVersion,

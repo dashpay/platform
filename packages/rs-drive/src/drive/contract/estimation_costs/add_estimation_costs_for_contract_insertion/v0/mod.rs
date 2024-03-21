@@ -24,6 +24,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds the estimation costs for a contract insertion
+    #[inline(always)]
     pub(super) fn add_estimation_costs_for_contract_insertion_v0(
         contract: &DataContract,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,

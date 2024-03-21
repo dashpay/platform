@@ -8,278 +8,259 @@ use dpp::state_transition::data_contract_create_transition::DataContractCreateTr
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
-use dpp::ProtocolError;
 
 impl BumpIdentityNonceActionV0 {
-    /// try from identity update
-    pub fn try_from_identity_update(
-        value: IdentityUpdateTransitionV0,
-    ) -> Result<Self, ProtocolError> {
+    /// from identity update
+    pub fn from_identity_update(value: IdentityUpdateTransitionV0) -> Self {
         let IdentityUpdateTransitionV0 {
             identity_id,
             nonce,
             user_fee_increase,
             ..
         } = value;
-        Ok(BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
             user_fee_increase,
-        })
+        }
     }
 
-    /// try from borrowed identity update
-    pub fn try_from_borrowed_identity_update(
-        value: &IdentityUpdateTransitionV0,
-    ) -> Result<Self, ProtocolError> {
+    /// from borrowed identity update
+    pub fn from_borrowed_identity_update(value: &IdentityUpdateTransitionV0) -> Self {
         let IdentityUpdateTransitionV0 {
             identity_id,
             nonce,
             user_fee_increase,
             ..
         } = value;
-        Ok(BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
             user_fee_increase: *user_fee_increase,
-        })
+        }
     }
 
-    /// try from identity update action
-    pub fn try_from_identity_update_action(
-        value: IdentityUpdateTransitionActionV0,
-    ) -> Result<Self, ProtocolError> {
+    /// from identity update action
+    pub fn from_identity_update_action(value: IdentityUpdateTransitionActionV0) -> Self {
         let IdentityUpdateTransitionActionV0 {
             identity_id,
             nonce,
             user_fee_increase,
             ..
         } = value;
-        Ok(BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
             user_fee_increase,
-        })
+        }
     }
 
-    /// try from borrowed identity update action
-    pub fn try_from_borrowed_identity_update_action(
-        value: &IdentityUpdateTransitionActionV0,
-    ) -> Result<Self, ProtocolError> {
+    /// from borrowed identity update action
+    pub fn from_borrowed_identity_update_action(value: &IdentityUpdateTransitionActionV0) -> Self {
         let IdentityUpdateTransitionActionV0 {
             identity_id,
             nonce,
             user_fee_increase,
             ..
         } = value;
-        Ok(BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
             user_fee_increase: *user_fee_increase,
-        })
+        }
     }
 
-    /// try from contract create
-    pub fn try_from_contract_create(
-        value: DataContractCreateTransitionV0,
-    ) -> Result<Self, ProtocolError> {
+    /// from contract create
+    pub fn from_contract_create(value: DataContractCreateTransitionV0) -> Self {
         let DataContractCreateTransitionV0 {
             data_contract,
             identity_nonce,
             user_fee_increase,
             ..
         } = value;
-        Ok(BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
             identity_id: data_contract.owner_id(),
             identity_nonce,
             user_fee_increase,
-        })
+        }
     }
 
-    /// try from contract create
-    pub fn try_from_borrowed_contract_create(
-        value: &DataContractCreateTransitionV0,
-    ) -> Result<Self, ProtocolError> {
+    /// from borrowed contract create
+    pub fn from_borrowed_contract_create(value: &DataContractCreateTransitionV0) -> Self {
         let DataContractCreateTransitionV0 {
             data_contract,
             identity_nonce,
             user_fee_increase,
             ..
         } = value;
-        Ok(BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
             identity_id: data_contract.owner_id(),
             identity_nonce: *identity_nonce,
             user_fee_increase: *user_fee_increase,
-        })
+        }
     }
 
-    /// try from contract create action
-    pub fn try_from_contract_create_action(
-        value: DataContractCreateTransitionActionV0,
-    ) -> Result<Self, ProtocolError> {
+    /// from contract create action
+    pub fn from_contract_create_action(value: DataContractCreateTransitionActionV0) -> Self {
         let DataContractCreateTransitionActionV0 {
             data_contract,
             identity_nonce,
             user_fee_increase,
             ..
         } = value;
-        Ok(BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
             identity_id: data_contract.owner_id(),
             identity_nonce,
             user_fee_increase,
-        })
+        }
     }
 
-    /// try from contract create
-    pub fn try_from_borrowed_contract_create_action(
+    /// from contract create action
+    pub fn from_borrowed_contract_create_action(
         value: &DataContractCreateTransitionActionV0,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         let DataContractCreateTransitionActionV0 {
             data_contract,
             identity_nonce,
             user_fee_increase,
             ..
         } = value;
-        Ok(BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
             identity_id: data_contract.owner_id(),
             identity_nonce: *identity_nonce,
             user_fee_increase: *user_fee_increase,
-        })
+        }
     }
 
-    /// try from identity credit transfer
-    pub fn try_from_identity_credit_transfer(
-        value: IdentityCreditTransferTransitionV0,
-    ) -> Result<Self, ProtocolError> {
+    /// from identity credit transfer
+    pub fn from_identity_credit_transfer(value: IdentityCreditTransferTransitionV0) -> Self {
         let IdentityCreditTransferTransitionV0 {
             identity_id,
             nonce,
             user_fee_increase,
             ..
         } = value;
-        Ok(BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
             user_fee_increase,
-        })
+        }
     }
 
-    /// try from borrowed identity credit transfer
-    pub fn try_from_borrowed_identity_credit_transfer(
+    /// from borrowed identity credit transfer
+    pub fn from_borrowed_identity_credit_transfer(
         value: &IdentityCreditTransferTransitionV0,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         let IdentityCreditTransferTransitionV0 {
             identity_id,
             nonce,
             user_fee_increase,
             ..
         } = value;
-        Ok(BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
             user_fee_increase: *user_fee_increase,
-        })
+        }
     }
 
-    /// try from identity credit transfer action
-    pub fn try_from_identity_credit_transfer_action(
+    /// from identity credit transfer action
+    pub fn from_identity_credit_transfer_action(
         value: IdentityCreditTransferTransitionActionV0,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         let IdentityCreditTransferTransitionActionV0 {
             identity_id,
             nonce,
             user_fee_increase,
             ..
         } = value;
-        Ok(BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
             user_fee_increase,
-        })
+        }
     }
 
-    /// try from borrowed identity credit transfer action
-    pub fn try_from_borrowed_identity_credit_transfer_action(
+    /// from borrowed identity credit transfer action
+    pub fn from_borrowed_identity_credit_transfer_action(
         value: &IdentityCreditTransferTransitionActionV0,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         let IdentityCreditTransferTransitionActionV0 {
             identity_id,
             nonce,
             user_fee_increase,
             ..
         } = value;
-        Ok(BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
             user_fee_increase: *user_fee_increase,
-        })
+        }
     }
 
-    /// try from identity credit withdrawal
-    pub fn try_from_identity_credit_withdrawal(
-        value: IdentityCreditWithdrawalTransitionV0,
-    ) -> Result<Self, ProtocolError> {
+    /// from identity credit withdrawal
+    pub fn from_identity_credit_withdrawal(value: IdentityCreditWithdrawalTransitionV0) -> Self {
         let IdentityCreditWithdrawalTransitionV0 {
             identity_id,
             nonce,
             user_fee_increase,
             ..
         } = value;
-        Ok(BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
             user_fee_increase,
-        })
+        }
     }
 
-    /// try from borrowed identity credit withdrawal
-    pub fn try_from_borrowed_identity_credit_withdrawal(
+    /// from borrowed identity credit withdrawal
+    pub fn from_borrowed_identity_credit_withdrawal(
         value: &IdentityCreditWithdrawalTransitionV0,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         let IdentityCreditWithdrawalTransitionV0 {
             identity_id,
             nonce,
             user_fee_increase,
             ..
         } = value;
-        Ok(BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
             user_fee_increase: *user_fee_increase,
-        })
+        }
     }
 
-    /// try from identity credit withdrawal action
-    pub fn try_from_identity_credit_withdrawal_action(
+    /// from identity credit withdrawal action
+    pub fn from_identity_credit_withdrawal_action(
         value: IdentityCreditWithdrawalTransitionActionV0,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         let IdentityCreditWithdrawalTransitionActionV0 {
             identity_id,
             nonce,
             user_fee_increase,
             ..
         } = value;
-        Ok(BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
             identity_id,
             identity_nonce: nonce,
             user_fee_increase,
-        })
+        }
     }
 
-    /// try from borrowed identity credit withdrawal action
-    pub fn try_from_borrowed_identity_credit_withdrawal_action(
+    /// from borrowed identity credit withdrawal action
+    pub fn from_borrowed_identity_credit_withdrawal_action(
         value: &IdentityCreditWithdrawalTransitionActionV0,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Self {
         let IdentityCreditWithdrawalTransitionActionV0 {
             identity_id,
             nonce,
             user_fee_increase,
             ..
         } = value;
-        Ok(BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
             identity_id: *identity_id,
             identity_nonce: *nonce,
             user_fee_increase: *user_fee_increase,
-        })
+        }
     }
 }

@@ -13,12 +13,15 @@ use std::collections::BTreeMap;
 
 use std::string::ToString;
 
-use crate::identity::TimestampMillis;
+#[cfg(feature = "state-transition-value-conversion")]
+use crate::data_contract::DataContract;
 
-use crate::{data_contract::DataContract, errors::ProtocolError};
+use crate::{document, errors::ProtocolError};
 
-use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::block::block_info::BlockInfo;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 #[cfg(feature = "state-transition-value-conversion")]
@@ -32,8 +35,6 @@ use crate::state_transition::documents_batch_transition;
 
 mod property_names {
     pub const ENTROPY: &str = "$entropy";
-    pub const CREATED_AT: &str = "$createdAt";
-    pub const UPDATED_AT: &str = "$updatedAt";
 }
 
 /// The Binary fields in [`DocumentCreateTransition`]
@@ -47,14 +48,7 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[display(
-    fmt = "Base: {}, Entropy: {:?}, Created At: {:?}, Updated At: {:?}, Data: {:?}",
-    "base",
-    "entropy",
-    "created_at",
-    "updated_at",
-    "data"
-)]
+#[display(fmt = "Base: {}, Entropy: {:?}, Data: {:?}", "base", "entropy", "data")]
 pub struct DocumentCreateTransitionV0 {
     /// Document Base Transition
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
@@ -66,18 +60,6 @@ pub struct DocumentCreateTransitionV0 {
         serde(rename = "$entropy")
     )]
     pub entropy: [u8; 32],
-
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")
-    )]
-    pub created_at: Option<TimestampMillis>,
-    // TODO: It should be moved to update transition
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")
-    )]
-    pub updated_at: Option<TimestampMillis>,
 
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub data: BTreeMap<String, Value>,
@@ -153,12 +135,6 @@ impl DocumentCreateTransitionV0 {
             entropy: map
                 .remove_hash256_bytes(property_names::ENTROPY)
                 .map_err(ProtocolError::ValueError)?,
-            created_at: map
-                .remove_optional_integer(property_names::CREATED_AT)
-                .map_err(ProtocolError::ValueError)?,
-            updated_at: map
-                .remove_optional_integer(property_names::UPDATED_AT)
-                .map_err(ProtocolError::ValueError)?,
             data: map,
         })
     }
@@ -170,18 +146,6 @@ impl DocumentCreateTransitionV0 {
             property_names::ENTROPY.to_string(),
             Value::Bytes(self.entropy.to_vec()),
         );
-        if let Some(created_at) = self.created_at {
-            transition_base_map.insert(
-                property_names::CREATED_AT.to_string(),
-                Value::U64(created_at),
-            );
-        }
-        if let Some(updated_at) = self.updated_at {
-            transition_base_map.insert(
-                property_names::UPDATED_AT.to_string(),
-                Value::U64(updated_at),
-            );
-        }
 
         transition_base_map.extend(self.data.clone());
 
@@ -191,38 +155,52 @@ impl DocumentCreateTransitionV0 {
 
 /// documents from create transition v0
 pub trait DocumentFromCreateTransitionV0 {
-    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` instance and `owner_id`.
+    /// Attempts to create a new `Document` from the given `DocumentCreateTransitionV0` instance, incorporating additional metadata such as ownership and block information.
+    ///
+    /// This function is responsible for taking an owned `DocumentCreateTransitionV0` instance, which encapsulates the initial data for a document, and augmenting this with metadata including the document owner's identifier, block information, and the requirement status of `created_at` and `updated_at` timestamps, as dictated by the associated data contract and the current platform version.
     ///
     /// # Arguments
     ///
-    /// * `value` - A `DocumentCreateTransition` instance containing information about the document being created.
-    /// * `owner_id` - The `Identifier` of the document's owner.
+    /// * `v0` - An owned `DocumentCreateTransitionV0` instance containing the initial data for the document being created.
+    /// * `owner_id` - The `Identifier` of the document's owner, specifying who will own the newly created document.
+    /// * `block_info` - A reference to the `BlockInfo`, which provides context about the block height and other block-related metadata at the time of document creation.
+    /// * `document_type` - A reference to the `DocumentTypeRef` associated with this document, defining its structure and rules.
+    /// * `platform_version` - A reference to the `PlatformVersion`, which may influence the creation process or validation logic based on the version-specific rules or features of the platform.
     ///
     /// # Returns
     ///
-    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
+    /// * `Result<Self, ProtocolError>` - On successful creation, returns a new `Document` object populated with the provided data and augmented with necessary metadata. If the creation process encounters any validation failures or other issues, it returns a `ProtocolError`.
+    ///
     fn try_from_owned_create_transition_v0(
         v0: DocumentCreateTransitionV0,
         owner_id: Identifier,
-        data_contract: &DataContract,
+        block_info: &BlockInfo,
+        document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
-    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` reference and `owner_id`.
+    /// Attempts to create a new `Document` from the given `DocumentCreateTransitionV0` reference, incorporating additional metadata like ownership and block information.
+    ///
+    /// This function takes a `DocumentCreateTransitionV0` reference, which contains the initial data for the document, and combines it with metadata such as the document owner's identifier, block information, and requirements for timestamp fields based on the associated data contract and platform version.
     ///
     /// # Arguments
     ///
-    /// * `value` - A reference to the `DocumentCreateTransitionActionV0` containing information about the document being created.
+    /// * `v0` - A reference to the `DocumentCreateTransitionV0` containing initial data for the document being created.
     /// * `owner_id` - The `Identifier` of the document's owner.
+    /// * `block_info` - A reference to the `BlockInfo` containing the block height at which the document is being created.
+    /// * `document_type` - A reference to the `DocumentTypeRef` associated with this document, defining its structure and rules.
+    /// * `platform_version` - A reference to the `PlatformVersion` indicating the version of the platform under which the document is being created.
     ///
     /// # Returns
     ///
-    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
+    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, populated with the provided data and metadata. Returns a `ProtocolError` if the creation fails due to issues like missing required fields, incorrect types, or other validation failures.
+    ///
     fn try_from_create_transition_v0(
         v0: &DocumentCreateTransitionV0,
         owner_id: Identifier,
-        data_contract: &DataContract,
+        block_info: &BlockInfo,
+        document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -233,30 +211,72 @@ impl DocumentFromCreateTransitionV0 for Document {
     fn try_from_owned_create_transition_v0(
         v0: DocumentCreateTransitionV0,
         owner_id: Identifier,
-        data_contract: &DataContract,
+        block_info: &BlockInfo,
+        document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {
-        let DocumentCreateTransitionV0 {
-            base,
-            created_at,
-            updated_at,
-            data,
-            ..
-        } = v0;
+        let DocumentCreateTransitionV0 { base, data, .. } = v0;
 
         match base {
             DocumentBaseTransition::V0(base_v0) => {
-                let DocumentBaseTransitionV0 {
-                    id,
-                    document_type_name,
-                    ..
-                } = base_v0;
+                let DocumentBaseTransitionV0 { id, .. } = base_v0;
 
-                let document_type =
-                    data_contract.document_type_for_name(document_type_name.as_str())?;
+                let requires_created_at = document_type
+                    .required_fields()
+                    .contains(document::property_names::CREATED_AT);
+                let requires_updated_at = document_type
+                    .required_fields()
+                    .contains(document::property_names::UPDATED_AT);
+
+                let requires_created_at_block_height = document_type
+                    .required_fields()
+                    .contains(document::property_names::CREATED_AT_BLOCK_HEIGHT);
+                let requires_updated_at_block_height = document_type
+                    .required_fields()
+                    .contains(document::property_names::UPDATED_AT_BLOCK_HEIGHT);
+
+                let requires_created_at_core_block_height = document_type
+                    .required_fields()
+                    .contains(document::property_names::CREATED_AT_CORE_BLOCK_HEIGHT);
+                let requires_updated_at_core_block_height = document_type
+                    .required_fields()
+                    .contains(document::property_names::UPDATED_AT_CORE_BLOCK_HEIGHT);
+
+                let created_at = if requires_created_at {
+                    Some(block_info.time_ms)
+                } else {
+                    None
+                };
+                let updated_at = if requires_updated_at {
+                    Some(block_info.time_ms)
+                } else {
+                    None
+                };
+
+                let created_at_block_height = if requires_created_at_block_height {
+                    Some(block_info.height)
+                } else {
+                    None
+                };
+                let updated_at_block_height = if requires_updated_at_block_height {
+                    Some(block_info.height)
+                } else {
+                    None
+                };
+
+                let created_at_core_block_height = if requires_created_at_core_block_height {
+                    Some(block_info.core_height)
+                } else {
+                    None
+                };
+                let updated_at_core_block_height = if requires_updated_at_core_block_height {
+                    Some(block_info.core_height)
+                } else {
+                    None
+                };
 
                 match platform_version
                     .dpp
@@ -270,6 +290,10 @@ impl DocumentFromCreateTransitionV0 for Document {
                         revision: document_type.initial_revision(),
                         created_at,
                         updated_at,
+                        created_at_block_height,
+                        updated_at_block_height,
+                        created_at_core_block_height,
+                        updated_at_core_block_height,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {
@@ -285,30 +309,72 @@ impl DocumentFromCreateTransitionV0 for Document {
     fn try_from_create_transition_v0(
         v0: &DocumentCreateTransitionV0,
         owner_id: Identifier,
-        data_contract: &DataContract,
+        block_info: &BlockInfo,
+        document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {
-        let DocumentCreateTransitionV0 {
-            base,
-            created_at,
-            updated_at,
-            data,
-            ..
-        } = v0;
+        let DocumentCreateTransitionV0 { base, data, .. } = v0;
 
         match base {
             DocumentBaseTransition::V0(base_v0) => {
-                let DocumentBaseTransitionV0 {
-                    id,
-                    document_type_name,
-                    ..
-                } = base_v0;
+                let DocumentBaseTransitionV0 { id, .. } = base_v0;
 
-                let document_type =
-                    data_contract.document_type_for_name(document_type_name.as_str())?;
+                let requires_created_at = document_type
+                    .required_fields()
+                    .contains(document::property_names::CREATED_AT);
+                let requires_updated_at = document_type
+                    .required_fields()
+                    .contains(document::property_names::UPDATED_AT);
+
+                let requires_created_at_block_height = document_type
+                    .required_fields()
+                    .contains(document::property_names::CREATED_AT_BLOCK_HEIGHT);
+                let requires_updated_at_block_height = document_type
+                    .required_fields()
+                    .contains(document::property_names::UPDATED_AT_BLOCK_HEIGHT);
+
+                let requires_created_at_core_block_height = document_type
+                    .required_fields()
+                    .contains(document::property_names::CREATED_AT_CORE_BLOCK_HEIGHT);
+                let requires_updated_at_core_block_height = document_type
+                    .required_fields()
+                    .contains(document::property_names::UPDATED_AT_CORE_BLOCK_HEIGHT);
+
+                let created_at = if requires_created_at {
+                    Some(block_info.time_ms)
+                } else {
+                    None
+                };
+                let updated_at = if requires_updated_at {
+                    Some(block_info.time_ms)
+                } else {
+                    None
+                };
+
+                let created_at_block_height = if requires_created_at_block_height {
+                    Some(block_info.height)
+                } else {
+                    None
+                };
+                let updated_at_block_height = if requires_updated_at_block_height {
+                    Some(block_info.height)
+                } else {
+                    None
+                };
+
+                let created_at_core_block_height = if requires_created_at_core_block_height {
+                    Some(block_info.core_height)
+                } else {
+                    None
+                };
+                let updated_at_core_block_height = if requires_updated_at_core_block_height {
+                    Some(block_info.core_height)
+                } else {
+                    None
+                };
 
                 match platform_version
                     .dpp
@@ -320,8 +386,12 @@ impl DocumentFromCreateTransitionV0 for Document {
                         owner_id,
                         properties: data.clone(),
                         revision: document_type.initial_revision(),
-                        created_at: *created_at,
-                        updated_at: *updated_at,
+                        created_at,
+                        updated_at,
+                        created_at_block_height,
+                        updated_at_block_height,
+                        created_at_core_block_height,
+                        updated_at_core_block_height,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {

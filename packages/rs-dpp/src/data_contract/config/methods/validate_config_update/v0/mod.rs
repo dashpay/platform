@@ -6,6 +6,7 @@ use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Identifier;
 
 impl DataContractConfig {
+    #[inline(always)]
     pub(super) fn validate_config_update_v0(
         &self,
         new_config: &DataContractConfig,

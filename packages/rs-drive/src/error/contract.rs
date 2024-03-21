@@ -12,4 +12,8 @@ pub enum DataContractError {
     /// Data contract missing or cannot be retrieved
     #[error("data contract cannot be retrieved: {0}")]
     MissingContract(String),
+
+    /// Data contract storage error when data contract is too big
+    #[error("data contract is too big to be stored: {0}")]
+    ContractTooBig(String),
 }

@@ -8,7 +8,8 @@ use dashcore::transaction::special_transaction::TransactionPayload;
 use dashcore::Transaction;
 
 /// Validates asset lock transaction structure
-pub fn validate_asset_lock_transaction_structure_v0(
+#[inline(always)]
+pub(super) fn validate_asset_lock_transaction_structure_v0(
     transaction: &Transaction,
     output_index: u32,
 ) -> Result<SimpleConsensusValidationResult, ProtocolError> {

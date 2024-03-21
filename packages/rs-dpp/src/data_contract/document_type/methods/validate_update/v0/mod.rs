@@ -4,6 +4,7 @@ use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::validation::SimpleConsensusValidationResult;
 
 impl<'a> DocumentTypeRef<'a> {
+    #[inline(always)]
     pub(super) fn validate_update_v0(
         &self,
         new_document_type: &DocumentType,

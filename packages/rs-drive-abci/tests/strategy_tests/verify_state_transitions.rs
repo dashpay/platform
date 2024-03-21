@@ -60,6 +60,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
             let consensus_validation_result = match state_transition.transform_into_action(
                 &platform,
+                abci_app.platform.state.load().last_block_info(),
                 ValidationMode::CheckTx, //using check_tx so we don't validate state
                 &mut execution_context,
                 None,

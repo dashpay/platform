@@ -168,7 +168,7 @@ describe('createGrpcTransportError', () => {
     metadata.set('drive-error-data-bin', driveErrorDataBin);
 
     const grpcError = new GrpcError(
-      1000,
+      10001,
       'Parsing error',
     );
     grpcError.metadata = metadata;

@@ -48,7 +48,8 @@ impl Drive {
     /// If calculated balance is below 0 it will go to negative balance
     ///
     /// Balances are stored in the identity under key 0
-    pub fn apply_balance_change_from_fee_to_identity_operations_v0(
+    #[inline(always)]
+    pub(super) fn apply_balance_change_from_fee_to_identity_operations_v0(
         &self,
         balance_change: BalanceChangeForIdentity,
         transaction: TransactionArg,

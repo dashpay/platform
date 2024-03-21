@@ -23,6 +23,7 @@ impl<'a> DriveQuery<'a> {
     /// * The start at document is not present in proof and it is expected to be.
     /// * The path query fails to verify against the given proof.
     /// * Converting the element into bytes fails.
+    #[inline(always)]
     pub(super) fn verify_proof_keep_serialized_v0(
         &self,
         proof: &[u8],

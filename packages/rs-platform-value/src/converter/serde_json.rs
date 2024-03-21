@@ -90,8 +90,16 @@ impl Value {
                     .map(|byte| JsonValue::Number(byte.into()))
                     .collect(),
             ),
-            Value::EnumU8(_) => todo!(),
-            Value::EnumString(_) => todo!(),
+            Value::EnumU8(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumU8 to JSONValue".to_string(),
+                ))
+            }
+            Value::EnumString(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumString to JSONValue".to_string(),
+                ))
+            }
         })
     }
 
@@ -178,8 +186,16 @@ impl Value {
                     .map(|byte| JsonValue::Number((*byte).into()))
                     .collect(),
             ),
-            Value::EnumU8(_) => todo!(),
-            Value::EnumString(_) => todo!(),
+            Value::EnumU8(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumU8 to JSONValue".to_string(),
+                ))
+            }
+            Value::EnumString(_) => {
+                return Err(Error::Unsupported(
+                    "No support for conversion of EnumString to JSONValue".to_string(),
+                ))
+            }
         })
     }
 }

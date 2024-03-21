@@ -9,7 +9,7 @@ async fn test_protocol_version_votes_zeros() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_protocol_version_votes_zeros").await;
 
     let starting_protxhash = ProTxHash::from_slice(&[0u8; 32]).expect("zero protxhash");
     let votings = MasternodeProtocolVote::fetch_many(&sdk, starting_protxhash)
@@ -27,7 +27,7 @@ async fn test_protocol_version_votes_none() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_protocol_version_votes_none").await;
 
     let votings = MasternodeProtocolVote::fetch_many(&sdk, None)
         .await
@@ -44,7 +44,7 @@ async fn test_protocol_version_votes_limit_2() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_protocol_version_votes_limit_2").await;
 
     let starting_protxhash = ProTxHash::from_slice(&[0u8; 32]).expect("zero protxhash");
     let votings = MasternodeProtocolVote::fetch_many_with_limit(&sdk, starting_protxhash, 2)
@@ -62,7 +62,7 @@ async fn test_protocol_version_votes_nx() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_protocol_version_votes_nx").await;
 
     let starting_protxhash = Some(ProTxHash::from_slice(&[0xffu8; 32]).expect("zero protxhash"));
     let votings = MasternodeProtocolVote::fetch_votes(&sdk, starting_protxhash, Some(2))
@@ -80,7 +80,7 @@ async fn test_protocol_version_votes_limit_0() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api().await;
+    let sdk = cfg.setup_api("test_protocol_version_votes_limit_0").await;
 
     let result = MasternodeProtocolVote::fetch_votes(&sdk, None, Some(0)).await;
 

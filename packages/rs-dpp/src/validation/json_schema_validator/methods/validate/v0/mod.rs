@@ -5,6 +5,7 @@ use crate::ProtocolError;
 use serde_json::Value as JsonValue;
 
 impl JsonSchemaValidator {
+    #[inline(always)]
     pub(super) fn validate_v0(
         &self,
         instance: &JsonValue,

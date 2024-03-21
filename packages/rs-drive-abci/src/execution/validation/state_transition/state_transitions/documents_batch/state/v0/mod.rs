@@ -1,3 +1,4 @@
+use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
@@ -36,6 +37,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
     fn transform_into_action_v0(
         &self,
         platform: &PlatformStateRef,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -93,7 +95,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                             ))?,
                             owner_id,
                             state_transition_action.user_fee_increase(),
-                        )?,
+                        ),
                     ),
                 );
             } else if platform.config.execution.use_document_triggers {
@@ -134,7 +136,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                             ))?,
                             owner_id,
                             state_transition_action.user_fee_increase(),
-                        )?,
+                        ),
                     ));
                 } else {
                     validated_transitions.push(transition);
@@ -154,6 +156,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
     fn transform_into_action_v0(
         &self,
         platform: &PlatformStateRef,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -164,6 +167,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
 
         let validation_result = self.try_into_action_v0(
             platform,
+            block_info,
             validation_mode.should_validate_document_valid_against_state(),
             tx,
             &mut execution_context,

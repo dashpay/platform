@@ -8,6 +8,7 @@ use grovedb::TransactionArg;
 impl Drive {
     /// We remove from system credits when:
     /// - an identity withdraws some of their balance
+    #[inline(always)]
     pub(super) fn remove_from_system_credits_v0(
         &self,
         amount: u64,

@@ -11,6 +11,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
+use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 
@@ -48,8 +49,12 @@ where
             core_rpc: &self.core_rpc,
         };
 
-        let state_transition_execution_event =
-            process_state_transition(&platform_ref, state_transition, Some(transaction))?;
+        let state_transition_execution_event = process_state_transition(
+            &platform_ref,
+            self.state.load().last_block_info(),
+            state_transition,
+            Some(transaction),
+        )?;
 
         if state_transition_execution_event.is_valid() {
             let execution_event = state_transition_execution_event.into_data()?;
@@ -89,6 +94,32 @@ where
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
+        if raw_tx.len() as u64
+            > platform_version
+                .dpp
+                .state_transitions
+                .max_state_transition_size
+        {
+            // The state transition is too big
+            let consensus_error =
+                ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(
+                    StateTransitionMaxSizeExceededError::new(
+                        raw_tx.len() as u64,
+                        platform_version
+                            .dpp
+                            .state_transitions
+                            .max_state_transition_size,
+                    ),
+                ));
+            tracing::debug!(
+                ?consensus_error,
+                "State transition too big on check tx (starts with {})",
+                hex::encode(raw_tx.split_at(80).0)
+            );
+
+            return Ok(ValidationResult::new_with_error(consensus_error));
+        }
+
         let state_transition = match StateTransition::deserialize_from_bytes(raw_tx) {
             Ok(state_transition) => state_transition,
             Err(err) => {
@@ -1343,6 +1374,12 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(567);
 
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(3), platform_version)
+                .expect("expected to get key pair");
+
+        signer.add_key(master_key.clone(), master_private_key.clone());
+
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
             Some(19),
@@ -1366,7 +1403,7 @@ mod tests {
 
         let identity: Identity = IdentityV0 {
             id: identifier,
-            public_keys: BTreeMap::from([(1, key.clone())]),
+            public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
             balance: 1000000000,
             revision: 0,
         }
@@ -1522,6 +1559,12 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(567);
 
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(3), platform_version)
+                .expect("expected to get key pair");
+
+        signer.add_key(master_key.clone(), master_private_key.clone());
+
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
             Some(19),
@@ -1545,7 +1588,7 @@ mod tests {
 
         let identity: Identity = IdentityV0 {
             id: identifier,
-            public_keys: BTreeMap::from([(1, key.clone())]),
+            public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
             balance: 1000000000,
             revision: 0,
         }
@@ -1652,6 +1695,12 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(567);
 
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(3), platform_version)
+                .expect("expected to get key pair");
+
+        signer.add_key(master_key.clone(), master_private_key.clone());
+
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
             Some(19),
@@ -1675,7 +1724,7 @@ mod tests {
 
         let identity: Identity = IdentityV0 {
             id: identifier,
-            public_keys: BTreeMap::from([(1, key.clone())]),
+            public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
             balance: 1000000000,
             revision: 0,
         }
@@ -1906,6 +1955,12 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(567);
 
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(3), platform_version)
+                .expect("expected to get key pair");
+
+        signer.add_key(master_key.clone(), master_private_key.clone());
+
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
             Some(19),
@@ -1929,7 +1984,7 @@ mod tests {
 
         let identity: Identity = IdentityV0 {
             id: identifier,
-            public_keys: BTreeMap::from([(1, key.clone())]),
+            public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
             balance: 1000000000,
             revision: 0,
         }
@@ -2021,6 +2076,12 @@ mod tests {
 
         let mut signer = SimpleSigner::default();
 
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(4), platform_version)
+                .expect("expected to get key pair");
+
+        signer.add_key(master_key.clone(), master_private_key.clone());
+
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
             Some(50),
@@ -2036,7 +2097,7 @@ mod tests {
 
         let identity: Identity = IdentityV0 {
             id: identifier,
-            public_keys: BTreeMap::from([(1, key.clone())]),
+            public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
             balance: 1000000000,
             revision: 0,
         }

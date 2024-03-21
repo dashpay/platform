@@ -1,3 +1,15 @@
+//! This library facilitates the creation and execution of comprehensive testing strategies for Dash Platform, leveraging the `Strategy` struct as its core.
+//! It is designed to simulate a wide range of blockchain activities, offering detailed control over the generation of state transitions, contract interactions, and identity management across blocks.
+//!
+//! Utilizing this library, users can craft scenarios that encompass every conceivable state transition on Dash Platform, with precise timing control on a block-by-block basis.
+//! Strategies can be as simple or complex as needed, from initializing contracts and identities at the start of a simulation to conducting intricate operations like document submissions, credit transfers, and more throughout the lifespan of the blockchain.
+//!
+//! This tool does not require any preliminary setup for the entities involved in the strategies; identities, contracts, and documents can be introduced at any point in the simulation.
+//! This flexibility ensures users can test against both new and existing blockchain states, adapting the scenarios as Dash Platform evolves.
+//!
+//! As of March 2024, the recommended approach to leverage this library's capabilities is through the `Strategies` module within Dash Platform's terminal user interface, located at `dashpay/rs-platform-explorer`.
+//! This interface provides an accessible and streamlined way to define, manage, and execute your testing strategies against Dash Platform.
+
 use crate::frequency::Frequency;
 use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
 use crate::operations::{
@@ -12,7 +24,7 @@ use dpp::data_contract::{DataContract, DataContractFactory};
 
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
-use dpp::identity::{Identity, KeyType, PartialIdentity, Purpose, SecurityLevel};
+use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
@@ -29,7 +41,7 @@ use dpp::state_transition::data_contract_update_transition::methods::DataContrac
 use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
-use rand::Rng;
+use rand::{thread_rng, Rng};
 use tracing::error;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use bincode::{Decode, Encode};
@@ -52,39 +64,41 @@ use simple_signer::signer::SimpleSigner;
 pub mod frequency;
 pub mod operations;
 pub mod transitions;
+pub type KeyMaps = BTreeMap<Purpose, BTreeMap<SecurityLevel, Vec<KeyType>>>;
 
-/// Represents a comprehensive strategy used for simulations or testing in a blockchain context.
+/// Defines a detailed strategy for conducting simulations or tests on Dash Platform.
 ///
-/// The `Strategy` struct encapsulates various operations, state transitions, and data contracts to provide a structured plan or set of procedures for specific purposes such as simulations, automated tests, or other blockchain-related workflows.
+/// This struct serves as the core framework for designing and executing comprehensive simulations or automated testing scenarios on Dash Platform. It encompasses a wide array of operations, state transitions, and data contract manipulations, enabling users to craft intricate strategies that mimic real-world blockchain dynamics or test specific functionalities.
+///
+/// The strategy allows for the specification of initial conditions, such as contracts to be created and identities to be registered, as well as dynamic actions that unfold over the simulation's lifespan, including contract updates and identity transactions. This versatile structure supports a broad spectrum of blockchain-related activities, from simple transfer operations to complex contract lifecycle management.
 ///
 /// # Fields
-/// - `contracts_with_updates`: A list of tuples containing:
-///   1. `CreatedDataContract`: A data contract that was created.
-///   2. `Option<BTreeMap<u64, CreatedDataContract>>`: An optional mapping where the key is the block height (or other sequential integer identifier) and the value is a data contract that corresponds to an update. If `None`, it signifies that there are no updates.
+/// - `contracts_with_updates`: Maps each created data contract to potential updates, enabling the simulation of contract evolution. Each tuple consists of a `CreatedDataContract` and an optional mapping of block heights to subsequent contract versions, facilitating time-sensitive contract transformations.
 ///
-/// - `operations`: A list of `Operation`s which define individual tasks or actions that are part of the strategy. Operations could encompass a range of blockchain-related actions like transfers, state changes, contract creations, etc.
+/// - `operations`: Enumerates discrete operations to be executed within the strategy. These operations represent individual actions or sequences of actions, such as document manipulations, identity updates, or contract interactions, each contributing to the overarching simulation narrative.
 ///
-/// - `start_identities`: A list of tuples representing the starting state of identities. Each tuple contains:
-///   1. `Identity`: The initial identity state.
-///   2. `StateTransition`: The state transition that led to the current state of the identity.
+/// - `start_identities`: Specifies identities to be established at the simulation's outset, including their initial attributes and balances. This setup allows for immediate participation of these identities in the blockchain's simulated activities.
 ///
-/// - `identities_inserts`: Defines the frequency distribution of identity inserts. `Frequency` might encapsulate statistical data like mean, median, variance, etc., for understanding or predicting the frequency of identity insertions.
+/// - `identities_inserts`: Controls the stochastic introduction of new identities into the simulation, based on a defined frequency distribution. This field allows the strategy to dynamically expand the set of participants, reflecting organic growth or specific testing requirements.
 ///
-/// - `signer`: An optional instance of `SimpleSigner`. The `SimpleSigner` is responsible for generating and managing cryptographic signatures, and might be used to authenticate or validate various operations or state transitions.
+/// - `identity_contract_nonce_gaps`: Optionally defines intervals at which nonce values for identities and contracts may be artificially incremented, introducing realistic entropy or testing specific edge cases.
 ///
-/// # Usage
+/// - `signer`: Provides an optional `SimpleSigner` instance responsible for generating cryptographic signatures for various transactions within the strategy. While optional, a signer is critical for authenticating state transitions and operations that require verification.
+///
+/// # Usage Example
 /// ```ignore
 /// let strategy = Strategy {
-///     contracts_with_updates: vec![...],
-///     operations: vec![...],
-///     start_identities: vec![...],
-///     identities_inserts: Frequency::new(...),
-///     signer: Some(SimpleSigner::new(...)),
+///     contracts_with_updates: vec![...], // Initial contracts and their planned updates
+///     operations: vec![...],             // Defined operations to simulate blockchain interactions
+///     start_identities: StartIdentities::new(...), // Identities to initialize
+///     identities_inserts: Frequency::new(...),     // Frequency of new identity introduction
+///     identity_contract_nonce_gaps: Some(Frequency::new(...)), // Optional nonce gaps
+///     signer: Some(SimpleSigner::new(...)),        // Optional signer for authenticating transactions
 /// };
 /// ```
 ///
-/// # Note
-/// Ensure that when using or updating the `Strategy`, all associated operations, identities, and contracts are coherent with the intended workflow or simulation. Inconsistencies might lead to unexpected behaviors or simulation failures.
+/// # Implementation Note
+/// It's imperative to maintain coherence among the specified operations, identities, and contracts within the `Strategy` to ensure the simulated scenarios accurately reflect intended behaviors or test conditions. Discrepancies or inconsistencies may result in unexpected outcomes or hinder the simulation's effectiveness in achieving its objectives.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Strategy {
     pub contracts_with_updates: Vec<(
@@ -92,8 +106,8 @@ pub struct Strategy {
         Option<BTreeMap<u64, CreatedDataContract>>,
     )>,
     pub operations: Vec<Operation>,
-    pub start_identities: (u8, u8),
-    pub identities_inserts: Frequency,
+    pub start_identities: StartIdentities,
+    pub identities_inserts: IdentityInsertInfo,
     pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
 }
@@ -103,6 +117,32 @@ pub struct Strategy {
 pub struct StrategyConfig {
     pub start_block_height: u64,
     pub number_of_blocks: u64,
+}
+
+/// Identities to register on the first block of the strategy
+#[derive(Clone, Debug, PartialEq, Default, Encode, Decode)]
+pub struct StartIdentities {
+    pub number_of_identities: u8,
+    pub keys_per_identity: u8,
+    pub starting_balances: u64, // starting balance in duffs
+}
+
+/// Identities to register on the first block of the strategy
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+pub struct IdentityInsertInfo {
+    pub frequency: Frequency,
+    pub start_keys: u8,
+    pub extra_keys: KeyMaps,
+}
+
+impl Default for IdentityInsertInfo {
+    fn default() -> Self {
+        Self {
+            frequency: Default::default(),
+            start_keys: 5,
+            extra_keys: Default::default(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -120,8 +160,8 @@ pub enum LocalDocumentQuery<'a> {
 struct StrategyInSerializationFormat {
     pub contracts_with_updates: Vec<(Vec<u8>, Option<BTreeMap<u64, Vec<u8>>>)>,
     pub operations: Vec<Vec<u8>>,
-    pub start_identities: (u8, u8),
-    pub identities_inserts: Frequency,
+    pub start_identities: StartIdentities,
+    pub identities_inserts: IdentityInsertInfo,
     pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
 }
@@ -277,324 +317,211 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
 }
 
 impl Strategy {
-    /// Convenience method to get all contract ids that are in operations
-    pub fn used_contract_ids(&self) -> BTreeSet<Identifier> {
-        self.operations
-            .iter()
-            .filter_map(|operation| match &operation.op_type {
-                OperationType::Document(document) => Some(document.contract.id()),
-                OperationType::ContractUpdate(op) => Some(op.contract.id()),
-                _ => None,
-            })
-            .collect()
-    }
-
-    /// Creates state transitions based on the `identities_inserts` and `start_identities` fields.
+    /// Generates comprehensive state transitions for a given block, including handling new identities and contracts.
     ///
-    /// This method creates a list of state transitions associated with identities. If the block height
-    /// is `1` and there are starting identities present in the strategy, these identities are directly
-    /// added to the state transitions list.
+    /// This primary function orchestrates the generation of state transitions for a block, accounting for
+    /// new identities, document operations, contract creations, and updates. It serves as the main entry point
+    /// for simulating activities on the Dash Platform based on the defined strategy. The function integrates
+    /// the creation and management of identities, their related transactions, and the dynamics of contracts and
+    /// document operations to provide a holistic view of block activities.
     ///
-    /// Additionally, based on a frequency criterion, this method can generate and append more state transitions
-    /// related to the creation of identities.
+    /// Internally, it calls `operations_based_transitions` to process specific operations and generates
+    /// additional transitions related to identities and contracts. It's designed to simulate a realistic
+    /// blockchain environment, enabling the testing of complex scenarios and strategies.
     ///
     /// # Parameters
-    /// - `block_info`: Information about the current block, used to decide on which state transitions should be generated.
-    /// - `signer`: A mutable reference to a signer instance used during the creation of identities state transitions.
-    /// - `rng`: A mutable reference to a random number generator.
-    /// - `platform_version`: The current platform version.
-    ///
-    /// # Returns
-    /// A vector of tuples containing `Identity` and its associated `StateTransition`.
-    ///
-    /// # Examples
-    /// ```ignore
-    /// // Assuming `strategy` is an instance of `Strategy`,
-    /// // and `block_info`, `signer`, `rng`, and `platform_version` are appropriately initialized.
-    /// let state_transitions = strategy.identity_state_transitions_for_block(&block_info, &mut signer, &mut rng, &platform_version);
-    /// ```
-    pub fn identity_state_transitions_for_block(
-        &self,
-        block_info: &BlockInfo,
-        signer: &mut SimpleSigner,
-        rng: &mut StdRng,
-        create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
-        config: &StrategyConfig,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
-        let mut state_transitions = vec![];
-
-        // Add start_identities
-        if block_info.height == config.start_block_height && self.start_identities.0 > 0 {
-            let mut new_transitions = crate::transitions::create_identities_state_transitions(
-                self.start_identities.0.into(), // number of identities
-                self.start_identities.1.into(), // number of keys per identity
-                signer,
-                rng,
-                create_asset_lock,
-                platform_version,
-            )?;
-            state_transitions.append(&mut new_transitions);
-        }
-
-        // Add identities_inserts
-        // Don't do this on first block because we need to skip utxo refresh
-        if block_info.height > config.start_block_height {
-            let frequency = &self.identities_inserts;
-            if frequency.check_hit(rng) {
-                let count = frequency.events(rng);
-                let mut new_transitions = crate::transitions::create_identities_state_transitions(
-                    count, // number of identities
-                    3,     // number of keys per identity
-                    signer,
-                    rng,
-                    create_asset_lock,
-                    platform_version,
-                )?;
-                state_transitions.append(&mut new_transitions);
-            }
-        }
-
-        Ok(state_transitions)
-    }
-
-    /// Generates state transitions for the initial contracts of the contracts_with_updates field.
-    ///
-    /// This method creates state transitions for data contracts by iterating over the contracts with updates
-    /// present in the strategy. For each contract:
-    /// 1. An identity is randomly selected from the provided list of current identities.
-    /// 2. The owner ID of the contract is set to the selected identity's ID.
-    /// 3. The ID of the contract is updated based on the selected identity's ID and entropy used during its creation.
-    /// 4. Any contract updates associated with the main contract are adjusted to reflect these changes.
-    /// 5. All operations in the strategy that match the old contract ID are updated with the new contract ID.
-    ///
-    /// Finally, a new data contract create state transition is generated using the modified contract.
-    ///
-    /// # Parameters
-    /// - `current_identities`: A reference to a list of current identities.
-    /// - `signer`: A reference to a signer instance used during the creation of state transitions.
-    /// - `rng`: A mutable reference to a random number generator.
-    /// - `platform_version`: The current platform version.
-    ///
-    /// # Returns
-    /// A vector of `StateTransition` for data contracts.
-    ///
-    /// # Examples
-    /// ```ignore
-    /// // Assuming `strategy` is an instance of `Strategy`,
-    /// // and `current_identities`, `signer`, `rng`, and `platform_version` are appropriately initialized.
-    /// let contract_transitions = strategy.contract_state_transitions(&current_identities, &signer, &mut rng, &platform_version);
-    /// ```
-    pub fn contract_state_transitions(
-        &mut self,
-        current_identities: &[Identity],
-        identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
-        signer: &SimpleSigner,
-        rng: &mut StdRng,
-        platform_version: &PlatformVersion,
-    ) -> Vec<StateTransition> {
-        let mut id_mapping = HashMap::new(); // Maps old IDs to new IDs
-
-        self.contracts_with_updates
-            .iter_mut()
-            .map(|(created_contract, contract_updates)| {
-                let identity_num = rng.gen_range(0..current_identities.len());
-                let identity = current_identities
-                    .get(identity_num)
-                    .unwrap()
-                    .clone()
-                    .into_partial_identity_info();
-
-                let contract = created_contract.data_contract_mut();
-
-                let identity_nonce = identity_nonce_counter.entry(identity.id).or_default();
-                *identity_nonce += 1;
-
-                contract.set_owner_id(identity.id);
-                let old_id = contract.id();
-                let new_id =
-                    DataContract::generate_data_contract_id_v0(identity.id, *identity_nonce);
-                contract.set_id(new_id);
-
-                id_mapping.insert(old_id, new_id); // Store the mapping
-
-                if let Some(contract_updates) = contract_updates {
-                    for (_, updated_contract) in contract_updates.iter_mut() {
-                        let updated_contract_data = updated_contract.data_contract_mut();
-                        // Use the new ID from the mapping
-                        if let Some(new_updated_id) = id_mapping.get(&updated_contract_data.id()) {
-                            updated_contract_data.set_id(*new_updated_id);
-                        }
-                        updated_contract_data.set_owner_id(contract.owner_id());
-                    }
-                }
-
-                // Update any document transitions that registered to the old contract id
-                for op in self.operations.iter_mut() {
-                    if let OperationType::Document(document_op) = &mut op.op_type {
-                        document_op.contract = contract.clone();
-                        let document_type = contract.document_type_cloned_for_name(document_op.document_type.name())
-                            .expect("Expected to get a document type for name while creating initial strategy contracts");
-                        document_op.document_type = document_type;
-                    }
-                }
-
-                DataContractCreateTransition::new_from_data_contract(
-                    contract.clone(),
-                    *identity_nonce,
-                    &identity,
-                    2, // key id 1 should always be a high or critical auth key in these tests
-                    signer,
-                    platform_version,
-                    None,
-                )
-                .expect("expected to create a create state transition from a data contract")
-            })
-            .collect()
-    }
-
-    /// Generates state transitions for contract updates in contracts_with_updates based on the current set of identities and block height.
-    ///
-    /// This method creates update state transitions for data contracts by iterating over the contracts with updates
-    /// present in the strategy. For each contract:
-    /// 1. It checks for any contract updates associated with the provided block height.
-    /// 2. For each matching update, it locates the corresponding identity based on the owner ID in the update.
-    /// 3. A new data contract update state transition is then generated using the located identity and the updated contract.
-    ///
-    /// # Parameters
-    /// - `current_identities`: A reference to a list of current identities.
-    /// - `block_height`: The height of the current block.
-    /// - `signer`: A reference to a signer instance used during the creation of state transitions.
-    /// - `platform_version`: The current platform version.
-    ///
-    /// # Returns
-    /// A vector of `StateTransition` for updating data contracts.
-    ///
-    /// # Panics
-    /// The method will panic if it doesn't find an identity matching the owner ID from the data contract update.
-    ///
-    /// # Examples
-    /// ```ignore
-    /// // Assuming `strategy` is an instance of `Strategy`,
-    /// // and `current_identities`, `block_height`, `signer`, and `platform_version` are appropriately initialized.
-    /// let update_transitions = strategy.contract_update_state_transitions(&current_identities, block_height, &signer, &platform_version);
-    /// ```
-    pub fn contract_update_state_transitions(
-        &mut self,
-        current_identities: &[Identity],
-        block_height: u64,
-        initial_block_height: u64,
-        signer: &SimpleSigner,
-        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
-        platform_version: &PlatformVersion,
-    ) -> Vec<StateTransition> {
-        // Collect updates
-        let updates: Vec<_> = self
-            .contracts_with_updates
-            .iter()
-            .flat_map(|(_, contract_updates_option)| {
-                contract_updates_option
-                    .as_ref()
-                    .map_or_else(Vec::new, |contract_updates| {
-                        contract_updates
-                            .iter()
-                            .filter_map(move |(update_height, contract_update)| {
-                                let adjusted_update_height =
-                                    initial_block_height + update_height * 3;
-                                if adjusted_update_height != block_height {
-                                    return None;
-                                }
-                                current_identities
-                                    .iter()
-                                    .find(|identity| {
-                                        identity.id() == contract_update.data_contract().owner_id()
-                                    })
-                                    .map(|identity| {
-                                        (identity.clone(), *update_height, contract_update)
-                                    })
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .into_iter()
-            })
-            .collect();
-
-        // Increment nonce counter, update data contract version, and create state transitions
-        updates
-            .into_iter()
-            .map(|(identity, update_height, contract_update)| {
-                let identity_info = identity.into_partial_identity_info();
-                let contract_id = contract_update.data_contract().id();
-                let nonce = contract_nonce_counter
-                    .entry((identity_info.id, contract_id))
-                    .and_modify(|e| *e += 1)
-                    .or_insert(1);
-
-                // Set the version number on the data contract
-                let mut contract_update_clone = contract_update.clone();
-                let data_contract = contract_update_clone.data_contract_mut();
-                data_contract.set_version(update_height as u32);
-
-                // Create the state transition
-                DataContractUpdateTransition::new_from_data_contract(
-                    data_contract.clone(),
-                    &identity_info,
-                    2, // Assuming key id 2 is a high or critical auth key
-                    *nonce,
-                    0,
-                    signer,
-                    platform_version,
-                    None,
-                )
-                .expect("expected to create a state transition from a data contract")
-            })
-            .collect()
-    }
-
-    /// Generates state transitions for a given block based on Strategy operations.
-    ///
-    /// The `state_transitions_for_block` function processes state transitions based on the provided
-    /// block information, platform, identities, and other input parameters. It facilitates
-    /// the creation of state transitions for both new documents and updated documents in the system.
-    /// Only deals with the operations field of Strategy. Not contracts_with_updates or identities fields.
-    ///
-    /// # Parameters
-    /// - `platform`: A reference to the platform, which provides access to various blockchain
-    ///   related functionalities and data.
-    /// - `block_info`: Information about the block for which the state transitions are being generated.
-    ///   This contains data such as its height and time.
-    /// - `current_identities`: A mutable reference to the list of current identities in the system.
-    ///   This list is used to facilitate state transitions related to the involved identities.
-    /// - `signer`: A mutable reference to a signer, which aids in creating cryptographic signatures
-    ///   for the state transitions.
-    /// - `rng`: A mutable reference to a random number generator, used for generating random values
-    ///   during state transition creation.
-    /// - `platform_version`: The version of the platform being used. This information is crucial
-    ///   to ensure compatibility and consistency in state transition generation.
+    /// - `document_query_callback`: Callback for querying documents based on specified criteria.
+    /// - `identity_fetch_callback`: Callback for fetching identity details, including public keys.
+    /// - `create_asset_lock`: Callback for creating asset lock proofs, primarily for identity transactions.
+    /// - `block_info`: Information about the current block, such as its height and timestamp.
+    /// - `current_identities`: A mutable list of identities present in the simulation, potentially expanded with new identities.
+    /// - `known_contracts`: A mutable map of contracts known in the simulation, including any updates.
+    /// - `signer`: A mutable reference to a signer instance for signing transactions.
+    /// - `identity_nonce_counter`: Tracks nonce values for identities, crucial for transaction uniqueness.
+    /// - `contract_nonce_counter`: Tracks nonce values for contract interactions.
+    /// - `rng`: A mutable random number generator for creating randomized elements in transactions.
+    /// - `config`: Configuration details for the strategy, including block start height and number of blocks.
+    /// - `platform_version`: Specifies the platform version for compatibility with Dash Platform features.
     ///
     /// # Returns
     /// A tuple containing:
-    /// 1. `Vec<StateTransition>`: A vector of state transitions generated for the given block.
-    ///    These transitions encompass both new document state transitions and document update transitions.
-    /// 2. `Vec<FinalizeBlockOperation>`: A vector of finalize block operations which may be necessary
-    ///    to conclude the block's processing.
+    /// 1. `Vec<StateTransition>`: A collection of state transitions generated for the block.
+    /// 2. `Vec<FinalizeBlockOperation>`: Operations that need to be finalized at the block's end, often related to identity updates.
     ///
-    /// # Examples
+    /// # Usage
+    /// This function is typically called once per block during simulation, with its output used to apply transactions
+    /// and operations within the simulated Dash Platform environment.
+    ///
     /// ```ignore
-    /// let (state_transitions, finalize_ops) = obj.state_transitions_for_block(
-    ///     &platform,
+    /// let (state_transitions, finalize_ops) = strategy.state_transitions_for_block(
+    ///     &mut document_query_callback,
+    ///     &mut identity_fetch_callback,
+    ///     &mut create_asset_lock,
     ///     &block_info,
     ///     &mut current_identities,
+    ///     &mut known_contracts,
     ///     &mut signer,
+    ///     &mut identity_nonce_counter,
+    ///     &mut contract_nonce_counter,
     ///     &mut rng,
-    ///     platform_version,
+    ///     &config,
+    ///     &platform_version,
     /// );
     /// ```
     ///
-    /// # Panics
-    /// This function may panic under unexpected conditions, for example, when unable to generate state
-    /// transitions for the given block.
-    pub fn state_transitions_for_block(
+    /// # Note
+    /// This function is central to simulating the lifecycle of block processing and strategy execution
+    /// on the Dash Platform. It encapsulates the complexity of transaction generation, identity management,
+    /// and contract dynamics within a block's context.
+    pub async fn state_transitions_for_block(
+        &mut self,
+        document_query_callback: &mut impl FnMut(LocalDocumentQuery) -> Vec<Document>,
+        identity_fetch_callback: &mut impl FnMut(
+            Identifier,
+            Option<IdentityKeysRequest>,
+        ) -> PartialIdentity,
+        create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
+        block_info: &BlockInfo,
+        current_identities: &mut Vec<Identity>,
+        known_contracts: &mut BTreeMap<String, DataContract>,
+        signer: &mut SimpleSigner,
+        identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
+        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
+        rng: &mut StdRng,
+        config: &StrategyConfig,
+        platform_version: &PlatformVersion,
+    ) -> (
+        Vec<StateTransition>,
+        Vec<FinalizeBlockOperation>,
+        Vec<Identity>,
+    ) {
+        let mut finalize_block_operations = vec![];
+
+        // Get identity state transitions
+        let identity_state_transitions = match self.identity_state_transitions_for_block(
+            block_info,
+            self.start_identities.starting_balances,
+            signer,
+            rng,
+            create_asset_lock,
+            config,
+            platform_version,
+        ) {
+            Ok(transitions) => transitions,
+            Err(e) => {
+                error!("identity_state_transitions_for_block error: {}", e);
+                return (vec![], finalize_block_operations, vec![]);
+            }
+        };
+
+        // Create state_transitions vec and identities vec based on identity_state_transitions outcome
+        let (identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
+            identity_state_transitions.into_iter().unzip();
+
+        // Do we also need to add identities to the identity_nonce_counter?
+
+        // Add initial contracts for contracts_with_updates on first block of strategy
+        if block_info.height == config.start_block_height {
+            let mut contract_state_transitions = self.initial_contract_state_transitions(
+                current_identities,
+                identity_nonce_counter,
+                signer,
+                rng,
+                platform_version,
+            );
+            state_transitions.append(&mut contract_state_transitions);
+        } else {
+            // Do operations and contract updates after the first block
+            let (mut operations_state_transitions, mut add_to_finalize_block_operations) = self
+                .operations_based_transitions(
+                    document_query_callback,
+                    identity_fetch_callback,
+                    create_asset_lock,
+                    block_info,
+                    current_identities,
+                    known_contracts,
+                    signer,
+                    identity_nonce_counter,
+                    contract_nonce_counter,
+                    rng,
+                    platform_version,
+                );
+            finalize_block_operations.append(&mut add_to_finalize_block_operations);
+            state_transitions.append(&mut operations_state_transitions);
+
+            // Contract updates for contracts_with_updates
+            let mut initial_contract_update_state_transitions = self
+                .initial_contract_update_state_transitions(
+                    current_identities,
+                    block_info.height,
+                    config.start_block_height,
+                    signer,
+                    contract_nonce_counter,
+                    platform_version,
+                );
+            state_transitions.append(&mut initial_contract_update_state_transitions);
+        }
+
+        (state_transitions, finalize_block_operations, identities)
+    }
+
+    /// Processes strategy operations to generate state transitions specific to operations for a given block.
+    ///
+    /// This function is responsible for generating state transitions based on the operations defined within
+    /// the strategy. It evaluates each operation's conditions and frequency to determine if a transition should
+    /// be created for the current block. The function supports a variety of operations, including document
+    /// creation, updates, deletions, identity-related transactions, and more, each tailored to the specifics
+    /// of the Dash Platform.
+    ///
+    /// `operations_based_transitions` is called internally by `state_transitions_for_block`
+    /// to handle the operational aspects of the strategy. While it focuses on the execution of operations,
+    /// it is part of a larger workflow that includes managing new identities, contracts, and their updates
+    /// across blocks.
+    ///
+    /// # Parameters
+    /// - `document_query_callback`: A callback function for querying existing documents based on specified criteria.
+    /// - `identity_fetch_callback`: A callback function for fetching identity information, including public keys.
+    /// - `create_asset_lock`: A callback function for creating asset lock proofs for identity transactions.
+    /// - `block_info`: Information about the current block, including height and time.
+    /// - `current_identities`: A mutable reference to the list of current identities involved in the operations.
+    /// - `known_contracts`: A mutable reference to a map of known contracts and their updates.
+    /// - `signer`: A mutable reference to a signer instance used for transaction signatures.
+    /// - `identity_nonce_counter`: A mutable reference to a map tracking nonce values for identities.
+    /// - `contract_nonce_counter`: A mutable reference to a map tracking nonce values for contract interactions.
+    /// - `rng`: A mutable reference to a random number generator for random value generation in operations.
+    /// - `platform_version`: The platform version, ensuring compatibility with Dash Platform features.
+    ///
+    /// # Returns
+    /// A tuple containing:
+    /// 1. `Vec<StateTransition>`: A vector of state transitions generated based on the operations for the current block.
+    /// 2. `Vec<FinalizeBlockOperation>`: A vector of operations that need to be finalized by the end of the block processing.
+    ///
+    /// # Usage
+    /// This function is a critical component of the strategy execution process, providing detailed control over
+    /// the generation and management of operations-specific state transitions within a block's context. It is not
+    /// typically called directly by external code but is an essential part of the internal mechanics of generating
+    /// state transitions for simulation or testing purposes.
+    ///
+    /// ```ignore
+    /// let (state_transitions, finalize_ops) = strategy.operations_based_transitions(
+    ///     &mut document_query_callback,
+    ///     &mut identity_fetch_callback,
+    ///     &mut create_asset_lock,
+    ///     &block_info,
+    ///     &mut current_identities,
+    ///     &mut known_contracts,
+    ///     &mut signer,
+    ///     &mut identity_nonce_counter,
+    ///     &mut contract_nonce_counter,
+    ///     &mut rng,
+    ///     &platform_version,
+    /// );
+    /// ```
+    ///
+    /// # Note
+    /// This function plays a pivotal role in simulating realistic blockchain operations, allowing for the
+    /// detailed and nuanced execution of a wide range of actions on the Dash Platform as defined by the strategy.
+    pub fn operations_based_transitions(
         &self,
         document_query_callback: &mut impl FnMut(LocalDocumentQuery) -> Vec<Document>,
         identity_fetch_callback: &mut impl FnMut(
@@ -637,7 +564,9 @@ impl Strategy {
                             .random_documents_with_params(
                                 count as u32,
                                 current_identities,
-                                block_info.time_ms,
+                                Some(block_info.time_ms),
+                                Some(block_info.height),
+                                Some(block_info.core_height),
                                 *fill_type,
                                 *fill_size,
                                 rng,
@@ -648,16 +577,17 @@ impl Strategy {
                         documents
                             .into_iter()
                             .for_each(|(document, identity, entropy)| {
-                                let updated_at =
-                                    if document_type.required_fields().contains("$updatedAt") {
-                                        document.created_at()
+                                let identity_contract_nonce =
+                                    if contract.owner_id() == identity.id() {
+                                        contract_nonce_counter
+                                            .entry((identity.id(), contract.id()))
+                                            .or_insert(1)
                                     } else {
-                                        None
+                                        contract_nonce_counter
+                                            .entry((identity.id(), contract.id()))
+                                            .or_default()
                                     };
 
-                                let identity_contract_nonce = contract_nonce_counter
-                                    .entry((identity.id(), contract.id()))
-                                    .or_default();
                                 let gap = self
                                     .identity_contract_nonce_gaps
                                     .as_ref()
@@ -675,8 +605,6 @@ impl Strategy {
                                         }
                                         .into(),
                                         entropy: entropy.to_buffer(),
-                                        created_at: document.created_at(),
-                                        updated_at,
                                         data: document.properties_consumed(),
                                     }
                                     .into();
@@ -740,7 +668,9 @@ impl Strategy {
                                 .random_documents_with_params(
                                     count as u32,
                                     &held_identity,
-                                    block_info.time_ms,
+                                    Some(block_info.time_ms),
+                                    Some(block_info.height),
+                                    Some(block_info.core_height),
                                     *fill_type,
                                     *fill_size,
                                     rng,
@@ -752,7 +682,9 @@ impl Strategy {
                                 .random_documents_with_params(
                                     count as u32,
                                     current_identities,
-                                    block_info.time_ms,
+                                    Some(block_info.time_ms),
+                                    Some(block_info.height),
+                                    Some(block_info.core_height),
                                     *fill_type,
                                     *fill_size,
                                     rng,
@@ -767,12 +699,6 @@ impl Strategy {
                                 document
                                     .properties_mut()
                                     .append(&mut specific_document_key_value_pairs.clone());
-                                let updated_at =
-                                    if document_type.required_fields().contains("$updatedAt") {
-                                        document.created_at()
-                                    } else {
-                                        None
-                                    };
 
                                 let identity_contract_nonce = contract_nonce_counter
                                     .entry((identity.id(), contract.id()))
@@ -789,8 +715,6 @@ impl Strategy {
                                         }
                                         .into(),
                                         entropy: entropy.to_buffer(),
-                                        created_at: document.created_at(),
-                                        updated_at,
                                         data: document.properties_consumed(),
                                     }
                                     .into();
@@ -999,7 +923,6 @@ impl Strategy {
                                         .revision()
                                         .expect("expected to unwrap revision")
                                         + 1,
-                                    updated_at: Some(block_info.time_ms),
                                     data: random_new_document.properties_consumed(),
                                 }
                                 .into();
@@ -1061,26 +984,52 @@ impl Strategy {
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
                         match update_op {
                             IdentityUpdateOp::IdentityUpdateAddKeys(keys_count) => {
-                                (0..count).for_each(|_| {
-                                    current_identities.iter_mut().enumerate().for_each(|(i, random_identity)| {
-                                        if i >= count.into() { return; }
+                                // Map the count of keys already added this block to each identity
+                                // This prevents adding duplicate KeyIDs in the same block
+                                let mut keys_already_added_count_map = HashMap::new();
+                                for id in &*current_identities {
+                                    keys_already_added_count_map.insert(id.id(), 0);
+                                }
 
-                                        let (state_transition, keys_to_add_at_end_block) =
-                                            crate::transitions::create_identity_update_transition_add_keys(
-                                                random_identity,
-                                                *keys_count,
-                                                identity_nonce_counter,
-                                                signer,
-                                                rng,
-                                                platform_version,
-                                            );
-                                        operations.push(state_transition);
-                                        finalize_block_operations.push(IdentityAddKeys(
-                                            keys_to_add_at_end_block.0,
-                                            keys_to_add_at_end_block.1,
-                                        ));
-                                    });
-                                });
+                                // Create `count` state transitions
+                                for _ in 0..count {
+                                    let identities_count = current_identities.len();
+                                    if identities_count == 0 {
+                                        break;
+                                    }
+
+                                    // Select a random identity from the current_identities
+                                    let random_index = thread_rng().gen_range(0..identities_count);
+                                    let random_identity = &mut current_identities[random_index];
+
+                                    // Get keys already added
+                                    let keys_already_added = keys_already_added_count_map.get(&random_identity.id())
+                                        .expect("Expected to get keys_already_added in IdentityAddKeys ST creation");
+
+                                    // Create transition
+                                    let (state_transition, keys_to_add_at_end_block) = crate::transitions::create_identity_update_transition_add_keys(
+                                            random_identity,
+                                            *keys_count,
+                                            *keys_already_added,
+                                            identity_nonce_counter,
+                                            signer,
+                                            rng,
+                                            platform_version,
+                                        );
+
+                                    // Push to operations vectors
+                                    operations.push(state_transition);
+                                    finalize_block_operations.push(IdentityAddKeys(
+                                        keys_to_add_at_end_block.0,
+                                        keys_to_add_at_end_block.1,
+                                    ));
+
+                                    // Increment keys_already_added count
+                                    keys_already_added_count_map.insert(
+                                        random_identity.id(),
+                                        keys_already_added + *keys_count as u32,
+                                    );
+                                }
                             }
                             IdentityUpdateOp::IdentityUpdateDisableKey(keys_count) => {
                                 (0..count).for_each(|_| {
@@ -1324,123 +1273,323 @@ impl Strategy {
         (operations, finalize_block_operations)
     }
 
-    /// Generates state transitions for a block by considering new identities.
+    /// Generates identity-related state transitions for a specified block, considering new and existing identities.
     ///
-    /// This function processes state transitions with respect to identities, contracts,
-    /// and document operations. The state transitions are generated based on the
-    /// given block's height and other parameters, with special handling for the initial block height.
+    /// This function orchestrates the creation of state transitions associated with identities, leveraging
+    /// the `start_identities` field to initialize identities at the strategy's start block, and the `identities_inserts`
+    /// field to dynamically insert new identities based on a defined frequency. It is essential for simulating
+    /// identity actions within the blockchain, such as identity creation, throughout the lifecycle of the strategy.
+    ///
+    /// The function intelligently handles the initial setup of identities at the beginning of the strategy and
+    /// supports the continuous introduction of new identities into the simulation, reflecting a more realistic
+    /// blockchain environment.
     ///
     /// # Parameters
-    /// - `platform`: A reference to the platform, which is parameterized with a mock core RPC type.
-    /// - `block_info`: Information about the current block, like its height and time.
-    /// - `current_identities`: A mutable reference to the current set of identities. This list
-    ///   may be appended with new identities during processing.
-    /// - `signer`: A mutable reference to a signer used for creating cryptographic signatures.
-    /// - `rng`: A mutable reference to a random number generator.
+    /// - `block_info`: Provides details about the current block, such as height, to guide the generation of state transitions.
+    /// - `signer`: A mutable reference to a signer instance, used for signing the state transitions of identities.
+    /// - `rng`: A mutable reference to a random number generator, for creating randomized elements where necessary.
+    /// - `create_asset_lock`: A mutable reference to a callback function that generates an asset lock proof and associated private key, used in identity creation transactions.
+    /// - `config`: Configuration details of the strategy, including the start block height.
+    /// - `platform_version`: Specifies the version of the Dash Platform, ensuring compatibility with its features and behaviors.
     ///
     /// # Returns
-    /// A tuple containing two vectors:
-    /// 1. `Vec<StateTransition>`: A vector of state transitions generated during processing.
-    /// 2. `Vec<FinalizeBlockOperation>`: A vector of finalize block operations derived during processing.
+    /// A vector of tuples, each containing an `Identity` and its associated `StateTransition`, representing the actions taken by or on behalf of that identity within the block.
     ///
     /// # Examples
     /// ```ignore
-    /// let (state_transitions, finalize_ops) = obj.state_transitions_for_block_with_new_identities(
-    ///     &platform,
+    /// // Assuming `strategy` is an instance of `Strategy`, with `block_info`, `signer`, `rng`,
+    /// // `create_asset_lock`, `config`, and `platform_version` properly initialized:
+    /// let identity_transitions = strategy.identity_state_transitions_for_block(
     ///     &block_info,
-    ///     &mut current_identities,
     ///     &mut signer,
     ///     &mut rng,
-    ///     platform_version
-    /// );
+    ///     &mut create_asset_lock,
+    ///     &config,
+    ///     &platform_version,
+    /// ).expect("Expected to generate identity state transitions without error");
     /// ```
-    pub async fn state_transitions_for_block_with_new_identities(
-        &mut self,
-        document_query_callback: &mut impl FnMut(LocalDocumentQuery) -> Vec<Document>,
-        identity_fetch_callback: &mut impl FnMut(
-            Identifier,
-            Option<IdentityKeysRequest>,
-        ) -> PartialIdentity,
-        create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
+    ///
+    /// # Notes
+    /// This function plays a crucial role in simulating the dynamic nature of identity management on the Dash Platform,
+    /// allowing for a nuanced and detailed representation of identity-related activities within a blockchain simulation environment.
+    pub fn identity_state_transitions_for_block(
+        &self,
         block_info: &BlockInfo,
-        current_identities: &mut Vec<Identity>,
-        known_contracts: &mut BTreeMap<String, DataContract>,
+        amount: u64,
         signer: &mut SimpleSigner,
-        identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
-        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
+        create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
         config: &StrategyConfig,
         platform_version: &PlatformVersion,
-    ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
-        let mut finalize_block_operations = vec![];
+    ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
+        let mut state_transitions = vec![];
 
-        // Get identity state transitions
-        let identity_state_transitions = match self.identity_state_transitions_for_block(
-            block_info,
-            signer,
-            rng,
-            create_asset_lock,
-            config,
-            platform_version,
-        ) {
-            Ok(transitions) => transitions,
-            Err(e) => {
-                error!("identity_state_transitions_for_block error: {}", e);
-                return (vec![], finalize_block_operations);
-            }
-        };
-
-        // Create state_transitions vec and identities vec based on identity_state_transitions outcome
-        let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
-            identity_state_transitions.into_iter().unzip();
-
-        // Append the new identities to current_identities
-        current_identities.append(&mut identities);
-
-        // Do we also need to add identities to the identity_nonce_counter?
-
-        // Add initial contracts for contracts_with_updates on first block of strategy
-        if block_info.height == config.start_block_height {
-            let mut contract_state_transitions = self.contract_state_transitions(
-                current_identities,
-                identity_nonce_counter,
+        // Add start_identities
+        if block_info.height == config.start_block_height
+            && self.start_identities.number_of_identities > 0
+        {
+            let mut new_transitions = crate::transitions::create_identities_state_transitions(
+                self.start_identities.number_of_identities.into(), // number of identities
+                self.start_identities.keys_per_identity.into(),    // number of keys per identity
+                &self.identities_inserts.extra_keys,
+                amount,
                 signer,
                 rng,
+                create_asset_lock,
                 platform_version,
-            );
-            state_transitions.append(&mut contract_state_transitions);
-        } else {
-            // Do operations and contract updates after the first block
-            let (mut document_state_transitions, mut add_to_finalize_block_operations) = self
-                .state_transitions_for_block(
-                    document_query_callback,
-                    identity_fetch_callback,
-                    create_asset_lock,
-                    block_info,
-                    current_identities,
-                    known_contracts,
-                    signer,
-                    identity_nonce_counter,
-                    contract_nonce_counter,
-                    rng,
-                    platform_version,
-                );
-            finalize_block_operations.append(&mut add_to_finalize_block_operations);
-            state_transitions.append(&mut document_state_transitions);
-
-            // Contract updates for contracts_with_updates
-            let mut contract_update_state_transitions = self.contract_update_state_transitions(
-                current_identities,
-                block_info.height,
-                config.start_block_height,
-                signer,
-                contract_nonce_counter,
-                platform_version,
-            );
-            state_transitions.append(&mut contract_update_state_transitions);
+            )?;
+            state_transitions.append(&mut new_transitions);
         }
 
-        (state_transitions, finalize_block_operations)
+        // Add identities_inserts
+        // Don't do this on first block because we need to skip utxo refresh
+        if block_info.height > config.start_block_height {
+            let frequency = &self.identities_inserts.frequency;
+            if frequency.check_hit(rng) {
+                let count = frequency.events(rng);
+                let mut new_transitions = crate::transitions::create_identities_state_transitions(
+                    count,                                       // number of identities
+                    self.identities_inserts.start_keys as KeyID, // number of keys per identity
+                    &self.identities_inserts.extra_keys,
+                    200000, // 0.002 dash
+                    signer,
+                    rng,
+                    create_asset_lock,
+                    platform_version,
+                )?;
+                state_transitions.append(&mut new_transitions);
+            }
+        }
+
+        Ok(state_transitions)
+    }
+
+    /// Initializes contracts and generates their creation state transitions based on the `contracts_with_updates` field.
+    ///
+    /// This function orchestrates the setup of initial data contracts specified in the strategy, applying any predefined updates
+    /// based on the simulation's block height. It assigns ownership of these contracts to identities randomly selected from the
+    /// current identities list, ensuring dynamic interaction within the simulated environment. Additionally, the function
+    /// updates the ID of each contract to reflect the ownership and creation details, maintaining the integrity of contract
+    /// relationships throughout the simulation.
+    ///
+    /// For contracts designated with updates, this process also prepares the contracts by adjusting their details to match
+    /// the simulated block height, ensuring that updates are accurately reflected in the simulation. Operations related to
+    /// these contracts are updated accordingly to maintain consistency.
+    ///
+    /// # Parameters
+    /// - `current_identities`: A list of current identities available in the simulation.
+    /// - `identity_nonce_counter`: Tracks nonce values for each identity to ensure unique contract identifiers.
+    /// - `signer`: A reference to a signer instance for signing the contract creation transactions.
+    /// - `rng`: A random number generator for selecting identities and generating contract details.
+    /// - `platform_version`: Indicates the platform version to ensure compatibility with Dash Platform features.
+    ///
+    /// # Returns
+    /// A vector of `StateTransition`, each representing the creation of a data contract within the simulated environment.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let initial_contract_transitions = strategy.initial_contract_state_transitions(
+    ///     &current_identities,
+    ///     &mut identity_nonce_counter,
+    ///     &signer,
+    ///     &mut rng,
+    ///     &platform_version,
+    /// );
+    /// ```
+    ///
+    /// This function is pivotal for setting up the simulated environment's initial state, providing a foundation for
+    /// subsequent operations and updates within the strategy.
+    pub fn initial_contract_state_transitions(
+        &mut self,
+        current_identities: &[Identity],
+        identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
+        signer: &SimpleSigner,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Vec<StateTransition> {
+        let mut id_mapping = HashMap::new(); // Maps old IDs to new IDs
+
+        self.contracts_with_updates
+            .iter_mut()
+            .map(|(created_contract, contract_updates)| {
+                // Select a random identity from current_identities to be the contract owner
+                let identity_num = rng.gen_range(0..current_identities.len());
+                let identity = current_identities
+                    .get(identity_num)
+                    .unwrap()
+                    .clone()
+                    .into_partial_identity_info();
+
+                let contract = created_contract.data_contract_mut();
+
+                // Get and bump the identity nonce
+                let identity_nonce = identity_nonce_counter.entry(identity.id).or_default();
+                *identity_nonce += 1;
+
+                // Set the contract ID and owner ID with the random identity
+                contract.set_owner_id(identity.id);
+                let old_id = contract.id();
+                let new_id =
+                    DataContract::generate_data_contract_id_v0(identity.id, *identity_nonce);
+                contract.set_id(new_id);
+
+                id_mapping.insert(old_id, new_id); // Store the mapping
+
+                // If there are contract updates, use the mapping to update their ID and owner ID too
+                if let Some(contract_updates) = contract_updates {
+                    for (_, updated_contract) in contract_updates.iter_mut() {
+                        let updated_contract_data = updated_contract.data_contract_mut();
+                        // Use the new ID from the mapping
+                        if let Some(new_updated_id) = id_mapping.get(&updated_contract_data.id()) {
+                            updated_contract_data.set_id(*new_updated_id);
+                        }
+                        updated_contract_data.set_owner_id(contract.owner_id());
+                    }
+                }
+
+                // Update any document transitions that registered to the old contract id
+                for op in self.operations.iter_mut() {
+                    if let OperationType::Document(document_op) = &mut op.op_type {
+                        if document_op.contract.id() == old_id {
+                            document_op.contract = contract.clone();
+                            let document_type = contract.document_type_cloned_for_name(document_op.document_type.name())
+                                .expect("Expected to get a document type for name while creating initial strategy contracts");
+                            document_op.document_type = document_type;
+                        }
+                    }
+                }
+
+                DataContractCreateTransition::new_from_data_contract(
+                    contract.clone(),
+                    *identity_nonce,
+                    &identity,
+                    2,
+                    signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to create a create state transition from a data contract")
+            })
+            .collect()
+    }
+
+    /// Generates state transitions for updating contracts based on the current set of identities and the block height.
+    ///
+    /// This function identifies and processes updates for data contracts as specified in the strategy, taking into account
+    /// the current block height to determine which updates to apply. Each eligible update is matched with its corresponding
+    /// identity based on ownership, ensuring that contract state transitions reflect the intended changes within the simulation.
+    ///
+    /// The function dynamically adjusts contract versions and ownership details, generating update state transitions that
+    /// are applied to the simulated blockchain environment. This process enables the simulation of contract evolution over
+    /// time, reflecting real-world scenarios where contracts may be updated in response to changing requirements or conditions.
+    ///
+    /// # Parameters
+    /// - `current_identities`: The list of identities involved in the simulation, used to match contract ownership.
+    /// - `block_height`: The current block height, used to determine eligibility for contract updates.
+    /// - `initial_block_height`: The block height at which the simulation or strategy begins, for calculating update timing.
+    /// - `signer`: A reference to a signer instance for signing contract update transactions.
+    /// - `contract_nonce_counter`: Tracks nonce values for contract interactions, ensuring uniqueness.
+    /// - `platform_version`: The platform version, for compatibility with Dash Platform features.
+    ///
+    /// # Returns
+    /// A vector of `StateTransition`, each representing an update to a data contract within the simulation.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let contract_update_transitions = strategy.initial_contract_update_state_transitions(
+    ///     &current_identities,
+    ///     block_height,
+    ///     initial_block_height,
+    ///     &signer,
+    ///     &mut contract_nonce_counter,
+    ///     &platform_version,
+    /// );
+    /// ```
+    ///
+    /// Through these updates, the simulation accurately mirrors the lifecycle of contracts on the Dash Platform, incorporating
+    /// changes that may occur over time.
+    pub fn initial_contract_update_state_transitions(
+        &mut self,
+        current_identities: &[Identity],
+        block_height: u64,
+        initial_block_height: u64,
+        signer: &SimpleSigner,
+        contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
+        platform_version: &PlatformVersion,
+    ) -> Vec<StateTransition> {
+        // Collect updates
+        let updates: Vec<_> = self
+            .contracts_with_updates
+            .iter()
+            .flat_map(|(_, contract_updates_option)| {
+                contract_updates_option
+                    .as_ref()
+                    .map_or_else(Vec::new, |contract_updates| {
+                        contract_updates
+                            .iter()
+                            .filter_map(move |(update_height, contract_update)| {
+                                let adjusted_update_height =
+                                    initial_block_height + update_height * 3;
+                                if adjusted_update_height != block_height {
+                                    return None;
+                                }
+                                current_identities
+                                    .iter()
+                                    .find(|identity| {
+                                        identity.id() == contract_update.data_contract().owner_id()
+                                    })
+                                    .map(|identity| {
+                                        (identity.clone(), *update_height, contract_update)
+                                    })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .into_iter()
+            })
+            .collect();
+
+        // Increment nonce counter, update data contract version, and create state transitions
+        updates
+            .into_iter()
+            .map(|(identity, update_height, contract_update)| {
+                let identity_info = identity.into_partial_identity_info();
+                let contract_id = contract_update.data_contract().id();
+                let nonce = contract_nonce_counter
+                    .entry((identity_info.id, contract_id))
+                    .and_modify(|e| *e += 1)
+                    .or_insert(1);
+
+                // Set the version number on the data contract
+                let mut contract_update_clone = contract_update.clone();
+                let data_contract = contract_update_clone.data_contract_mut();
+                data_contract.set_version(update_height as u32);
+
+                // Create the state transition
+                DataContractUpdateTransition::new_from_data_contract(
+                    data_contract.clone(),
+                    &identity_info,
+                    2, // Assuming key id 2 is a high or critical auth key
+                    *nonce,
+                    0,
+                    signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to create a state transition from a data contract")
+            })
+            .collect()
+    }
+
+    /// Convenience method to get all contract ids that are in operations
+    pub fn used_contract_ids(&self) -> BTreeSet<Identifier> {
+        self.operations
+            .iter()
+            .filter_map(|operation| match &operation.op_type {
+                OperationType::Document(document) => Some(document.contract.id()),
+                OperationType::ContractUpdate(op) => Some(op.contract.id()),
+                _ => None,
+            })
+            .collect()
     }
 }
 
@@ -1449,7 +1598,7 @@ mod tests {
     use crate::frequency::Frequency;
     use crate::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use crate::transitions::create_state_transitions_for_identities;
-    use crate::Strategy;
+    use crate::{StartIdentities, Strategy};
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
@@ -1575,11 +1724,12 @@ mod tests {
                     },
                 },
             ],
-            start_identities: (2, 3),
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+            start_identities: StartIdentities {
+                number_of_identities: 2,
+                keys_per_identity: 3,
+                starting_balances: 100_000_000,
             },
+            identities_inserts: Default::default(),
             identity_contract_nonce_gaps: None,
             signer: Some(simple_signer),
         };

@@ -29,6 +29,7 @@ impl IdentityCreateStateTransitionStructureValidationV0 for IdentityCreateTransi
 
         IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
             self.public_keys(),
+            true,
             platform_version,
         )
         .map_err(Error::Protocol)

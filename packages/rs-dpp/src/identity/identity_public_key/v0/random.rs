@@ -115,6 +115,31 @@ impl IdentityPublicKeyV0 {
         ))
     }
 
+    pub fn random_key_with_known_attributes(
+        id: KeyID,
+        rng: &mut StdRng,
+        purpose: Purpose,
+        security_level: SecurityLevel,
+        key_type: KeyType,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        let read_only = false;
+        let (public_data, private_data) =
+            key_type.random_public_and_private_key_data(rng, platform_version)?;
+        let data = BinaryData::new(public_data);
+        let identity_public_key = IdentityPublicKeyV0 {
+            id,
+            key_type,
+            purpose,
+            security_level,
+            read_only,
+            disabled_at: None,
+            data,
+            contract_bounds: None,
+        };
+        Ok((identity_public_key, private_data))
+    }
+
     pub fn random_key_with_rng(
         id: KeyID,
         rng: &mut StdRng,

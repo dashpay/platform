@@ -18,7 +18,8 @@ use std::collections::HashMap;
 impl Drive {
     //todo: this should probably not exist
     /// Update revision for specific identity
-    pub fn update_identity_revision_v0(
+    #[inline(always)]
+    pub(super) fn update_identity_revision_v0(
         &self,
         identity_id: [u8; 32],
         revision: Revision,

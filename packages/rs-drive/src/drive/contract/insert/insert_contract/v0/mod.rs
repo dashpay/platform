@@ -15,6 +15,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
+use crate::error::contract::DataContractError;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
@@ -22,6 +23,7 @@ use std::collections::{HashMap, HashSet};
 
 impl Drive {
     /// Insert a contract.
+    #[inline(always)]
     pub(super) fn insert_contract_v0(
         &self,
         contract: &DataContract,
@@ -41,8 +43,20 @@ impl Drive {
             None
         };
 
+        let serialized_contract =
+            contract.serialize_to_bytes_with_platform_version(platform_version)?;
+
+        if serialized_contract.len() as u64 > u32::MAX as u64
+            || serialized_contract.len() as u32
+                > platform_version.dpp.contract_versions.max_serialized_size
+        {
+            // This should normally be caught by DPP, but there is a rare possibility that the
+            // re-serialized size is bigger than the original serialized data contract.
+            return Err(Error::DataContract(DataContractError::ContractTooBig(format!("Trying to insert a data contract of size {} that is over the max allowed insertion size {}", serialized_contract.len(), platform_version.dpp.contract_versions.max_serialized_size))));
+        }
+
         let contract_element = Element::Item(
-            contract.serialize_to_bytes_with_platform_version(platform_version)?,
+            serialized_contract,
             StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
         );
 
@@ -101,6 +115,7 @@ impl Drive {
     /// The operations for adding a contract.
     /// These operations add a contract to storage using `add_contract_to_storage`
     /// and insert the empty trees which will be necessary to later insert documents.
+    #[inline(always)]
     pub(super) fn insert_contract_add_operations_v0(
         &self,
         contract_element: Element,

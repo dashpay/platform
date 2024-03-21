@@ -3,7 +3,8 @@ use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Value;
 use regex::Regex;
 
-pub fn pattern_is_valid_regex_validator_v0(
+#[inline(always)]
+pub(super) fn pattern_is_valid_regex_validator_v0(
     path: &str,
     key: &str,
     _parent: &Value,

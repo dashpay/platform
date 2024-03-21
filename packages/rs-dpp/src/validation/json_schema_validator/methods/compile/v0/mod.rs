@@ -6,6 +6,7 @@ use jsonschema::{JSONSchema, KeywordDefinition};
 use serde_json::json;
 
 impl JsonSchemaValidator {
+    #[inline(always)]
     pub(super) fn compile_v0(&self, json_schema: &JsonValue) -> Result<bool, ProtocolError> {
         if self.is_compiled_v0() {
             return Ok(false);
@@ -44,6 +45,7 @@ impl JsonSchemaValidator {
         Ok(true)
     }
 
+    #[inline(always)]
     pub(super) fn is_compiled_v0(&self) -> bool {
         let validator_guard = self.validator.read().unwrap();
 

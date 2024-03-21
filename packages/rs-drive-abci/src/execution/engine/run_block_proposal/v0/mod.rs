@@ -78,8 +78,9 @@ where
         );
 
         let last_block_time_ms = last_committed_platform_state.last_committed_block_time_ms();
-        let last_block_height = last_committed_platform_state
-            .last_committed_known_height_or(self.config.abci.genesis_height.saturating_sub(1));
+        let last_block_height = last_committed_platform_state.last_committed_known_block_height_or(
+            self.config.abci.genesis_height.saturating_sub(1),
+        );
         let last_block_core_height = last_committed_platform_state
             .last_committed_known_core_height_or(self.config.abci.genesis_core_height);
         let hpmn_list_len = last_committed_platform_state.hpmn_list_len() as u32;

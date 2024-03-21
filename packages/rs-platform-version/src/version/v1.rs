@@ -38,16 +38,16 @@ use crate::version::drive_versions::{
     DriveCreditPoolEpochsMethodVersions, DriveCreditPoolMethodVersions,
     DriveCreditPoolPendingEpochRefundsMethodVersions,
     DriveCreditPoolStorageFeeDistributionPoolMethodVersions,
-    DriveDataContractOperationMethodVersions, DriveDocumentDeleteMethodVersions,
-    DriveDocumentEstimationCostsMethodVersions, DriveDocumentIndexUniquenessMethodVersions,
-    DriveDocumentInsertMethodVersions, DriveDocumentMethodVersions,
-    DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
-    DriveEstimatedCostsMethodVersions, DriveFeesMethodVersions, DriveGroveApplyMethodVersions,
-    DriveGroveBasicMethodVersions, DriveGroveBatchMethodVersions, DriveGroveCostMethodVersions,
-    DriveGroveMethodVersions, DriveIdentityContractInfoMethodVersions,
-    DriveIdentityCostEstimationMethodVersions, DriveIdentityFetchAttributesMethodVersions,
-    DriveIdentityFetchFullIdentityMethodVersions, DriveIdentityFetchMethodVersions,
-    DriveIdentityFetchPartialIdentityMethodVersions,
+    DriveCreditPoolUnpaidEpochMethodVersions, DriveDataContractOperationMethodVersions,
+    DriveDocumentDeleteMethodVersions, DriveDocumentEstimationCostsMethodVersions,
+    DriveDocumentIndexUniquenessMethodVersions, DriveDocumentInsertMethodVersions,
+    DriveDocumentMethodVersions, DriveDocumentQueryMethodVersions,
+    DriveDocumentUpdateMethodVersions, DriveEstimatedCostsMethodVersions, DriveFeesMethodVersions,
+    DriveGroveApplyMethodVersions, DriveGroveBasicMethodVersions, DriveGroveBatchMethodVersions,
+    DriveGroveCostMethodVersions, DriveGroveMethodVersions,
+    DriveIdentityContractInfoMethodVersions, DriveIdentityCostEstimationMethodVersions,
+    DriveIdentityFetchAttributesMethodVersions, DriveIdentityFetchFullIdentityMethodVersions,
+    DriveIdentityFetchMethodVersions, DriveIdentityFetchPartialIdentityMethodVersions,
     DriveIdentityFetchPublicKeyHashesMethodVersions, DriveIdentityInsertMethodVersions,
     DriveIdentityKeyHashesToIdentityInsertMethodVersions, DriveIdentityKeysFetchMethodVersions,
     DriveIdentityKeysInsertMethodVersions, DriveIdentityKeysMethodVersions,
@@ -131,6 +131,9 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     DriveCreditPoolStorageFeeDistributionPoolMethodVersions {
                         get_storage_fees_from_distribution_pool: 0,
                     },
+                unpaid_epoch: DriveCreditPoolUnpaidEpochMethodVersions {
+                    get_unpaid_epoch_index: 0,
+                },
             },
             protocol_upgrade: DriveProtocolUpgradeVersions {
                 clear_version_information: 0,
@@ -591,6 +594,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     validate_identity_public_key_ids_exist_in_state: 0,
                     validate_state_transition_identity_signed: 0,
                     validate_unique_identity_public_key_hashes_in_state: 0,
+                    validate_master_key_uniqueness: 0,
                 },
                 identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
@@ -603,7 +607,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
                 identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
-                    advanced_structure: None,
+                    advanced_structure: Some(0),
                     identity_signatures: Some(0),
                     balance: None,
                     nonce: Some(0),
@@ -893,6 +897,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             },
         },
         state_transitions: StateTransitionVersions {
+            max_state_transition_size: 20000,
             documents: DocumentTransitionVersions {
                 documents_batch_transition: DocumentsBatchTransitionVersions {
                     validation: DocumentsBatchTransitionValidationVersions {
@@ -910,6 +915,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             },
         },
         contract_versions: ContractVersions {
+            max_serialized_size: 65000,
             contract_serialization_version: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,
@@ -971,6 +977,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 default_current_version: 0,
             },
             document_method_versions: DocumentMethodVersions {
+                is_equal_ignoring_timestamps: 0,
                 hash: 0,
                 get_raw_for_contract: 0,
                 get_raw_for_document_type: 0,

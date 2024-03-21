@@ -44,7 +44,8 @@ pub const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn create_domain_data_trigger_v0(
+#[inline(always)]
+pub(super) fn create_domain_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
@@ -423,6 +424,7 @@ pub fn create_domain_data_trigger_v0(
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
+    use dpp::block::block_info::BlockInfo;
     use dpp::platform_value::Bytes32;
     use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
@@ -500,7 +502,7 @@ mod test {
 
         let result = create_domain_data_trigger_v0(
             &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(
-                document_create_transition,|_identifier| {
+                document_create_transition, &BlockInfo::default(), |_identifier| {
                     Ok(Arc::new(DataContractFetchInfo::dpns_contract_fixture(platform_version.protocol_version)))
                 }).expect("expected to create action").into(),
             &data_trigger_context,

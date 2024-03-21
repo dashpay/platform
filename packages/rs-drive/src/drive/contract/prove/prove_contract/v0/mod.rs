@@ -26,6 +26,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the path query generation or proof generation fails.
+    #[inline(always)]
     pub(super) fn prove_contract_v0(
         &self,
         contract_id: [u8; 32],

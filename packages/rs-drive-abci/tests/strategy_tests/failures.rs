@@ -1,12 +1,11 @@
 #[cfg(test)]
 mod tests {
     use crate::execution::run_chain_for_strategy;
-
     use std::collections::{BTreeMap, HashMap};
     use strategy_tests::frequency::Frequency;
 
     use crate::strategy::{FailureStrategy, NetworkStrategy};
-    use strategy_tests::Strategy;
+    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
 
@@ -47,11 +46,15 @@ mod tests {
                     Some(BTreeMap::from([(3, contract_update_1)])),
                 )],
                 operations: vec![],
-                start_identities: (0, 0),
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -68,7 +71,7 @@ mod tests {
                 dont_finalize_block: false,
                 expect_every_block_errors_with_codes: vec![],
                 rounds_before_successful_block: None,
-                expect_specific_block_errors_with_codes: HashMap::from([(3, vec![1067])]), //missing position (we skipped pos 6)
+                expect_specific_block_errors_with_codes: HashMap::from([(3, vec![10411])]), //missing position (we skipped pos 6)
             }),
             query_testing: None,
             verify_state_transition_results: true,
@@ -124,11 +127,9 @@ mod tests {
             strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
-                start_identities: (0, 0),
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo::default(),
+
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
