@@ -48,22 +48,29 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state)),
             }
         } else {
-            let identities = self.drive.fetch_full_identities(
+            let identities_keys = self.drive.fetch_identities_keys(
                 identity_ids.as_slice(),
                 None,
                 platform_version,
             )?;
 
-            let identities = identities
+            let identities = identities_keys
                 .into_iter()
                 .map(|(key, maybe_identity)| {
                     Ok::<IdentityEntry, ProtocolError>(IdentityEntry {
                         key: key.to_vec(),
                         value: maybe_identity
                             .map(|identity| {
+                                tracing::debug!(
+                                    "[KeysRequest] Identity {:?} with {:?} keys",
+                                    identity.id,
+                                    identity.loaded_public_keys.len()
+                                );
+
                                 Ok::<get_partial_identities_response::IdentityValue, ProtocolError>(
                                     get_partial_identities_response::IdentityValue {
-                                        value: identity.serialize_consume_to_bytes()?,
+                                        // value: identity.serialize_consume_to_bytes()?,
+                                        value: vec![]
                                     },
                                 )
                             })
