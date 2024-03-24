@@ -7,15 +7,13 @@ use crate::execution::types::state_transition_aware_error::v0::StateTransitionAw
 
 pub struct StateTransitionContainerV0<'a> {
     /// The asset lock state transitions
-    asset_lock_state_transitions: Vec<StateTransition>,
-    /// The signed state transitions, these are signed by an identity
-    signed_state_transitions: Vec<StateTransition>,
+    state_transitions: Vec<StateTransition>,
     /// Deserialization errors
     consensus_errors: Vec<StateTransitionAwareErrorV0<'a>>,
 }
 
-impl FromIterator<Result<ConsensusValidationResult, StateTransitionAwareErrorV0<'a>>> for StateTransitionContainerV0 {
-    fn from_iter<I: IntoIterator<Item = Result<ConsensusValidationResult, StateTransitionAwareError>>>(iter: I) -> Self {
+impl<'a> FromIterator<Result<ConsensusValidationResult<StateTransition>, StateTransitionAwareErrorV0<'a>>> for StateTransitionContainerV0<'a> {
+    fn from_iter<I: IntoIterator<Item = Result<ConsensusValidationResult<StateTransition>, StateTransitionAwareErrorV0<'a>>>>(iter: I) -> Self {
         let mut asset_lock_state_transitions = Vec::new();
         let mut signed_state_transitions = Vec::new();
         let mut consensus_errors = Vec::new();

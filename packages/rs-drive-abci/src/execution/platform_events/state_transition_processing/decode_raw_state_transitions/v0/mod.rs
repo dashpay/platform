@@ -53,7 +53,7 @@ impl<C> Platform<C>
     pub(super) fn decode_raw_state_transitions_v0(
         &self,
         raw_state_transitions: &Vec<Vec<u8>>,
-    ) -> Result<StateTransitionContainerV0<'a>, Error> {
+    ) -> Result<StateTransitionContainerV0, Error> {
         raw_state_transitions.into_iter().map(|raw_state_transition| {
             match StateTransition::deserialize_from_bytes(raw_state_transition) {
                 Ok(state_transition) => Ok(ConsensusValidationResult::new_with_data(state_transition)),
