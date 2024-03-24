@@ -796,6 +796,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 new: 0,
                 validate: 0,
                 compile: 0,
+                compile_and_validate: 0,
             },
             data_contract: DataContractValidationVersions {
                 validate: 0,
@@ -898,6 +899,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         },
         state_transitions: StateTransitionVersions {
             max_state_transition_size: 20000,
+            max_transitions_in_documents_batch: 1,
             documents: DocumentTransitionVersions {
                 documents_batch_transition: DocumentsBatchTransitionVersions {
                     validation: DocumentsBatchTransitionValidationVersions {

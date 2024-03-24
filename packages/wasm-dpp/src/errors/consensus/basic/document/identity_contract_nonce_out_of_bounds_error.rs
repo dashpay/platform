@@ -1,4 +1,4 @@
-use dpp::consensus::basic::document::IdentityContractNonceOutOfBoundsError;
+use dpp::consensus::basic::document::NonceOutOfBoundsError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 
@@ -6,11 +6,11 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IdentityContractNonceOutOfBoundsError)]
 pub struct IdentityContractNonceOutOfBoundsErrorWasm {
-    inner: IdentityContractNonceOutOfBoundsError,
+    inner: NonceOutOfBoundsError,
 }
 
-impl From<&IdentityContractNonceOutOfBoundsError> for IdentityContractNonceOutOfBoundsErrorWasm {
-    fn from(e: &IdentityContractNonceOutOfBoundsError) -> Self {
+impl From<&NonceOutOfBoundsError> for IdentityContractNonceOutOfBoundsErrorWasm {
+    fn from(e: &NonceOutOfBoundsError) -> Self {
         Self { inner: e.clone() }
     }
 }
