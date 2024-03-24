@@ -21,12 +21,11 @@ use crate::consensus::basic::decode::{
 use crate::consensus::basic::document::{
     DataContractNotPresentError, DocumentTransitionsAreAbsentError,
     DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
-    IdentityContractNonceOutOfBoundsError, InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError,
-    MissingDataContractIdBasicError, MissingDocumentTransitionActionError,
-    MissingDocumentTransitionTypeError, MissingDocumentTypeError,
-    MissingPositionsInDocumentTypePropertiesError,
+    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
+    MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
+    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
+    MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
 use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
@@ -183,7 +182,7 @@ pub enum BasicError {
     DuplicateDocumentTransitionsWithIndicesError(DuplicateDocumentTransitionsWithIndicesError),
 
     #[error(transparent)]
-    IdentityContractNonceOutOfBoundsError(IdentityContractNonceOutOfBoundsError),
+    NonceOutOfBoundsError(NonceOutOfBoundsError),
 
     #[error(transparent)]
     InconsistentCompoundIndexDataError(InconsistentCompoundIndexDataError),

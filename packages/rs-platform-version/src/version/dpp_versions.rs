@@ -17,6 +17,7 @@ pub struct DPPVersion {
 #[derive(Clone, Debug, Default)]
 pub struct StateTransitionVersions {
     pub max_state_transition_size: u64,
+    pub max_transitions_in_documents_batch: u16,
     pub documents: DocumentTransitionVersions,
     pub identities: IdentityTransitionVersions,
 }
@@ -82,6 +83,7 @@ pub struct JsonSchemaValidatorVersions {
     pub new: FeatureVersion,
     pub validate: FeatureVersion,
     pub compile: FeatureVersion,
+    pub compile_and_validate: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

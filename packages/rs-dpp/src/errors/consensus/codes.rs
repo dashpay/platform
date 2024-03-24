@@ -103,7 +103,7 @@ impl ErrorWithCode for BasicError {
             Self::MissingPositionsInDocumentTypePropertiesError { .. } => 10411,
             Self::MaxDocumentsTransitionsExceededError { .. } => 10412,
             Self::DocumentTransitionsAreAbsentError { .. } => 10413,
-            Self::IdentityContractNonceOutOfBoundsError(_) => 10414,
+            Self::NonceOutOfBoundsError(_) => 10414,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,

@@ -1,6 +1,6 @@
 use crate::consensus::basic::document::{
     DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
-    IdentityContractNonceOutOfBoundsError, MaxDocumentsTransitionsExceededError,
+    MaxDocumentsTransitionsExceededError, NonceOutOfBoundsError,
 };
 use crate::consensus::basic::BasicError;
 
@@ -19,8 +19,6 @@ use platform_version::version::PlatformVersion;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
-const MAX_TRANSITIONS_IN_BATCH: usize = 1;
-
 impl DocumentsBatchTransition {
     #[inline(always)]
     pub(super) fn validate_base_structure_v0(
@@ -33,9 +31,23 @@ impl DocumentsBatchTransition {
             ));
         }
 
-        if self.transitions().len() > MAX_TRANSITIONS_IN_BATCH {
+        let transitions_len = self.transitions().len();
+
+        if transitions_len > u16::MAX as usize
+            || transitions_len as u16
+                > platform_version
+                    .dpp
+                    .state_transitions
+                    .max_transitions_in_documents_batch
+        {
             return Ok(SimpleConsensusValidationResult::new_with_error(
-                MaxDocumentsTransitionsExceededError::new(MAX_TRANSITIONS_IN_BATCH as u32).into(),
+                MaxDocumentsTransitionsExceededError::new(
+                    platform_version
+                        .dpp
+                        .state_transitions
+                        .max_transitions_in_documents_batch,
+                )
+                .into(),
             ));
         }
 
@@ -63,10 +75,8 @@ impl DocumentsBatchTransition {
                 // We need to make sure that the identity contract nonce is within the allowed bounds
                 // This means that it is stored on 40 bits
                 if transition.identity_contract_nonce() & MISSING_IDENTITY_REVISIONS_FILTER > 0 {
-                    result.add_error(BasicError::IdentityContractNonceOutOfBoundsError(
-                        IdentityContractNonceOutOfBoundsError::new(
-                            transition.identity_contract_nonce(),
-                        ),
+                    result.add_error(BasicError::NonceOutOfBoundsError(
+                        NonceOutOfBoundsError::new(transition.identity_contract_nonce()),
                     ));
                 }
             }
