@@ -1,6 +1,6 @@
 use crate::consensus::basic::document::{
     DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
-    IdentityContractNonceOutOfBoundsError, MaxDocumentsTransitionsExceededError,
+    MaxDocumentsTransitionsExceededError, NonceOutOfBoundsError,
 };
 use crate::consensus::basic::BasicError;
 
@@ -75,10 +75,8 @@ impl DocumentsBatchTransition {
                 // We need to make sure that the identity contract nonce is within the allowed bounds
                 // This means that it is stored on 40 bits
                 if transition.identity_contract_nonce() & MISSING_IDENTITY_REVISIONS_FILTER > 0 {
-                    result.add_error(BasicError::IdentityContractNonceOutOfBoundsError(
-                        IdentityContractNonceOutOfBoundsError::new(
-                            transition.identity_contract_nonce(),
-                        ),
+                    result.add_error(BasicError::NonceOutOfBoundsError(
+                        NonceOutOfBoundsError::new(transition.identity_contract_nonce()),
                     ));
                 }
             }
