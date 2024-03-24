@@ -6,6 +6,7 @@ mod state;
 mod transformer;
 
 use dpp::block::block_info::BlockInfo;
+use dpp::identity::PartialIdentity;
 use dpp::prelude::*;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -130,6 +131,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
         &self,
         _platform: &PlatformStateRef,
         action: &StateTransitionAction,
+        identity: &PartialIdentity,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match platform_version
@@ -149,6 +151,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
                 };
                 self.validate_advanced_structure_from_state_v0(
                     documents_batch_transition_action,
+                    identity,
                     platform_version,
                 )
             }
@@ -160,7 +163,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
         }
     }
 
-    fn requires_advance_structure_validation_from_state(&self) -> bool {
+    fn has_advanced_structure_validation_with_state(&self) -> bool {
         true
     }
 }
