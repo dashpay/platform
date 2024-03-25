@@ -1075,15 +1075,32 @@ impl Strategy {
 
                     // Generate state transition for identity transfer operation
                     OperationType::IdentityTransfer if current_identities.len() > 1 => {
-                        let identities_clone = current_identities.to_owned();
-                        // Sender is the first in the list, which should be loaded_identity
-                        let owner = &mut current_identities[0];
-                        // Recipient is the second in the list
-                        let recipient = &identities_clone[1];
                         for _ in 0..count {
+                            let identities_count = current_identities.len();
+                            if identities_count == 0 {
+                                break;
+                            }
+
+                            // Select a random identity from the current_identities for the sender
+                            let random_index_sender = thread_rng().gen_range(0..identities_count);
+
+                            // Clone current_identities to a Vec for manipulation
+                            let mut unused_identities: Vec<_> =
+                                current_identities.iter().cloned().collect();
+                            unused_identities.remove(random_index_sender); // Remove the sender
+                            let unused_identities_count = unused_identities.len();
+
+                            // Select a random identity from the remaining ones for the recipient
+                            let random_index_recipient =
+                                thread_rng().gen_range(0..unused_identities_count);
+                            let recipient = &unused_identities[random_index_recipient];
+
+                            // Use the sender index on the original slice
+                            let sender = &mut current_identities[random_index_sender];
+
                             let state_transition =
                                 crate::transitions::create_identity_credit_transfer_transition(
-                                    owner,
+                                    sender,
                                     recipient,
                                     identity_nonce_counter,
                                     signer,
@@ -1092,6 +1109,7 @@ impl Strategy {
                             operations.push(state_transition);
                         }
                     }
+
                     OperationType::ContractCreate(params, doc_type_range)
                         if !current_identities.is_empty() =>
                     {
