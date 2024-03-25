@@ -117,13 +117,13 @@ pub struct Drive {
 // is at the top of the tree in order to reduce proof size
 // the most import tree is theDataContract Documents tree
 
-//                        DataContract_Documents 64
-//                  /                               \
-//             Identities 32                           Balances 96
-//             /        \                         /                   \
-//   Token_Balances 16    Pools 48      WithdrawalTransactions 80    Misc  112
-//       /      \                                /                       \
-//     NUPKH->I 8 UPKH->I 24        SpentAssetLockTransactions 72        Versions 120
+//                                   DataContract_Documents 64
+//                      /                                            \
+//             Identities 32                                       Balances 96
+//             /        \                                  /                              \
+//   Token_Balances 16    Pools 48      WithdrawalTransactions 80                       Misc  112
+//       /      \                                /                                              \
+//     NUPKH->I 8 UPKH->I 24    SpentAssetLockTransactions 72                                 Versions 120
 
 /// Keys for the root tree.
 #[cfg(any(feature = "full", feature = "verify"))]

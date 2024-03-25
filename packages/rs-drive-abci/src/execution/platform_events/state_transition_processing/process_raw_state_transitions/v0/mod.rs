@@ -1,20 +1,17 @@
 use crate::error::Error;
-use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::basic::decode::SerializedObjectParsingError;
-use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::ConsensusError;
+use dpp::dashcore;
 use dpp::dashcore::hashes::Hash;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
-use dpp::serialization::PlatformDeserializable;
-use dpp::state_transition::StateTransition;
-use dpp::{dashcore, ProtocolError};
+use dpp::validation::ConsensusValidationResult;
 
+use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::state_transition_container::v0::StateTransitionContainerGettersV0;
+use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::state_transitions_processing_result::{
     StateTransitionExecutionResult, StateTransitionsProcessingResult,
@@ -69,18 +66,42 @@ where
             core_rpc: &self.core_rpc,
         };
 
+        let state_transition_container =
+            self.decode_raw_state_transitions(raw_state_transitions, platform_version)?;
+
+        let (
+            valid_state_transitions,
+            invalid_state_transitions,
+            invalid_execution_abci_state_transitions,
+        ) = state_transition_container.destructure();
+
         let mut processing_result = StateTransitionsProcessingResult::default();
 
-        for raw_state_transition in raw_state_transitions {
-            let execution_result = self
-                .process_raw_state_transition_v0(
+        for (raw_state_transition, state_transition) in valid_state_transitions {
+            tracing::trace!(?state_transition, "Processing state transition");
+
+            let state_transition_name = state_transition.name();
+
+            let is_st_asset_lock_funded = state_transition.optional_asset_lock_proof().is_some();
+
+            // Validate state transition and produce an execution event
+            let execution_result = process_state_transition(
+                &platform_ref,
+                block_info,
+                state_transition,
+                Some(transaction),
+            )
+            .map(|validation_result| {
+                self.process_validation_result_v0(
                     raw_state_transition,
+                    state_transition_name,
+                    is_st_asset_lock_funded,
+                    validation_result,
                     block_info,
-                    &platform_ref,
                     transaction,
                     platform_version,
                 )
-                .unwrap_or_else(|st_error| {
+                .unwrap_or_else(|execution_error| {
                     let mut st_hash = String::new();
                     if tracing::enabled!(tracing::Level::ERROR) {
                         st_hash = hex::encode(
@@ -90,133 +111,84 @@ where
                     }
 
                     tracing::error!(
-                        error = ?st_error.error,
-                        raw_state_transition = ?st_error.raw_state_transition,
-                        "Error processing state transition ({}) : {}",
+                        error = ?execution_error.error,
+                        raw_state_transition = ?execution_error.raw_state_transition,
+                        "Internal Error processing state transition ({}) : {}",
                         st_hash,
-                        st_error.error,
+                        execution_error.error,
                     );
 
-                    StateTransitionExecutionResult::DriveAbciError(st_error.error.to_string())
-                });
+                    StateTransitionExecutionResult::InternalError(execution_error.error.to_string())
+                })
+            })
+            .unwrap_or_else(|processing_error| {
+                let mut st_hash = String::new();
+                if tracing::enabled!(tracing::Level::ERROR) {
+                    st_hash = hex::encode(
+                        dashcore::hashes::sha256::Hash::hash(raw_state_transition).to_byte_array(),
+                    );
+                }
+
+                tracing::error!(
+                    error = ?processing_error,
+                    raw_state_transition = ?raw_state_transition,
+                    "Internal Error processing state transition ({}) : {}",
+                    st_hash,
+                    processing_error,
+                );
+
+                StateTransitionExecutionResult::InternalError(processing_error.to_string())
+            });
 
             processing_result.add(execution_result)?;
+        }
+
+        for (_, consensus_error) in invalid_state_transitions {
+            // we have already traced error messages, no need to create new ones
+            processing_result.add(StateTransitionExecutionResult::UnpaidConsensusError(
+                consensus_error,
+            ))?;
+        }
+
+        for (_, protocol_error) in invalid_execution_abci_state_transitions {
+            // we have already traced error messages, no need to create new ones
+            processing_result.add(StateTransitionExecutionResult::InternalError(format!(
+                "{}",
+                protocol_error
+            )))?;
         }
 
         Ok(processing_result)
     }
 
-    fn process_raw_state_transition_v0(
+    fn process_validation_result_v0(
         &self,
-        raw_state_transition: &[u8],
+        raw_state_transition: &Vec<u8>, //used for errors
+        state_transition_name: &str,
+        is_st_asset_lock_funded: bool, //todo: remove this (as they should be treated the same)
+        mut validation_result: ConsensusValidationResult<ExecutionEvent>,
         block_info: &BlockInfo,
-        platform_ref: &PlatformRef<C>,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransitionExecutionResult, StateTransitionAwareError> {
-        if raw_state_transition.len() as u64
-            > platform_version
-                .dpp
-                .state_transitions
-                .max_state_transition_size
-        {
-            // The state transition is too big
-            let consensus_error =
-                ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(
-                    StateTransitionMaxSizeExceededError::new(
-                        raw_state_transition.len() as u64,
-                        platform_version
-                            .dpp
-                            .state_transitions
-                            .max_state_transition_size,
-                    ),
-                ));
-            tracing::debug!(?consensus_error, "State transition too big",);
-
-            return Ok(StateTransitionExecutionResult::UnpaidConsensusError(
-                consensus_error,
-            ));
-        }
-
         // Tenderdash hex-encoded ST hash
         let mut st_hash = String::new();
-        if tracing::enabled!(tracing::Level::DEBUG) {
-            st_hash = hex::encode(
-                dashcore::hashes::sha256::Hash::hash(raw_state_transition).to_byte_array(),
-            );
-        }
-
-        let state_transition = match StateTransition::deserialize_from_bytes(raw_state_transition) {
-            Ok(state_transition) => state_transition,
-            Err(error) => {
-                return match error {
-                    ProtocolError::PlatformDeserializationError(message) => {
-                        let consensus_error =
-                            SerializedObjectParsingError::new(message.clone()).into();
-                        let errors = vec![&consensus_error];
-
-                        tracing::debug!(
-                            ?errors,
-                            "Invalid unknown state transition ({}): {}",
-                            st_hash,
-                            message
-                        );
-
-                        Ok(StateTransitionExecutionResult::UnpaidConsensusError(
-                            consensus_error,
-                        ))
-                    }
-                    ProtocolError::MaxEncodedBytesReachedError { .. } => {
-                        let message = error.to_string();
-                        let consensus_error =
-                            SerializedObjectParsingError::new(message.clone()).into();
-                        let errors = vec![&consensus_error];
-
-                        tracing::debug!(
-                            ?errors,
-                            "State transition beyond max encoded bytes limit ({}): {}",
-                            st_hash,
-                            message
-                        );
-
-                        Ok(StateTransitionExecutionResult::UnpaidConsensusError(
-                            consensus_error,
-                        ))
-                    }
-                    _ => Err(StateTransitionAwareError {
-                        error: error.into(),
-                        raw_state_transition: raw_state_transition.into(),
-                    }),
-                };
-            }
-        };
-
-        tracing::trace!(?state_transition, "Processing state transition");
-
-        let state_transition_name = state_transition.name();
-        let is_st_asset_lock_funded = state_transition.optional_asset_lock_proof().is_some();
-
-        // Validate state transition and produce an execution event
-        let mut st_validation_result = process_state_transition(
-            platform_ref,
-            block_info,
-            state_transition,
-            Some(transaction),
-        )
-        .map_err(|error| StateTransitionAwareError {
-            error,
-            raw_state_transition: raw_state_transition.into(),
-        })?;
 
         // State Transition is invalid
-        if !st_validation_result.is_valid() {
-            let first_consensus_error = st_validation_result
+        if !validation_result.is_valid() {
+            let first_consensus_error = validation_result
                 .errors
                 // the first error must be present for an invalid result
                 .remove(0);
 
+            if tracing::enabled!(tracing::Level::DEBUG) {
+                st_hash = hex::encode(
+                    dashcore::hashes::sha256::Hash::hash(raw_state_transition).to_byte_array(),
+                );
+            }
+
             tracing::debug!(
-                errors = ?st_validation_result.errors,
+                errors = ?validation_result.errors,
                 "Invalid {} state transition ({}): {}",
                 state_transition_name,
                 st_hash,
@@ -231,7 +203,7 @@ where
             // 3. The revision given by the state transition isn't allowed based on the state
             let state_transition_execution_result = if is_st_asset_lock_funded {
                 StateTransitionExecutionResult::UnpaidConsensusError(first_consensus_error)
-            } else if let Ok(execution_event) = st_validation_result.into_data() {
+            } else if let Ok(execution_event) = validation_result.into_data() {
                 // In this case the execution event will be to pay for the state transition processing
                 // This ONLY pays for what is needed to prevent attacks on the system
 
@@ -239,7 +211,7 @@ where
                     .execute_event(execution_event, block_info, transaction, platform_version)
                     .map_err(|error| StateTransitionAwareError {
                         error,
-                        raw_state_transition: raw_state_transition.into(),
+                        raw_state_transition: raw_state_transition.clone(),
                     })?;
 
                 match event_execution_result {
@@ -278,7 +250,7 @@ where
                             st_hash,
                         );
 
-                        StateTransitionExecutionResult::DriveAbciError(format!(
+                        StateTransitionExecutionResult::InternalError(format!(
                             "{} {}",
                             first_consensus_error, payment_consensus_error
                         ))
@@ -292,18 +264,18 @@ where
         }
 
         let execution_event =
-            st_validation_result
+            validation_result
                 .into_data()
                 .map_err(|error| StateTransitionAwareError {
                     error: error.into(),
-                    raw_state_transition: raw_state_transition.into(),
+                    raw_state_transition: raw_state_transition.clone(),
                 })?;
 
         let event_execution_result = self
             .execute_event(execution_event, block_info, transaction, platform_version)
             .map_err(|error| StateTransitionAwareError {
                 error,
-                raw_state_transition: raw_state_transition.into(),
+                raw_state_transition: raw_state_transition.clone(),
             })?;
 
         let state_transition_execution_result = match event_execution_result {

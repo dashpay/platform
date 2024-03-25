@@ -24,8 +24,7 @@ use crate::execution::validation::state_transition::state_transitions::identity_
 use crate::execution::validation::state_transition::state_transitions::identity_create::identity_and_signatures::v0::IdentityCreateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_top_up::identity_retrieval::v0::IdentityTopUpStateTransitionIdentityRetrievalV0;
 use crate::execution::validation::state_transition::ValidationMode;
-
-pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
+pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     block_info: &BlockInfo,
     state_transition: StateTransition,

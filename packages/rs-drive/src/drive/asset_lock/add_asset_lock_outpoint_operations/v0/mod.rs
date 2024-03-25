@@ -7,7 +7,10 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
+use dpp::asset_lock::reduced_asset_lock_value::ReducedAssetLockValue;
+use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
+use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::Element::Item;
@@ -29,6 +32,8 @@ impl Drive {
     pub(super) fn add_asset_lock_outpoint_operations_v0(
         &self,
         outpoint: &Bytes36,
+        remaining_credit_value: Credits,
+        initial_credit_value: Credits,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -42,11 +47,23 @@ impl Drive {
             )?;
         }
 
+        let item_bytes = if remaining_credit_value == 0 {
+            vec![] // we store nothing if the asset lock has been completely used
+        } else {
+            let reduced_asset_lock = ReducedAssetLockValue::new(
+                initial_credit_value,
+                remaining_credit_value,
+                platform_version,
+            )?;
+
+            reduced_asset_lock.serialize_to_bytes()?
+        };
+
         self.batch_insert(
             PathFixedSizeKeyRefElement((
                 asset_lock_storage_path(),
                 outpoint.as_slice(),
-                Item(vec![], None),
+                Item(item_bytes, None),
             )),
             &mut drive_operations,
             &platform_version.drive,

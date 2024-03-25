@@ -18,6 +18,7 @@ impl IdentityCreateTransitionActionV0 {
             public_keys,
             identity_id,
             asset_lock_proof,
+            user_fee_increase,
             ..
         } = value;
 
@@ -36,7 +37,7 @@ impl IdentityCreateTransitionActionV0 {
             initial_balance_amount,
             identity_id,
             asset_lock_outpoint: Bytes36::new(outpoint_bytes),
-            user_fee_increase: value.user_fee_increase,
+            user_fee_increase,
         })
     }
 
@@ -49,6 +50,7 @@ impl IdentityCreateTransitionActionV0 {
             public_keys,
             identity_id,
             asset_lock_proof,
+            user_fee_increase,
             ..
         } = value;
 
@@ -67,7 +69,7 @@ impl IdentityCreateTransitionActionV0 {
             initial_balance_amount,
             identity_id: *identity_id,
             asset_lock_outpoint: Bytes36::new(outpoint_bytes),
-            user_fee_increase: value.user_fee_increase,
+            user_fee_increase: *user_fee_increase,
         })
     }
 }

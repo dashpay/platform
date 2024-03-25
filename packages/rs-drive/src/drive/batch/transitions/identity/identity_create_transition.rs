@@ -29,7 +29,7 @@ impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
             SystemOperation(SystemOperationType::AddToSystemCredits {
                 amount: initial_balance_amount,
             }),
-            SystemOperation(SystemOperationType::AddUsedAssetLock {
+            SystemOperation(SystemOperationType::AddFullyUsedAssetLock {
                 asset_lock_outpoint,
             }),
         ];

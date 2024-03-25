@@ -25,7 +25,7 @@ impl DriveHighLevelOperationConverter for IdentityTopUpTransitionAction {
             SystemOperation(SystemOperationType::AddToSystemCredits {
                 amount: top_up_balance_amount,
             }),
-            SystemOperation(SystemOperationType::AddUsedAssetLock {
+            SystemOperation(SystemOperationType::AddFullyUsedAssetLock {
                 asset_lock_outpoint,
             }),
         ];

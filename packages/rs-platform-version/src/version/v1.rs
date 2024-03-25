@@ -1,13 +1,13 @@
 use crate::version::contracts::SystemDataContractVersions;
 use crate::version::dpp_versions::{
-    ContractVersions, CostVersions, DPPValidationVersions, DPPVersion, DataContractMethodVersions,
-    DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions,
-    DocumentTransitionVersions, DocumentTypeClassMethodVersions, DocumentTypeIndexVersions,
-    DocumentTypeMethodVersions, DocumentTypeSchemaVersions, DocumentTypeValidationVersions,
-    DocumentTypeVersions, DocumentVersions, DocumentsBatchTransitionValidationVersions,
-    DocumentsBatchTransitionVersions, IdentityKeyTypeMethodVersions,
-    IdentityTransitionAssetLockVersions, IdentityTransitionVersions, IdentityVersions,
-    JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
+    AssetLockVersions, ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
+    DataContractMethodVersions, DataContractValidationVersions, DocumentFeatureVersionBounds,
+    DocumentMethodVersions, DocumentTransitionVersions, DocumentTypeClassMethodVersions,
+    DocumentTypeIndexVersions, DocumentTypeMethodVersions, DocumentTypeSchemaVersions,
+    DocumentTypeValidationVersions, DocumentTypeVersions, DocumentVersions,
+    DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
+    IdentityKeyTypeMethodVersions, IdentityTransitionAssetLockVersions, IdentityTransitionVersions,
+    IdentityVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
     RecursiveSchemaValidatorVersions, StateTransitionConversionVersions,
     StateTransitionMethodVersions, StateTransitionSerializationVersions, StateTransitionVersions,
 };
@@ -991,6 +991,13 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             identity_key_type_method_versions: IdentityKeyTypeMethodVersions {
                 random_public_key_data: 0,
                 random_public_and_private_key_data: 0,
+            },
+        },
+        asset_lock_versions: AssetLockVersions {
+            reduced_asset_lock_value: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
             },
         },
     },

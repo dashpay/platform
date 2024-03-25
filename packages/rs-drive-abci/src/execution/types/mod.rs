@@ -25,6 +25,3 @@ pub(in crate::execution) mod update_state_masternode_list_outcome;
 
 /// A container for the state transitions
 pub(in crate::execution) mod state_transition_container;
-
-/// An error that contains the raw transaction
-pub(in crate::execution) mod state_transition_aware_error;

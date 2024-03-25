@@ -650,6 +650,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 }
                 StateTransitionAction::BumpIdentityNonceAction(_) => {}
                 StateTransitionAction::BumpIdentityDataContractNonceAction(_) => {}
+                StateTransitionAction::PartiallyUseAssetLockAction(_) => {}
             }
         } else {
             // if we don't have an action this means there was a problem in the validation of the state transition

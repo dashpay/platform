@@ -11,6 +11,7 @@ use dpp::platform_value::Bytes36;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 
+use dpp::fee::Credits;
 use grovedb::EstimatedLayerInformation;
 use std::collections::HashMap;
 
@@ -28,6 +29,8 @@ impl Drive {
     pub fn add_asset_lock_outpoint_operations(
         &self,
         outpoint: &Bytes36,
+        remaining_credit_value: Credits,
+        initial_credit_value: Credits,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -41,6 +44,8 @@ impl Drive {
         {
             0 => self.add_asset_lock_outpoint_operations_v0(
                 outpoint,
+                remaining_credit_value,
+                initial_credit_value,
                 estimated_costs_only_with_layer_info,
                 platform_version,
             ),

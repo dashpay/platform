@@ -1,0 +1,33 @@
+use dpp::fee::Credits;
+use dpp::platform_value::Bytes36;
+use dpp::prelude::UserFeeIncrease;
+use serde::{Deserialize, Serialize};
+mod transformer;
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PartiallyUseAssetLockActionV0 {
+    /// asset lock outpoint
+    pub asset_lock_outpoint: Bytes36,
+    /// initial credit value
+    pub initial_credit_value: Credits,
+    /// remaining credit value AFTER used credits are deducted
+    pub remaining_credit_value: Credits,
+    /// the used credits for processing, this is what will go to Evonodes for processing
+    pub used_credits: Credits,
+    /// fee multiplier
+    pub user_fee_increase: UserFeeIncrease,
+}
+
+/// document base transition action accessors v0
+pub trait PartiallyUseAssetLockActionAccessorsV0 {
+    /// asset lock outpoint
+    fn asset_lock_outpoint(&self) -> Bytes36;
+    /// initial credit value
+    fn initial_credit_value(&self) -> Credits;
+    /// remaining credit value AFTER used credits are deducted
+    fn remaining_credit_value(&self) -> Credits;
+    /// the used credits for processing, this is what will go to Evonodes for processing
+    fn used_credits(&self) -> Credits;
+    /// fee multiplier
+    fn user_fee_increase(&self) -> UserFeeIncrease;
+}

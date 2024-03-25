@@ -1,46 +1,60 @@
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
-use dpp::validation::ConsensusValidationResult;
-use crate::execution::types::state_transition_aware_error::v0::StateTransitionAwareErrorV0;
+use dpp::ProtocolError;
 
 /// This is a container that holds state transitions
 
+#[derive(Debug, Default)]
 pub struct StateTransitionContainerV0<'a> {
     /// The asset lock state transitions
-    state_transitions: Vec<StateTransition>,
+    pub(super) valid_state_transitions: Vec<(&'a Vec<u8>, StateTransition)>,
     /// Deserialization errors
-    consensus_errors: Vec<StateTransitionAwareErrorV0<'a>>,
+    pub(super) invalid_state_transitions: Vec<(&'a Vec<u8>, ConsensusError)>,
+    /// Deserialization errors that broke platform, these should not exist, but are still handled
+    pub(super) invalid_state_transitions_with_protocol_error: Vec<(&'a Vec<u8>, ProtocolError)>,
 }
 
-impl<'a> FromIterator<Result<ConsensusValidationResult<StateTransition>, StateTransitionAwareErrorV0<'a>>> for StateTransitionContainerV0<'a> {
-    fn from_iter<I: IntoIterator<Item = Result<ConsensusValidationResult<StateTransition>, StateTransitionAwareErrorV0<'a>>>>(iter: I) -> Self {
-        let mut asset_lock_state_transitions = Vec::new();
-        let mut signed_state_transitions = Vec::new();
-        let mut consensus_errors = Vec::new();
+pub trait StateTransitionContainerGettersV0<'a> {
+    fn valid_state_transitions(&'a self) -> &'a [(&'a Vec<u8>, StateTransition)];
+    fn invalid_state_transitions(&'a self) -> &'a [(&'a Vec<u8>, ConsensusError)];
+    fn invalid_state_transitions_with_protocol_error(
+        &'a self,
+    ) -> &'a [(&'a Vec<u8>, ProtocolError)];
 
-        for item in iter {
-            match item {
-                Ok(result) => {
-                    if result.is_success() {
-                        // Assuming all successful results go into signed_state_transitions for the sake of example
-                        // Adjust this logic based on your requirements
-                        signed_state_transitions.push(result.get_state_transition().unwrap().clone());
-                    } else {
-                        // Handle consensus error
-                        consensus_errors.push(result.get_consensus_error().unwrap().clone());
-                    }
-                }
-                Err(e) => {
-                    // Handle deserialization error or other types of errors
-                    consensus_errors.push(ConsensusError::from(e)); // Assuming you have a way to convert errors
-                }
-            }
-        }
+    fn destructure(
+        self,
+    ) -> (
+        Vec<(&'a Vec<u8>, StateTransition)>,
+        Vec<(&'a Vec<u8>, ConsensusError)>,
+        Vec<(&'a Vec<u8>, ProtocolError)>,
+    );
+}
 
-        StateTransitionContainerV0 {
-            asset_lock_state_transitions,
-            signed_state_transitions,
-            consensus_errors,
-        }
+impl<'a> StateTransitionContainerV0<'a> {
+    pub fn push_valid_state_transition(
+        &mut self,
+        raw_state_transition: &'a Vec<u8>,
+        valid_state_transition: StateTransition,
+    ) {
+        self.valid_state_transitions
+            .push((raw_state_transition, valid_state_transition))
+    }
+
+    pub fn push_invalid_raw_state_transition(
+        &mut self,
+        invalid_raw_state_transition: &'a Vec<u8>,
+        error: ConsensusError,
+    ) {
+        self.invalid_state_transitions
+            .push((invalid_raw_state_transition, error))
+    }
+
+    pub fn push_invalid_raw_state_transition_with_protocol_error(
+        &mut self,
+        invalid_raw_state_transition: &'a Vec<u8>,
+        error: ProtocolError,
+    ) {
+        self.invalid_state_transitions_with_protocol_error
+            .push((invalid_raw_state_transition, error))
     }
 }

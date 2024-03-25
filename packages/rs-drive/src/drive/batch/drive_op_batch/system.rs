@@ -25,9 +25,18 @@ pub enum SystemOperationType {
         amount: Credits,
     },
     /// Adding a used asset lock
-    AddUsedAssetLock {
+    AddFullyUsedAssetLock {
         /// The asset lock outpoint that should be added
         asset_lock_outpoint: Bytes36,
+    },
+    /// Adding a used asset lock that is only partially used
+    AddPartiallyUsedAssetLock {
+        /// The asset lock outpoint that should be added
+        asset_lock_outpoint: Bytes36,
+        /// the remaining amount of credits from the asset lock
+        remaining_credit_value: Credits,
+        /// the initial amount of credits from the asset lock
+        initial_credit_value: Credits,
     },
 }
 
@@ -57,10 +66,23 @@ impl DriveLowLevelOperationConverter for SystemOperationType {
                     transaction,
                     platform_version,
                 ),
-            SystemOperationType::AddUsedAssetLock {
+            SystemOperationType::AddFullyUsedAssetLock {
                 asset_lock_outpoint,
             } => drive.add_asset_lock_outpoint_operations(
                 &asset_lock_outpoint,
+                0,
+                0,
+                estimated_costs_only_with_layer_info,
+                platform_version,
+            ),
+            SystemOperationType::AddPartiallyUsedAssetLock {
+                asset_lock_outpoint,
+                remaining_credit_value,
+                initial_credit_value,
+            } => drive.add_asset_lock_outpoint_operations(
+                &asset_lock_outpoint,
+                remaining_credit_value,
+                initial_credit_value,
                 estimated_costs_only_with_layer_info,
                 platform_version,
             ),

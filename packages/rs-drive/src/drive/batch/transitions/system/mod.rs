@@ -1,2 +1,3 @@
 mod bump_identity_data_contract_nonce;
 mod bump_identity_nonce;
+mod partially_use_asset_lock;

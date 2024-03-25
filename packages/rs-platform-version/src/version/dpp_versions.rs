@@ -12,6 +12,7 @@ pub struct DPPVersion {
     pub contract_versions: ContractVersions,
     pub document_versions: DocumentVersions,
     pub identity_versions: IdentityVersions,
+    pub asset_lock_versions: AssetLockVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -198,6 +199,11 @@ pub struct RecursiveSchemaValidatorVersions {
     pub traversal_validator: FeatureVersion,
     pub byte_array_has_no_items_as_parent_validator: FeatureVersion,
     pub pattern_is_valid_regex_validator: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct AssetLockVersions {
+    pub reduced_asset_lock_value: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
