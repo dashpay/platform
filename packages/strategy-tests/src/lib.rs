@@ -419,10 +419,6 @@ impl Strategy {
         let (identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
 
-        // for identity in &identities {
-        //     identity_nonce_counter.insert(identity.id(), 1);
-        // }
-
         // Add initial contracts for contracts_with_updates on first block of strategy
         if block_info.height == config.start_block_height {
             let mut contract_state_transitions = self.initial_contract_state_transitions(
