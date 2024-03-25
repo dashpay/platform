@@ -110,26 +110,6 @@
              responseClass:[GetIdentityResponse class]];
 }
 
-#pragma mark getPartialIdentities(GetPartialIdentitiesRequest) returns (GetPartialIdentitiesResponse)
-
-- (void)getPartialIdentitiesWithRequest:(GetPartialIdentitiesRequest *)request handler:(void(^)(GetPartialIdentitiesResponse *_Nullable response, NSError *_Nullable error))handler{
-  [[self RPCTogetPartialIdentitiesWithRequest:request handler:handler] start];
-}
-// Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetPartialIdentitiesWithRequest:(GetPartialIdentitiesRequest *)request handler:(void(^)(GetPartialIdentitiesResponse *_Nullable response, NSError *_Nullable error))handler{
-  return [self RPCToMethod:@"getPartialIdentities"
-            requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[GetPartialIdentitiesResponse class]
-        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
-}
-- (GRPCUnaryProtoCall *)getPartialIdentitiesWithMessage:(GetPartialIdentitiesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
-  return [self RPCToMethod:@"getPartialIdentities"
-                   message:message
-           responseHandler:handler
-               callOptions:callOptions
-             responseClass:[GetPartialIdentitiesResponse class]];
-}
-
 #pragma mark getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse)
 
 - (void)getIdentityKeysWithRequest:(GetIdentityKeysRequest *)request handler:(void(^)(GetIdentityKeysResponse *_Nullable response, NSError *_Nullable error))handler{
@@ -148,6 +128,26 @@
            responseHandler:handler
                callOptions:callOptions
              responseClass:[GetIdentityKeysResponse class]];
+}
+
+#pragma mark getIdentitiesKeys(GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse)
+
+- (void)getIdentitiesKeysWithRequest:(GetIdentitiesKeysRequest *)request handler:(void(^)(GetIdentitiesKeysResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetIdentitiesKeysWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetIdentitiesKeysWithRequest:(GetIdentitiesKeysRequest *)request handler:(void(^)(GetIdentitiesKeysResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getIdentitiesKeys"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetIdentitiesKeysResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getIdentitiesKeysWithMessage:(GetIdentitiesKeysRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getIdentitiesKeys"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetIdentitiesKeysResponse class]];
 }
 
 #pragma mark getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse)

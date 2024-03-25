@@ -22,15 +22,6 @@ type PlatformgetIdentity = {
   readonly responseType: typeof platform_pb.GetIdentityResponse;
 };
 
-type PlatformgetPartialIdentities = {
-  readonly methodName: string;
-  readonly service: typeof Platform;
-  readonly requestStream: false;
-  readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetPartialIdentitiesRequest;
-  readonly responseType: typeof platform_pb.GetPartialIdentitiesResponse;
-};
-
 type PlatformgetIdentityKeys = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -38,6 +29,15 @@ type PlatformgetIdentityKeys = {
   readonly responseStream: false;
   readonly requestType: typeof platform_pb.GetIdentityKeysRequest;
   readonly responseType: typeof platform_pb.GetIdentityKeysResponse;
+};
+
+type PlatformgetIdentitiesKeys = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetIdentitiesKeysRequest;
+  readonly responseType: typeof platform_pb.GetIdentitiesKeysResponse;
 };
 
 type PlatformgetIdentityNonce = {
@@ -179,8 +179,8 @@ export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
   static readonly getIdentity: PlatformgetIdentity;
-  static readonly getPartialIdentities: PlatformgetPartialIdentities;
   static readonly getIdentityKeys: PlatformgetIdentityKeys;
+  static readonly getIdentitiesKeys: PlatformgetIdentitiesKeys;
   static readonly getIdentityNonce: PlatformgetIdentityNonce;
   static readonly getIdentityContractNonce: PlatformgetIdentityContractNonce;
   static readonly getIdentityBalance: PlatformgetIdentityBalance;
@@ -248,15 +248,6 @@ export class PlatformClient {
     requestMessage: platform_pb.GetIdentityRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityResponse|null) => void
   ): UnaryResponse;
-  getPartialIdentities(
-    requestMessage: platform_pb.GetPartialIdentitiesRequest,
-    metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetPartialIdentitiesResponse|null) => void
-  ): UnaryResponse;
-  getPartialIdentities(
-    requestMessage: platform_pb.GetPartialIdentitiesRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetPartialIdentitiesResponse|null) => void
-  ): UnaryResponse;
   getIdentityKeys(
     requestMessage: platform_pb.GetIdentityKeysRequest,
     metadata: grpc.Metadata,
@@ -265,6 +256,15 @@ export class PlatformClient {
   getIdentityKeys(
     requestMessage: platform_pb.GetIdentityKeysRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityKeysResponse|null) => void
+  ): UnaryResponse;
+  getIdentitiesKeys(
+    requestMessage: platform_pb.GetIdentitiesKeysRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesKeysResponse|null) => void
+  ): UnaryResponse;
+  getIdentitiesKeys(
+    requestMessage: platform_pb.GetIdentitiesKeysRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesKeysResponse|null) => void
   ): UnaryResponse;
   getIdentityNonce(
     requestMessage: platform_pb.GetIdentityNonceRequest,

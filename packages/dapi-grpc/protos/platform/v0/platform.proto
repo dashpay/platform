@@ -10,8 +10,8 @@ service Platform {
   rpc broadcastStateTransition(BroadcastStateTransitionRequest)
       returns (BroadcastStateTransitionResponse);
   rpc getIdentity(GetIdentityRequest) returns (GetIdentityResponse);
-  rpc getPartialIdentities(GetPartialIdentitiesRequest) returns (GetPartialIdentitiesResponse);
   rpc getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
+  rpc getIdentitiesKeys(GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse);
   rpc getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse);
   rpc getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse);
   rpc getIdentityBalance(GetIdentityBalanceRequest)
@@ -129,38 +129,6 @@ message GetIdentityResponse {
   oneof version { GetIdentityResponseV0 v0 = 1; }
 }
 
-message GetPartialIdentitiesRequest {
-
-  message GetPartialIdentitiesRequestV0 {
-    repeated bytes ids = 1;
-    bool prove = 2;
-  }
-
-  oneof version { GetPartialIdentitiesRequestV0 v0 = 1; }
-}
-
-message GetPartialIdentitiesResponse {
-
-  message IdentityValue { bytes value = 1; }
-
-  message IdentityEntry {
-    bytes key = 1;
-    IdentityValue value = 2;
-  }
-
-  message Identities { repeated IdentityEntry identity_entries = 1; }
-
-  message GetPartialIdentitiesResponseV0 {
-    oneof result {
-      Identities identities = 1;
-      Proof proof = 2;
-    }
-    ResponseMetadata metadata = 3;
-  }
-
-  oneof version { GetPartialIdentitiesResponseV0 v0 = 1; }
-}
-
 message GetIdentityNonceResponse {
 
   message GetIdentityNonceResponseV0 {
@@ -266,6 +234,34 @@ message GetIdentityKeysResponse {
   }
 
   oneof version { GetIdentityKeysResponseV0 v0 = 1; }
+}
+
+message GetIdentitiesKeysRequest {
+
+  message GetIdentitiesKeysRequestV0 {
+    repeated bytes ids = 1;
+    bool prove = 2;
+  }
+
+  oneof version { GetIdentitiesKeysRequestV0 v0 = 1; }
+}
+
+message GetIdentitiesKeysResponse {
+
+  message GetIdentitiesKeysResponseV0 {
+    message Keys { repeated bytes keys_bytes = 1; }
+
+    // Map of identity id to keys
+    message IdentitiesKeys { map<string, Keys> entries = 1; };
+
+    oneof result {
+      IdentitiesKeys identities_keys = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetIdentitiesKeysResponseV0 v0 = 1; }
 }
 
 message GetProofsRequest {

@@ -820,6 +820,104 @@ pub mod get_identity_keys_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIdentitiesKeysRequest {
+    #[prost(oneof = "get_identities_keys_request::Version", tags = "1")]
+    pub version: ::core::option::Option<get_identities_keys_request::Version>,
+}
+/// Nested message and enum types in `GetIdentitiesKeysRequest`.
+pub mod get_identities_keys_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetIdentitiesKeysRequestV0 {
+        #[prost(bytes = "vec", repeated, tag = "1")]
+        #[serde(with = "crate::deserialization::vec_base64string")]
+        pub ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+        #[prost(bool, tag = "2")]
+        pub prove: bool,
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetIdentitiesKeysRequestV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(::dapi_grpc_macros::Mockable)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIdentitiesKeysResponse {
+    #[prost(oneof = "get_identities_keys_response::Version", tags = "1")]
+    pub version: ::core::option::Option<get_identities_keys_response::Version>,
+}
+/// Nested message and enum types in `GetIdentitiesKeysResponse`.
+pub mod get_identities_keys_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(::dapi_grpc_macros::Mockable)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetIdentitiesKeysResponseV0 {
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(oneof = "get_identities_keys_response_v0::Result", tags = "1, 2")]
+        pub result: ::core::option::Option<get_identities_keys_response_v0::Result>,
+    }
+    /// Nested message and enum types in `GetIdentitiesKeysResponseV0`.
+    pub mod get_identities_keys_response_v0 {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct Keys {
+            #[prost(bytes = "vec", repeated, tag = "1")]
+            pub keys_bytes: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+        }
+        /// Map of identity id to keys
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[derive(::dapi_grpc_macros::Mockable)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct IdentitiesKeys {
+            #[prost(map = "string, message", tag = "1")]
+            pub entries: ::std::collections::HashMap<
+                ::prost::alloc::string::String,
+                Keys,
+            >,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(message, tag = "1")]
+            IdentitiesKeys(IdentitiesKeys),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetIdentitiesKeysResponseV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[derive(::dapi_grpc_macros::VersionedGrpcMessage)]
 #[grpc_versions(0)]
 #[derive(::dapi_grpc_macros::Mockable)]
@@ -2214,6 +2312,36 @@ pub mod platform_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn get_identities_keys(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetIdentitiesKeysRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetIdentitiesKeysResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getIdentitiesKeys",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getIdentitiesKeys",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn get_identity_nonce(
             &mut self,
             request: impl tonic::IntoRequest<super::GetIdentityNonceRequest>,
@@ -2699,6 +2827,13 @@ pub mod platform_server {
             tonic::Response<super::GetIdentityKeysResponse>,
             tonic::Status,
         >;
+        async fn get_identities_keys(
+            &self,
+            request: tonic::Request<super::GetIdentitiesKeysRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetIdentitiesKeysResponse>,
+            tonic::Status,
+        >;
         async fn get_identity_nonce(
             &self,
             request: tonic::Request<super::GetIdentityNonceRequest>,
@@ -3055,6 +3190,52 @@ pub mod platform_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = getIdentityKeysSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/org.dash.platform.dapi.v0.Platform/getIdentitiesKeys" => {
+                    #[allow(non_camel_case_types)]
+                    struct getIdentitiesKeysSvc<T: Platform>(pub Arc<T>);
+                    impl<
+                        T: Platform,
+                    > tonic::server::UnaryService<super::GetIdentitiesKeysRequest>
+                    for getIdentitiesKeysSvc<T> {
+                        type Response = super::GetIdentitiesKeysResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetIdentitiesKeysRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).get_identities_keys(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = getIdentitiesKeysSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

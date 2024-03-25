@@ -28,15 +28,6 @@ Platform.getIdentity = {
   responseType: platform_pb.GetIdentityResponse
 };
 
-Platform.getPartialIdentities = {
-  methodName: "getPartialIdentities",
-  service: Platform,
-  requestStream: false,
-  responseStream: false,
-  requestType: platform_pb.GetPartialIdentitiesRequest,
-  responseType: platform_pb.GetPartialIdentitiesResponse
-};
-
 Platform.getIdentityKeys = {
   methodName: "getIdentityKeys",
   service: Platform,
@@ -44,6 +35,15 @@ Platform.getIdentityKeys = {
   responseStream: false,
   requestType: platform_pb.GetIdentityKeysRequest,
   responseType: platform_pb.GetIdentityKeysResponse
+};
+
+Platform.getIdentitiesKeys = {
+  methodName: "getIdentitiesKeys",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetIdentitiesKeysRequest,
+  responseType: platform_pb.GetIdentitiesKeysResponse
 };
 
 Platform.getIdentityNonce = {
@@ -250,11 +250,11 @@ PlatformClient.prototype.getIdentity = function getIdentity(requestMessage, meta
   };
 };
 
-PlatformClient.prototype.getPartialIdentities = function getPartialIdentities(requestMessage, metadata, callback) {
+PlatformClient.prototype.getIdentityKeys = function getIdentityKeys(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
-  var client = grpc.unary(Platform.getPartialIdentities, {
+  var client = grpc.unary(Platform.getIdentityKeys, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
@@ -281,11 +281,11 @@ PlatformClient.prototype.getPartialIdentities = function getPartialIdentities(re
   };
 };
 
-PlatformClient.prototype.getIdentityKeys = function getIdentityKeys(requestMessage, metadata, callback) {
+PlatformClient.prototype.getIdentitiesKeys = function getIdentitiesKeys(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
-  var client = grpc.unary(Platform.getIdentityKeys, {
+  var client = grpc.unary(Platform.getIdentitiesKeys, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

@@ -24,15 +24,15 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetIdentityRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentityResponse.FromString,
                 )
-        self.getPartialIdentities = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getPartialIdentities',
-                request_serializer=platform__pb2.GetPartialIdentitiesRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetPartialIdentitiesResponse.FromString,
-                )
         self.getIdentityKeys = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityKeys',
                 request_serializer=platform__pb2.GetIdentityKeysRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentityKeysResponse.FromString,
+                )
+        self.getIdentitiesKeys = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getIdentitiesKeys',
+                request_serializer=platform__pb2.GetIdentitiesKeysRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentitiesKeysResponse.FromString,
                 )
         self.getIdentityNonce = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityNonce',
@@ -126,13 +126,13 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def getPartialIdentities(self, request, context):
+    def getIdentityKeys(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def getIdentityKeys(self, request, context):
+    def getIdentitiesKeys(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -241,15 +241,15 @@ def add_PlatformServicer_to_server(servicer, server):
                     request_deserializer=platform__pb2.GetIdentityRequest.FromString,
                     response_serializer=platform__pb2.GetIdentityResponse.SerializeToString,
             ),
-            'getPartialIdentities': grpc.unary_unary_rpc_method_handler(
-                    servicer.getPartialIdentities,
-                    request_deserializer=platform__pb2.GetPartialIdentitiesRequest.FromString,
-                    response_serializer=platform__pb2.GetPartialIdentitiesResponse.SerializeToString,
-            ),
             'getIdentityKeys': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityKeys,
                     request_deserializer=platform__pb2.GetIdentityKeysRequest.FromString,
                     response_serializer=platform__pb2.GetIdentityKeysResponse.SerializeToString,
+            ),
+            'getIdentitiesKeys': grpc.unary_unary_rpc_method_handler(
+                    servicer.getIdentitiesKeys,
+                    request_deserializer=platform__pb2.GetIdentitiesKeysRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentitiesKeysResponse.SerializeToString,
             ),
             'getIdentityNonce': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityNonce,
@@ -371,23 +371,6 @@ class Platform(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def getPartialIdentities(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getPartialIdentities',
-            platform__pb2.GetPartialIdentitiesRequest.SerializeToString,
-            platform__pb2.GetPartialIdentitiesResponse.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-    @staticmethod
     def getIdentityKeys(request,
             target,
             options=(),
@@ -401,6 +384,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityKeys',
             platform__pb2.GetIdentityKeysRequest.SerializeToString,
             platform__pb2.GetIdentityKeysResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getIdentitiesKeys(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentitiesKeys',
+            platform__pb2.GetIdentitiesKeysRequest.SerializeToString,
+            platform__pb2.GetIdentitiesKeysResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
