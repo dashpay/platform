@@ -7,7 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
-use dpp::identity::PartialIdentity;
+use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
@@ -36,7 +36,7 @@ impl Drive {
         identity_ids: &[[u8; 32]],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result::<BTreeMap::<[u8; 32], Option<PartialIdentity>>, Error> {
+    ) -> Result::<BTreeMap::<[u8; 32], BTreeMap<KeyID, IdentityPublicKey>>, Error> {
         match platform_version
             .drive
             .methods

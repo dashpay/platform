@@ -295,111 +295,6 @@ pub mod get_identity_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::Mockable)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetPartialIdentitiesRequest {
-    #[prost(oneof = "get_partial_identities_request::Version", tags = "1")]
-    pub version: ::core::option::Option<get_partial_identities_request::Version>,
-}
-/// Nested message and enum types in `GetPartialIdentitiesRequest`.
-pub mod get_partial_identities_request {
-    #[derive(::serde::Serialize, ::serde::Deserialize)]
-    #[serde(rename_all = "snake_case")]
-    #[derive(::dapi_grpc_macros::Mockable)]
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct GetPartialIdentitiesRequestV0 {
-        #[prost(bytes = "vec", repeated, tag = "1")]
-        #[serde(with = "crate::deserialization::vec_base64string")]
-        pub ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-        #[prost(bool, tag = "2")]
-        pub prove: bool,
-    }
-    #[derive(::serde::Serialize, ::serde::Deserialize)]
-    #[serde(rename_all = "snake_case")]
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Version {
-        #[prost(message, tag = "1")]
-        V0(GetPartialIdentitiesRequestV0),
-    }
-}
-#[derive(::serde::Serialize, ::serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::Mockable)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetPartialIdentitiesResponse {
-    #[prost(oneof = "get_partial_identities_response::Version", tags = "1")]
-    pub version: ::core::option::Option<get_partial_identities_response::Version>,
-}
-/// Nested message and enum types in `GetPartialIdentitiesResponse`.
-pub mod get_partial_identities_response {
-    #[derive(::serde::Serialize, ::serde::Deserialize)]
-    #[serde(rename_all = "snake_case")]
-    #[derive(::dapi_grpc_macros::Mockable)]
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct IdentityValue {
-        #[prost(bytes = "vec", tag = "1")]
-        pub value: ::prost::alloc::vec::Vec<u8>,
-    }
-    #[derive(::serde::Serialize, ::serde::Deserialize)]
-    #[serde(rename_all = "snake_case")]
-    #[derive(::dapi_grpc_macros::Mockable)]
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct IdentityEntry {
-        #[prost(bytes = "vec", tag = "1")]
-        pub key: ::prost::alloc::vec::Vec<u8>,
-        #[prost(message, optional, tag = "2")]
-        pub value: ::core::option::Option<IdentityValue>,
-    }
-    #[derive(::serde::Serialize, ::serde::Deserialize)]
-    #[serde(rename_all = "snake_case")]
-    #[derive(::dapi_grpc_macros::Mockable)]
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct Identities {
-        #[prost(message, repeated, tag = "1")]
-        pub identity_entries: ::prost::alloc::vec::Vec<IdentityEntry>,
-    }
-    #[derive(::serde::Serialize, ::serde::Deserialize)]
-    #[serde(rename_all = "snake_case")]
-    #[derive(::dapi_grpc_macros::Mockable)]
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct GetPartialIdentitiesResponseV0 {
-        #[prost(message, optional, tag = "3")]
-        pub metadata: ::core::option::Option<super::ResponseMetadata>,
-        #[prost(oneof = "get_partial_identities_response_v0::Result", tags = "1, 2")]
-        pub result: ::core::option::Option<get_partial_identities_response_v0::Result>,
-    }
-    /// Nested message and enum types in `GetPartialIdentitiesResponseV0`.
-    pub mod get_partial_identities_response_v0 {
-        #[derive(::serde::Serialize, ::serde::Deserialize)]
-        #[serde(rename_all = "snake_case")]
-        #[allow(clippy::derive_partial_eq_without_eq)]
-        #[derive(Clone, PartialEq, ::prost::Oneof)]
-        pub enum Result {
-            #[prost(message, tag = "1")]
-            Identities(super::Identities),
-            #[prost(message, tag = "2")]
-            Proof(super::super::Proof),
-        }
-    }
-    #[derive(::serde::Serialize, ::serde::Deserialize)]
-    #[serde(rename_all = "snake_case")]
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Version {
-        #[prost(message, tag = "1")]
-        V0(GetPartialIdentitiesResponseV0),
-    }
-}
-#[derive(::serde::Serialize, ::serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
 #[derive(
     ::dapi_grpc_macros::VersionedGrpcMessage,
     ::dapi_grpc_macros::VersionedGrpcResponse
@@ -2252,36 +2147,6 @@ pub mod platform_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        pub async fn get_partial_identities(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetPartialIdentitiesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetPartialIdentitiesResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/org.dash.platform.dapi.v0.Platform/getPartialIdentities",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "org.dash.platform.dapi.v0.Platform",
-                        "getPartialIdentities",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
         pub async fn get_identity_keys(
             &mut self,
             request: impl tonic::IntoRequest<super::GetIdentityKeysRequest>,
@@ -2813,13 +2678,6 @@ pub mod platform_server {
             tonic::Response<super::GetIdentityResponse>,
             tonic::Status,
         >;
-        async fn get_partial_identities(
-            &self,
-            request: tonic::Request<super::GetPartialIdentitiesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetPartialIdentitiesResponse>,
-            tonic::Status,
-        >;
         async fn get_identity_keys(
             &self,
             request: tonic::Request<super::GetIdentityKeysRequest>,
@@ -3098,52 +2956,6 @@ pub mod platform_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = getIdentitySvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/org.dash.platform.dapi.v0.Platform/getPartialIdentities" => {
-                    #[allow(non_camel_case_types)]
-                    struct getPartialIdentitiesSvc<T: Platform>(pub Arc<T>);
-                    impl<
-                        T: Platform,
-                    > tonic::server::UnaryService<super::GetPartialIdentitiesRequest>
-                    for getPartialIdentitiesSvc<T> {
-                        type Response = super::GetPartialIdentitiesResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetPartialIdentitiesRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).get_partial_identities(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = getPartialIdentitiesSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

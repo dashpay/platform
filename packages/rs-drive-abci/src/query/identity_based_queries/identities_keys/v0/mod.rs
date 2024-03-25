@@ -1,13 +1,12 @@
+
+use std::collections::HashMap;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_partial_identities_request::GetPartialIdentitiesRequestV0;
-use dapi_grpc::platform::v0::get_partial_identities_response;
-use dapi_grpc::platform::v0::get_partial_identities_response::{
-    get_partial_identities_response_v0, GetPartialIdentitiesResponseV0, IdentityEntry,
-};
+use dapi_grpc::platform::v0::get_identities_keys_request::GetIdentitiesKeysRequestV0;
+use dapi_grpc::platform::v0::get_identities_keys_response::{get_identities_keys_response_v0, GetIdentitiesKeysResponseV0};
 use dpp::platform_value::Bytes32;
 use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
@@ -17,10 +16,10 @@ use dpp::{check_validation_result_with_data, ProtocolError};
 impl<C> Platform<C> {
     pub(super) fn query_identities_v0(
         &self,
-        GetPartialIdentitiesRequestV0 { ids, prove }: GetPartialIdentitiesRequestV0,
+        GetIdentitiesKeysRequestV0 { ids, prove }: GetIdentitiesKeysRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetPartialIdentitiesResponseV0>, Error> {
+    ) -> Result<QueryValidationResult<GetIdentitiesKeysResponseV0>, Error> {
         let identity_ids = check_validation_result_with_data!(ids
             .into_iter()
             .map(|identity_id_vec| {
@@ -35,18 +34,19 @@ impl<C> Platform<C> {
             .collect::<Result<Vec<[u8; 32]>, QueryError>>());
 
         let response = if prove {
-            let proof = self.drive.prove_full_identities(
-                identity_ids.as_slice(),
-                None,
-                &platform_version.drive,
-            )?;
-
-            GetPartialIdentitiesResponseV0 {
-                result: Some(get_partial_identities_response_v0::Result::Proof(
-                    self.response_proof_v0(platform_state, proof),
-                )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
-            }
+            todo!()
+            // let proof = self.drive.prove_full_identities(
+            //     identity_ids.as_slice(),
+            //     None,
+            //     &platform_version.drive,
+            // )?;
+            //
+            // GetPartialIdentitiesResponseV0 {
+            //     result: Some(get_partial_identities_response_v0::Result::Proof(
+            //         self.response_proof_v0(platform_state, proof),
+            //     )),
+            //     metadata: Some(self.response_metadata_v0(platform_state)),
+            // }
         } else {
             let identities_keys = self.drive.fetch_identities_keys(
                 identity_ids.as_slice(),
@@ -54,37 +54,28 @@ impl<C> Platform<C> {
                 platform_version,
             )?;
 
-            let identities = identities_keys
+            use get_identities_keys_response_v0::Keys;
+
+            let identities_keys = identities_keys
                 .into_iter()
-                .map(|(key, maybe_identity)| {
-                    Ok::<IdentityEntry, ProtocolError>(IdentityEntry {
-                        key: key.to_vec(),
-                        value: maybe_identity
-                            .map(|identity| {
-                                tracing::debug!(
-                                    "[KeysRequest] Identity {:?} with {:?} keys",
-                                    identity.id,
-                                    identity.loaded_public_keys.len()
-                                );
-
-                                Ok::<get_partial_identities_response::IdentityValue, ProtocolError>(
-                                    get_partial_identities_response::IdentityValue {
-                                        // value: identity.serialize_consume_to_bytes()?,
-                                        value: vec![]
-                                    },
-                                )
-                            })
-                            .transpose()?,
-                    })
+                .map(|(key, identity_keys)| {
+                    let keys_bytes = identity_keys
+                        .into_iter()
+                        .map(|(_, key)| key.serialize_to_bytes())
+                        .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()?;
+                    
+                    Ok((hex::encode(&key), Keys { keys_bytes }))
                 })
-                .collect::<Result<Vec<IdentityEntry>, ProtocolError>>()?;
+                .collect::<Result<HashMap<String, Keys>, ProtocolError>>()?;
 
-            GetPartialIdentitiesResponseV0 {
-                result: Some(get_partial_identities_response_v0::Result::Identities(
-                    get_partial_identities_response::Identities {
-                        identity_entries: identities,
-                    },
-                )),
+            GetIdentitiesKeysResponseV0 {
+                result: Some(
+                    get_identities_keys_response_v0::Result::IdentitiesKeys(
+                        get_identities_keys_response_v0::IdentitiesKeys {
+                            entries: identities_keys
+                        }
+                    )
+                ),
                 metadata: Some(self.response_metadata_v0(platform_state)),
             }
         };

@@ -3,21 +3,21 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_partial_identities_request::Version as RequestVersion;
-use dapi_grpc::platform::v0::get_partial_identities_response::Version as ResponseVersion;
-use dapi_grpc::platform::v0::{GetPartialIdentitiesRequest, GetPartialIdentitiesResponse};
+use dapi_grpc::platform::v0::get_identities_keys_request::Version as RequestVersion;
+use dapi_grpc::platform::v0::get_identities_keys_response::Version as ResponseVersion;
+use dapi_grpc::platform::v0::{GetIdentitiesKeysRequest, GetIdentitiesKeysResponse};
 use dpp::version::PlatformVersion;
 
 mod v0;
 
 impl<C> Platform<C> {
     /// Querying of an identity by a public key hash
-    pub fn query_identities(
+    pub fn query_identities_keys(
         &self,
-        GetPartialIdentitiesRequest { version }: GetPartialIdentitiesRequest,
+        GetIdentitiesKeysRequest { version }: GetIdentitiesKeysRequest,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetPartialIdentitiesResponse>, Error> {
+    ) -> Result<QueryValidationResult<GetIdentitiesKeysResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::DecodingError("could not decode identities query".to_string()),
@@ -28,7 +28,7 @@ impl<C> Platform<C> {
             .drive_abci
             .query
             .identity_based_queries
-            .identities;
+            .identities_keys;
 
         let feature_version = match &version {
             RequestVersion::V0(_) => 0,
@@ -49,8 +49,10 @@ impl<C> Platform<C> {
                 let result =
                     self.query_identities_v0(request_v0, platform_state, platform_version)?;
 
-                Ok(result.map(|response_v0| GetPartialIdentitiesResponse {
-                    version: Some(ResponseVersion::V0(response_v0)),
+                Ok(result.map(|response_v0| GetIdentitiesKeysResponse {
+                    version: Some(ResponseVersion::V0(
+                        response_v0
+                    )),
                 }))
             }
         }
