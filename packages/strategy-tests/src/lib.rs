@@ -125,6 +125,7 @@ pub struct StartIdentities {
     pub number_of_identities: u8,
     pub keys_per_identity: u8,
     pub starting_balances: u64, // starting balance in duffs
+    pub extra_keys: KeyMaps,
 }
 
 /// Identities to register on the first block of the strategy
@@ -418,9 +419,9 @@ impl Strategy {
         let (identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
 
-        for identity in &identities {
-            identity_nonce_counter.insert(identity.id(), 1);
-        }
+        // for identity in &identities {
+        //     identity_nonce_counter.insert(identity.id(), 1);
+        // }
 
         // Add initial contracts for contracts_with_updates on first block of strategy
         if block_info.height == config.start_block_height {
@@ -1330,25 +1331,10 @@ impl Strategy {
         if block_info.height == config.start_block_height
             && self.start_identities.number_of_identities > 0
         {
-            // Make sure we insert a key for transfers
-            let mut key_maps: KeyMaps = [(
-                Purpose::TRANSFER,
-                [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
-            )]
-            .into();
-            let mut new_key_count = self.start_identities.keys_per_identity - 1;
-
-            // Also an authentication key with critical security level for documents
-            key_maps.insert(
-                Purpose::AUTHENTICATION,
-                [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
-            );
-            new_key_count -= 1;
-
             let mut new_transitions = crate::transitions::create_identities_state_transitions(
                 self.start_identities.number_of_identities.into(),
-                new_key_count.into(),
-                &key_maps,
+                self.start_identities.keys_per_identity.into(),
+                &self.start_identities.extra_keys,
                 amount,
                 signer,
                 rng,
@@ -1761,6 +1747,7 @@ mod tests {
                 number_of_identities: 2,
                 keys_per_identity: 3,
                 starting_balances: 100_000_000,
+                extra_keys: BTreeMap::new(),
             },
             identities_inserts: Default::default(),
             identity_contract_nonce_gaps: None,
