@@ -48,6 +48,15 @@ impl DataContract {
             DocumentTypeRef::V0(v0) => v0.json_schema_validator.deref(),
         };
 
+        let json_value = match value.try_into_validating_json() {
+            Ok(json_value) => json_value,
+            Err(e) => {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::BasicError(BasicError::ValueError(e.into())),
+                ))
+            }
+        };
+
         // Compile json schema validator if it's not yet compiled
         if !validator.is_compiled(platform_version)? {
             // It is normal that we get a protocol error here, since the document type is coming
@@ -64,14 +73,9 @@ impl DataContract {
                 .try_to_validating_json()
                 .map_err(ProtocolError::ValueError)?;
 
-            validator.compile(&root_json_schema, platform_version)?;
-        }
-
-        match value.try_into_validating_json() {
-            Ok(json_value) => validator.validate(&json_value, platform_version),
-            Err(e) => Ok(SimpleConsensusValidationResult::new_with_error(
-                ConsensusError::BasicError(BasicError::ValueError(e.into())),
-            )),
+            validator.compile_and_validate(&root_json_schema, &json_value, platform_version)
+        } else {
+            validator.validate(&json_value, platform_version)
         }
     }
 

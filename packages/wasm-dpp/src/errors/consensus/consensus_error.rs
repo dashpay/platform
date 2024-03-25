@@ -318,7 +318,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::IdentityCreditTransferToSelfError(err) => {
             IdentityCreditTransferToSelfErrorWasm::from(err).into()
         }
-        BasicError::IdentityContractNonceOutOfBoundsError(err) => {
+        BasicError::NonceOutOfBoundsError(err) => {
             IdentityContractNonceOutOfBoundsErrorWasm::from(err).into()
         }
         ProtocolVersionParsingError(e) => ProtocolVersionParsingErrorWasm::from(e).into(),

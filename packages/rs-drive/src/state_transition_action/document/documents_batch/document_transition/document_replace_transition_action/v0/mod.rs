@@ -46,6 +46,16 @@ pub trait DocumentReplaceTransitionActionAccessorsV0 {
     fn created_at(&self) -> Option<TimestampMillis>;
     /// updated at
     fn updated_at(&self) -> Option<TimestampMillis>;
+    /// Returns the block height at which the document was created.
+    fn created_at_block_height(&self) -> Option<BlockHeight>;
+
+    /// Returns the block height at which the document was last updated.
+    fn updated_at_block_height(&self) -> Option<BlockHeight>;
+    /// Returns the core block height at which the document was created.
+    fn created_at_core_block_height(&self) -> Option<CoreBlockHeight>;
+
+    /// Returns the core block height at which the document was last updated.
+    fn updated_at_core_block_height(&self) -> Option<CoreBlockHeight>;
     /// data
     fn data(&self) -> &BTreeMap<String, Value>;
     /// data owned

@@ -4,7 +4,6 @@ use dpp::validation::ConsensusValidationResult;
 use dpp::version::{PlatformVersion};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
-use drive::state_transition_action::StateTransitionAction;
 use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
@@ -16,7 +15,6 @@ pub trait ValidateStateTransitionIdentitySignature {
     fn validate_state_transition_identity_signed(
         &self,
         drive: &Drive,
-        action: Option<&StateTransitionAction>,
         request_revision: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
@@ -28,7 +26,6 @@ impl ValidateStateTransitionIdentitySignature for StateTransition {
     fn validate_state_transition_identity_signed(
         &self,
         drive: &Drive,
-        action: Option<&StateTransitionAction>,
         request_revision: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
@@ -43,7 +40,6 @@ impl ValidateStateTransitionIdentitySignature for StateTransition {
         {
             0 => self.validate_state_transition_identity_signed_v0(
                 drive,
-                action,
                 request_revision,
                 transaction,
                 execution_context,

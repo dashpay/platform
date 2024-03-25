@@ -6,6 +6,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::ProtocolError;
 
 use dpp::state_transition::{StateTransition};
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
@@ -58,19 +59,6 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         platform_version,
                     )?;
 
-                if state_transition.has_basic_structure_validation() {
-                    // First we validate the basic structure
-                    let result = state_transition.validate_basic_structure(platform_version)?;
-
-                    if !result.is_valid() {
-                        return Ok(
-                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                                result.errors,
-                            ),
-                        );
-                    }
-                }
-
                 if state_transition.has_nonces_validation() {
                     let result = state_transition.validate_nonces(
                         &platform.into(),
@@ -88,8 +76,38 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     }
                 }
 
-                let action = if state_transition.requires_advance_structure_validation_from_state()
-                {
+                if state_transition.has_basic_structure_validation() {
+                    // First we validate the basic structure
+                    let result = state_transition.validate_basic_structure(platform_version)?;
+
+                    if !result.is_valid() {
+                        return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                result.errors,
+                            ),
+                        );
+                    }
+                }
+
+                // Validating signatures
+                let result = state_transition.validate_identity_and_signatures(
+                    platform.drive,
+                    None,
+                    &mut state_transition_execution_context,
+                    platform_version,
+                )?;
+
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+
+                let mut maybe_identity = result.into_data()?;
+
+                let action = if state_transition.has_advanced_structure_validation_with_state() {
                     let state_transition_action_result = state_transition.transform_into_action(
                         platform,
                         platform.state.last_block_info(),
@@ -106,10 +124,19 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     }
                     let action = state_transition_action_result.into_data()?;
 
+                    let identity =
+                        maybe_identity
+                            .as_ref()
+                            .ok_or(ProtocolError::CorruptedCodeExecution(
+                            "the identity should always be known on advanced structure validation"
+                                .to_string(),
+                        ))?;
+
                     // Validating structure
                     let result = state_transition.validate_advanced_structure_from_state(
                         &platform.into(),
                         &action,
+                        identity,
                         platform_version,
                     )?;
 
@@ -124,53 +151,6 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 } else {
                     None
                 };
-
-                // We want to validate the signature before we check that the signature security level is good.
-
-                let action = if state_transition
-                    .requires_state_to_validate_identity_and_signatures()
-                {
-                    if let Some(action) = action {
-                        Some(action)
-                    } else {
-                        let state_transition_action_result = state_transition
-                            .transform_into_action(
-                                platform,
-                                platform.state.last_block_info(),
-                                ValidationMode::CheckTx,
-                                &mut state_transition_execution_context,
-                                None,
-                            )?;
-                        if !state_transition_action_result.is_valid_with_data() {
-                            return Ok(
-                                    ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                                        state_transition_action_result.errors,
-                                    ),
-                                );
-                        }
-                        Some(state_transition_action_result.into_data()?)
-                    }
-                } else {
-                    None
-                };
-
-                // Validating signatures
-                let result = state_transition.validate_identity_and_signatures(
-                    platform.drive,
-                    action.as_ref(),
-                    None,
-                    &mut state_transition_execution_context,
-                    platform_version,
-                )?;
-
-                if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
-                }
-                let mut maybe_identity = result.into_data()?;
 
                 if state_transition.has_balance_validation() {
                     let result = state_transition.validate_balance(
