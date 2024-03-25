@@ -1,11 +1,13 @@
 mod chain;
 mod instant;
 
+use dpp::asset_lock::reduced_asset_lock_value::ReducedAssetLockValue;
+use dpp::fee::Credits;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::prelude::AssetLockProof;
-use dpp::validation::SimpleConsensusValidationResult;
+use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
@@ -28,24 +30,26 @@ pub trait AssetLockProofValidation {
     fn validate<C: CoreRPCLike>(
         &self,
         platform_ref: &PlatformRef<C>,
+        required_balance: Credits,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, Error>;
+    ) -> Result<ConsensusValidationResult<ReducedAssetLockValue>, Error>;
 }
 
 impl AssetLockProofValidation for AssetLockProof {
     fn validate<C: CoreRPCLike>(
         &self,
         platform_ref: &PlatformRef<C>,
+        required_balance: Credits,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, Error> {
+    ) -> Result<ConsensusValidationResult<ReducedAssetLockValue>, Error> {
         match self {
             AssetLockProof::Instant(proof) => {
-                proof.validate(platform_ref, transaction, platform_version)
+                proof.validate(platform_ref, required_balance, transaction, platform_version)
             }
             AssetLockProof::Chain(proof) => {
-                proof.validate(platform_ref, transaction, platform_version)
+                proof.validate(platform_ref, required_balance, transaction, platform_version)
             }
         }
     }

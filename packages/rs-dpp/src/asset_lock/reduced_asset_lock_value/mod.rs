@@ -1,5 +1,5 @@
 use crate::asset_lock::reduced_asset_lock_value::v0::{
-    ReducedAssetLockValueGettersV0, ReducedAssetLockValueSettersV0, ReducedAssetLockValueV0,
+    ReducedAssetLockValueV0,
 };
 use crate::fee::Credits;
 use crate::ProtocolError;
@@ -9,6 +9,8 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_version::version::PlatformVersion;
 
 mod v0;
+
+pub use v0::{ReducedAssetLockValueGettersV0, ReducedAssetLockValueSettersV0};
 
 #[derive(
     Debug, Clone, Copy, Encode, Decode, PlatformSerialize, PlatformDeserialize, From, PartialEq,
@@ -44,15 +46,15 @@ impl ReducedAssetLockValue {
 }
 
 impl ReducedAssetLockValueGettersV0 for ReducedAssetLockValue {
-    fn initial_credit_value(&self) -> Option<Credits> {
+    fn initial_credit_value(&self) -> Credits {
         match self {
-            ReducedAssetLockValue::V0(v0) => Some(v0.initial_credit_value),
+            ReducedAssetLockValue::V0(v0) => v0.initial_credit_value,
         }
     }
 
-    fn remaining_credit_value(&self) -> Option<Credits> {
+    fn remaining_credit_value(&self) -> Credits {
         match self {
-            ReducedAssetLockValue::V0(v0) => Some(v0.remaining_credit_value),
+            ReducedAssetLockValue::V0(v0) => v0.remaining_credit_value,
         }
     }
 }

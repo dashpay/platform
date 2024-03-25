@@ -1,11 +1,13 @@
+use dpp::asset_lock::reduced_asset_lock_value::ReducedAssetLockValue;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::rpc::signature::CoreSignatureVerification;
 use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
+use dpp::fee::Credits;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 
-use dpp::validation::SimpleConsensusValidationResult;
+use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
@@ -17,10 +19,10 @@ impl AssetLockProofValidation for InstantAssetLockProof {
     fn validate<C: CoreRPCLike>(
         &self,
         platform_ref: &PlatformRef<C>,
+        required_balance: Credits,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, Error> {
-        let mut result = SimpleConsensusValidationResult::default();
+    ) -> Result<ConsensusValidationResult<ReducedAssetLockValue>, Error> {
 
         // Verify instant lock signature with Core
 
@@ -30,11 +32,9 @@ impl AssetLockProofValidation for InstantAssetLockProof {
         )?;
 
         if !is_instant_lock_signature_valid {
-            result.add_error(InvalidInstantAssetLockProofSignatureError::new());
-
-            return Ok(result);
+            return Ok(ConsensusValidationResult::new_with_error(InvalidInstantAssetLockProofSignatureError::new().into()));
         }
 
-        self.verify_is_not_spent(platform_ref, transaction, platform_version)
+        self.verify_is_not_spent_and_has_enough_balance(platform_ref, required_balance, transaction, platform_version)
     }
 }

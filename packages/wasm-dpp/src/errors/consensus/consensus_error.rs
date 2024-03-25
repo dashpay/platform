@@ -34,7 +34,7 @@ use dpp::consensus::basic::BasicError::{
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     IdentityAssetLockProofLockedTransactionMismatchError,
     IdentityAssetLockTransactionIsNotFoundError,
-    IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    IdentityAssetLockTransactionOutPointAlreadyConsumedError,
     IdentityAssetLockTransactionOutputNotFoundError, IncompatibleProtocolVersionError,
     IncompatibleRe2PatternError, InvalidAssetLockProofCoreChainHeightError,
     InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
@@ -340,7 +340,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             DuplicatedIdentityPublicKeyErrorWasm::from(e).into()
         }
         MissingMasterPublicKeyError(e) => MissingMasterPublicKeyErrorWasm::from(e).into(),
-        IdentityAssetLockTransactionOutPointAlreadyExistsError(e) => {
+        IdentityAssetLockTransactionOutPointAlreadyConsumedError(e) => {
             IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm::from(e).into()
         }
         InvalidIdentityAssetLockTransactionOutputError(e) => {

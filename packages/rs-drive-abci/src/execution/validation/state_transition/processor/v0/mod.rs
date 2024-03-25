@@ -21,7 +21,6 @@ use drive::state_transition_action::StateTransitionAction;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext};
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{ValidateStateTransitionIdentitySignature};
 use crate::execution::validation::state_transition::state_transitions::identity_update::advanced_structure::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
-use crate::execution::validation::state_transition::state_transitions::identity_create::identity_and_signatures::v0::IdentityCreateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_top_up::identity_retrieval::v0::IdentityTopUpStateTransitionIdentityRetrievalV0;
 use crate::execution::validation::state_transition::ValidationMode;
 pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
@@ -34,23 +33,35 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let mut state_transition_execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
-    // Validating signatures
-    let result = state_transition.validate_identity_and_signatures(
-        platform.drive,
-        transaction,
-        &mut state_transition_execution_context,
-        platform_version,
-    )?;
-
-    if !result.is_valid() {
-        // If the signature is not valid we do not have the user pay for the state transition
-        // Since it is most likely not from them
-        // Proposers should remove such transactions from the block
-        // Other validators should reject blocks with such transactions
-        return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
-    }
-
-    let mut maybe_identity = result.into_data()?;
+    let mut maybe_identity = if state_transition.uses_identity_in_state() {
+        let result = if state_transition.validates_signature_based_on_identity_info() {
+            // Validating signature for identity based state transitions (all those except identity create)
+            state_transition.validate_identity_signed_state_transition(
+                platform.drive,
+                transaction,
+                &mut state_transition_execution_context,
+                platform_version,
+            )
+        } else {
+            state_transition.retrieve_identity_info(
+                platform.drive,
+                transaction,
+                &mut state_transition_execution_context,
+                platform_version,
+            )
+        }?;
+        if !result.is_valid() {
+            // If the signature is not valid or if we could not retrieve identity info
+            // we do not have the user pay for the state transition.
+            // Since it is most likely not from them
+            // Proposers should remove such transactions from the block
+            // Other validators should reject blocks with such transactions
+            return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+        }
+        Some(result.into_data()?)
+    } else {
+        None
+    };
 
     if state_transition.has_nonces_validation() {
         // Validating identity contract nonce, this must happen after validating the signature
@@ -138,17 +149,12 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
         let action = state_transition_action_result.into_data()?;
 
-        let identity_ref = maybe_identity.as_ref().ok_or(Error::Execution(
-            ExecutionError::CorruptedCodeExecution(
-                "The identity must be known on advanced structure validation",
-            ),
-        ))?;
-
         // Validating structure
         let result = state_transition.validate_advanced_structure_from_state(
             &platform.into(),
             &action,
-            identity_ref,
+            maybe_identity.as_ref(),
+            transaction,
             platform_version,
         )?;
         if !result.is_valid() {
@@ -205,7 +211,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
 }
 
 /// A trait for validating state transitions within a blockchain.
-pub(crate) trait StateTransitionSignatureValidationV0 {
+pub(crate) trait StateTransitionIdentityBasedSignatureValidationV0 {
     /// Validates the identity and signatures of a transaction to ensure its authenticity.
     ///
     /// # Arguments
@@ -221,13 +227,28 @@ pub(crate) trait StateTransitionSignatureValidationV0 {
     /// - `Ok(ConsensusValidationResult<Option<PartialIdentity>>)`: Indicates that the transaction has passed authentication, and the result contains an optional `PartialIdentity`.
     /// - `Err(Error)`: Indicates that the transaction failed authentication, and the result contains an `Error` indicating the reason for failure.
     ///
-    fn validate_identity_and_signatures(
+    fn validate_identity_signed_state_transition(
         &self,
         drive: &Drive,
         tx: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error>;
+    ) -> Result<ConsensusValidationResult<PartialIdentity>, Error>;
+
+    /// fetches identity info
+    fn retrieve_identity_info(
+        &self,
+        drive: &Drive,
+        tx: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<PartialIdentity>, Error>;
+
+    /// Is the state transition supposed to have an identity in the state to succeed
+    fn uses_identity_in_state(&self) -> bool;
+
+    /// Do we validate the signature based on identity info?
+    fn validates_signature_based_on_identity_info(&self) -> bool;
 }
 
 /// A trait for validating state transitions within a blockchain.
@@ -323,14 +344,16 @@ pub(crate) trait StateTransitionStructureKnownInStateValidationV0 {
         &self,
         platform: &PlatformStateRef,
         action: &StateTransitionAction,
-        identity: &PartialIdentity,
+        maybe_identity: Option<&PartialIdentity>,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
     /// This means we should transform into the action before validation of the structure
-    fn has_advanced_structure_validation_with_state(&self) -> bool {
-        false
-    }
+    fn has_advanced_structure_validation_with_state(&self) -> bool;
+    /// This means we should transform into the action before validation of the advanced structure,
+    /// and that we must even do this on check_tx
+    fn requires_advanced_structure_validation_with_state_on_check_tx(&self) -> bool;
 }
 
 /// A trait for validating state transitions within a blockchain.
@@ -550,34 +573,55 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
         &self,
         platform: &PlatformStateRef,
         action: &StateTransitionAction,
-        identity: &PartialIdentity,
+        maybe_identity: Option<&PartialIdentity>,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
-            StateTransition::DocumentsBatch(st) => st.validate_advanced_structure_from_state(
-                platform,
-                action,
-                identity,
-                platform_version,
-            ),
+            StateTransition::DocumentsBatch(st) => {
+
+                st.validate_advanced_structure_from_state(
+                    platform,
+                    action,
+                    maybe_identity,
+                    transaction,
+                    platform_version,
+                )
+            },
+            StateTransition::IdentityCreate(st) => {
+
+                st.validate_advanced_structure_from_state(
+                    platform,
+                    action,
+                    maybe_identity,
+                    transaction,
+                    platform_version,
+                )
+            },
             _ => Ok(ConsensusValidationResult::new()),
         }
     }
 
-    /// This means we should transform into the action before validation of the structure
+    /// This means we should transform into the action before validation of the advanced structure
     fn has_advanced_structure_validation_with_state(&self) -> bool {
+        matches!(self, StateTransition::DocumentsBatch(_) | StateTransition::IdentityCreate(_))
+    }
+
+    /// This means we should transform into the action before validation of the advanced structure,
+    /// and that we must even do this on check_tx
+    fn requires_advanced_structure_validation_with_state_on_check_tx(&self) -> bool {
         matches!(self, StateTransition::DocumentsBatch(_))
     }
 }
 
-impl StateTransitionSignatureValidationV0 for StateTransition {
-    fn validate_identity_and_signatures(
+impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
+    fn validate_identity_signed_state_transition(
         &self,
         drive: &Drive,
         tx: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
+    ) -> Result<ConsensusValidationResult<PartialIdentity>, Error> {
         match self {
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
@@ -592,8 +636,7 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                         tx,
                         execution_context,
                         platform_version,
-                    )?
-                    .map(Some))
+                    )?)
             }
             StateTransition::IdentityUpdate(_) => {
                 //Basic signature verification
@@ -604,76 +647,31 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                         tx,
                         execution_context,
                         platform_version,
-                    )?
-                    .map(Some))
+                    )?)
             }
-            StateTransition::IdentityCreate(st) => {
-                match platform_version
-                    .drive_abci
-                    .validation_and_processing
-                    .state_transitions
-                    .identity_create_state_transition
-                    .identity_signatures
-                {
-                    Some(0) => {
-                        let mut validation_result =
-                            ConsensusValidationResult::<Option<PartialIdentity>>::default();
-
-                        let signable_bytes: Vec<u8> = self.signable_bytes()?;
-
-                        let result = st.validate_identity_create_state_transition_signatures_v0(
-                            signable_bytes,
-                            execution_context,
-                        );
-
-                        validation_result.merge(result);
-                        validation_result.set_data(None);
-
-                        Ok(validation_result)
-                    }
-                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
-                        method: "identity create transition: validate_identity_and_signatures"
-                            .to_string(),
-                        known_versions: vec![0],
-                    })),
-                    Some(version) => {
-                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                            method: "identity create transition: validate_identity_and_signatures"
-                                .to_string(),
-                            known_versions: vec![0],
-                            received: version,
-                        }))
-                    }
-                }
-            }
-            StateTransition::IdentityTopUp(st) => {
-                match platform_version
-                    .drive_abci
-                    .validation_and_processing
-                    .state_transitions
-                    .identity_top_up_state_transition
-                    .identity_signatures
-                {
-                    // The validation of the signature happens on the state level
-                    Some(0) => Ok(st
-                        .retrieve_topped_up_identity(drive, tx, platform_version)?
-                        .map(Some)),
-                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
-                        method: "identity top up transition: validate_identity_and_signatures"
-                            .to_string(),
-                        known_versions: vec![0],
-                    })),
-                    Some(version) => {
-                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                            method: "identity top up transition: validate_identity_and_signatures"
-                                .to_string(),
-                            known_versions: vec![0],
-                            received: version,
-                        }))
-                    }
-                }
-            }
+            StateTransition::IdentityCreate(_) => Ok(ConsensusValidationResult::new()),
+            StateTransition::IdentityTopUp(_) => Ok(ConsensusValidationResult::new()),
         }
+    }
+
+    fn retrieve_identity_info(&self, drive: &Drive, tx: TransactionArg, execution_context: &mut StateTransitionExecutionContext, platform_version: &PlatformVersion) -> Result<ConsensusValidationResult<PartialIdentity>, Error> {
+        match self {
+            StateTransition::IdentityTopUp(st) => {
+                Ok(st
+                    .retrieve_topped_up_identity(drive, tx, platform_version)?)
+                }
+            _ => Ok(ConsensusValidationResult::new())
+        }
+    }
+
+    /// Is the state transition supposed to have an identity in the state to succeed
+    fn uses_identity_in_state(&self) -> bool {
+        !matches!(self, StateTransition::IdentityCreate(_))
+    }
+
+    /// Do we validate the signature based on identity info?
+    fn validates_signature_based_on_identity_info(&self) -> bool {
+        !matches!(self, StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_))
     }
 }
 

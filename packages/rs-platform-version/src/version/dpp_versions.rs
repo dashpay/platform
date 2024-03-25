@@ -25,6 +25,7 @@ pub struct StateTransitionVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct IdentityTransitionVersions {
+    pub max_public_keys_in_creation: u16,
     pub asset_locks: IdentityTransitionAssetLockVersions,
 }
 
@@ -58,7 +59,6 @@ pub struct CostVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPValidationVersions {
-    pub validate_time_in_block_time_window: FeatureVersion,
     pub json_schema_validator: JsonSchemaValidatorVersions,
     pub data_contract: DataContractValidationVersions,
     pub document_type: DocumentTypeValidationVersions,

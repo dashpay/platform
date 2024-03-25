@@ -1824,7 +1824,7 @@ mod tests {
         assert!(matches!(
             validation_result.errors.first().expect("expected an error"),
             ConsensusError::BasicError(
-                BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(_)
+                BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_)
             )
         ));
 
@@ -1840,7 +1840,7 @@ mod tests {
         assert!(matches!(
             validation_result.errors.first().expect("expected an error"),
             ConsensusError::BasicError(
-                BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(_)
+                BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_)
             )
         ));
     }
@@ -2130,7 +2130,7 @@ mod tests {
         assert!(matches!(
             validation_result.errors.first().expect("expected an error"),
             ConsensusError::BasicError(
-                BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(_)
+                BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_)
             )
         ));
 
@@ -2146,7 +2146,7 @@ mod tests {
         assert!(matches!(
             validation_result.errors.first().expect("expected an error"),
             ConsensusError::BasicError(
-                BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(_)
+                BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_)
             )
         ));
     }

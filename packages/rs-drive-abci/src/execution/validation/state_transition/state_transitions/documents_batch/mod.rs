@@ -131,7 +131,8 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
         &self,
         _platform: &PlatformStateRef,
         action: &StateTransitionAction,
-        identity: &PartialIdentity,
+        identity: Option<&PartialIdentity>,
+        _transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match platform_version
@@ -142,6 +143,11 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
             .advanced_structure
         {
             0 => {
+                let identity = identity.ok_or(Error::Execution(
+                    ExecutionError::CorruptedCodeExecution(
+                        "The identity must be known on advanced structure validation",
+                    ),
+                ))?;
                 let StateTransitionAction::DocumentsBatchAction(documents_batch_transition_action) =
                     action
                 else {
@@ -164,6 +170,10 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
     }
 
     fn has_advanced_structure_validation_with_state(&self) -> bool {
+        true
+    }
+
+    fn requires_advanced_structure_validation_with_state_on_check_tx(&self) -> bool {
         true
     }
 }

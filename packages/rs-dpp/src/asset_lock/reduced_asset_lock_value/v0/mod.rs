@@ -8,8 +8,8 @@ pub struct ReducedAssetLockValueV0 {
 }
 
 pub trait ReducedAssetLockValueGettersV0 {
-    fn initial_credit_value(&self) -> Option<Credits>;
-    fn remaining_credit_value(&self) -> Option<Credits>;
+    fn initial_credit_value(&self) -> Credits;
+    fn remaining_credit_value(&self) -> Credits;
 }
 
 pub trait ReducedAssetLockValueSettersV0 {

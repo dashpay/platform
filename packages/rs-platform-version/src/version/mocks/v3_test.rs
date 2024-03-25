@@ -243,7 +243,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             asset_lock: DriveAssetLockMethodVersions {
                 add_asset_lock_outpoint: 0,
                 add_estimation_costs_for_adding_asset_lock: 0,
-                has_asset_lock_outpoint: 0,
+                fetch_asset_lock_outpoint_info: 0,
             },
             verify: DriveVerifyMethodVersions {
                 contract: DriveVerifyContractMethodVersions {
@@ -601,7 +601,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 },
                 identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
-                    advanced_structure: None,
+                    advanced_structure: Some(0),
                     identity_signatures: Some(0),
                     balance: None,
                     nonce: None,
@@ -620,7 +620,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
                     advanced_structure: None,
-                    identity_signatures: Some(0),
+                    identity_signatures: None,
                     balance: None,
                     nonce: None,
                     state: 0,
@@ -794,7 +794,6 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             signature_verify: 0,
         },
         validation: DPPValidationVersions {
-            validate_time_in_block_time_window: 0,
             json_schema_validator: JsonSchemaValidatorVersions {
                 new: 0,
                 validate: 0,
@@ -912,6 +911,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 },
             },
             identities: IdentityTransitionVersions {
+                max_public_keys_in_creation: 6,
                 asset_locks: IdentityTransitionAssetLockVersions {
                     validate_asset_lock_transaction_structure: 0,
                     validate_instant_asset_lock_proof_structure: 0,
