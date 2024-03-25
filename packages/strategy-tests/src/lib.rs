@@ -24,7 +24,7 @@ use dpp::data_contract::{DataContract, DataContractFactory};
 
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
-use dpp::identity::{Identity, KeyType, PartialIdentity, Purpose, SecurityLevel};
+use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
@@ -1351,25 +1351,10 @@ impl Strategy {
             if frequency.check_hit(rng) {
                 let count = frequency.events(rng); // number of identities to create
 
-                // Make sure we insert a key for transfers
-                let mut key_maps: KeyMaps = [(
-                    Purpose::TRANSFER,
-                    [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
-                )]
-                .into();
-                let mut new_key_count = self.identities_inserts.start_keys - 1;
-
-                // Also an authentication key with critical security level for documents
-                key_maps.insert(
-                    Purpose::AUTHENTICATION,
-                    [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
-                );
-                new_key_count -= 1;
-
                 let mut new_transitions = crate::transitions::create_identities_state_transitions(
                     count,
-                    new_key_count.into(),
-                    &key_maps,
+                    self.identities_inserts.start_keys as KeyID,
+                    &self.identities_inserts.extra_keys,
                     200000, // 0.002 dash
                     signer,
                     rng,
