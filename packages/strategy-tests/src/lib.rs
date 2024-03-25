@@ -1100,7 +1100,7 @@ impl Strategy {
                                     recipient,
                                     identity_nonce_counter,
                                     signer,
-                                    1000,
+                                    300000,
                                 );
                             operations.push(state_transition);
                         }
