@@ -20,10 +20,14 @@ impl From<&InvalidIdentityCreditTransferAmountError>
 #[wasm_bindgen(js_class=InvalidIdentityCreditTransferAmountError)]
 impl InvalidIdentityCreditTransferAmountErrorWasm {
     #[wasm_bindgen(js_name=getAmount)]
-    pub fn amount(&self) -> u64 { self.inner.amount() }
+    pub fn amount(&self) -> u64 {
+        self.inner.amount()
+    }
 
     #[wasm_bindgen(js_name=getMinAmount)]
-    pub fn min_amount(&self) -> u64 { self.inner.min_amount() }
+    pub fn min_amount(&self) -> u64 {
+        self.inner.min_amount()
+    }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
