@@ -728,3 +728,173 @@ fn insert_values_nested(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use platform_value::platform_value;
+
+    mod document_type_name {
+        use super::*;
+
+        #[test]
+        fn should_be_valid() {
+            let platform_version = PlatformVersion::latest();
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "valid_name": {
+                        "type": "string",
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false
+            });
+
+            let result = DocumentTypeV0::try_from_schema_v0(
+                Identifier::new([1; 32]),
+                "valid_name-a-b-123",
+                schema,
+                None,
+                false,
+                false,
+                true,
+                platform_version,
+            )
+            .expect("should be valid");
+        }
+
+        #[test]
+        fn should_no_be_empty() {
+            let platform_version = PlatformVersion::latest();
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "valid_name": {
+                        "type": "string",
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false
+            });
+
+            let result = DocumentTypeV0::try_from_schema_v0(
+                Identifier::new([1; 32]),
+                "",
+                schema,
+                None,
+                false,
+                false,
+                true,
+                platform_version,
+            );
+
+            assert!(matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)
+            ) if matches!(
+                boxed.as_ref(),
+                ConsensusError::BasicError(
+                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                ))
+            ));
+        }
+
+        #[test]
+        fn should_no_be_longer_than_64_chars() {
+            let platform_version = PlatformVersion::latest();
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "valid_name": {
+                        "type": "string",
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false
+            });
+
+            let result = DocumentTypeV0::try_from_schema_v0(
+                Identifier::new([1; 32]),
+                &"a".repeat(65),
+                schema,
+                None,
+                false,
+                false,
+                true,
+                platform_version,
+            );
+
+            assert!(matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)
+            ) if matches!(
+                boxed.as_ref(),
+                ConsensusError::BasicError(
+                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                ))
+            ));
+        }
+
+        #[test]
+        fn should_no_be_alphanumeric() {
+            let platform_version = PlatformVersion::latest();
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "valid_name": {
+                        "type": "string",
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false
+            });
+
+            let result = DocumentTypeV0::try_from_schema_v0(
+                Identifier::new([1; 32]),
+                "invalid name",
+                schema.clone(),
+                None,
+                false,
+                false,
+                true,
+                platform_version,
+            );
+
+            assert!(matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)
+            ) if matches!(
+                boxed.as_ref(),
+                ConsensusError::BasicError(
+                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                ))
+            ));
+
+            let result = DocumentTypeV0::try_from_schema_v0(
+                Identifier::new([1; 32]),
+                "invalid&name",
+                schema,
+                None,
+                false,
+                false,
+                true,
+                platform_version,
+            );
+
+            assert!(matches!(
+                result,
+                Err(ProtocolError::ConsensusError(boxed)
+            ) if matches!(
+                boxed.as_ref(),
+                ConsensusError::BasicError(
+                    BasicError::InvalidDocumentTypeNameError(InvalidDocumentTypeNameError { .. })
+                ))
+            ));
+        }
+    }
+}
