@@ -5,48 +5,14 @@ use crate::errors::consensus::basic::{
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
 
-use crate::errors::consensus::basic::identity::{
-    DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm,
-    IdentityAssetLockProofLockedTransactionMismatchErrorWasm,
-    IdentityAssetLockTransactionIsNotFoundErrorWasm,
-    IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm,
-    IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityCreditTransferToSelfErrorWasm,
-    IdentityInsufficientBalanceErrorWasm, InvalidAssetLockProofCoreChainHeightErrorWasm,
-    InvalidAssetLockProofTransactionHeightErrorWasm, InvalidAssetLockProofValueErrorWasm,
-    InvalidAssetLockTransactionOutputReturnSizeErrorWasm,
-    InvalidIdentityAssetLockProofChainLockValidationErrorWasm,
-    InvalidIdentityAssetLockTransactionErrorWasm,
-    InvalidIdentityAssetLockTransactionOutputErrorWasm,
-    InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm,
-    InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm,
-    InvalidIdentityKeySignatureErrorWasm, InvalidIdentityPublicKeyDataErrorWasm,
-    InvalidIdentityPublicKeySecurityLevelErrorWasm, InvalidInstantAssetLockProofErrorWasm,
-    InvalidInstantAssetLockProofSignatureErrorWasm, MissingMasterPublicKeyErrorWasm,
-    NotImplementedIdentityCreditWithdrawalTransitionPoolingErrorWasm,
-};
+use crate::errors::consensus::basic::identity::{DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm, IdentityAssetLockProofLockedTransactionMismatchErrorWasm, IdentityAssetLockTransactionIsNotFoundErrorWasm, IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm, IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityCreditTransferToSelfErrorWasm, IdentityInsufficientBalanceErrorWasm, InvalidAssetLockProofCoreChainHeightErrorWasm, InvalidAssetLockProofTransactionHeightErrorWasm, InvalidAssetLockProofValueErrorWasm, InvalidAssetLockTransactionOutputReturnSizeErrorWasm, InvalidIdentityAssetLockProofChainLockValidationErrorWasm, InvalidIdentityAssetLockTransactionErrorWasm, InvalidIdentityAssetLockTransactionOutputErrorWasm, InvalidIdentityCreditTransferAmountErrorWasm, InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm, InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm, InvalidIdentityKeySignatureErrorWasm, InvalidIdentityPublicKeyDataErrorWasm, InvalidIdentityPublicKeySecurityLevelErrorWasm, InvalidInstantAssetLockProofErrorWasm, InvalidInstantAssetLockProofSignatureErrorWasm, MissingMasterPublicKeyErrorWasm, NotImplementedIdentityCreditWithdrawalTransitionPoolingErrorWasm};
 
 use crate::errors::consensus::state::identity::{
     DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
     InvalidIdentityNonceErrorWasm, MissingIdentityPublicKeyIdsErrorWasm,
 };
 use dpp::consensus::basic::BasicError;
-use dpp::consensus::basic::BasicError::{
-    DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
-    IdentityAssetLockProofLockedTransactionMismatchError,
-    IdentityAssetLockTransactionIsNotFoundError,
-    IdentityAssetLockTransactionOutPointAlreadyExistsError,
-    IdentityAssetLockTransactionOutputNotFoundError, IncompatibleProtocolVersionError,
-    IncompatibleRe2PatternError, InvalidAssetLockProofCoreChainHeightError,
-    InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
-    InvalidIdentityAssetLockProofChainLockValidationError,
-    InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
-    InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
-    InvalidIdentityCreditWithdrawalTransitionOutputScriptError, InvalidIdentityPublicKeyDataError,
-    InvalidIdentityPublicKeySecurityLevelError, InvalidInstantAssetLockProofError,
-    InvalidInstantAssetLockProofSignatureError, JsonSchemaError, MissingMasterPublicKeyError,
-    NotImplementedIdentityCreditWithdrawalTransitionPoolingError, ProtocolVersionParsingError,
-    SerializedObjectParsingError, UnsupportedProtocolVersionError, UnsupportedVersionError,
-};
+use dpp::consensus::basic::BasicError::{DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError, IdentityAssetLockProofLockedTransactionMismatchError, IdentityAssetLockTransactionIsNotFoundError, IdentityAssetLockTransactionOutPointAlreadyExistsError, IdentityAssetLockTransactionOutputNotFoundError, IncompatibleProtocolVersionError, IncompatibleRe2PatternError, InvalidAssetLockProofCoreChainHeightError, InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError, InvalidIdentityAssetLockProofChainLockValidationError, InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError, InvalidIdentityCreditTransferAmountError, InvalidIdentityCreditWithdrawalTransitionCoreFeeError, InvalidIdentityCreditWithdrawalTransitionOutputScriptError, InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError, InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError, JsonSchemaError, MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError, ProtocolVersionParsingError, SerializedObjectParsingError, UnsupportedProtocolVersionError, UnsupportedVersionError};
 use dpp::consensus::fee::fee_error::FeeError;
 use dpp::consensus::signature::SignatureError;
 
@@ -375,6 +341,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         InvalidAssetLockProofTransactionHeightError(e) => {
             InvalidAssetLockProofTransactionHeightErrorWasm::from(e).into()
+        }
+        InvalidIdentityCreditTransferAmountError(e) => {
+            InvalidIdentityCreditTransferAmountErrorWasm::from(e).into()
         }
         InvalidIdentityCreditWithdrawalTransitionCoreFeeError(e) => {
             InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm::from(e).into()
