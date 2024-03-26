@@ -1,15 +1,8 @@
-use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
-use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::ConsensusError;
-use dpp::identity::state_transition::AssetLockProved;
-
 use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
-use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::PlatformMessageSignable;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;

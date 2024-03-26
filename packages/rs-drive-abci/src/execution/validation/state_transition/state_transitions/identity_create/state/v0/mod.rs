@@ -18,7 +18,6 @@ use dpp::state_transition::identity_create_transition::accessors::IdentityCreate
 
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
-use dpp::validation::SimpleConsensusValidationResult;
 
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;

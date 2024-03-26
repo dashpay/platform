@@ -20,7 +20,7 @@ use crate::rpc::core::CoreRPCLike;
 use crate::execution::validation::state_transition::identity_top_up::state::v0::IdentityTopUpStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::identity_top_up::structure::v0::IdentityTopUpStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0,
+    StateTransitionBasicStructureValidationV0,
 };
 
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
@@ -33,7 +33,7 @@ impl StateTransitionActionTransformerV0 for IdentityTopUpTransition {
         _block_info: &BlockInfo,
         _validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
-        _tx: TransactionArg,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
@@ -44,7 +44,7 @@ impl StateTransitionActionTransformerV0 for IdentityTopUpTransition {
             .identity_top_up_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(platform, execution_context, platform_version),
+            0 => self.transform_into_action_v0(platform, execution_context, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity top up transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -75,34 +75,6 @@ impl StateTransitionBasicStructureValidationV0 for IdentityTopUpTransition {
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
                 method: "identity top up transition: validate_basic_structure".to_string(),
                 known_versions: vec![0],
-            })),
-        }
-    }
-}
-
-impl StateTransitionStateValidationV0 for IdentityTopUpTransition {
-    fn validate_state<C: CoreRPCLike>(
-        &self,
-        _action: Option<StateTransitionAction>,
-        platform: &PlatformRef<C>,
-        _validation_mode: ValidationMode,
-        execution_context: &mut StateTransitionExecutionContext,
-        tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version = platform.state.current_platform_version()?;
-
-        match platform_version
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .identity_top_up_state_transition
-            .state
-        {
-            0 => self.validate_state_v0(platform, execution_context, tx, platform_version),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "identity top up transition: validate_state".to_string(),
-                known_versions: vec![0],
-                received: version,
             })),
         }
     }

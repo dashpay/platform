@@ -1,3 +1,4 @@
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
@@ -31,52 +32,38 @@ use crate::execution::validation::state_transition::common::asset_lock::transact
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_top_up) trait IdentityTopUpStateTransitionStateValidationV0
 {
-    fn validate_state_v0<C: CoreRPCLike>(
-        &self,
-        platform: &PlatformRef<C>,
-        execution_context: &mut StateTransitionExecutionContext,
-        tx: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
 impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
-    fn validate_state_v0<C: CoreRPCLike>(
-        &self,
-        platform: &PlatformRef<C>,
-        execution_context: &mut StateTransitionExecutionContext,
-        tx: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
-
-        validation_result.merge(self.asset_lock_proof().validate(
-            platform,
-            tx,
-            platform_version,
-        )?);
-
-        if !validation_result.is_valid() {
-            return Ok(validation_result);
-        }
-
-        self.transform_into_action_v0(platform, execution_context, platform_version)
-    }
-
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
+        // Todo: we might want a lowered required balance
+        let required_balance = platform_version.dpp.state_transitions.identities.asset_locks.required_asset_lock_duff_balance_for_processing_start_for_identity_create;
+
+        // Validate asset lock proof state
+        let asset_lock_proof_validation = self.asset_lock_proof().validate(
+            platform,
+            required_balance,
+            transaction,
+            platform_version,
+        )?;
+
+        if !asset_lock_proof_validation.is_valid() {
+            return Ok(ConsensusValidationResult::new_with_errors(asset_lock_proof_validation.errors));
+        }
 
         let tx_out_validation = fetch_asset_lock_transaction_output_sync(
             platform.core_rpc,
@@ -91,7 +78,7 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
         }
 
         let tx_out = tx_out_validation.into_data()?;
-        let min_value = IdentityTopUpTransition::get_minimal_asset_lock_value(platform_version)?;
+        let min_value = platform_version.dpp.state_transitions.identities.asset_locks.required_asset_lock_duff_balance_for_processing_start_for_identity_top_up;
         if tx_out.value < min_value {
             return Ok(ConsensusValidationResult::new_with_error(
                 InvalidAssetLockProofValueError::new(tx_out.value, min_value).into(),
@@ -126,18 +113,23 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
             ));
         }
 
+        let asset_lock_value_to_be_consumed = if asset_lock_proof_validation.has_data() {
+            asset_lock_proof_validation.into_data()?
+        } else {
+            let initial_balance_amount = tx_out.value * CREDITS_PER_DUFF;
+            AssetLockValue::new(initial_balance_amount, initial_balance_amount, platform_version)?
+        };
+
         match IdentityTopUpTransitionAction::try_from_borrowed(
             self,
-            tx_out.value * CREDITS_PER_DUFF,
+            asset_lock_value_to_be_consumed,
         ) {
             Ok(action) => {
-                validation_result.set_data(action.into());
+                Ok(ConsensusValidationResult::new_with_data(action.into()))
             }
             Err(error) => {
-                validation_result.add_error(error);
+                Ok(ConsensusValidationResult::new_with_error(error))
             }
         }
-
-        Ok(validation_result)
     }
 }

@@ -1,5 +1,6 @@
 mod v0;
 
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
@@ -79,7 +80,7 @@ impl<'a> ExecutionEvent<'a> {
             }
             StateTransitionAction::IdentityTopUpAction(identity_top_up_action) => {
                 let user_fee_increase = identity_top_up_action.user_fee_increase();
-                let added_balance = identity_top_up_action.top_up_balance_amount();
+                let added_balance = identity_top_up_action.top_up_asset_lock_value().remaining_credit_value();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {

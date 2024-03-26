@@ -5,6 +5,7 @@ use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundE
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identity::state_transition::AssetLockProved;
+use dpp::platform_value::Bytes36;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::validation::ConsensusValidationResult;
 use drive::grovedb::TransactionArg;
@@ -34,11 +35,11 @@ impl TransformIntoPartiallyUsedAssetLockActionV0 for IdentityCreateTransition {
             ).into()));
         };
 
-        let outpoint_bytes = asset_lock_outpoint
+        let outpoint_bytes: [u8;36] = asset_lock_outpoint
             .try_into()
             .map_err(|e: io::Error| SerializedObjectParsingError::new(e.to_string()))?;
 
-        let stored_asset_lock_info = platform.drive.fetch_asset_lock_outpoint_info(outpoint_bytes, transaction, &platform_version.drive)?;
+        let stored_asset_lock_info = platform.drive.fetch_asset_lock_outpoint_info(&Bytes36(outpoint_bytes), transaction, &platform_version.drive)?;
 
         match stored_asset_lock_info {
             StoredAssetLockInfo::Present => {

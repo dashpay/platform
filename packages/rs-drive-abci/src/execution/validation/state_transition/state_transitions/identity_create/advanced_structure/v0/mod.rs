@@ -17,7 +17,7 @@ use crate::platform_types::platform::PlatformStateRef;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_create) trait IdentityCreateStateTransitionAdvancedStructureValidationV0
 {
-    fn validate_advanced_structure_from_state_v0<C>(
+    fn validate_advanced_structure_from_state_v0(
         &self,
         // The state here is only to be used to query information for the action
         platform: &PlatformStateRef,
@@ -28,7 +28,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::identi
 }
 
 impl IdentityCreateStateTransitionAdvancedStructureValidationV0 for IdentityCreateTransition {
-    fn validate_advanced_structure_from_state_v0<C>(
+    fn validate_advanced_structure_from_state_v0(
         &self,
         platform: &PlatformStateRef,
         action: &IdentityCreateTransitionAction,

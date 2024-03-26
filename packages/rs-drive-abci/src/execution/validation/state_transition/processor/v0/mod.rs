@@ -703,8 +703,9 @@ impl StateTransitionStateValidationV0 for StateTransition {
             StateTransition::IdentityUpdate(st) => {
                 st.validate_state(action, platform, validation_mode, execution_context, tx)
             }
-            StateTransition::IdentityTopUp(st) => {
-                st.validate_state(action, platform, validation_mode, execution_context, tx)
+            StateTransition::IdentityTopUp(_) => {
+                // Nothing to validate from state
+                Ok(ConsensusValidationResult::new())
             }
             StateTransition::IdentityCreditWithdrawal(st) => {
                 st.validate_state(action, platform, validation_mode, execution_context, tx)
