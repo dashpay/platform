@@ -37,6 +37,7 @@ use dpp::NativeBlsModule;
 use rand::prelude::{IteratorRandom, StdRng};
 use simple_signer::signer::SimpleSigner;
 
+use crate::KeyMaps;
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use std::collections::{BTreeMap, HashSet};
@@ -283,6 +284,7 @@ pub fn create_identity_top_up_transition(
 pub fn create_identity_update_transition_add_keys(
     identity: &mut Identity,
     count: u16,
+    keys_already_added_this_block_count: u32,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
@@ -290,8 +292,11 @@ pub fn create_identity_update_transition_add_keys(
 ) -> (StateTransition, (Identifier, Vec<IdentityPublicKey>)) {
     identity.bump_revision();
 
+    let start_id =
+        (identity.public_keys().len() as u32 + keys_already_added_this_block_count) as KeyID;
+
     let keys = IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(
-        identity.public_keys().len() as KeyID,
+        start_id,
         count as u32,
         rng,
         platform_version,
@@ -314,7 +319,6 @@ pub fn create_identity_update_transition_add_keys(
         key_id,
         add_public_keys.clone(),
         vec![],
-        None,
         *identity_nonce,
         0,
         signer,
@@ -423,7 +427,6 @@ pub fn create_identity_update_transition_disable_keys(
         key_id,
         vec![],
         key_ids_to_disable,
-        Some(block_time),
         *identity_nonce,
         0,
         signer,
@@ -487,9 +490,15 @@ pub fn create_identity_withdrawal_transition(
 
     let identity_public_key = identity
         .get_first_public_key_matching(
-            Purpose::AUTHENTICATION,
+            Purpose::TRANSFER,
             HashSet::from([SecurityLevel::CRITICAL]),
-            HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+            HashSet::from([
+                KeyType::ECDSA_SECP256K1,
+                KeyType::BLS12_381,
+                KeyType::ECDSA_HASH160,
+                KeyType::BIP13_SCRIPT_HASH,
+                KeyType::EDDSA_25519_HASH160,
+            ]),
         )
         .expect("expected to get a signing key");
 
@@ -558,7 +567,7 @@ pub fn create_identity_credit_transfer_transition(
 
     let identity_public_key = identity
         .get_first_public_key_matching(
-            Purpose::AUTHENTICATION,
+            Purpose::TRANSFER,
             HashSet::from([SecurityLevel::CRITICAL]),
             HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
         )
@@ -615,18 +624,40 @@ pub fn create_identity_credit_transfer_transition(
 pub fn create_identities_state_transitions(
     count: u16,
     key_count: KeyID,
+    extra_keys: &KeyMaps,
+    balance: u64,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
     create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
-    let (identities, mut keys) = Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(
-        count,
-        key_count,
-        rng,
-        platform_version,
-    )
-    .expect("Expected to create identities and keys");
+    let (mut identities, mut keys) =
+        Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(
+            count,
+            key_count,
+            rng,
+            platform_version,
+        )
+        .expect("Expected to create identities and keys");
+
+    for identity in identities.iter_mut() {
+        for (purpose, security_to_key_type_map) in extra_keys {
+            for (security_level, key_types) in security_to_key_type_map {
+                for key_type in key_types {
+                    let (key, private_key) = IdentityPublicKey::random_key_with_known_attributes(
+                        (identity.public_keys().len() + 1) as KeyID,
+                        rng,
+                        *purpose,
+                        *security_level,
+                        *key_type,
+                        platform_version,
+                    )?;
+                    identity.add_public_key(key.clone());
+                    keys.push((key, private_key));
+                }
+            }
+        }
+    }
 
     let starting_id_num = signer
         .private_keys
@@ -663,7 +694,7 @@ pub fn create_identities_state_transitions(
                 });
 
             // Attempt to create an asset lock
-            match create_asset_lock(200000) {
+            match create_asset_lock(balance) {
                 Some((proof, private_key)) => {
                     let pk = private_key.to_bytes();
                     match IdentityCreateTransition::try_from_identity_with_signer(

@@ -73,6 +73,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// and distributing the block fees from the previous block and applies the batch.
     ///
     /// Returns `ProcessedBlockFeesOutcome`.
+    #[inline(always)]
     pub(super) fn process_block_fees_v0(
         &self,
         block_info: &BlockStateInfo,

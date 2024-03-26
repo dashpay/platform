@@ -17,6 +17,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Updates a document and returns the associated fee.
+    #[inline(always)]
     pub(super) fn update_document_for_contract_v0(
         &self,
         document: &Document,

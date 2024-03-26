@@ -17,6 +17,7 @@ use dpp::{
     document::Document,
     platform_value::{platform_value, Value},
     prelude::{DataContract, Identifier},
+    ProtocolError,
 };
 use drive::query::{DriveQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use drive_proof_verifier::{types::Documents, FromProof};
@@ -58,7 +59,9 @@ impl DocumentQuery {
     ) -> Result<Self, Error> {
         let contract = contract.into();
         // ensure document type name is correct
-        contract.document_type_for_name(document_type_name)?;
+        contract
+            .document_type_for_name(document_type_name)
+            .map_err(ProtocolError::DataContractError)?;
 
         Ok(Self {
             data_contract: Arc::clone(&contract),
@@ -298,7 +301,8 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveQuery<'a> {
         // let data_contract = request.data_contract.clone();
         let document_type = request
             .data_contract
-            .document_type_for_name(&request.document_type_name)?;
+            .document_type_for_name(&request.document_type_name)
+            .map_err(ProtocolError::DataContractError)?;
 
         let internal_clauses = InternalClauses::extract_from_clauses(request.where_clauses.clone())
             .map_err(Error::Drive)?;

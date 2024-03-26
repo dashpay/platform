@@ -250,7 +250,6 @@ describe('IdentityFactory', () => {
       expect(stateTransition.getPublicKeysToAdd().map((k) => k.toObject()))
         .to.deep.equal(addPublicKeys.map((k) => k.toObject()));
       expect(stateTransition.getPublicKeyIdsToDisable()).to.deep.equal([0]);
-      expect(stateTransition.getPublicKeysDisabledAt()).to.deep.equal(new Date());
     });
   });
 

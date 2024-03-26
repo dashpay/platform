@@ -3,6 +3,7 @@ mod nonce;
 mod state;
 mod structure;
 
+use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -28,6 +29,7 @@ impl StateTransitionActionTransformerV0 for IdentityCreditTransferTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        _block_info: &BlockInfo,
         _validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,

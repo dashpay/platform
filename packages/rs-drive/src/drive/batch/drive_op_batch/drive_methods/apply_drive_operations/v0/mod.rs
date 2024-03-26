@@ -35,6 +35,7 @@ impl Drive {
     ///
     /// If `apply` is set to true, it applies the low-level drive operations and updates side info accordingly.
     /// If not, it only estimates the costs and updates estimated costs with layer info.
+    #[inline(always)]
     pub(super) fn apply_drive_operations_v0(
         &self,
         operations: Vec<DriveOperation>,

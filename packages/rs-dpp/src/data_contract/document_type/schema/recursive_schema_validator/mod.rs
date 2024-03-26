@@ -114,7 +114,7 @@ mod test {
                     err.pattern(),
                     "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
                 );
-                assert_eq!(consensus_error.code(), 1009);
+                assert_eq!(consensus_error.code(), 10202);
             }
             _ => panic!("Expected error to be IncompatibleRe2PatternError"),
         }
@@ -157,7 +157,7 @@ mod test {
                     err.pattern(),
                     "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
                 );
-                assert_eq!(consensus_error.code(), 1009);
+                assert_eq!(consensus_error.code(), 10202);
             }
             _ => panic!("Expected error to be IncompatibleRe2PatternError"),
         }
@@ -187,7 +187,7 @@ mod test {
                     err.pattern(),
                     "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
                 );
-                assert_eq!(consensus_error.code(), 1009);
+                assert_eq!(consensus_error.code(), 10202);
             }
             _ => panic!("Expected error to be IncompatibleRe2PatternError"),
         }

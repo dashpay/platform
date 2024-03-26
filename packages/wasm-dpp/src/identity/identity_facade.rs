@@ -257,7 +257,6 @@ impl IdentityFacadeWasm {
     ) -> Result<IdentityUpdateTransitionWasm, JsValue> {
         let (add_public_keys, disable_public_keys) =
             super::factory_utils::parse_create_identity_update_transition_keys(public_keys)?;
-        let now = js_sys::Date::now() as u64;
 
         self.0
             .create_identity_update_transition(
@@ -265,7 +264,6 @@ impl IdentityFacadeWasm {
                 identity_nonce,
                 add_public_keys,
                 disable_public_keys,
-                Some(now),
             )
             .map(Into::into)
             .with_js_error()

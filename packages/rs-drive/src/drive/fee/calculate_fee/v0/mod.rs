@@ -9,7 +9,8 @@ use enum_map::EnumMap;
 
 impl Drive {
     /// Calculates fees for the given operations. Returns the storage and processing costs.
-    pub fn calculate_fee_v0(
+    #[inline(always)]
+    pub(super) fn calculate_fee_v0(
         base_operations: Option<EnumMap<BaseOp, u64>>,
         drive_operations: Option<Vec<LowLevelDriveOperation>>,
         epoch: &Epoch,

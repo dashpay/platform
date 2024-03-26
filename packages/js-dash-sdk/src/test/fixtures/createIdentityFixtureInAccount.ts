@@ -16,6 +16,7 @@ export async function createIdentityFixtureInAccount(account) {
 
   const publicKeyOne = new IdentityPublicKey(1);
   publicKeyOne.setData(identityMasterPrivateKey.toPublicKey().toBuffer());
+  publicKeyOne.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
 
   const publicKeyTwo = new IdentityPublicKey(1);
   publicKeyTwo.setId(1);

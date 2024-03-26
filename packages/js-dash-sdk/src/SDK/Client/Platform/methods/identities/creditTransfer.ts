@@ -28,7 +28,7 @@ export async function creditTransfer(
 
   this.logger.silly('[Identity#creditTransfer] Created IdentityCreditTransferTransition');
 
-  const signerKeyIndex = 2;
+  const signerKeyIndex = 3;
 
   await signStateTransition(this, identityCreditTransferTransition, identity, signerKeyIndex);
 

@@ -11,6 +11,7 @@ where
     /// Updates the drive cache at the end of finalize block. This does a few things like merging
     /// the data contract cache and the platform versions cache.
     ///
+    #[inline(always)]
     pub(super) fn update_drive_cache_v0(&self, block_execution_context: &BlockExecutionContext) {
         // Update global cache with updated contracts form this block
         self.drive

@@ -211,6 +211,8 @@ pub fn get_withdrawal_document_fixture(
     document_type.create_document_with_prevalidated_properties(
         id,
         owner_id,
+        0,
+        0,
         properties,
         platform_version,
     )

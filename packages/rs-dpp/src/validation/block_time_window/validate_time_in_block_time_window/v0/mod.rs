@@ -21,6 +21,7 @@ pub const BLOCK_TIME_WINDOW_MILLIS: u64 = BLOCK_TIME_WINDOW_MINUTES * 60 * 1000;
 /// # Errors
 ///
 /// If any arithmetic operation (subtraction or addition) overflows, an `NonConsensusError::Overflow` error is returned.
+#[inline(always)]
 pub(super) fn validate_time_in_block_time_window_v0(
     last_block_header_time_millis: TimestampMillis,
     time_to_check_millis: TimestampMillis,

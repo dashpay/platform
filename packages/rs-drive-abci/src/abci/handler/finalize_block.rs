@@ -1,8 +1,10 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::rpc::core::CoreRPCLike;
+use std::sync::atomic::Ordering;
 use tenderdash_abci::proto::abci as proto;
 
 pub fn finalize_block<'a, A, C>(
@@ -37,8 +39,12 @@ where
         .block_platform_state()
         .current_platform_version()?;
 
+    let request_finalize_block: FinalizeBlockCleanedRequest = request.try_into()?;
+
+    let block_height = request_finalize_block.height;
+
     let block_finalization_outcome = app.platform().finalize_block_proposal(
-        request.try_into()?,
+        request_finalize_block,
         block_execution_context,
         transaction,
         platform_version,
@@ -60,6 +66,10 @@ where
     }
 
     app.commit_transaction(platform_version)?;
+
+    app.platform()
+        .committed_block_height_guard
+        .store(block_height, Ordering::Relaxed);
 
     Ok(proto::ResponseFinalizeBlock {
         events: vec![],

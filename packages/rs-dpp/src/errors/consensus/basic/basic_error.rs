@@ -9,10 +9,11 @@ use crate::consensus::basic::data_contract::{
     DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError,
     DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
     IncompatibleDataContractSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
-    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidIndexPropertyTypeError,
+    InvalidDataContractIdError, InvalidDataContractVersionError,
+    InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, InvalidJsonSchemaRefError,
     SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError,
+    UniqueIndicesLimitReachedError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
 };
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
@@ -20,16 +21,16 @@ use crate::consensus::basic::decode::{
 use crate::consensus::basic::document::{
     DataContractNotPresentError, DocumentTransitionsAreAbsentError,
     DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
-    IdentityContractNonceOutOfBoundsError, InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError,
-    MissingDataContractIdBasicError, MissingDocumentTransitionActionError,
-    MissingDocumentTransitionTypeError, MissingDocumentTypeError,
-    MissingPositionsInDocumentTypePropertiesError,
+    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
+    MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
+    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
+    MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
 use crate::consensus::basic::identity::{
-    DataContractBoundsNotPresentError, DuplicatedIdentityPublicKeyBasicError,
-    DuplicatedIdentityPublicKeyIdBasicError, IdentityAssetLockProofLockedTransactionMismatchError,
+    DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
+    DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
+    IdentityAssetLockProofLockedTransactionMismatchError,
     IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     IdentityAssetLockTransactionOutputNotFoundError, IdentityCreditTransferToSelfError,
@@ -44,6 +45,7 @@ use crate::consensus::basic::identity::{
     InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError,
     InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
     MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
+    TooManyMasterPublicKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
@@ -57,6 +59,8 @@ use crate::consensus::basic::json_schema_compilation_error::JsonSchemaCompilatio
 use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
+use crate::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
+use crate::data_contract::errors::DataContractError;
 
 #[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone)]
 pub enum BasicError {
@@ -71,6 +75,15 @@ pub enum BasicError {
 
     #[error(transparent)]
     VersionError(VersionError),
+
+    #[error(transparent)]
+    ContractError(DataContractError),
+
+    #[error(transparent)]
+    UnknownSecurityLevelError(UnknownSecurityLevelError),
+
+    #[error(transparent)]
+    UnknownStorageKeyRequirementsError(UnknownStorageKeyRequirementsError),
 
     #[error(transparent)]
     SerializedObjectParsingError(SerializedObjectParsingError),
@@ -169,7 +182,7 @@ pub enum BasicError {
     DuplicateDocumentTransitionsWithIndicesError(DuplicateDocumentTransitionsWithIndicesError),
 
     #[error(transparent)]
-    IdentityContractNonceOutOfBoundsError(IdentityContractNonceOutOfBoundsError),
+    NonceOutOfBoundsError(NonceOutOfBoundsError),
 
     #[error(transparent)]
     InconsistentCompoundIndexDataError(InconsistentCompoundIndexDataError),
@@ -207,6 +220,11 @@ pub enum BasicError {
 
     #[error(transparent)]
     DuplicatedIdentityPublicKeyIdBasicError(DuplicatedIdentityPublicKeyIdBasicError),
+
+    #[error(transparent)]
+    DisablingKeyIdAlsoBeingAddedInSameTransitionError(
+        DisablingKeyIdAlsoBeingAddedInSameTransitionError,
+    ),
 
     #[error(transparent)]
     IdentityAssetLockProofLockedTransactionMismatchError(
@@ -259,6 +277,15 @@ pub enum BasicError {
 
     #[error(transparent)]
     MissingMasterPublicKeyError(MissingMasterPublicKeyError),
+
+    #[error(transparent)]
+    TooManyMasterPublicKeyError(TooManyMasterPublicKeyError),
+
+    #[error(transparent)]
+    MasterPublicKeyUpdateError(MasterPublicKeyUpdateError),
+
+    #[error(transparent)]
+    InvalidDocumentTypeRequiredSecurityLevelError(InvalidDocumentTypeRequiredSecurityLevelError),
 
     #[error(transparent)]
     InvalidIdentityPublicKeySecurityLevelError(InvalidIdentityPublicKeySecurityLevelError),

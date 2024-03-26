@@ -14,7 +14,6 @@ pub mod property_names {
     pub const ADD_PUBLIC_KEYS_SIGNATURE: &str = "addPublicKeys[].signature";
     pub const ADD_PUBLIC_KEYS: &str = "addPublicKeys";
     pub const DISABLE_PUBLIC_KEYS: &str = "disablePublicKeys";
-    pub const PUBLIC_KEYS_DISABLED_AT: &str = "publicKeysDisabledAt";
 }
 
 pub const IDENTIFIER_FIELDS: [&str; 1] = [IDENTITY_ID];

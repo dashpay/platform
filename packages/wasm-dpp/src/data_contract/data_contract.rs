@@ -151,6 +151,7 @@ impl DataContractWasm {
         let document_type = self
             .inner
             .document_type_for_name(doc_type)
+            .map_err(ProtocolError::DataContractError)
             .with_js_error()?;
 
         let mut binary_paths = BTreeMap::new();
@@ -234,7 +235,11 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=getDocumentSchema)]
     pub fn document_schema(&mut self, name: &str) -> Result<JsValue, JsValue> {
-        let document_type = self.inner.document_type_for_name(name).with_js_error()?;
+        let document_type = self
+            .inner
+            .document_type_for_name(name)
+            .map_err(ProtocolError::DataContractError)
+            .with_js_error()?;
 
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 

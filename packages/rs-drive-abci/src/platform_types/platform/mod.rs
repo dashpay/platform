@@ -11,6 +11,7 @@ use arc_swap::ArcSwap;
 use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use dashcore_rpc::dashcore::BlockHash;
@@ -34,6 +35,8 @@ pub struct Platform<C> {
     // for query and check tx and we don't want to block affect the
     // state update on finalize block, and vise versa.
     pub state: ArcSwap<PlatformState>,
+    /// block height guard
+    pub committed_block_height_guard: AtomicU64,
     /// Configuration
     pub config: PlatformConfig,
     /// Core RPC Client
@@ -184,7 +187,7 @@ impl<C> Platform<C> {
                 Platform::<C>::fetch_platform_state(&drive, None, platform_version)?
             else {
                 return Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                    "execution state should be stored as well as protocol version",
+                    "execution state should be stored as well as protocol version".to_string(),
                 )));
             };
 
@@ -219,9 +222,12 @@ impl<C> Platform<C> {
             platform_state.current_protocol_version_in_consensus(),
         )?);
 
+        let height = platform_state.last_committed_block_height();
+
         let platform: Platform<C> = Platform {
             drive,
             state: ArcSwap::new(Arc::new(platform_state)),
+            committed_block_height_guard: AtomicU64::from(height),
             config,
             core_rpc,
         };
@@ -245,11 +251,14 @@ impl<C> Platform<C> {
             next_epoch_protocol_version,
         );
 
+        let height = platform_state.last_committed_block_height();
+
         PlatformVersion::set_current(PlatformVersion::get(current_protocol_version_in_consensus)?);
 
         Ok(Platform {
             drive,
             state: ArcSwap::new(Arc::new(platform_state)),
+            committed_block_height_guard: AtomicU64::from(height),
             config,
             core_rpc,
         })

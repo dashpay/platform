@@ -3,7 +3,7 @@ pub mod transformer;
 use dpp::document::{Document, DocumentV0};
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::{Identifier, Value};
-use dpp::prelude::Revision;
+use dpp::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use dpp::ProtocolError;
 
 use std::collections::BTreeMap;
@@ -22,6 +22,14 @@ pub struct DocumentReplaceTransitionActionV0 {
     pub created_at: Option<TimestampMillis>,
     /// The time the document was last updated
     pub updated_at: Option<TimestampMillis>,
+    /// The block height at which the document was created
+    pub created_at_block_height: Option<BlockHeight>,
+    /// The block height at which the document was last updated
+    pub updated_at_block_height: Option<BlockHeight>,
+    /// The core block height at which the document was created
+    pub created_at_core_block_height: Option<CoreBlockHeight>,
+    /// The core block height at which the document was last updated
+    pub updated_at_core_block_height: Option<CoreBlockHeight>,
     /// Document properties
     pub data: BTreeMap<String, Value>,
 }
@@ -38,6 +46,16 @@ pub trait DocumentReplaceTransitionActionAccessorsV0 {
     fn created_at(&self) -> Option<TimestampMillis>;
     /// updated at
     fn updated_at(&self) -> Option<TimestampMillis>;
+    /// Returns the block height at which the document was created.
+    fn created_at_block_height(&self) -> Option<BlockHeight>;
+
+    /// Returns the block height at which the document was last updated.
+    fn updated_at_block_height(&self) -> Option<BlockHeight>;
+    /// Returns the core block height at which the document was created.
+    fn created_at_core_block_height(&self) -> Option<CoreBlockHeight>;
+
+    /// Returns the core block height at which the document was last updated.
+    fn updated_at_core_block_height(&self) -> Option<CoreBlockHeight>;
     /// data
     fn data(&self) -> &BTreeMap<String, Value>;
     /// data owned
@@ -93,6 +111,10 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
             revision,
             created_at,
             updated_at,
+            created_at_block_height,
+            updated_at_block_height,
+            created_at_core_block_height,
+            updated_at_core_block_height,
             data,
         } = value;
 
@@ -110,6 +132,10 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
                 revision: Some(*revision),
                 created_at: *created_at,
                 updated_at: *updated_at,
+                created_at_block_height: *created_at_block_height,
+                updated_at_block_height: *updated_at_block_height,
+                created_at_core_block_height: *created_at_core_block_height,
+                updated_at_core_block_height: *updated_at_core_block_height,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -130,6 +156,10 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
             revision,
             created_at,
             updated_at,
+            created_at_block_height,
+            updated_at_block_height,
+            created_at_core_block_height,
+            updated_at_core_block_height,
             data,
         } = value;
 
@@ -147,6 +177,10 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
                 revision: Some(revision),
                 created_at,
                 updated_at,
+                created_at_block_height,
+                updated_at_block_height,
+                created_at_core_block_height,
+                updated_at_core_block_height,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

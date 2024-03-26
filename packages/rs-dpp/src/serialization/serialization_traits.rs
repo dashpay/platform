@@ -172,7 +172,7 @@ pub trait PlatformMessageSignable {
         public_key_type: KeyType,
         public_key_data: &[u8],
         signature: &[u8],
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
+    ) -> SimpleConsensusValidationResult;
 
     #[cfg(feature = "message-signing")]
     fn sign_by_private_key(
