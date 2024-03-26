@@ -250,7 +250,6 @@ pub struct DriveAbciBlockEndMethodVersions {
     pub update_state_cache: FeatureVersion,
     pub update_drive_cache: FeatureVersion,
     pub validator_set_update: FeatureVersion,
-    pub consensus_param_updates: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -266,6 +265,7 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciProtocolUpgradeMethodVersions {
     pub check_for_desired_protocol_upgrade: FeatureVersion,
+    pub upgrade_protocol_version: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

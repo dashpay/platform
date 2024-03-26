@@ -530,6 +530,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             },
             protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
                 check_for_desired_protocol_upgrade: 0,
+                upgrade_protocol_version: 0,
             },
             block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
                 add_process_epoch_change_operations: 0,
@@ -580,7 +581,6 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 update_state_cache: 0,
                 update_drive_cache: 0,
                 validator_set_update: 0,
-                consensus_param_updates: 0,
             },
             platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
                 fetch_platform_state: 0,

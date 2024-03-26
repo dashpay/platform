@@ -13,7 +13,7 @@ where
     ///
     #[inline(always)]
     pub(super) fn update_drive_cache_v0(&self, block_execution_context: &BlockExecutionContext) {
-        // Update global cache with updated contracts form this block
+        // Update global cache with updated contracts
         self.drive
             .cache
             .data_contracts

@@ -64,8 +64,8 @@ pub struct MimicExecuteBlockOutcome {
     pub block_id_hash: [u8; 32],
     /// Block signature
     pub signature: [u8; 96],
-    /// Protocol version for next block
-    pub next_block_protocol_version: Option<ProtocolVersion>,
+    /// Version of Drive app used to generate this block
+    pub app_version: u64,
 }
 
 /// Options for execution
@@ -87,7 +87,6 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
         &self,
         proposer_pro_tx_hash: [u8; 32],
         current_quorum: &TestQuorumInfo,
-        current_version: ProtocolVersion,
         proposed_version: ProtocolVersion,
         block_info: BlockInfo,
         round: u32,
@@ -117,6 +116,8 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                     .unwrap()
                     .unwrap()
             });
+
+        const DEFAULT_APP_VERSION: u64 = 0;
 
         let mut rng = StdRng::seed_from_u64(block_info.height);
 
@@ -152,7 +153,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             proposed_app_version: proposed_version as u64,
             version: Some(Consensus {
                 block: 0,
-                app: current_version as u64,
+                app: DEFAULT_APP_VERSION, // TODO: Prepare proposal should get 0 always
             }),
             quorum_hash: current_quorum.quorum_hash.to_byte_array().to_vec(),
         };
@@ -172,7 +173,11 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             consensus_param_updates: _,
             core_chain_lock_update,
             validator_set_update,
+            app_version, // TODO: Not optional
         } = response_prepare_proposal;
+
+        let current_protocol_version =
+            app_version.expect("expected app version") as ProtocolVersion;
 
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
             core_height = core_chain_lock_update.core_block_height;
@@ -230,7 +235,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
 
         let state_id = StateId {
             app_hash: app_hash.clone(),
-            app_version: current_version as u64,
+            app_version: current_protocol_version as u64,
             core_chain_locked_height: core_height,
             height,
             time: time.to_milis(),
@@ -270,28 +275,25 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             proposed_app_version: proposed_version as u64,
             version: Some(Consensus {
                 block: 0,
-                app: current_version as u64,
+                app: current_protocol_version as u64,
             }),
             quorum_hash: current_quorum.quorum_hash.to_byte_array().to_vec(),
         };
 
-        let consensus_param_updates = if !options.independent_process_proposal_verification {
+        if !options.independent_process_proposal_verification {
             //we just check as if we were the proposer
             //we must call process proposal so the app hash is set
-            let response = self.process_proposal(request_process_proposal)
+            self.process_proposal(request_process_proposal)
                 .unwrap_or_else(|e| {
                     panic!(
                         "should skip processing (because we prepared it) block #{} at time #{} : {:?}",
                         block_info.height, block_info.time_ms, e
                     )
                 });
-
-            response.consensus_param_updates
         } else {
-            // TODO: Shouldn't it be prepare proposal first?
             //we first call process proposal as the proposer
             //we must call process proposal so the app hash is set
-            let response = self.process_proposal(request_process_proposal.clone())
+            self.process_proposal(request_process_proposal.clone())
                 .unwrap_or_else(|e| {
                     panic!(
                         "should skip processing (because we prepared it) block #{} at time #{} : {:?}",
@@ -383,9 +385,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                 "the application hashed are not valid for height {}",
                 block_info.height
             );
-
-            response.consensus_param_updates
-        };
+        }
 
         let request_extend_vote = RequestExtendVote {
             hash: block_header_hash.to_vec(),
@@ -523,7 +523,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             header: Some(Header {
                 version: Some(Consensus {
                     block: 0, //todo
-                    app: current_version as u64,
+                    app: current_protocol_version as u64,
                 }),
                 chain_id: CHAIN_ID.to_string(),
                 height: height as i64,
@@ -592,18 +592,9 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             assert_eq!(app_hash, root_hash_after_finalization);
         }
 
-        let next_block_protocol_version = consensus_param_updates
-            .map(|updates| updates.version)
-            .map(|version| version.unwrap().app_version)
-            .map(|version| {
-                version
-                    .try_into()
-                    .expect("expected a valid protocol version")
-            });
-
         Ok(MimicExecuteBlockOutcome {
             state_transaction_results,
-            next_block_protocol_version,
+            app_version: current_protocol_version as u64,
             withdrawal_transactions,
             validator_set_update,
             next_validator_set_hash,
