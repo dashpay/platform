@@ -1,4 +1,4 @@
-use dpp::asset_lock::reduced_asset_lock_value::ReducedAssetLockValue;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
@@ -22,7 +22,7 @@ impl AssetLockProofValidation for ChainAssetLockProof {
         required_balance: Credits,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<ReducedAssetLockValue>, Error> {
+    ) -> Result<ConsensusValidationResult<AssetLockValue>, Error> {
 
         if platform_ref.state.last_committed_core_height() < self.core_chain_locked_height {
             return Ok(ConsensusValidationResult::new_with_error(InvalidAssetLockProofCoreChainHeightError::new(

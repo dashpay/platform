@@ -1,7 +1,7 @@
 mod chain;
 mod instant;
 
-use dpp::asset_lock::reduced_asset_lock_value::ReducedAssetLockValue;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::fee::Credits;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
@@ -33,7 +33,7 @@ pub trait AssetLockProofValidation {
         required_balance: Credits,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<ReducedAssetLockValue>, Error>;
+    ) -> Result<ConsensusValidationResult<AssetLockValue>, Error>;
 }
 
 impl AssetLockProofValidation for AssetLockProof {
@@ -43,7 +43,7 @@ impl AssetLockProofValidation for AssetLockProof {
         required_balance: Credits,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<ReducedAssetLockValue>, Error> {
+    ) -> Result<ConsensusValidationResult<AssetLockValue>, Error> {
         match self {
             AssetLockProof::Instant(proof) => {
                 proof.validate(platform_ref, required_balance, transaction, platform_version)

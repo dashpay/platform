@@ -13,7 +13,7 @@ use drive::grovedb::TransactionArg;
 use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockAction;
-use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
+use crate::platform_types::platform::PlatformStateRef;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_create) trait IdentityCreateStateTransitionAdvancedStructureValidationV0
 {
@@ -41,6 +41,30 @@ impl IdentityCreateStateTransitionAdvancedStructureValidationV0 for IdentityCrea
             platform_version,
         )
         .map_err(Error::Protocol)?;
+
+        // We should validate that the identity id is created from the asset lock proof
+
+        let identifier_from_outpoint = match self.asset_lock_proof().create_identifier() {
+            Ok(identifier) => identifier,
+            Err(_) => {
+                return ConsensusValidationResult::new_with_error(ConsensusError::BasicError(
+                    BasicError::IdentityAssetLockTransactionOutputNotFoundError(
+                        IdentityAssetLockTransactionOutputNotFoundError::new(
+                            self.asset_lock_proof().output_index() as usize,
+                        ),
+                    ),
+                ))
+            }
+        };
+
+        if identifier_from_outpoint != self.identity_id() {
+            return ConsensusValidationResult::new_with_error(ConsensusError::BasicError(
+                BasicError::InvalidIdentifierError(InvalidIdentifierError::new(
+                    "identity_id".to_string(),
+                    "does not match created identifier from asset lock".to_string(),
+                )),
+            ));
+        }
 
         if !validation_result.is_valid() {
             let Some(asset_lock_outpoint) = self.asset_lock_proof().out_point() else {

@@ -4,14 +4,13 @@ use dpp::identifier::Identifier;
 
 use dpp::platform_value::Bytes36;
 use dpp::prelude::UserFeeIncrease;
-use serde::{Deserialize, Serialize};
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 
 /// action v0
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct IdentityTopUpTransitionActionV0 {
-    /// top up balance amount
-    pub top_up_balance_amount: u64,
+    /// we top up the remaining amount of the asset lock value
+    pub top_up_asset_lock_value: AssetLockValue,
     /// identity id
     pub identity_id: Identifier,
     /// asset lock outpoint

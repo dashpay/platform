@@ -2,6 +2,7 @@ pub(crate) mod identity_and_signatures;
 mod state;
 mod basic_structure;
 mod advanced_structure;
+mod transform_into_partially_used_asset_lock_action;
 
 use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
@@ -138,7 +139,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for IdentityCreateTransiti
 impl StateTransitionStateValidationV0 for IdentityCreateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
-        _action: Option<StateTransitionAction>,
+        action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
@@ -152,7 +153,26 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
             .identity_create_state_transition
             .state
         {
-            0 => self.validate_state_v0(platform, execution_context, tx, platform_version),
+            0 => {
+                let action =
+                    action.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "identity create validation should always an action",
+                    )))?;
+                let StateTransitionAction::IdentityCreateAction(_) =
+                    &action
+                    else {
+                        return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "action must be a identity create transition action",
+                        )));
+                    };
+                let validation_result = self.validate_state_v0(platform, execution_context, tx, platform_version)?;
+                if validation_result.is_valid() {
+                    Ok(ConsensusValidationResult::new_with_data(action))
+                } else {
+                    Ok(ConsensusValidationResult::new_with_errors(validation_result.errors))
+                }
+                
+            },
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create transition: validate_state".to_string(),
                 known_versions: vec![0],

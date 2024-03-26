@@ -5,6 +5,7 @@ use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
 use std::io;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 
 use dpp::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
 
@@ -12,7 +13,7 @@ impl IdentityCreateTransitionActionV0 {
     /// try from
     pub fn try_from(
         value: IdentityCreateTransitionV0,
-        initial_balance_amount: Credits,
+        asset_lock_value_to_be_consumed: AssetLockValue,
     ) -> Result<Self, ConsensusError> {
         let IdentityCreateTransitionV0 {
             public_keys,
@@ -34,7 +35,7 @@ impl IdentityCreateTransitionActionV0 {
 
         Ok(IdentityCreateTransitionActionV0 {
             public_keys: public_keys.into_iter().map(|a| a.into()).collect(),
-            initial_balance_amount,
+            asset_lock_value_to_be_consumed,
             identity_id,
             asset_lock_outpoint: Bytes36::new(outpoint_bytes),
             user_fee_increase,
@@ -44,7 +45,7 @@ impl IdentityCreateTransitionActionV0 {
     /// try from borrowed
     pub fn try_from_borrowed(
         value: &IdentityCreateTransitionV0,
-        initial_balance_amount: Credits,
+        asset_lock_value_to_be_consumed: AssetLockValue,
     ) -> Result<Self, ConsensusError> {
         let IdentityCreateTransitionV0 {
             public_keys,
@@ -66,7 +67,7 @@ impl IdentityCreateTransitionActionV0 {
 
         Ok(IdentityCreateTransitionActionV0 {
             public_keys: public_keys.iter().map(|key| key.into()).collect(),
-            initial_balance_amount,
+            asset_lock_value_to_be_consumed,
             identity_id: *identity_id,
             asset_lock_outpoint: Bytes36::new(outpoint_bytes),
             user_fee_increase: *user_fee_increase,

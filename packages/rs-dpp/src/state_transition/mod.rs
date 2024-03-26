@@ -14,6 +14,7 @@ use bincode::{Decode, Encode};
 ))]
 use dashcore::signer;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_version::version::PlatformVersion;
 
 mod abstract_state_transition;
 #[cfg(any(
@@ -66,6 +67,8 @@ use crate::identity::{IdentityPublicKey, KeyType};
 use crate::identity::{KeyID, SecurityLevel};
 use crate::prelude::{AssetLockProof, UserFeeIncrease};
 pub use state_transitions::*;
+use crate::balances::credits::CREDITS_PER_DUFF;
+use crate::fee::Credits;
 
 use crate::serialization::Signable;
 use crate::state_transition::data_contract_create_transition::{
@@ -283,6 +286,14 @@ impl StateTransition {
             self,
             StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_)
         )
+    }
+
+    pub fn required_asset_lock_balance_for_processing_start(&self, platform_version: &PlatformVersion) -> Credits {
+        match self {
+            StateTransition::IdentityCreate(_) => platform_version.dpp.state_transitions.identities.asset_locks.required_asset_lock_duff_balance_for_processing_start_for_identity_create * CREDITS_PER_DUFF,
+            StateTransition::IdentityTopUp(_) => platform_version.dpp.state_transitions.identities.asset_locks.required_asset_lock_duff_balance_for_processing_start_for_identity_top_up * CREDITS_PER_DUFF,
+            _ => 0,
+        }
     }
 
     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {

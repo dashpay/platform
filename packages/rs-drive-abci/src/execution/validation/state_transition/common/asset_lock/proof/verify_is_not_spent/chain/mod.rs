@@ -1,4 +1,4 @@
-use dpp::asset_lock::reduced_asset_lock_value::ReducedAssetLockValue;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::asset_lock::StoredAssetLockInfo;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -11,7 +11,7 @@ use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
-use dpp::asset_lock::reduced_asset_lock_value::ReducedAssetLockValueGettersV0;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 
 // TODO: Versioning
 impl AssetLockProofVerifyIsNotSpent for ChainAssetLockProof {
@@ -21,7 +21,7 @@ impl AssetLockProofVerifyIsNotSpent for ChainAssetLockProof {
         required_balance: Credits,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<ReducedAssetLockValue>, Error> {
+    ) -> Result<ConsensusValidationResult<AssetLockValue>, Error> {
 
         // Make sure that asset lock isn't spent yet
 

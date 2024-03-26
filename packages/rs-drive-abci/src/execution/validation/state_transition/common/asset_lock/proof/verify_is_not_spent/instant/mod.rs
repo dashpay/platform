@@ -1,4 +1,4 @@
-use dpp::asset_lock::reduced_asset_lock_value::{ReducedAssetLockValue, ReducedAssetLockValueGettersV0};
+use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
 use dpp::asset_lock::StoredAssetLockInfo;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -21,7 +21,7 @@ impl AssetLockProofVerifyIsNotSpent for InstantAssetLockProof {
         required_balance: Credits,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<ReducedAssetLockValue>, Error> {
+    ) -> Result<ConsensusValidationResult<AssetLockValue>, Error> {
 
         // Make sure that asset lock isn't spent yet
 

@@ -213,7 +213,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             if let Some(asset_lock_proof) = state_transition.optional_asset_lock_proof() {
                 // we should check that the asset lock is still valid
                 let validation_result =
-                    asset_lock_proof.verify_is_not_spent_and_has_enough_balance(platform, state_transition.required_asset_lock_balance_for_processing_start(), None, platform_version)?;
+                    asset_lock_proof.verify_is_not_spent_and_has_enough_balance(platform, state_transition.required_asset_lock_balance_for_processing_start(platform_version), None, platform_version)?;
 
                 if validation_result.is_valid() {
                     Ok(ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_data(None))

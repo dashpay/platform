@@ -10,16 +10,15 @@ use dpp::platform_value::Bytes36;
 use dpp::prelude::UserFeeIncrease;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use serde::{Deserialize, Serialize};
+use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
 
 /// action v0
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct IdentityCreateTransitionActionV0 {
     /// public keys
     pub public_keys: Vec<IdentityPublicKey>,
-    /// initial balance amount
-    pub initial_balance_amount: u64,
+    /// the initial balance amount is equal to the remaining asset lock value
+    pub asset_lock_value_to_be_consumed: AssetLockValue,
     /// identity id
     pub identity_id: Identifier,
     /// asset lock outpoint
@@ -31,14 +30,14 @@ pub struct IdentityCreateTransitionActionV0 {
 impl From<IdentityCreateTransitionActionV0> for PartialIdentity {
     fn from(value: IdentityCreateTransitionActionV0) -> Self {
         let IdentityCreateTransitionActionV0 {
-            initial_balance_amount,
+            asset_lock_value_to_be_consumed,
             identity_id,
             ..
         } = value;
         PartialIdentity {
             id: identity_id,
             loaded_public_keys: Default::default(), //no need to load public keys
-            balance: Some(initial_balance_amount),
+            balance: Some(asset_lock_value_to_be_consumed.remaining_credit_value()),
             revision: None,
 
             not_found_public_keys: Default::default(),
@@ -49,14 +48,14 @@ impl From<IdentityCreateTransitionActionV0> for PartialIdentity {
 impl From<&IdentityCreateTransitionActionV0> for PartialIdentity {
     fn from(value: &IdentityCreateTransitionActionV0) -> Self {
         let IdentityCreateTransitionActionV0 {
-            initial_balance_amount,
+            asset_lock_value_to_be_consumed,
             identity_id,
             ..
         } = value;
         PartialIdentity {
             id: *identity_id,
             loaded_public_keys: Default::default(), //no need to load public keys
-            balance: Some(*initial_balance_amount),
+            balance: Some(asset_lock_value_to_be_consumed.remaining_credit_value()),
             revision: None,
 
             not_found_public_keys: Default::default(),
@@ -88,7 +87,7 @@ impl IdentityFromIdentityCreateTransitionActionV0 for Identity {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreateTransitionActionV0 {
-            initial_balance_amount,
+            asset_lock_value_to_be_consumed,
             identity_id,
             public_keys,
             ..
@@ -101,7 +100,7 @@ impl IdentityFromIdentityCreateTransitionActionV0 for Identity {
             0 => Ok(IdentityV0 {
                 id: identity_id,
                 public_keys: public_keys.into_iter().map(|key| (key.id(), key)).collect(),
-                balance: initial_balance_amount,
+                balance: asset_lock_value_to_be_consumed.remaining_credit_value(),
                 revision: 0,
             }
             .into()),
@@ -117,7 +116,7 @@ impl IdentityFromIdentityCreateTransitionActionV0 for Identity {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreateTransitionActionV0 {
-            initial_balance_amount,
+            asset_lock_value_to_be_consumed,
             identity_id,
             public_keys,
             ..
@@ -133,7 +132,7 @@ impl IdentityFromIdentityCreateTransitionActionV0 for Identity {
                     .iter()
                     .map(|key| (key.id(), key.clone()))
                     .collect(),
-                balance: *initial_balance_amount,
+                balance: asset_lock_value_to_be_consumed.remaining_credit_value(),
                 revision: 0,
             }
             .into()),

@@ -10,6 +10,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 
 /// Operations on the System
 #[derive(Clone, Debug)]
@@ -24,19 +25,13 @@ pub enum SystemOperationType {
         /// The amount of credits we are seeking to remove
         amount: Credits,
     },
-    /// Adding a used asset lock
-    AddFullyUsedAssetLock {
+    /// Adding a used asset lock, if it is only partially used the asset_lock_value
+    /// will have a non 0 remaining_credit_value
+    AddUsedAssetLock {
         /// The asset lock outpoint that should be added
         asset_lock_outpoint: Bytes36,
-    },
-    /// Adding a used asset lock that is only partially used
-    AddPartiallyUsedAssetLock {
-        /// The asset lock outpoint that should be added
-        asset_lock_outpoint: Bytes36,
-        /// the remaining amount of credits from the asset lock
-        remaining_credit_value: Credits,
-        /// the initial amount of credits from the asset lock
-        initial_credit_value: Credits,
+        /// The asset lock value, both initial and remaining
+        asset_lock_value: AssetLockValue,
     },
 }
 
@@ -66,23 +61,12 @@ impl DriveLowLevelOperationConverter for SystemOperationType {
                     transaction,
                     platform_version,
                 ),
-            SystemOperationType::AddFullyUsedAssetLock {
+            SystemOperationType::AddUsedAssetLock {
                 asset_lock_outpoint,
+                asset_lock_value,
             } => drive.add_asset_lock_outpoint_operations(
                 &asset_lock_outpoint,
-                0,
-                0,
-                estimated_costs_only_with_layer_info,
-                platform_version,
-            ),
-            SystemOperationType::AddPartiallyUsedAssetLock {
-                asset_lock_outpoint,
-                remaining_credit_value,
-                initial_credit_value,
-            } => drive.add_asset_lock_outpoint_operations(
-                &asset_lock_outpoint,
-                remaining_credit_value,
-                initial_credit_value,
+                asset_lock_value,
                 estimated_costs_only_with_layer_info,
                 platform_version,
             ),

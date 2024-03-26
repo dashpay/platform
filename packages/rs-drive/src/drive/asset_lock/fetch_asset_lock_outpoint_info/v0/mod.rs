@@ -11,7 +11,7 @@ use dpp::version::drive_versions::DriveVersion;
 
 use dpp::platform_value::Bytes36;
 use grovedb::TransactionArg;
-use dpp::asset_lock::reduced_asset_lock_value::ReducedAssetLockValue;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::asset_lock::StoredAssetLockInfo;
 use dpp::serialization::PlatformDeserializable;
 
@@ -85,7 +85,7 @@ impl Drive {
             if item_bytes.is_empty() {
                 Ok::<StoredAssetLockInfo, Error>(StoredAssetLockInfo::Present)
             } else {
-                Ok(StoredAssetLockInfo::PresentWithInfo(ReducedAssetLockValue::deserialize_from_bytes(item_bytes)?))
+                Ok(StoredAssetLockInfo::PresentWithInfo(AssetLockValue::deserialize_from_bytes(item_bytes)?))
             }
         }).transpose()?.unwrap_or(StoredAssetLockInfo::NotPresent))
     }

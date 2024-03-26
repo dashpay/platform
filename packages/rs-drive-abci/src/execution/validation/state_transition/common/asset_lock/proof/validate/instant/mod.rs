@@ -1,4 +1,4 @@
-use dpp::asset_lock::reduced_asset_lock_value::ReducedAssetLockValue;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
@@ -22,7 +22,7 @@ impl AssetLockProofValidation for InstantAssetLockProof {
         required_balance: Credits,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<ReducedAssetLockValue>, Error> {
+    ) -> Result<ConsensusValidationResult<AssetLockValue>, Error> {
 
         // Verify instant lock signature with Core
 

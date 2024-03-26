@@ -44,30 +44,6 @@ impl IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 for Identity
             }
         }
 
-        // We should validate that the identity id is created from the asset lock proof
-
-        let identifier_from_outpoint = match self.asset_lock_proof().create_identifier() {
-            Ok(identifier) => identifier,
-            Err(_) => {
-                return ConsensusValidationResult::new_with_error(ConsensusError::BasicError(
-                    BasicError::IdentityAssetLockTransactionOutputNotFoundError(
-                        IdentityAssetLockTransactionOutputNotFoundError::new(
-                            self.asset_lock_proof().output_index() as usize,
-                        ),
-                    ),
-                ))
-            }
-        };
-
-        if identifier_from_outpoint != self.identity_id() {
-            return ConsensusValidationResult::new_with_error(ConsensusError::BasicError(
-                BasicError::InvalidIdentifierError(InvalidIdentifierError::new(
-                    "identity_id".to_string(),
-                    "does not match created identifier from asset lock".to_string(),
-                )),
-            ));
-        }
-
         SimpleConsensusValidationResult::new()
     }
 }

@@ -3,16 +3,16 @@ use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
 
 use dpp::consensus::ConsensusError;
-use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
 use dpp::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use std::io;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 
 impl IdentityTopUpTransitionActionV0 {
     /// try from
     pub fn try_from(
         value: IdentityTopUpTransitionV0,
-        top_up_balance_amount: Credits,
+        top_up_asset_lock_value: AssetLockValue,
     ) -> Result<Self, ConsensusError> {
         let IdentityTopUpTransitionV0 {
             identity_id,
@@ -32,7 +32,7 @@ impl IdentityTopUpTransitionActionV0 {
             .map_err(|e: io::Error| SerializedObjectParsingError::new(e.to_string()))?;
 
         Ok(IdentityTopUpTransitionActionV0 {
-            top_up_balance_amount,
+            top_up_asset_lock_value,
             identity_id,
             asset_lock_outpoint: Bytes36::new(outpoint_bytes),
             user_fee_increase,
@@ -42,7 +42,7 @@ impl IdentityTopUpTransitionActionV0 {
     /// try from borrowed
     pub fn try_from_borrowed(
         value: &IdentityTopUpTransitionV0,
-        top_up_balance_amount: Credits,
+        top_up_asset_lock_value: AssetLockValue,
     ) -> Result<Self, ConsensusError> {
         let IdentityTopUpTransitionV0 {
             identity_id,
@@ -62,7 +62,7 @@ impl IdentityTopUpTransitionActionV0 {
             .map_err(|e: io::Error| SerializedObjectParsingError::new(e.to_string()))?;
 
         Ok(IdentityTopUpTransitionActionV0 {
-            top_up_balance_amount,
+            top_up_asset_lock_value,
             identity_id: *identity_id,
             asset_lock_outpoint: Bytes36::new(outpoint_bytes),
             user_fee_increase: *user_fee_increase,

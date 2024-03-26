@@ -35,7 +35,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
 
     let mut maybe_identity = if state_transition.uses_identity_in_state() {
         let result = if state_transition.validates_signature_based_on_identity_info() {
-            // Validating signature for identity based state transitions (all those except identity create)
+            // Validating signature for identity based state transitions (all those except identity create and identity top up)
             state_transition.validate_identity_signed_state_transition(
                 platform.drive,
                 transaction,
@@ -43,6 +43,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
                 platform_version,
             )
         } else {
+            // Currently only identity top up
             state_transition.retrieve_identity_info(
                 platform.drive,
                 transaction,
@@ -60,6 +61,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
         Some(result.into_data()?)
     } else {
+        // Currently only identity create
         None
     };
 
@@ -101,6 +103,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     }
 
     if state_transition.has_advanced_structure_validation_without_state() {
+        // Currently only used for Identity Update
         // Next we have advanced structure validation, this is structure validation that does not require
         // state but isn't checked on check_tx. If advanced structure fails identity nonces or identity
         // contract nonces will be bumped
@@ -129,6 +132,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     }
 
     let action = if state_transition.has_advanced_structure_validation_with_state() {
+        // Currently used for identity create and documents batch
         let state_transition_action_result = state_transition.transform_into_action(
             platform,
             block_info,

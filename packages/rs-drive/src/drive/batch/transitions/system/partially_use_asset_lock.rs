@@ -1,3 +1,4 @@
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 use crate::drive::batch::DriveOperation::SystemOperation;
 use crate::drive::batch::{DriveOperation, SystemOperationType};
@@ -12,9 +13,10 @@ impl DriveHighLevelOperationConverter for PartiallyUseAssetLockAction {
     fn into_high_level_drive_operations<'b>(
         self,
         _epoch: &Epoch,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'b>>, Error> {
         let initial_credit_value = self.initial_credit_value();
+        // The remaining credit value is already computed here
         let remaining_credit_value = self.remaining_credit_value();
         let used_credits = self.used_credits();
         let asset_lock_outpoint = self.asset_lock_outpoint();
@@ -23,10 +25,9 @@ impl DriveHighLevelOperationConverter for PartiallyUseAssetLockAction {
             SystemOperation(SystemOperationType::AddToSystemCredits {
                 amount: used_credits,
             }),
-            SystemOperation(SystemOperationType::AddPartiallyUsedAssetLock {
+            SystemOperation(SystemOperationType::AddUsedAssetLock {
                 asset_lock_outpoint,
-                remaining_credit_value,
-                initial_credit_value,
+                asset_lock_value: AssetLockValue::new(initial_credit_value, remaining_credit_value, platform_version)?,
             }),
         ];
         Ok(drive_operations)

@@ -607,6 +607,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     nonce: None,
                     state: 0,
                     transform_into_action: 0,
+                    transform_into_partially_used_asset_lock_action: Some(0),
                 },
                 identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
@@ -616,6 +617,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     nonce: Some(0),
                     state: 0,
                     transform_into_action: 0,
+                    transform_into_partially_used_asset_lock_action: None,
                 },
                 identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
@@ -625,27 +627,30 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     nonce: None,
                     state: 0,
                     transform_into_action: 0,
+                    transform_into_partially_used_asset_lock_action: Some(0),
                 },
                 identity_credit_withdrawal_state_transition:
-                    DriveAbciStateTransitionValidationVersion {
-                        basic_structure: Some(0),
-                        advanced_structure: None,
-                        identity_signatures: None,
-                        balance: Some(0),
-                        nonce: Some(0),
-                        state: 0,
-                        transform_into_action: 0,
-                    },
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    balance: Some(0),
+                    nonce: Some(0),
+                    state: 0,
+                    transform_into_action: 0,
+                    transform_into_partially_used_asset_lock_action: None,
+                },
                 identity_credit_transfer_state_transition:
-                    DriveAbciStateTransitionValidationVersion {
-                        basic_structure: Some(0),
-                        advanced_structure: None,
-                        identity_signatures: None,
-                        balance: Some(0),
-                        nonce: Some(0),
-                        state: 0,
-                        transform_into_action: 0,
-                    },
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    balance: Some(0),
+                    nonce: Some(0),
+                    state: 0,
+                    transform_into_action: 0,
+                    transform_into_partially_used_asset_lock_action: None,
+                },
                 contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
                     advanced_structure: None,
@@ -654,6 +659,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     nonce: Some(0),
                     state: 0,
                     transform_into_action: 0,
+                    transform_into_partially_used_asset_lock_action: None,
                 },
                 contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: None,
@@ -663,6 +669,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     nonce: Some(0),
                     state: 0,
                     transform_into_action: 0,
+                    transform_into_partially_used_asset_lock_action: None,
                 },
                 documents_batch_state_transition:
                     DriveAbciDocumentsStateTransitionValidationVersions {
@@ -913,9 +920,10 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             identities: IdentityTransitionVersions {
                 max_public_keys_in_creation: 6,
                 asset_locks: IdentityTransitionAssetLockVersions {
+                    required_asset_lock_duff_balance_for_processing_start_for_identity_create: 200000,
+                    required_asset_lock_duff_balance_for_processing_start_for_identity_top_up: 100000,
                     validate_asset_lock_transaction_structure: 0,
                     validate_instant_asset_lock_proof_structure: 0,
-                    minimal_asset_lock_value: 0,
                 },
             },
         },

@@ -1,3 +1,4 @@
+use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValueGettersV0, AssetLockValueSettersV0};
 use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 use crate::drive::batch::DriveOperation::{IdentityOperation, SystemOperation};
 use crate::drive::batch::{DriveOperation, IdentityOperationType, SystemOperationType};
@@ -16,10 +17,13 @@ impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
         _epoch: &Epoch,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
-        let initial_balance_amount = self.initial_balance_amount();
+        let mut asset_lock_value = self.asset_lock_value_to_be_consumed();
         let asset_lock_outpoint = self.asset_lock_outpoint();
+        let initial_balance = asset_lock_value.remaining_credit_value();
         let identity =
             Identity::try_from_identity_create_transition_action(self, platform_version)?;
+
+        asset_lock_value.set_remaining_credit_value(0); // We are using the entire value
 
         let drive_operations = vec![
             IdentityOperation(IdentityOperationType::AddNewIdentity {
@@ -27,10 +31,11 @@ impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
                 is_masternode_identity: false,
             }),
             SystemOperation(SystemOperationType::AddToSystemCredits {
-                amount: initial_balance_amount,
+                amount: initial_balance,
             }),
-            SystemOperation(SystemOperationType::AddFullyUsedAssetLock {
+            SystemOperation(SystemOperationType::AddUsedAssetLock {
                 asset_lock_outpoint,
+                asset_lock_value
             }),
         ];
         Ok(drive_operations)
