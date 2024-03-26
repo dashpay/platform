@@ -1,4 +1,4 @@
-use dpp::consensus::basic::data_contract::InvalidJsonSchemaRefError;
+use dpp::consensus::basic::data_contract::InvalidDocumentTypeNameError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 
@@ -13,7 +13,7 @@ pub struct InvalidDocumentTypeNameErrorWasm {
 impl InvalidDocumentTypeNameErrorWasm {
     #[wasm_bindgen(js_name=getName)]
     pub fn get_name(&self) -> String {
-        self.inner.name()
+        self.inner.name().to_string()
     }
 
     #[wasm_bindgen(js_name=getCode)]
