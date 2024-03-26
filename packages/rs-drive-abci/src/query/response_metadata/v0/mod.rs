@@ -9,7 +9,7 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
     ) -> ResponseMetadata {
         ResponseMetadata {
-            height: platform_state.last_committed_height(),
+            height: platform_state.last_committed_block_height(),
             core_chain_locked_height: platform_state.last_committed_core_height(),
             epoch: platform_state.last_committed_block_epoch().index as u32,
             time_ms: platform_state

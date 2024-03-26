@@ -6,6 +6,7 @@ mod state;
 mod transformer;
 
 use dpp::block::block_info::BlockInfo;
+use dpp::identity::PartialIdentity;
 use dpp::prelude::*;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -47,6 +48,7 @@ impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
@@ -60,7 +62,7 @@ impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
             .documents_batch_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(&platform.into(), validation_mode, tx),
+            0 => self.transform_into_action_v0(&platform.into(), block_info, validation_mode, tx),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -127,10 +129,11 @@ impl StateTransitionNonceValidationV0 for DocumentsBatchTransition {
 impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransition {
     fn validate_advanced_structure_from_state(
         &self,
-        platform: &PlatformStateRef,
-        action: Option<&StateTransitionAction>,
+        _platform: &PlatformStateRef,
+        action: &StateTransitionAction,
+        identity: &PartialIdentity,
         platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, Error> {
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match platform_version
             .drive_abci
             .validation_and_processing
@@ -139,10 +142,6 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
             .advanced_structure
         {
             0 => {
-                let action =
-                    action.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "documents batch structure validation should have an action",
-                    )))?;
                 let StateTransitionAction::DocumentsBatchAction(documents_batch_transition_action) =
                     action
                 else {
@@ -151,20 +150,20 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
                     )));
                 };
                 self.validate_advanced_structure_from_state_v0(
-                    platform,
                     documents_batch_transition_action,
+                    identity,
                     platform_version,
                 )
             }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "documents batch transition: base structure".to_string(),
+                method: "documents batch transition: advanced structure from state".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
         }
     }
 
-    fn requires_advance_structure_validation_from_state(&self) -> bool {
+    fn has_advanced_structure_validation_with_state(&self) -> bool {
         true
     }
 }

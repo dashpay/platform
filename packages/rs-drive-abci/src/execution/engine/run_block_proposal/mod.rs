@@ -1,6 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::platform_types::epoch_info::v0::EpochInfoV0Methods;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::{block_execution_outcome, block_proposal};
 use crate::rpc::core::CoreRPCLike;
@@ -46,18 +48,31 @@ where
         transaction: &Transaction,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
-        // Get current protocol version from block header
-        let protocol_version = block_proposal.consensus_versions.app as u32;
-        let platform_version = PlatformVersion::get(protocol_version)?;
+        // TODO: We should do it above and validate version from request
+        //  prepare proposal should set this version
+        // Epoch information is always calculated with the last committed platform version
+        // even if we are switching to a new version in this block.
+        let last_committed_platform_version = platform_state.current_platform_version()?;
 
         let epoch_info = self.gather_epoch_info(
             &block_proposal,
             transaction,
             platform_state,
-            platform_version,
+            last_committed_platform_version,
         )?;
 
-        match platform_version
+        // Determine a protocol version for this block
+        let block_platform_version = if epoch_info.is_epoch_change_but_not_genesis() {
+            // Switch to next proposed platform version if we are on the first block of the new epoch
+            // This version must be set to the state as current one during block processing
+            let protocol_version = platform_state.next_epoch_protocol_version();
+            PlatformVersion::get(protocol_version)?
+        } else {
+            // Stay on the last committed platform version
+            last_committed_platform_version
+        };
+
+        match block_platform_version
             .drive_abci
             .methods
             .engine
@@ -66,10 +81,10 @@ where
             0 => self.run_block_proposal_v0(
                 block_proposal,
                 known_from_us,
-                epoch_info.into(),
+                epoch_info,
                 transaction,
                 platform_state,
-                platform_version,
+                block_platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "run_block_proposal".to_string(),

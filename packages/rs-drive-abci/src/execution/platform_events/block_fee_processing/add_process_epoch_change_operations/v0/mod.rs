@@ -77,6 +77,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// accumulated during the previous epoch.
     ///
     /// `DistributionLeftoverCredits` will be returned, except if we are at Genesis Epoch.
+    #[inline(always)]
     pub(super) fn add_process_epoch_change_operations_v0(
         &self,
         block_execution_context: &BlockExecutionContext,

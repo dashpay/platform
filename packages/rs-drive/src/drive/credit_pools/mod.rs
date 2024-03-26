@@ -47,6 +47,7 @@ use crate::fee_pools::epochs::paths::EpochProposers;
 use dpp::block::epoch::{Epoch, EpochIndex};
 #[cfg(feature = "full")]
 use dpp::fee::epoch::SignedCreditsPerEpoch;
+#[cfg(feature = "full")]
 use dpp::fee::SignedCredits;
 #[cfg(feature = "full")]
 use grovedb::query_result_type::QueryResultType;

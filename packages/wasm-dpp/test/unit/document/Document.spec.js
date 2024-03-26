@@ -85,7 +85,11 @@ describe('Document', () => {
       $ownerId: ownerId,
       $revision: DocumentCreateTransition.INITIAL_REVISION,
       $createdAt: now,
+      $createdAtBlockHeight: 1,
+      $createdAtCoreBlockHeight: 1,
       $updatedAt: now,
+      $updatedAtBlockHeight: 1,
+      $updatedAtCoreBlockHeight: 1,
     };
 
     rawDocumentWithBuffers = {
@@ -96,7 +100,11 @@ describe('Document', () => {
       $ownerId: ownerId.toBuffer(),
       $revision: DocumentCreateTransition.INITIAL_REVISION,
       $createdAt: now,
+      $createdAtBlockHeight: 1,
+      $createdAtCoreBlockHeight: 1,
       $updatedAt: now,
+      $updatedAtBlockHeight: 1,
+      $updatedAtCoreBlockHeight: 1,
     };
 
     document = new ExtendedDocument(rawDocument, dataContract);
@@ -407,7 +415,7 @@ describe('Document', () => {
     it('should return serialized Document', () => {
       const buffer = document.toBuffer();
       expect(buffer).to.be.instanceOf(Buffer);
-      expect(buffer.length).to.equal(624);
+      expect(buffer.length).to.equal(647);
     });
 
     // TODO: remove or replace?

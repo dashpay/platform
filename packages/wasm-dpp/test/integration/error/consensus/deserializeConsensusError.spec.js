@@ -18,14 +18,14 @@ describe('deserializeConsensusError', () => {
     const message = 'Can\'t read protocol version from serialized object: test';
 
     expect(consensusError).to.be.instanceOf(ProtocolVersionParsingError);
-    expect(consensusError.getCode()).to.equals(1000);
+    expect(consensusError.getCode()).to.equals(10001);
     expect(consensusError.message).to.equals(message);
 
     const serializedConsensusError = consensusError.serialize();
 
     const recoveredError = deserializeConsensusError(serializedConsensusError);
     expect(recoveredError).to.be.instanceOf(ProtocolVersionParsingError);
-    expect(recoveredError.getCode()).to.equals(1000);
+    expect(recoveredError.getCode()).to.equals(10001);
     expect(recoveredError.message).to.equals(message);
   });
 });

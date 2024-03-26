@@ -22,7 +22,7 @@ use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::{
     identity::KeyID,
-    prelude::{Identifier, Revision, TimestampMillis},
+    prelude::{Identifier, Revision},
     ProtocolError,
 };
 
@@ -56,9 +56,6 @@ pub struct IdentityUpdateTransitionV0 {
     /// Identity Public Keys ID's to disable for the Identity
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(default))]
     pub disable_public_keys: Vec<KeyID>,
-
-    /// Timestamp when keys were disabled
-    pub public_keys_disabled_at: Option<TimestampMillis>,
 
     /// The fee multiplier
     pub user_fee_increase: UserFeeIncrease,

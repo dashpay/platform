@@ -113,22 +113,16 @@ where
         return Err(run_result.errors.remove(0));
     }
 
-    let block_execution_outcome = run_result.into_data().map_err(Error::Protocol)?;
-
-    let platform_version = PlatformVersion::get(block_execution_outcome.protocol_version)
-        .expect("must be set in run block proposal from existing protocol version");
-
-    let consensus_param_updates = app
-        .platform()
-        .consensus_param_updates(&block_execution_outcome, platform_version)?;
-
     let block_execution_outcome::v0::BlockExecutionOutcome {
         app_hash,
         state_transitions_result,
         validator_set_update,
+        protocol_version,
         mut block_execution_context,
-        ..
-    } = block_execution_outcome;
+    } = run_result.into_data().map_err(Error::Protocol)?;
+
+    let platform_version = PlatformVersion::get(protocol_version)
+        .expect("must be set in run block proposal from existing protocol version");
 
     // We need to let Tenderdash know about the transactions we should remove from execution
     let valid_tx_count = state_transitions_result.valid_count();
@@ -193,7 +187,9 @@ where
             signature: chain_lock.signature.to_bytes().to_vec(),
         }),
         validator_set_update,
-        consensus_param_updates,
+        // TODO: implement consensus param updates
+        consensus_param_updates: None,
+        app_version: Some(protocol_version as u64),
     };
 
     block_execution_context.set_proposer_results(Some(response.clone()));
@@ -211,8 +207,13 @@ where
         valid_tx_count,
         delayed_tx_count,
         failed_tx_count,
-        "Prepared proposal with {} transitions for height: {}, round: {} in {} ms",
+        "Prepared proposal with {} transition{} for height: {}, round: {} in {} ms",
         valid_tx_count + invalid_paid_tx_count,
+        if valid_tx_count + invalid_paid_tx_count > 0 {
+            "s"
+        } else {
+            ""
+        },
         request.height,
         request.round,
         elapsed_time_ms,

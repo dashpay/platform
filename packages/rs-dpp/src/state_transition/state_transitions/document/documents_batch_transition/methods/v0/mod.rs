@@ -7,7 +7,9 @@ use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
 use crate::identity::SecurityLevel;
-use crate::prelude::{IdentityNonce, UserFeeIncrease};
+use crate::prelude::IdentityNonce;
+#[cfg(feature = "state-transition-signing")]
+use crate::prelude::UserFeeIncrease;
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::{

@@ -53,7 +53,7 @@ pub enum ExecutionError {
 
     /// The platform encountered a corrupted cache state error.
     #[error("platform corrupted cached state error: {0}")]
-    CorruptedCachedState(&'static str),
+    CorruptedCachedState(String),
 
     /// The fork is not yet active for core.
     #[error("initialization fork not active: {0}")]
@@ -81,6 +81,10 @@ pub enum ExecutionError {
     /// A protocol upgrade incoherence error occurred.
     #[error("protocol upgrade incoherence error: {0}")]
     ProtocolUpgradeIncoherence(&'static str),
+
+    /// A protocol upgrade should happen only on epoch change
+    #[error("unexpected protocol upgrade: it should happen only on epoch change")]
+    UnexpectedProtocolVersionUpgrade,
 
     /// Data is missing from the drive.
     #[error("drive missing data error: {0}")]

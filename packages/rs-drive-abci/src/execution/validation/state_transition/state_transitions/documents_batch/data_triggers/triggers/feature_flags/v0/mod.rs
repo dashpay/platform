@@ -31,7 +31,8 @@ use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn create_feature_flag_data_trigger_v0(
+#[inline(always)]
+pub(super) fn create_feature_flag_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     _platform_version: &PlatformVersion,
@@ -71,7 +72,7 @@ pub fn create_feature_flag_data_trigger_v0(
         )))
     })?;
 
-    let latest_block_height = context.platform.state.last_committed_height();
+    let latest_block_height = context.platform.state.last_committed_block_height();
 
     if enable_at_height < latest_block_height {
         let err = DataTriggerConditionError::new(

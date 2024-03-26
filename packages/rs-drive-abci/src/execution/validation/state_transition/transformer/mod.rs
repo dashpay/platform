@@ -3,6 +3,7 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransition;
 use drive::grovedb::TransactionArg;
@@ -29,6 +30,7 @@ pub trait StateTransitionActionTransformerV0 {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
@@ -39,35 +41,68 @@ impl StateTransitionActionTransformerV0 for StateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
-            StateTransition::DataContractCreate(st) => {
-                st.transform_into_action(platform, validation_mode, execution_context, tx)
-            }
-            StateTransition::DataContractUpdate(st) => {
-                st.transform_into_action(platform, validation_mode, execution_context, tx)
-            }
-            StateTransition::IdentityCreate(st) => {
-                st.transform_into_action(platform, validation_mode, execution_context, tx)
-            }
-            StateTransition::IdentityUpdate(st) => {
-                st.transform_into_action(platform, validation_mode, execution_context, tx)
-            }
-            StateTransition::IdentityTopUp(st) => {
-                st.transform_into_action(platform, validation_mode, execution_context, tx)
-            }
-            StateTransition::IdentityCreditWithdrawal(st) => {
-                st.transform_into_action(platform, validation_mode, execution_context, tx)
-            }
-            StateTransition::DocumentsBatch(st) => {
-                st.transform_into_action(platform, validation_mode, execution_context, tx)
-            }
-            StateTransition::IdentityCreditTransfer(st) => {
-                st.transform_into_action(platform, validation_mode, execution_context, tx)
-            }
+            StateTransition::DataContractCreate(st) => st.transform_into_action(
+                platform,
+                block_info,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
+            StateTransition::DataContractUpdate(st) => st.transform_into_action(
+                platform,
+                block_info,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityCreate(st) => st.transform_into_action(
+                platform,
+                block_info,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityUpdate(st) => st.transform_into_action(
+                platform,
+                block_info,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityTopUp(st) => st.transform_into_action(
+                platform,
+                block_info,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityCreditWithdrawal(st) => st.transform_into_action(
+                platform,
+                block_info,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
+            StateTransition::DocumentsBatch(st) => st.transform_into_action(
+                platform,
+                block_info,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityCreditTransfer(st) => st.transform_into_action(
+                platform,
+                block_info,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
         }
     }
 }

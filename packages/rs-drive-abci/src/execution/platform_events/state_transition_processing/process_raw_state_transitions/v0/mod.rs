@@ -5,6 +5,9 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
+use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
+use dpp::consensus::basic::BasicError;
+use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
@@ -111,6 +114,30 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransitionExecutionResult, StateTransitionAwareError> {
+        if raw_state_transition.len() as u64
+            > platform_version
+                .dpp
+                .state_transitions
+                .max_state_transition_size
+        {
+            // The state transition is too big
+            let consensus_error =
+                ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(
+                    StateTransitionMaxSizeExceededError::new(
+                        raw_state_transition.len() as u64,
+                        platform_version
+                            .dpp
+                            .state_transitions
+                            .max_state_transition_size,
+                    ),
+                ));
+            tracing::debug!(?consensus_error, "State transition too big",);
+
+            return Ok(StateTransitionExecutionResult::UnpaidConsensusError(
+                consensus_error,
+            ));
+        }
+
         // Tenderdash hex-encoded ST hash
         let mut st_hash = String::new();
         if tracing::enabled!(tracing::Level::DEBUG) {
@@ -170,13 +197,16 @@ where
         let is_st_asset_lock_funded = state_transition.optional_asset_lock_proof().is_some();
 
         // Validate state transition and produce an execution event
-        let mut st_validation_result =
-            process_state_transition(platform_ref, state_transition, Some(transaction)).map_err(
-                |error| StateTransitionAwareError {
-                    error,
-                    raw_state_transition: raw_state_transition.into(),
-                },
-            )?;
+        let mut st_validation_result = process_state_transition(
+            platform_ref,
+            block_info,
+            state_transition,
+            Some(transaction),
+        )
+        .map_err(|error| StateTransitionAwareError {
+            error,
+            raw_state_transition: raw_state_transition.into(),
+        })?;
 
         // State Transition is invalid
         if !st_validation_result.is_valid() {

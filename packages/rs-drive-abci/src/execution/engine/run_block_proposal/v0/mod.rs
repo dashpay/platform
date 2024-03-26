@@ -1,5 +1,4 @@
 use dpp::block::epoch::Epoch;
-use dpp::util::deserializer::ProtocolVersion;
 
 use dpp::validation::ValidationResult;
 use drive::error::Error::GroveDB;
@@ -69,6 +68,24 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
+        // Run block proposal determines version by itself based on the previous
+        // state and block time.
+        // It should provide correct version on prepare proposal to block header
+        // and validate it on process proposal.
+        // If version set to 0 (default number value) it means we are on prepare proposal,
+        // so there is no need for validation.
+        if !known_from_us
+            && block_proposal.consensus_versions.app != platform_version.protocol_version as u64
+        {
+            return Ok(ValidationResult::new_with_error(
+                AbciError::BadRequest(format!(
+                    "received a block proposal with protocol version {}, expected: {}",
+                    block_proposal.consensus_versions.app, platform_version.protocol_version
+                ))
+                .into(),
+            ));
+        }
+
         tracing::trace!(
             method = "run_block_proposal_v0",
             ?block_proposal,
@@ -78,44 +95,26 @@ where
             block_proposal.round,
         );
 
+        if epoch_info.is_epoch_change_but_not_genesis() {
+            tracing::info!(
+                epoch_index = epoch_info.current_epoch_index(),
+                "epoch change occurring from epoch {} to epoch {}",
+                epoch_info
+                    .previous_epoch_index()
+                    .expect("must be set since we aren't on genesis"),
+                epoch_info.current_epoch_index(),
+            );
+        }
+
         let last_block_time_ms = last_committed_platform_state.last_committed_block_time_ms();
-        let last_block_height = last_committed_platform_state
-            .last_committed_known_height_or(self.config.abci.genesis_height.saturating_sub(1));
+        let last_block_height = last_committed_platform_state.last_committed_known_block_height_or(
+            self.config.abci.genesis_height.saturating_sub(1),
+        );
         let last_block_core_height = last_committed_platform_state
             .last_committed_known_core_height_or(self.config.abci.genesis_core_height);
-        let hpmn_list_len = last_committed_platform_state.hpmn_list_len() as u32;
 
         // Create a bock state from previous committed state
         let mut block_platform_state = last_committed_platform_state.clone();
-
-        // Set protocol version for this block
-        {
-            let current_block_protocol_version = platform_version.protocol_version;
-            let previous_block_protocol_version =
-                last_committed_platform_state.current_protocol_version_in_consensus();
-
-            // Set current protocol version from the block
-            block_platform_state
-                .set_current_protocol_version_in_consensus(current_block_protocol_version);
-
-            // Does this block has different protocol version comparing with the previous?
-            if previous_block_protocol_version != current_block_protocol_version {
-                tracing::info!(
-                    epoch_index = epoch_info.current_epoch_index(),
-                    "protocol version changed from {} to {}",
-                    previous_block_protocol_version,
-                    current_block_protocol_version,
-                );
-
-                // We need to persist new protocol version
-                // TODO: Must be a part of epoch trees?
-                self.drive.store_current_protocol_version(
-                    current_block_protocol_version,
-                    Some(transaction),
-                    &platform_version.drive,
-                )?;
-            }
-        }
 
         // Init block execution context
         let block_state_info = block_state_info::v0::BlockStateInfoV0::from_block_proposal(
@@ -258,52 +257,15 @@ where
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
             })?; // This is a system error
 
-        // Determine a new protocol version if enough proposers voted
-        let mut next_block_protocol_version = None;
-        if epoch_info.is_epoch_change_but_not_genesis() {
-            tracing::info!(
-                epoch_index = epoch_info.current_epoch_index(),
-                "epoch change occurring from epoch {} to epoch {}",
-                epoch_info
-                    .previous_epoch_index()
-                    .expect("must be set since we aren't on genesis"),
-                epoch_info.current_epoch_index(),
-            );
-
-            // Set next protocol version as a version for next block if changed
-            if block_platform_state.current_protocol_version_in_consensus()
-                == block_platform_state.next_epoch_protocol_version()
-            {
-                tracing::trace!(
-                    epoch_index = epoch_info.current_epoch_index(),
-                    "protocol version for the next block remains the same {}",
-                    block_platform_state.current_protocol_version_in_consensus(),
-                );
-            } else {
-                next_block_protocol_version =
-                    Some(block_platform_state.next_epoch_protocol_version());
-
-                tracing::trace!(
-                    epoch_index = epoch_info.current_epoch_index(),
-                    "set new protocol version for the next block {}",
-                    block_platform_state.next_epoch_protocol_version(),
-                );
-            }
-
-            // Determine new protocol version based on votes for the next epoch
-            let maybe_new_protocol_version =
-                self.check_for_desired_protocol_upgrade(hpmn_list_len, platform_version)?;
-
-            if let Some(new_protocol_version) = maybe_new_protocol_version {
-                block_platform_state.set_next_epoch_protocol_version(new_protocol_version);
-            }
-
-            // Since we are starting new epoch we need to drop previously
-            // proposed versions
-            self.drive
-                .clear_version_information(Some(transaction), &platform_version.drive)
-                .map_err(Error::Drive)?;
-        }
+        // Update block platform state with current and next epoch protocol versions
+        // if it was proposed
+        self.upgrade_protocol_version(
+            &epoch_info,
+            last_committed_platform_state,
+            &mut block_platform_state,
+            transaction,
+            platform_version,
+        )?;
 
         // Mark all previously broadcasted and chainlocked withdrawals as complete
         // only when we are on a new core height
@@ -354,7 +316,7 @@ where
             block_execution_context::v0::BlockExecutionContextV0 {
                 block_state_info: block_state_info.into(),
                 epoch_info: epoch_info.clone(),
-                hpmn_count: hpmn_list_len,
+                hpmn_count: block_platform_state.hpmn_list_len() as u32,
                 unsigned_withdrawal_transactions: unsigned_withdrawal_transaction_bytes,
                 block_platform_state,
                 proposer_results: None,
@@ -407,7 +369,6 @@ where
                 state_transitions_result,
                 validator_set_update,
                 protocol_version: platform_version.protocol_version,
-                next_block_protocol_version,
                 block_execution_context,
             },
         ))

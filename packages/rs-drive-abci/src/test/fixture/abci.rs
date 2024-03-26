@@ -51,7 +51,7 @@ pub fn static_init_chain_request(config: &PlatformConfig) -> RequestInitChain {
         chain_id: "strategy_tests".to_string(),
         consensus_params: Some(ConsensusParams {
             version: Some(VersionParams {
-                app_version: config.testing_configs.initial_protocol_version as u64,
+                app_version: config.initial_protocol_version as u64,
             }),
             ..Default::default()
         }),

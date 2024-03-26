@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/grpc-common",
-  "version": "1.0.0-dev.7",
+  "version": "1.0.0-dev.9",
   "description": "Common GRPC library",
   "main": "index.js",
   "scripts": {

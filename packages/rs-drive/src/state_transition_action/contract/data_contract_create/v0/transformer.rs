@@ -5,7 +5,7 @@ use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 impl DataContractCreateTransitionActionV0 {
-    pub(in crate::state_transition_action::contract::data_contract_create) fn try_from_platform_versioned(
+    pub(in crate::state_transition_action::contract::data_contract_create) fn try_from_transition(
         value: DataContractCreateTransitionV0,
         validate: bool,
         platform_version: &PlatformVersion,
@@ -21,7 +21,7 @@ impl DataContractCreateTransitionActionV0 {
         })
     }
 
-    pub(in crate::state_transition_action::contract::data_contract_create) fn try_from_borrowed_platform_versioned(
+    pub(in crate::state_transition_action::contract::data_contract_create) fn try_from_borrowed_transition(
         value: &DataContractCreateTransitionV0,
         validate: bool,
         platform_version: &PlatformVersion,

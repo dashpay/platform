@@ -134,6 +134,7 @@ impl DataContractConfigV0 {
     ///
     /// * `Result<ContractConfig, ProtocolError>`: On success, a ContractConfig.
     ///   On failure, a ProtocolError.
+    #[inline(always)]
     pub(super) fn get_contract_configuration_properties_v0(
         contract: &BTreeMap<String, Value>,
     ) -> Result<DataContractConfigV0, ProtocolError> {

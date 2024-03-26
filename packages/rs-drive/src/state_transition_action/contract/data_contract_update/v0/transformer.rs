@@ -3,42 +3,33 @@ use dpp::data_contract::DataContract;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
 use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
-use platform_version::TryFromPlatformVersioned;
 
-impl TryFromPlatformVersioned<DataContractUpdateTransitionV0>
-    for DataContractUpdateTransitionActionV0
-{
-    type Error = ProtocolError;
-
-    fn try_from_platform_versioned(
+impl DataContractUpdateTransitionActionV0 {
+    pub(in crate::state_transition_action::contract::data_contract_update) fn try_from_transition(
         value: DataContractUpdateTransitionV0,
+        validate: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Self::Error> {
+    ) -> Result<Self, ProtocolError> {
         Ok(DataContractUpdateTransitionActionV0 {
             data_contract: DataContract::try_from_platform_versioned(
                 value.data_contract,
-                true,
+                validate,
                 platform_version,
             )?,
             identity_contract_nonce: value.identity_contract_nonce,
             user_fee_increase: value.user_fee_increase,
         })
     }
-}
 
-impl TryFromPlatformVersioned<&DataContractUpdateTransitionV0>
-    for DataContractUpdateTransitionActionV0
-{
-    type Error = ProtocolError;
-
-    fn try_from_platform_versioned(
+    pub(in crate::state_transition_action::contract::data_contract_update) fn try_from_borrowed_transition(
         value: &DataContractUpdateTransitionV0,
+        validate: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Self::Error> {
+    ) -> Result<Self, ProtocolError> {
         Ok(DataContractUpdateTransitionActionV0 {
             data_contract: DataContract::try_from_platform_versioned(
                 value.data_contract.clone(),
-                true,
+                validate,
                 platform_version,
             )?,
             identity_contract_nonce: value.identity_contract_nonce,

@@ -151,6 +151,7 @@ pub struct DriveAbciStateTransitionCommonValidationVersions {
     pub validate_identity_public_key_ids_exist_in_state: FeatureVersion,
     pub validate_state_transition_identity_signed: FeatureVersion,
     pub validate_unique_identity_public_key_hashes_in_state: FeatureVersion,
+    pub validate_master_key_uniqueness: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -249,7 +250,6 @@ pub struct DriveAbciBlockEndMethodVersions {
     pub update_state_cache: FeatureVersion,
     pub update_drive_cache: FeatureVersion,
     pub validator_set_update: FeatureVersion,
-    pub consensus_param_updates: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -265,6 +265,7 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciProtocolUpgradeMethodVersions {
     pub check_for_desired_protocol_upgrade: FeatureVersion,
+    pub upgrade_protocol_version: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

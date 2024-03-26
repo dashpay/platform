@@ -65,7 +65,8 @@ const DPNS_DASH_TLD_PREORDER_SALT: [u8; 32] = [
 
 impl<C> Platform<C> {
     /// Creates trees and populates them with necessary identities, contracts and documents
-    pub fn create_genesis_state_v0(
+    #[inline(always)]
+    pub(super) fn create_genesis_state_v0(
         &self,
         genesis_time: TimestampMillis,
         system_identity_public_keys: SystemIdentityPublicKeys,
@@ -255,6 +256,10 @@ impl<C> Platform<C> {
             revision: None,
             created_at: None,
             updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
         }
         .into();
 
@@ -309,8 +314,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    223, 169, 228, 83, 244, 223, 151, 180, 234, 121, 211, 67, 186, 50, 178, 197,
-                    218, 74, 120, 230, 160, 60, 236, 227, 196, 79, 4, 235, 128, 222, 74, 16
+                    234, 164, 235, 118, 224, 151, 97, 37, 216, 180, 69, 227, 187, 186, 178, 82,
+                    251, 35, 184, 238, 104, 188, 106, 117, 182, 210, 91, 97, 218, 177, 130, 64
                 ]
             )
         }

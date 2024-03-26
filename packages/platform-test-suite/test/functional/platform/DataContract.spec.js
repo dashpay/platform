@@ -55,7 +55,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(2000);
+      expect(broadcastError.getCause().getCode()).to.equal(20000);
       expect(broadcastError.getCause()).to.be.an.instanceOf(IdentityNotFoundError);
     });
 
@@ -101,7 +101,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(1050);
+      expect(broadcastError.getCause().getCode()).to.equal(10212);
       expect(broadcastError.getCause()).to.be.an.instanceOf(InvalidDataContractVersionError);
     });
 
@@ -127,7 +127,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(1051);
+      expect(broadcastError.getCause().getCode()).to.equal(10213);
       expect(broadcastError.getCause()).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
     });
 

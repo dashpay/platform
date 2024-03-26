@@ -12,6 +12,7 @@ use dpp::identity::identity_public_key::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::platform_value::{BinaryData, ReplacementType};
 use dpp::serialization::ValueConvertible;
+use dpp::ProtocolError;
 
 use dpp::version::PlatformVersion;
 mod purpose;
@@ -97,7 +98,7 @@ impl IdentityPublicKeyWasm {
         self.0.set_security_level(
             security_level
                 .try_into()
-                .map_err(|e: anyhow::Error| e.to_string())?,
+                .map_err(|e: ProtocolError| e.to_string())?,
         );
         Ok(())
     }

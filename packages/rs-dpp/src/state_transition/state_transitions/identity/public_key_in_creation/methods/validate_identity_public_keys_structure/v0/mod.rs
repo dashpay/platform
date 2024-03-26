@@ -1,11 +1,12 @@
 use crate::consensus::basic::identity::{
-    DuplicatedIdentityPublicKeyIdBasicError, InvalidIdentityPublicKeySecurityLevelError,
+    DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
+    InvalidIdentityPublicKeySecurityLevelError, MissingMasterPublicKeyError,
+    TooManyMasterPublicKeyError,
 };
 use crate::consensus::basic::BasicError;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 
-use crate::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
 use crate::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 
 use crate::consensus::state::state_error::StateError;
@@ -33,7 +34,7 @@ lazy_static! {
         );
         m.insert(Purpose::ENCRYPTION, vec![SecurityLevel::MEDIUM]);
         m.insert(Purpose::DECRYPTION, vec![SecurityLevel::MEDIUM]);
-        m.insert(Purpose::WITHDRAW, vec![SecurityLevel::CRITICAL]);
+        m.insert(Purpose::TRANSFER, vec![SecurityLevel::CRITICAL]);
         m
     };
 }
@@ -41,8 +42,10 @@ impl IdentityPublicKeyInCreation {
     /// This validation will validate the count of new keys, that there are no duplicates either by
     /// id or by data. This is done before signature and state validation to remove potential
     /// attack vectors.
+    #[inline(always)]
     pub(super) fn validate_identity_public_keys_structure_v0(
         identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
+        in_create_identity: bool,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         if identity_public_keys_with_witness.len() > MAX_PUBLIC_KEYS {
@@ -75,11 +78,31 @@ impl IdentityPublicKeyInCreation {
         )?;
         if !duplicated_key_ids.is_empty() {
             return Ok(SimpleConsensusValidationResult::new_with_error(
-                StateError::DuplicatedIdentityPublicKeyStateError(
-                    DuplicatedIdentityPublicKeyStateError::new(duplicated_key_ids),
+                BasicError::DuplicatedIdentityPublicKeyBasicError(
+                    DuplicatedIdentityPublicKeyBasicError::new(duplicated_key_ids),
                 )
                 .into(),
             ));
+        }
+
+        if in_create_identity {
+            // We should check that we are only adding one master authentication key
+
+            let master_key_count = identity_public_keys_with_witness
+                .iter()
+                .filter(|key| key.security_level() == SecurityLevel::MASTER)
+                .count();
+            if master_key_count == 0 {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    BasicError::MissingMasterPublicKeyError(MissingMasterPublicKeyError::new())
+                        .into(),
+                ));
+            } else if master_key_count > 1 {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    BasicError::TooManyMasterPublicKeyError(TooManyMasterPublicKeyError::new())
+                        .into(),
+                ));
+            }
         }
 
         // We should check all the security levels

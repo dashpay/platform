@@ -15,19 +15,14 @@ impl TryIntoPlatformVersioned<ExecTxResult> for StateTransitionExecutionResult {
         platform_version: &PlatformVersion,
     ) -> Result<ExecTxResult, Self::Error> {
         let response = match self {
-            StateTransitionExecutionResult::SuccessfulExecution(estimated_fees, actual_fees) => {
-                ExecTxResult {
-                    code: 0,
-                    gas_wanted: estimated_fees.total_base_fee() as SignedCredits,
-                    gas_used: actual_fees.total_base_fee() as SignedCredits,
-                    ..Default::default()
-                }
-            }
+            StateTransitionExecutionResult::SuccessfulExecution(_, actual_fees) => ExecTxResult {
+                code: 0,
+                gas_used: actual_fees.total_base_fee() as SignedCredits,
+                ..Default::default()
+            },
             StateTransitionExecutionResult::UnpaidConsensusError(error) => ExecTxResult {
                 code: HandlerError::from(&error).code(),
                 info: error.response_info_for_version(platform_version)?,
-                // TODO: We need to pass processing fees as well
-                gas_wanted: 0,
                 gas_used: 0,
                 ..Default::default()
             },
@@ -35,8 +30,6 @@ impl TryIntoPlatformVersioned<ExecTxResult> for StateTransitionExecutionResult {
                 ExecTxResult {
                     code: HandlerError::from(&error).code(),
                     info: error.response_info_for_version(platform_version)?,
-                    // TODO: Improve gas wanted
-                    gas_wanted: actual_fees.total_base_fee() as SignedCredits,
                     gas_used: actual_fees.total_base_fee() as SignedCredits,
                     ..Default::default()
                 }

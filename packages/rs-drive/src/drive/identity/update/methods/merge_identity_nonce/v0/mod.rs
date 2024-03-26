@@ -18,7 +18,8 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Update nonce for specific identity
-    pub fn merge_identity_nonce_v0(
+    #[inline(always)]
+    pub(super) fn merge_identity_nonce_v0(
         &self,
         identity_id: [u8; 32],
         nonce: IdentityNonce,
