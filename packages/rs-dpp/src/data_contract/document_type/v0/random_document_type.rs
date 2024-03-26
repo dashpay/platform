@@ -345,7 +345,7 @@ impl DocumentTypeV0 {
                         },
                         ArrayItemType::Identifier => json!({"type": "array"}),
                         ArrayItemType::Boolean => json!({"type": "bool"}),
-                        ArrayItemType::Date => json!({"type": "date"}), 
+                        ArrayItemType::Date => json!({"type": "date"}),
                     };
 
                     json!({

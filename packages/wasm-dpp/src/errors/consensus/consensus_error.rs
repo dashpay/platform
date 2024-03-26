@@ -321,6 +321,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::NonceOutOfBoundsError(err) => {
             IdentityContractNonceOutOfBoundsErrorWasm::from(err).into()
         }
+        BasicError::InvalidDocumentTypeError(err) => InvalidDocumentTypeErrorWasm::from(err).into(),
         ProtocolVersionParsingError(e) => ProtocolVersionParsingErrorWasm::from(e).into(),
         SerializedObjectParsingError(e) => SerializedObjectParsingErrorWasm::from(e).into(),
         JsonSchemaError(e) => JsonSchemaErrorWasm::from(e).into(),

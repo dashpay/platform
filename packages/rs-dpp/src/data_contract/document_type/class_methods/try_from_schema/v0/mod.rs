@@ -24,6 +24,7 @@ use std::collections::HashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
+use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeRequiredSecurityLevelError;
 #[cfg(feature = "validation")]
@@ -114,6 +115,18 @@ impl DocumentTypeV0 {
 
         #[cfg(feature = "validation")]
         if validate {
+            // Make sure a document type name is compliant
+            if !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+                || name.is_empty()
+                || name.len() > 64
+            {
+                return Err(ProtocolError::ConsensusError(Box::new(
+                    InvalidDocumentTypeNameError::new(name.to_string()).into(),
+                )));
+            }
+
             // Make sure JSON Schema is compilable
             let root_json_schema = root_schema.try_to_validating_json().map_err(|e| {
                 ProtocolError::ConsensusError(
