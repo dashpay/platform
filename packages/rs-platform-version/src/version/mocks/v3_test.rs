@@ -61,10 +61,10 @@ use crate::version::drive_versions::{
     DrivePlatformSystemMethodVersions, DriveProtocolUpgradeVersions, DriveProveMethodVersions,
     DriveStateTransitionMethodVersions, DriveStateTransitionOperationMethodVersions,
     DriveStructureVersion, DriveSystemEstimationCostsMethodVersions,
-    DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
-    DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
-    DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions,
-    DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions, DriveVersion,
+    DriveVerifyContractMethodVersions, DriveVerifyDocumentMethodVersions,
+    DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
+    DriveVerifySingleDocumentMethodVersions, DriveVerifyStateTransitionMethodVersions,
+    DriveVerifySystemMethodVersions, DriveVersion,
 };
 use crate::version::mocks::TEST_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
@@ -140,7 +140,6 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             },
             protocol_upgrade: DriveProtocolUpgradeVersions {
                 clear_version_information: 0,
-                change_to_new_version_and_clear_version_information: 0,
                 fetch_versions_with_counter: 0,
                 fetch_proved_versions_with_counter: 0,
                 fetch_validator_version_votes: 0,
@@ -407,10 +406,6 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 },
             },
             platform_system: DrivePlatformSystemMethodVersions {
-                protocol_version: DriveSystemProtocolVersionMethodVersions {
-                    fetch_next_protocol_version: 0,
-                    set_next_protocol_version_operations: 0,
-                },
                 estimation_costs: DriveSystemEstimationCostsMethodVersions {
                     for_total_system_credits_update: 0,
                 },

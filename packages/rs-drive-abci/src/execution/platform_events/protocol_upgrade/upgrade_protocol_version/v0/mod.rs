@@ -52,14 +52,6 @@ impl<C> Platform<C> {
                     previous_block_protocol_version,
                     current_block_protocol_version,
                 );
-
-                // We need to persist new protocol version
-                // TODO: Must be a part of epoch trees. The matter of the next PR
-                self.drive.store_current_protocol_version(
-                    current_block_protocol_version,
-                    Some(transaction),
-                    &platform_version.drive,
-                )?;
             };
 
             // Determine a new protocol version for the next epoch if enough proposers voted
