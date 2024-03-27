@@ -3,7 +3,6 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
-use drive::grovedb::Transaction;
 
 mod v0;
 
