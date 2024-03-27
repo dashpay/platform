@@ -316,7 +316,9 @@ where
             block_execution_context::v0::BlockExecutionContextV0 {
                 block_state_info: block_state_info.into(),
                 epoch_info: epoch_info.clone(),
-                hpmn_count: block_platform_state.hpmn_list_len() as u32,
+                // TODO: It doesn't seem correct to use previous block count of hpmns.
+                //  We currently not using this field in the codebase. We probably should just remove it.
+                hpmn_count: last_committed_platform_state.hpmn_list_len() as u32,
                 unsigned_withdrawal_transactions: unsigned_withdrawal_transaction_bytes,
                 block_platform_state,
                 proposer_results: None,
