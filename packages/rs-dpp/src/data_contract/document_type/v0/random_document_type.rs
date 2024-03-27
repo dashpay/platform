@@ -402,7 +402,6 @@ impl DocumentTypeV0 {
 
         // Combine everything into the final schema
         let schema = json!({
-            "title": name,
             "type": "object",
             "properties": properties_json_schema,
             "required": required_fields.iter().cloned().collect::<Vec<_>>(),
