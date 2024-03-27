@@ -155,10 +155,8 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
 
         // Validating structure
         let result = state_transition.validate_advanced_structure_from_state(
-            &platform.into(),
             &action,
             maybe_identity.as_ref(),
-            transaction,
             platform_version,
         )?;
         if !result.is_valid() {
@@ -337,7 +335,6 @@ pub(crate) trait StateTransitionStructureKnownInStateValidationV0 {
     ///
     /// # Arguments
     ///
-    /// * `platform` - A reference to the platform state ref.
     /// * `action` - An optional reference to the state transition action.
     /// * `platform_version` - The platform version.
     ///
@@ -346,10 +343,8 @@ pub(crate) trait StateTransitionStructureKnownInStateValidationV0 {
     /// * `Result<SimpleConsensusValidationResult, Error>` - A result with either a SimpleConsensusValidationResult or an Error.
     fn validate_advanced_structure_from_state(
         &self,
-        platform: &PlatformStateRef,
         action: &StateTransitionAction,
         maybe_identity: Option<&PartialIdentity>,
-        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
@@ -575,30 +570,24 @@ impl StateTransitionAdvancedStructureValidationV0 for StateTransition {
 impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
     fn validate_advanced_structure_from_state(
         &self,
-        platform: &PlatformStateRef,
         action: &StateTransitionAction,
         maybe_identity: Option<&PartialIdentity>,
-        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
             StateTransition::DocumentsBatch(st) => {
 
                 st.validate_advanced_structure_from_state(
-                    platform,
                     action,
                     maybe_identity,
-                    transaction,
                     platform_version,
                 )
             },
             StateTransition::IdentityCreate(st) => {
 
                 st.validate_advanced_structure_from_state(
-                    platform,
                     action,
                     maybe_identity,
-                    transaction,
                     platform_version,
                 )
             },

@@ -78,6 +78,14 @@ pub struct DriveAbciValidationVersions {
     pub state_transitions: DriveAbciStateTransitionValidationVersions,
     pub process_state_transition: FeatureVersion,
     pub state_transition_to_execution_event_for_check_tx: FeatureVersion,
+    pub penalties: PenaltyAmounts,
+}
+
+/// All of these penalty amounts are in credits
+#[derive(Clone, Debug, Default)]
+pub struct PenaltyAmounts {
+    pub identity_id_not_correct: u64,
+    pub validation_of_added_keys_failure: u64,
 }
 
 #[derive(Clone, Debug, Default)]

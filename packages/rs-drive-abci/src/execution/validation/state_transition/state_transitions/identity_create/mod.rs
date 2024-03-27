@@ -14,7 +14,7 @@ use crate::execution::validation::state_transition::identity_create::state::v0::
 use crate::execution::validation::state_transition::identity_create::basic_structure::v0::IdentityCreateStateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::v0::{StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0, StateTransitionStructureKnownInStateValidationV0};
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
+use crate::platform_types::platform::PlatformRef;
 
 use crate::rpc::core::CoreRPCLike;
 
@@ -87,10 +87,8 @@ impl StateTransitionBasicStructureValidationV0 for IdentityCreateTransition {
 impl StateTransitionStructureKnownInStateValidationV0 for IdentityCreateTransition {
     fn validate_advanced_structure_from_state(
         &self,
-        platform: &PlatformStateRef,
         action: &StateTransitionAction,
         _identity: Option<&PartialIdentity>,
-        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match platform_version
@@ -109,9 +107,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for IdentityCreateTransiti
                         )));
                     };
                 self.validate_advanced_structure_from_state_v0(
-                    platform,
                     identity_create_action,
-                    transaction,
                     platform_version,
                 )
             }

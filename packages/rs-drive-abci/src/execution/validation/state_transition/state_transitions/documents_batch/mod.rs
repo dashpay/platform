@@ -129,10 +129,8 @@ impl StateTransitionNonceValidationV0 for DocumentsBatchTransition {
 impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransition {
     fn validate_advanced_structure_from_state(
         &self,
-        _platform: &PlatformStateRef,
         action: &StateTransitionAction,
         identity: Option<&PartialIdentity>,
-        _transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match platform_version

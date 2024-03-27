@@ -7,6 +7,9 @@ use dpp::platform_value::Bytes36;
 use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use std::io;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
+use crate::state_transition_action::identity::identity_create::v0::IdentityCreateTransitionActionV0;
+use crate::state_transition_action::identity::identity_topup::v0::IdentityTopUpTransitionActionV0;
 
 impl PartiallyUseAssetLockActionV0 {
     /// try from identity create transition
@@ -85,6 +88,59 @@ impl PartiallyUseAssetLockActionV0 {
         })
     }
 
+
+    /// from identity create transition action
+    pub fn from_identity_create_transition_action(
+        value: IdentityCreateTransitionActionV0,
+        desired_used_credits: Credits,
+    ) -> Self {
+        let IdentityCreateTransitionActionV0 {
+            asset_lock_outpoint,
+            asset_lock_value_to_be_consumed,
+            user_fee_increase,
+            ..
+        } = value;
+
+        let remaining_balance_after_used_credits_are_deducted =
+            asset_lock_value_to_be_consumed.remaining_credit_value().saturating_sub(desired_used_credits);
+
+        let used_credits = std::cmp::min(asset_lock_value_to_be_consumed.remaining_credit_value(), desired_used_credits);
+
+        PartiallyUseAssetLockActionV0 {
+            asset_lock_outpoint,
+            initial_credit_value: asset_lock_value_to_be_consumed.initial_credit_value(),
+            remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
+            used_credits,
+            user_fee_increase,
+        }
+    }
+
+    /// from borrowed identity create transition action
+    pub fn from_borrowed_identity_create_transition_action(
+        value: &IdentityCreateTransitionActionV0,
+        desired_used_credits: Credits,
+    ) -> Self {
+        let IdentityCreateTransitionActionV0 {
+            asset_lock_outpoint,
+            asset_lock_value_to_be_consumed,
+            user_fee_increase,
+            ..
+        } = value;
+
+        let remaining_balance_after_used_credits_are_deducted =
+            asset_lock_value_to_be_consumed.remaining_credit_value().saturating_sub(desired_used_credits);
+
+        let used_credits = std::cmp::min(asset_lock_value_to_be_consumed.remaining_credit_value(), desired_used_credits);
+
+        PartiallyUseAssetLockActionV0 {
+            asset_lock_outpoint: *asset_lock_outpoint,
+            initial_credit_value: asset_lock_value_to_be_consumed.initial_credit_value(),
+            remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
+            used_credits,
+            user_fee_increase: *user_fee_increase,
+        }
+    }
+
     /// try from identity top up transition
     pub fn try_from_identity_top_up_transition(
         value: IdentityTopUpTransitionV0,
@@ -157,5 +213,57 @@ impl PartiallyUseAssetLockActionV0 {
             used_credits,
             user_fee_increase: *user_fee_increase,
         })
+    }
+
+    /// from identity top up transition action
+    pub fn from_identity_top_up_transition_action(
+        value: IdentityTopUpTransitionActionV0,
+        desired_used_credits: Credits,
+    ) -> Self {
+        let IdentityTopUpTransitionActionV0 {
+            asset_lock_outpoint,
+            top_up_asset_lock_value,
+            user_fee_increase,
+            ..
+        } = value;
+
+        let remaining_balance_after_used_credits_are_deducted =
+            top_up_asset_lock_value.remaining_credit_value().saturating_sub(desired_used_credits);
+
+        let used_credits = std::cmp::min(top_up_asset_lock_value.remaining_credit_value(), desired_used_credits);
+
+        PartiallyUseAssetLockActionV0 {
+            asset_lock_outpoint,
+            initial_credit_value: top_up_asset_lock_value.initial_credit_value(),
+            remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
+            used_credits,
+            user_fee_increase,
+        }
+    }
+
+    /// from borrowed identity top up transition
+    pub fn from_borrowed_identity_top_up_transition_action(
+        value: &IdentityTopUpTransitionActionV0,
+        desired_used_credits: Credits,
+    ) -> Self {
+        let IdentityTopUpTransitionActionV0 {
+            asset_lock_outpoint,
+            top_up_asset_lock_value,
+            user_fee_increase,
+            ..
+        } = value;
+
+        let remaining_balance_after_used_credits_are_deducted =
+            top_up_asset_lock_value.remaining_credit_value().saturating_sub(desired_used_credits);
+
+        let used_credits = std::cmp::min(top_up_asset_lock_value.remaining_credit_value(), desired_used_credits);
+
+        PartiallyUseAssetLockActionV0 {
+            asset_lock_outpoint: *asset_lock_outpoint,
+            initial_credit_value: top_up_asset_lock_value.initial_credit_value(),
+            remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
+            used_credits,
+            user_fee_increase: *user_fee_increase,
+        }
     }
 }

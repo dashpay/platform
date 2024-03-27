@@ -4,6 +4,8 @@ use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use crate::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
+use crate::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 
 impl PartiallyUseAssetLockAction {
     /// try from identity create transition
@@ -46,6 +48,36 @@ impl PartiallyUseAssetLockAction {
         }
     }
 
+    /// from identity create transition action
+    pub fn from_identity_create_transition_action(
+        value: IdentityCreateTransitionAction,
+        used_credits: Credits,
+    ) -> Self {
+        match value {
+            IdentityCreateTransitionAction::V0(v0) => 
+                PartiallyUseAssetLockActionV0::from_identity_create_transition_action(
+                    v0,
+                    used_credits,
+                )
+                    .into(),
+        }
+    }
+
+    /// from borrowed identity create transition action
+    pub fn from_borrowed_identity_create_transition_action(
+        value: &IdentityCreateTransitionAction,
+        used_credits: Credits,
+    ) -> Self {
+        match value {
+            IdentityCreateTransitionAction::V0(v0) => 
+                PartiallyUseAssetLockActionV0::from_borrowed_identity_create_transition_action(
+                    v0,
+                    used_credits,
+                )
+                    .into(),
+        }
+    }
+
     /// try from identity top up transition
     pub fn try_from_identity_top_up_transition(
         value: IdentityTopUpTransition,
@@ -83,6 +115,36 @@ impl PartiallyUseAssetLockAction {
                 )?
                 .into(),
             ),
+        }
+    }
+
+    /// from identity top up transition action
+    pub fn from_identity_top_up_transition_action(
+        value: IdentityTopUpTransitionAction,
+        used_credits: Credits,
+    ) -> Self {
+        match value {
+            IdentityTopUpTransitionAction::V0(v0) => 
+                PartiallyUseAssetLockActionV0::from_identity_top_up_transition_action(
+                    v0,
+                    used_credits,
+                )
+                    .into(),
+        }
+    }
+
+    /// from borrowed identity top up transition action
+    pub fn from_borrowed_identity_top_up_transition_action(
+        value: &IdentityTopUpTransitionAction,
+        used_credits: Credits,
+    ) -> Self {
+        match value {
+            IdentityTopUpTransitionAction::V0(v0) => 
+                PartiallyUseAssetLockActionV0::from_borrowed_identity_top_up_transition_action(
+                    v0,
+                    used_credits,
+                )
+                    .into(),
         }
     }
 }

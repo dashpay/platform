@@ -137,10 +137,8 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
 
                     // Validating structure
                     let result = state_transition.validate_advanced_structure_from_state(
-                        &platform.into(),
                         &action,
                         maybe_identity.as_ref(),
-                        None,
                         platform_version,
                     )?;
 
