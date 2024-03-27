@@ -60,7 +60,6 @@ impl ProtocolVersionsCache {
 
     /// Clears the cache
     pub fn clear(&mut self) {
-        self.loaded = false;
         self.global_cache.clear();
         self.block_cache.clear();
     }

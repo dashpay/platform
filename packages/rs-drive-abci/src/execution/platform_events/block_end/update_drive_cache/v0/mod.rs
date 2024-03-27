@@ -1,6 +1,3 @@
-use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
-use crate::execution::types::block_execution_context::BlockExecutionContext;
-use crate::platform_types::epoch_info::v0::EpochInfoV0Methods;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
@@ -12,7 +9,7 @@ where
     /// the data contract cache and the platform versions cache.
     ///
     #[inline(always)]
-    pub(super) fn update_drive_cache_v0(&self, block_execution_context: &BlockExecutionContext) {
+    pub(super) fn update_drive_cache_v0(&self) {
         // Update global cache with updated contracts
         self.drive
             .cache
@@ -21,15 +18,6 @@ where
 
         let mut protocol_versions_counter = self.drive.cache.protocol_versions_counter.write();
 
-        if block_execution_context
-            .epoch_info()
-            .is_epoch_change_but_not_genesis()
-        {
-            // Clear previously proposed versions since we started a new epoch
-            protocol_versions_counter.clear();
-        } else {
-            // Update proposed versions with new proposal from the current block
-            protocol_versions_counter.merge_block_cache()
-        }
+        protocol_versions_counter.merge_block_cache()
     }
 }

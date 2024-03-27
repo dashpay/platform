@@ -249,7 +249,7 @@ mod tests {
                     );
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&122));
+                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&123));
                 }
             })
             .expect("Failed to create thread with custom stack size");
@@ -398,7 +398,7 @@ mod tests {
                     ChainExecutionParameters {
                         block_start,
                         core_height_start: 1,
-                        block_count: 2,
+                        block_count: 1,
                         proposers,
                         quorums,
                         current_quorum_hash,
@@ -877,7 +877,7 @@ mod tests {
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     assert_eq!(
                         (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
-                        (Some(&18), Some(&111))
+                        (Some(&18), Some(&112))
                     );
                     //not all nodes have upgraded
                 }
@@ -1010,7 +1010,7 @@ mod tests {
                     let counter = &platform.drive.cache.protocol_versions_counter.read();
                     assert_eq!(
                         (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
-                        (Some(&23), Some(&2))
+                        (Some(&24), Some(&2))
                     );
                     assert_eq!(
                         state
