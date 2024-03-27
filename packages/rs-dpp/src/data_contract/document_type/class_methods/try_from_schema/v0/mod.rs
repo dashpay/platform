@@ -24,6 +24,7 @@ use std::collections::HashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
+#[cfg(any(test, feature = "validation"))]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeRequiredSecurityLevelError;

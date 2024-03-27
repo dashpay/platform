@@ -9,7 +9,7 @@ pub struct InvalidDocumentTypeNameErrorWasm {
     inner: InvalidDocumentTypeNameError,
 }
 
-#[wasm_bindgen(js_name=InvalidDocumentTypeNameError)]
+#[wasm_bindgen]
 impl InvalidDocumentTypeNameErrorWasm {
     #[wasm_bindgen(js_name=getName)]
     pub fn get_name(&self) -> String {
