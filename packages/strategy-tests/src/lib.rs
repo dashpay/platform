@@ -1129,13 +1129,10 @@ impl Strategy {
                                             platform_version,
                                         ) {
                                             Ok(new_document_type) => {
-                                                let mut doc_type_clone =
+                                                let doc_type_clone =
                                                     new_document_type.schema().clone();
-                                                let name = doc_type_clone.remove("title").expect(
-                                            "Expected to get a doc type title in ContractCreate",
-                                        );
                                                 Some((
-                                                    Value::Text(name.to_string()),
+                                                    Value::Text(new_document_type.name().clone()),
                                                     doc_type_clone,
                                                 ))
                                             }

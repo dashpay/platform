@@ -104,6 +104,7 @@ impl ErrorWithCode for BasicError {
             Self::MaxDocumentsTransitionsExceededError { .. } => 10412,
             Self::DocumentTransitionsAreAbsentError { .. } => 10413,
             Self::NonceOutOfBoundsError(_) => 10414,
+            Self::InvalidDocumentTypeNameError(_) => 10415,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
