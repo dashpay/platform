@@ -25,6 +25,14 @@ impl<C> Platform<C> {
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // Store current protocol version in drive state
+        // TODO: This will be removed in #1778
+        self.drive.store_current_protocol_version(
+            platform_version.protocol_version,
+            Some(transaction),
+            &platform_version.drive,
+        )?;
+
         // Determine a new protocol version for the next epoch if enough proposers voted
         // otherwise keep the current one
 
@@ -40,13 +48,24 @@ impl<C> Platform<C> {
         // Since we are starting a new epoch we need to drop previously
         // proposed versions
 
-        let mut protocol_versions_counter = self.drive.cache.protocol_versions_counter.write();
-        protocol_versions_counter.clear();
-        drop(protocol_versions_counter);
-
+        // Remove previously proposed versions from Drive state
         self.drive
             .clear_version_information(Some(transaction), &platform_version.drive)
             .map_err(Error::Drive)?;
+
+        // We clean voting counter cache only on finalize block because:
+        // 1. The voting counter global cache uses for querying of voting information in Drive queries
+        // 2. There might be multiple rounds so on the next round we will lose all previous epoch votes
+        //
+        // Instead of clearing cache, the further block processing logic is using `get_if_enabled`
+        // to get a version counter from the global cache. We disable this getter here to prevent
+        // reading previous voting information for the new epoch.
+        // The getter must be enabled back on finalize block in [update_drive_cache] and at the very beginning
+        // of the block processing in [clear_drive_block_cache].
+
+        let mut protocol_versions_counter = self.drive.cache.protocol_versions_counter.write();
+        protocol_versions_counter.disable_getter();
+        drop(protocol_versions_counter);
 
         Ok(())
     }

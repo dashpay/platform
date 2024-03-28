@@ -239,6 +239,8 @@ where
         }
         .into();
 
+        self.update_drive_cache(&block_execution_context, platform_version)?;
+
         let block_platform_state = block_execution_context.block_platform_state_owned();
 
         self.update_state_cache(
@@ -247,8 +249,6 @@ where
             transaction,
             platform_version,
         )?;
-
-        self.update_drive_cache(platform_version)?;
 
         // Gather some metrics
         crate::metrics::abci_last_block_time(block_header.time.seconds as u64);

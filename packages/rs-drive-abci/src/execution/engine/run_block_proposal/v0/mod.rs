@@ -156,13 +156,6 @@ where
                     previous_block_protocol_version,
                     current_block_protocol_version,
                 );
-
-                // TODO: This will be removed in #1778
-                self.drive.store_current_protocol_version(
-                    current_block_protocol_version,
-                    Some(transaction),
-                    &platform_version.drive,
-                )?;
             };
 
             // Update block platform state with current and next epoch protocol versions
