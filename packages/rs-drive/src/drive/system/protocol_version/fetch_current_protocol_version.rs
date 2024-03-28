@@ -2,15 +2,14 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
-use crate::drive::system::misc_path;
-use crate::drive::system::misc_tree_constants::PROTOCOL_VERSION_STORAGE_KEY;
+use crate::drive::system::protocol_version::PROTOCOL_VERSION_AUX_KEY;
 use dpp::util::deserializer::ProtocolVersion;
 use grovedb::{GroveDb, TransactionArg};
 use integer_encoding::VarInt;
 
 ///
 impl Drive {
-    /// Gets the current protocol version from the backing store
+    /// Gets the current protocol version from aux storage
     ///
     /// !!!DON'T CHANGE!!!!
     ///
@@ -41,20 +40,15 @@ impl Drive {
         grove: &GroveDb,
         transaction: TransactionArg,
     ) -> Result<Option<ProtocolVersion>, Error> {
-        let misc_path = misc_path();
         grove
-            .get_raw_optional(
-                (&misc_path).into(),
-                PROTOCOL_VERSION_STORAGE_KEY,
-                transaction,
-            )
+            .get_aux(PROTOCOL_VERSION_AUX_KEY, transaction)
             .unwrap()
             .map_err(Error::GroveDB)
-            .map(|maybe_element| {
-                maybe_element
-                    .map(|e| {
-                        let bytes = e.as_item_bytes()?;
-                        let Some((protocol_version, _)) = ProtocolVersion::decode_var(bytes) else {
+            .map(|bytes| {
+                bytes
+                    .map(|bytes| {
+                        let Some((protocol_version, _)) = ProtocolVersion::decode_var(&bytes)
+                        else {
                             return Err(Error::Drive(DriveError::CorruptedSerialization(
                                 String::from("protocol version incorrectly serialized"),
                             )));

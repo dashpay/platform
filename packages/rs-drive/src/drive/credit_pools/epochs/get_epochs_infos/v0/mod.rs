@@ -13,7 +13,8 @@ use std::u64;
 use crate::drive::credit_pools::pools_vec_path;
 use crate::error::query::QuerySyntaxError;
 use crate::fee_pools::epochs::epoch_key_constants::{
-    KEY_FEE_MULTIPLIER, KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT, KEY_START_TIME,
+    KEY_FEE_MULTIPLIER, KEY_PROTOCOL_VERSION, KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT,
+    KEY_START_TIME,
 };
 use crate::query::QueryItem;
 use dpp::version::PlatformVersion;
@@ -42,6 +43,7 @@ impl Drive {
             KEY_START_BLOCK_HEIGHT.to_vec(),
             KEY_START_BLOCK_CORE_HEIGHT.to_vec(),
             KEY_FEE_MULTIPLIER.to_vec(),
+            KEY_PROTOCOL_VERSION.to_vec(),
         ]);
         let mut query = if ascending {
             Query::new_single_query_item(QueryItem::RangeFrom(
@@ -56,7 +58,8 @@ impl Drive {
         query.set_subquery(subquery);
         let path_query = PathQuery::new(
             pools_vec_path(),
-            SizedQuery::new(query, Some(count * 4), None),
+            // The multiplier must be equal to requested keys count
+            SizedQuery::new(query, Some(count * 5), None),
         );
 
         let results = self
@@ -202,6 +205,26 @@ impl Drive {
 
                 let fee_multiplier = f64::from_be_bytes(fee_multiplier_bytes);
 
+                let protocol_version_element = inner_map.get(&KEY_PROTOCOL_VERSION.to_vec())?;
+
+                let Element::Item(encoded_protocol_version, _) = protocol_version_element else {
+                    return Some(Err(Error::Drive(DriveError::UnexpectedElementType(
+                        "protocol version must be an item",
+                    ))));
+                };
+
+                let protocol_version_bytes: [u8; 4] =
+                    match encoded_protocol_version.as_slice().try_into().map_err(|_| {
+                        Error::Drive(DriveError::CorruptedSerialization(
+                            "protocol version must be 4 bytes for a u32".to_string(),
+                        ))
+                    }) {
+                        Ok(value) => value,
+                        Err(e) => return Some(Err(e)),
+                    };
+
+                let protocol_version = u32::from_be_bytes(protocol_version_bytes);
+
                 // Construct the ExtendedEpochInfo
                 Some(Ok(ExtendedEpochInfoV0 {
                     index: epoch_index,
@@ -209,6 +232,7 @@ impl Drive {
                     first_block_height,
                     first_core_block_height,
                     fee_multiplier,
+                    protocol_version,
                 }
                 .into()))
             })

@@ -1,7 +1,6 @@
 mod fetch_current_protocol_version;
 
-mod fetch_next_protocol_version;
-
 mod store_current_protocol_version;
 
-mod set_next_protocol_version_operations;
+/// Protocol Version Storage key
+const PROTOCOL_VERSION_AUX_KEY: &[u8; 16] = b"protocol_version";

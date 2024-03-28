@@ -606,6 +606,7 @@ message GetEpochsInfoResponse {
       uint32 first_core_block_height = 3;
       uint64 start_time = 4;
       double fee_multiplier = 5;
+      uint32 protocol_version = 6;
     }
 
     oneof result {

@@ -25,14 +25,6 @@ impl<C> Platform<C> {
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        // Store current protocol version in drive state
-        // TODO: This will be removed in #1778
-        self.drive.store_current_protocol_version(
-            platform_version.protocol_version,
-            Some(transaction),
-            &platform_version.drive,
-        )?;
-
         // Determine a new protocol version for the next epoch if enough proposers voted
         // otherwise keep the current one
 

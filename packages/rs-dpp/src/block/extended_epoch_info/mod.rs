@@ -3,6 +3,7 @@ pub mod v0;
 use crate::block::epoch::EpochIndex;
 use crate::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfoV0Getters};
 use crate::protocol_error::ProtocolError;
+use crate::util::deserializer::ProtocolVersion;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -54,6 +55,12 @@ impl ExtendedEpochInfoV0Getters for ExtendedEpochInfo {
     fn fee_multiplier(&self) -> f64 {
         match self {
             ExtendedEpochInfo::V0(v0) => v0.fee_multiplier,
+        }
+    }
+
+    fn protocol_version(&self) -> ProtocolVersion {
+        match self {
+            ExtendedEpochInfo::V0(v0) => v0.protocol_version,
         }
     }
 }

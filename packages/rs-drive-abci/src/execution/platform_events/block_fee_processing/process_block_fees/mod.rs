@@ -6,6 +6,7 @@ use drive::grovedb::Transaction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::block_execution_context::BlockExecutionContext;
 
 use crate::execution::types::block_fees::BlockFees;
 
@@ -37,8 +38,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     ///
     pub fn process_block_fees(
         &self,
-        block_info: &BlockStateInfo,
-        epoch_info: &EpochInfo,
+        block_execution_context: &BlockExecutionContext,
         block_fees: BlockFees,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
@@ -50,8 +50,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             .process_block_fees
         {
             0 => self.process_block_fees_v0(
-                block_info,
-                epoch_info,
+                block_execution_context,
                 block_fees,
                 transaction,
                 platform_version,

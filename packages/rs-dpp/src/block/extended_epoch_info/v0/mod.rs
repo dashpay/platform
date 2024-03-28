@@ -1,4 +1,5 @@
 use crate::block::epoch::EpochIndex;
+use crate::util::deserializer::ProtocolVersion;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +16,8 @@ pub struct ExtendedEpochInfoV0 {
     pub first_core_block_height: u32,
     /// Fee multiplier
     pub fee_multiplier: f64,
+    /// Protocol version
+    pub protocol_version: u32,
 }
 
 /// Trait defining getters for `ExtendedEpochInfoV0`.
@@ -33,4 +36,7 @@ pub trait ExtendedEpochInfoV0Getters {
 
     /// Returns the fee multiplier.
     fn fee_multiplier(&self) -> f64;
+
+    /// Protocol version
+    fn protocol_version(&self) -> ProtocolVersion;
 }

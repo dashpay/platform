@@ -49,6 +49,7 @@ use dpp::block::epoch::{Epoch, EpochIndex};
 use dpp::fee::epoch::{perpetual_storage_epochs, GENESIS_EPOCH_INDEX};
 #[cfg(feature = "full")]
 use dpp::fee::Credits;
+use dpp::util::deserializer::ProtocolVersion;
 #[cfg(feature = "full")]
 use grovedb::batch::GroveDbOp;
 #[cfg(feature = "full")]
@@ -67,6 +68,7 @@ pub mod epochs_root_tree_key_constants;
 pub fn add_create_fee_pool_trees_operations(
     batch: &mut GroveDbOpBatch,
     epochs_per_era: u16,
+    protocol_version: ProtocolVersion,
 ) -> Result<(), Error> {
     // Init storage credit pool
     batch.push(update_storage_fee_distribution_pool_operation(0)?);
@@ -83,6 +85,11 @@ pub fn add_create_fee_pool_trees_operations(
         let epoch = Epoch::new(i)?;
         epoch.add_init_empty_operations(batch)?;
     }
+
+    let genesis_epoch = Epoch::new(GENESIS_EPOCH_INDEX)?;
+
+    // Initial protocol version for genesis epoch
+    batch.push(genesis_epoch.update_protocol_version_operation(protocol_version));
 
     Ok(())
 }

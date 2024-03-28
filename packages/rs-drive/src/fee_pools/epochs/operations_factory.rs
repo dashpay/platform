@@ -40,12 +40,13 @@ use crate::error::Error;
 use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::fee_pools::epochs::epoch_key_constants::{
     KEY_FEE_MULTIPLIER, KEY_POOL_PROCESSING_FEES, KEY_POOL_STORAGE_FEES, KEY_PROPOSERS,
-    KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT, KEY_START_TIME,
+    KEY_PROTOCOL_VERSION, KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT, KEY_START_TIME,
 };
 use crate::fee_pools::epochs::paths::EpochProposers;
 use dpp::balances::credits::Creditable;
 use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
+use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::GroveDbOp;
 use grovedb::{Element, TransactionArg};
@@ -77,6 +78,8 @@ pub trait EpochOperations {
     );
     /// Adds to the groveDB op batch operations signifying that the epoch distribution fees were paid out.
     fn add_mark_as_paid_operations(&self, batch: &mut GroveDbOpBatch);
+    /// Update Epoch's protocol version
+    fn update_protocol_version_operation(&self, protocol_version: ProtocolVersion) -> GroveDbOp;
     /// Returns a groveDB op which updates the epoch start time.
     fn update_start_time_operation(&self, time_ms: u64) -> GroveDbOp;
     /// Returns a groveDB op which updates the epoch start block height.
@@ -190,6 +193,15 @@ impl EpochOperations for Epoch {
         batch.push(self.delete_storage_credits_for_distribution_operation());
 
         batch.push(self.delete_processing_credits_for_distribution_operation());
+    }
+
+    /// Returns a groveDB op which updates the epoch start time.
+    fn update_protocol_version_operation(&self, protocol_version: ProtocolVersion) -> GroveDbOp {
+        GroveDbOp::insert_op(
+            self.get_path_vec(),
+            KEY_PROTOCOL_VERSION.to_vec(),
+            Element::Item(protocol_version.to_be_bytes().to_vec(), None),
+        )
     }
 
     /// Returns a groveDB op which updates the epoch start time.

@@ -2111,6 +2111,8 @@ pub mod get_epochs_info_response {
             pub start_time: u64,
             #[prost(double, tag = "5")]
             pub fee_multiplier: f64,
+            #[prost(uint32, tag = "6")]
+            pub protocol_version: u32,
         }
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[serde(rename_all = "snake_case")]
