@@ -152,7 +152,7 @@ where
             StateTransitionExecutionResult::UnpaidConsensusError(..) => TxAction::Removed,
             // We shouldn't include in the block any state transitions that produced an internal error
             // during execution
-            StateTransitionExecutionResult::DriveAbciError(..) => TxAction::Removed,
+            StateTransitionExecutionResult::InternalError(..) => TxAction::Removed,
         };
 
         let tx_result: ExecTxResult =

@@ -18,8 +18,6 @@ impl IdentityTopUpStateTransitionStructureValidationV0 for IdentityTopUpTransiti
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        // TODO: Add validation for the structure of the IdentityTopUpTransition
-
         self.asset_lock_proof()
             .validate_structure(platform_version)
             .map_err(Error::Protocol)

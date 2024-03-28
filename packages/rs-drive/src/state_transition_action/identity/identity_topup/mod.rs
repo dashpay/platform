@@ -5,6 +5,7 @@ pub mod v0;
 
 use crate::state_transition_action::identity::identity_topup::v0::IdentityTopUpTransitionActionV0;
 use derive_more::From;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 
 use dpp::platform_value::{Bytes36, Identifier};
 use dpp::prelude::UserFeeIncrease;
@@ -18,9 +19,16 @@ pub enum IdentityTopUpTransitionAction {
 
 impl IdentityTopUpTransitionAction {
     /// The balance being topped up
-    pub fn top_up_balance_amount(&self) -> u64 {
+    pub fn top_up_asset_lock_value(&self) -> &AssetLockValue {
         match self {
-            IdentityTopUpTransitionAction::V0(transition) => transition.top_up_balance_amount,
+            IdentityTopUpTransitionAction::V0(transition) => &transition.top_up_asset_lock_value,
+        }
+    }
+
+    /// The balance being topped up
+    pub fn top_up_asset_lock_value_consume(self) -> AssetLockValue {
+        match self {
+            IdentityTopUpTransitionAction::V0(transition) => transition.top_up_asset_lock_value,
         }
     }
 

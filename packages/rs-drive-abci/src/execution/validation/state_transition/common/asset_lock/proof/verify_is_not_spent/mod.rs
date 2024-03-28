@@ -3,9 +3,11 @@ mod instant;
 
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
+use dpp::fee::Credits;
 
 use dpp::prelude::AssetLockProof;
-use dpp::validation::SimpleConsensusValidationResult;
+use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
@@ -26,28 +28,36 @@ pub trait AssetLockProofVerifyIsNotSpent {
     /// # Returns
     ///
     /// * `Result<SimpleConsensusValidationResult, Error>` - A result with either a SimpleConsensusValidationResult or an Error.
-    fn verify_is_not_spent<C>(
+    fn verify_is_not_spent_and_has_enough_balance<C>(
         &self,
         platform_ref: &PlatformRef<C>,
+        required_balance: Credits,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, Error>;
+    ) -> Result<ConsensusValidationResult<AssetLockValue>, Error>;
 }
 
 impl AssetLockProofVerifyIsNotSpent for AssetLockProof {
-    fn verify_is_not_spent<C>(
+    fn verify_is_not_spent_and_has_enough_balance<C>(
         &self,
         platform_ref: &PlatformRef<C>,
+        required_balance: Credits,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, Error> {
+    ) -> Result<ConsensusValidationResult<AssetLockValue>, Error> {
         match self {
-            AssetLockProof::Instant(proof) => {
-                proof.verify_is_not_spent(platform_ref, transaction, platform_version)
-            }
-            AssetLockProof::Chain(proof) => {
-                proof.verify_is_not_spent(platform_ref, transaction, platform_version)
-            }
+            AssetLockProof::Instant(proof) => proof.verify_is_not_spent_and_has_enough_balance(
+                platform_ref,
+                required_balance,
+                transaction,
+                platform_version,
+            ),
+            AssetLockProof::Chain(proof) => proof.verify_is_not_spent_and_has_enough_balance(
+                platform_ref,
+                required_balance,
+                transaction,
+                platform_version,
+            ),
         }
     }
 }

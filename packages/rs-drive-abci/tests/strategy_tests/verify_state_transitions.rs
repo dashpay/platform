@@ -6,6 +6,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::Document;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
@@ -61,7 +62,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
             let consensus_validation_result = match state_transition.transform_into_action(
                 &platform,
                 abci_app.platform.state.load().last_block_info(),
-                ValidationMode::CheckTx, //using check_tx so we don't validate state
+                ValidationMode::NoValidation, //using check_tx so we don't validate state
                 &mut execution_context,
                 None,
             ) {
@@ -469,7 +470,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     if *was_executed {
                         //while this isn't 100% sure to be true (in the case of debt,
                         // for the tests we have we can use it
-                        assert!(identity_top_up_transition.top_up_balance_amount() <= balance);
+                        assert!(
+                            identity_top_up_transition
+                                .top_up_asset_lock_value()
+                                .remaining_credit_value()
+                                <= balance
+                        );
                     }
                 }
                 StateTransitionAction::IdentityCreditWithdrawalAction(
@@ -650,6 +656,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 }
                 StateTransitionAction::BumpIdentityNonceAction(_) => {}
                 StateTransitionAction::BumpIdentityDataContractNonceAction(_) => {}
+                StateTransitionAction::PartiallyUseAssetLockAction(_) => {}
             }
         } else {
             // if we don't have an action this means there was a problem in the validation of the state transition

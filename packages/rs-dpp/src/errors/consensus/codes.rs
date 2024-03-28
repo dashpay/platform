@@ -111,7 +111,7 @@ impl ErrorWithCode for BasicError {
             Self::DuplicatedIdentityPublicKeyIdBasicError(_) => 10501,
             Self::IdentityAssetLockProofLockedTransactionMismatchError(_) => 10502,
             Self::IdentityAssetLockTransactionIsNotFoundError(_) => 10503,
-            Self::IdentityAssetLockTransactionOutPointAlreadyExistsError(_) => 10504,
+            Self::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_) => 10504,
             Self::IdentityAssetLockTransactionOutputNotFoundError(_) => 10505,
             Self::InvalidAssetLockProofCoreChainHeightError(_) => 10506,
             Self::InvalidAssetLockProofTransactionHeightError(_) => 10507,
@@ -137,6 +137,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidIdentityUpdateTransitionDisableKeysError(_) => 10527,
             Self::IdentityCreditTransferToSelfError(_) => 10528,
             Self::MasterPublicKeyUpdateError(_) => 10529,
+            Self::IdentityAssetLockTransactionOutPointNotEnoughBalanceError(_) => 10530,
 
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,

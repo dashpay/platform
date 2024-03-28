@@ -6,6 +6,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
 
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -24,10 +25,13 @@ pub enum SystemOperationType {
         /// The amount of credits we are seeking to remove
         amount: Credits,
     },
-    /// Adding a used asset lock
+    /// Adding a used asset lock, if it is only partially used the asset_lock_value
+    /// will have a non 0 remaining_credit_value
     AddUsedAssetLock {
         /// The asset lock outpoint that should be added
         asset_lock_outpoint: Bytes36,
+        /// The asset lock value, both initial and remaining
+        asset_lock_value: AssetLockValue,
     },
 }
 
@@ -59,8 +63,10 @@ impl DriveLowLevelOperationConverter for SystemOperationType {
                 ),
             SystemOperationType::AddUsedAssetLock {
                 asset_lock_outpoint,
+                asset_lock_value,
             } => drive.add_asset_lock_outpoint_operations(
                 &asset_lock_outpoint,
+                asset_lock_value,
                 estimated_costs_only_with_layer_info,
                 platform_version,
             ),

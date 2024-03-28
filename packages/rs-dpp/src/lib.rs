@@ -35,6 +35,7 @@ mod bls;
 #[cfg(feature = "fixtures-and-mocks")]
 pub mod tests;
 
+pub mod asset_lock;
 pub mod balances;
 pub mod block;
 pub mod fee;

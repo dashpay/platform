@@ -2,6 +2,7 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
 
@@ -17,6 +18,7 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use drive::drive::batch::transitions::DriveHighLevelOperationConverter;
 use drive::drive::batch::DriveOperation;
+use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockActionAccessorsV0;
 
 /// An execution event
 #[derive(Clone)]
@@ -46,6 +48,13 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         execution_operations: Vec<ValidationOperation>,
         /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
         user_fee_increase: UserFeeIncrease,
+    },
+    /// A drive event that is paid from an asset lock
+    PaidFromAssetLockWithoutIdentity {
+        /// The processing fees that should be distributed to validators
+        processing_fees: Credits,
+        /// the operations that should be performed
+        operations: Vec<DriveOperation<'a>>,
     },
     /// A drive event that is free
     #[allow(dead_code)] // TODO investigate why `variant `Free` is never constructed`
@@ -79,7 +88,9 @@ impl<'a> ExecutionEvent<'a> {
             }
             StateTransitionAction::IdentityTopUpAction(identity_top_up_action) => {
                 let user_fee_increase = identity_top_up_action.user_fee_increase();
-                let added_balance = identity_top_up_action.top_up_balance_amount();
+                let added_balance = identity_top_up_action
+                    .top_up_asset_lock_value()
+                    .remaining_credit_value();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
@@ -92,9 +103,19 @@ impl<'a> ExecutionEvent<'a> {
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "partial identity should be present",
+                        "partial identity should be present for identity top up action",
                     )))
                 }
+            }
+            StateTransitionAction::PartiallyUseAssetLockAction(partially_used_asset_lock) => {
+                let used_credits = partially_used_asset_lock.used_credits();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                // We mark it as a free operation because the event itself is paying for itself
+                Ok(ExecutionEvent::PaidFromAssetLockWithoutIdentity {
+                    processing_fees: used_credits,
+                    operations,
+                })
             }
             StateTransitionAction::IdentityCreditWithdrawalAction(identity_credit_withdrawal) => {
                 let user_fee_increase = identity_credit_withdrawal.user_fee_increase();
@@ -111,7 +132,7 @@ impl<'a> ExecutionEvent<'a> {
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "partial identity should be present",
+                        "partial identity should be present for identity credit withdrawal action",
                     )))
                 }
             }
@@ -130,7 +151,7 @@ impl<'a> ExecutionEvent<'a> {
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "partial identity should be present",
+                        "partial identity should be present for identity credit transfer action",
                     )))
                 }
             }
@@ -148,7 +169,7 @@ impl<'a> ExecutionEvent<'a> {
                     })
                 } else {
                     Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "partial identity should be present",
+                        "partial identity should be present for other state transitions",
                     )))
                 }
             }

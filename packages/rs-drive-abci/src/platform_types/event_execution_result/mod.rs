@@ -1,4 +1,4 @@
-use dpp::validation::SimpleConsensusValidationResult;
+use dpp::consensus::ConsensusError;
 
 use dpp::fee::fee_result::FeeResult;
 
@@ -9,9 +9,11 @@ pub type EstimatedFeeResult = FeeResult;
 #[derive(Debug, Clone)]
 pub enum EventExecutionResult {
     /// Successfully executed a paid event
-    SuccessfulPaidExecution(EstimatedFeeResult, FeeResult),
+    SuccessfulPaidExecution(Option<EstimatedFeeResult>, FeeResult),
+    /// Unsuccessfully executed a paid event
+    UnsuccessfulPaidExecution(Option<EstimatedFeeResult>, FeeResult, Vec<ConsensusError>),
     /// Successfully executed a free event
     SuccessfulFreeExecution,
     /// There were consensus errors when trying to execute an event
-    ConsensusExecutionError(SimpleConsensusValidationResult),
+    UnpaidConsensusExecutionError(Vec<ConsensusError>),
 }

@@ -7,6 +7,7 @@ use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::ConsensusError;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
@@ -37,6 +38,7 @@ where
     pub(in crate::execution) fn execute_event(
         &self,
         event: ExecutionEvent,
+        consensus_errors: Vec<ConsensusError>,
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
@@ -47,7 +49,13 @@ where
             .state_transition_processing
             .execute_event
         {
-            0 => self.execute_event_v0(event, block_info, transaction, platform_version),
+            0 => self.execute_event_v0(
+                event,
+                consensus_errors,
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "execute_event".to_string(),
                 known_versions: vec![0],

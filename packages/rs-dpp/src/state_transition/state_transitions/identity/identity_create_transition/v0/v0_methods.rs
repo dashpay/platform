@@ -88,6 +88,11 @@ impl IdentityCreateTransitionAccessorsV0 for IdentityCreateTransitionV0 {
         &self.public_keys
     }
 
+    /// Get identity public keys
+    fn public_keys_mut(&mut self) -> &mut Vec<IdentityPublicKeyInCreation> {
+        &mut self.public_keys
+    }
+
     /// Replaces existing set of public keys with a new one
     fn set_public_keys(&mut self, public_keys: Vec<IdentityPublicKeyInCreation>) {
         self.public_keys = public_keys;

@@ -9,9 +9,9 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Asset lock transaction {transaction_id} output {output_index} already used")]
+#[error("Asset lock transaction {transaction_id} output {output_index} already completely used")]
 #[platform_serialize(unversioned)]
-pub struct IdentityAssetLockTransactionOutPointAlreadyExistsError {
+pub struct IdentityAssetLockTransactionOutPointAlreadyConsumedError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
@@ -23,7 +23,7 @@ pub struct IdentityAssetLockTransactionOutPointAlreadyExistsError {
     output_index: usize,
 }
 
-impl IdentityAssetLockTransactionOutPointAlreadyExistsError {
+impl IdentityAssetLockTransactionOutPointAlreadyConsumedError {
     pub fn new(transaction_id: Txid, output_index: usize) -> Self {
         Self {
             transaction_id,
@@ -40,8 +40,8 @@ impl IdentityAssetLockTransactionOutPointAlreadyExistsError {
     }
 }
 
-impl From<IdentityAssetLockTransactionOutPointAlreadyExistsError> for ConsensusError {
-    fn from(err: IdentityAssetLockTransactionOutPointAlreadyExistsError) -> Self {
-        Self::BasicError(BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(err))
+impl From<IdentityAssetLockTransactionOutPointAlreadyConsumedError> for ConsensusError {
+    fn from(err: IdentityAssetLockTransactionOutPointAlreadyConsumedError) -> Self {
+        Self::BasicError(BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(err))
     }
 }

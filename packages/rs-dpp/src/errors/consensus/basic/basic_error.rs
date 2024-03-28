@@ -32,7 +32,8 @@ use crate::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     IdentityAssetLockProofLockedTransactionMismatchError,
     IdentityAssetLockTransactionIsNotFoundError,
-    IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    IdentityAssetLockTransactionOutPointAlreadyConsumedError,
+    IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     IdentityAssetLockTransactionOutputNotFoundError, IdentityCreditTransferToSelfError,
     InvalidAssetLockProofCoreChainHeightError, InvalidAssetLockProofTransactionHeightError,
     InvalidAssetLockTransactionOutputReturnSizeError,
@@ -235,8 +236,13 @@ pub enum BasicError {
     IdentityAssetLockTransactionIsNotFoundError(IdentityAssetLockTransactionIsNotFoundError),
 
     #[error(transparent)]
-    IdentityAssetLockTransactionOutPointAlreadyExistsError(
-        IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    IdentityAssetLockTransactionOutPointAlreadyConsumedError(
+        IdentityAssetLockTransactionOutPointAlreadyConsumedError,
+    ),
+
+    #[error(transparent)]
+    IdentityAssetLockTransactionOutPointNotEnoughBalanceError(
+        IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     ),
 
     #[error(transparent)]
