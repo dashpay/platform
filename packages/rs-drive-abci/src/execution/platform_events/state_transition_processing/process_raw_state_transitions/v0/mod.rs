@@ -6,7 +6,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::dashcore;
 use dpp::dashcore::hashes::Hash;
 use dpp::fee::fee_result::FeeResult;
-use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::validation::ConsensusValidationResult;
 
 use crate::execution::types::execution_event::ExecutionEvent;
@@ -82,8 +81,6 @@ where
 
             let state_transition_name = state_transition.name();
 
-            let is_st_asset_lock_funded = state_transition.optional_asset_lock_proof().is_some();
-
             // Validate state transition and produce an execution event
             let execution_result = process_state_transition(
                 &platform_ref,
@@ -95,7 +92,6 @@ where
                 self.process_validation_result_v0(
                     raw_state_transition,
                     state_transition_name,
-                    is_st_asset_lock_funded,
                     validation_result,
                     block_info,
                     transaction,
@@ -163,9 +159,8 @@ where
 
     fn process_validation_result_v0(
         &self,
-        raw_state_transition: &Vec<u8>, //used for errors
+        raw_state_transition: &[u8], //used for errors
         state_transition_name: &str,
-        is_st_asset_lock_funded: bool, //todo: remove this (as they should be treated the same)
         mut validation_result: ConsensusValidationResult<ExecutionEvent>,
         block_info: &BlockInfo,
         transaction: &Transaction,
@@ -201,9 +196,9 @@ where
             //    placed on the payment blockchain and they can't be partially spent.
             // 2. We can't prove that the state transition is associated with the identity
             // 3. The revision given by the state transition isn't allowed based on the state
-            let state_transition_execution_result = if is_st_asset_lock_funded {
-                StateTransitionExecutionResult::UnpaidConsensusError(first_consensus_error)
-            } else if let Ok((execution_event, errors)) = validation_result.into_data_and_errors() {
+            let state_transition_execution_result = if let Ok((execution_event, errors)) =
+                validation_result.into_data_and_errors()
+            {
                 // In this case the execution event will be to pay for the state transition processing
                 // This ONLY pays for what is needed to prevent attacks on the system
 
@@ -217,7 +212,7 @@ where
                     )
                     .map_err(|error| StateTransitionAwareError {
                         error,
-                        raw_state_transition: raw_state_transition.clone(),
+                        raw_state_transition: raw_state_transition.to_vec(),
                     })?;
 
                 match event_execution_result {
@@ -273,7 +268,7 @@ where
             validation_result.into_data_and_errors().map_err(|error| {
                 StateTransitionAwareError {
                     error: error.into(),
-                    raw_state_transition: raw_state_transition.clone(),
+                    raw_state_transition: raw_state_transition.to_vec(),
                 }
             })?;
 
@@ -287,7 +282,7 @@ where
             )
             .map_err(|error| StateTransitionAwareError {
                 error,
-                raw_state_transition: raw_state_transition.clone(),
+                raw_state_transition: raw_state_transition.to_vec(),
             })?;
 
         let state_transition_execution_result = match event_execution_result {

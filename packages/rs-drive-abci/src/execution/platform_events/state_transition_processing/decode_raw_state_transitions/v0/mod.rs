@@ -44,6 +44,8 @@ where
         raw_state_transitions: &'a Vec<Vec<u8>>,
         platform_version: &PlatformVersion,
     ) -> StateTransitionContainerV0<'a> {
+        // Todo: might be better to have StateTransitionContainerV0 be a decoder instead and have
+        //  the method decode_raw_state_transitions
         let mut container = StateTransitionContainerV0::default();
         for raw_state_transition in raw_state_transitions {
             if raw_state_transition.len() as u64

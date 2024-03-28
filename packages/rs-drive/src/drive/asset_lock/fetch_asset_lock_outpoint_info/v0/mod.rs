@@ -85,9 +85,9 @@ impl Drive {
             .map(|element| {
                 let item_bytes = element.as_item_bytes()?;
                 if item_bytes.is_empty() {
-                    Ok::<StoredAssetLockInfo, Error>(StoredAssetLockInfo::Present)
+                    Ok::<StoredAssetLockInfo, Error>(StoredAssetLockInfo::FullyConsumed)
                 } else {
-                    Ok(StoredAssetLockInfo::PresentWithInfo(
+                    Ok(StoredAssetLockInfo::PartiallyConsumed(
                         AssetLockValue::deserialize_from_bytes(item_bytes)?,
                     ))
                 }

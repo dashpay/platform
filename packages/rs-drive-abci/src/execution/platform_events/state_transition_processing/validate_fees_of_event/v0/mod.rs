@@ -146,9 +146,10 @@ where
                     ))
                 }
             }
-            _ => Ok(ConsensusValidationResult::new_with_data(
-                FeeResult::default(),
-            )),
+            ExecutionEvent::Free { .. }
+            | ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. } => Ok(
+                ConsensusValidationResult::new_with_data(FeeResult::default()),
+            ),
         }
     }
 }

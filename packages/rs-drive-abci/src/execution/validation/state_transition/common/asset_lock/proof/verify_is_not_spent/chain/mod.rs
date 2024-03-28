@@ -37,7 +37,7 @@ impl AssetLockProofVerifyIsNotSpent for ChainAssetLockProof {
         )?;
 
         match stored_asset_lock_info {
-            StoredAssetLockInfo::Present => {
+            StoredAssetLockInfo::FullyConsumed => {
                 // It was already entirely spent
                 Ok(ConsensusValidationResult::new_with_error(
                     IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
@@ -47,7 +47,7 @@ impl AssetLockProofVerifyIsNotSpent for ChainAssetLockProof {
                     .into(),
                 ))
             }
-            StoredAssetLockInfo::PresentWithInfo(reduced_asset_lock_value) => {
+            StoredAssetLockInfo::PartiallyConsumed(reduced_asset_lock_value) => {
                 if reduced_asset_lock_value.remaining_credit_value() == 0 {
                     Ok(ConsensusValidationResult::new_with_error(
                         IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
