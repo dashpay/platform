@@ -79,7 +79,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction(1);
+      } = await client.platform.identities.utils.createAssetLockTransaction(150000);
 
       const invalidInstantLock = createFakeInstantLock(transaction.hash);
       const assetLockProof = await client.platform.dpp.identity.createInstantAssetLockProof(
@@ -169,7 +169,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction(15);
+      } = await client.platform.identities.utils.createAssetLockTransaction(150000);
 
       const account = await client.getWalletAccount();
 
@@ -377,7 +377,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identities.utils.createAssetLockTransaction(15);
+        } = await client.platform.identities.utils.createAssetLockTransaction(150000);
 
         const instantLock = createFakeInstantLock(transaction.hash);
         const assetLockProof = await client.platform.dpp.identity
