@@ -919,7 +919,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 max_public_keys_in_creation: 6,
                 asset_locks: IdentityTransitionAssetLockVersions {
                     required_asset_lock_duff_balance_for_processing_start_for_identity_create:
-                        100000,
+                        200000,
                     required_asset_lock_duff_balance_for_processing_start_for_identity_top_up:
                         50000,
                     validate_asset_lock_transaction_structure: 0,
