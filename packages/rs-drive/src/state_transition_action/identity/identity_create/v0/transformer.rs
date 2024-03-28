@@ -51,6 +51,7 @@ impl IdentityCreateTransitionActionV0 {
             ..
         } = value;
 
+        // This should already be checked in validate basic
         let asset_lock_outpoint = asset_lock_proof.out_point().ok_or_else(|| {
             IdentityAssetLockTransactionOutputNotFoundError::new(
                 asset_lock_proof.output_index() as usize

@@ -25,22 +25,33 @@ impl AssetLockProofValidation for InstantAssetLockProof {
     ) -> Result<ConsensusValidationResult<AssetLockValue>, Error> {
         // Verify instant lock signature with Core
 
-        let is_instant_lock_signature_valid = self.instant_lock().verify_signature(
-            platform_ref.core_rpc,
-            platform_ref.state.last_committed_core_height(),
-        )?;
-
-        if !is_instant_lock_signature_valid {
-            return Ok(ConsensusValidationResult::new_with_error(
-                InvalidInstantAssetLockProofSignatureError::new().into(),
-            ));
-        }
-
-        self.verify_is_not_spent_and_has_enough_balance(
+        let validation_result = self.verify_is_not_spent_and_has_enough_balance(
             platform_ref,
             required_balance,
             transaction,
             platform_version,
-        )
+        )?;
+
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
+        // If we have a partially spent asset lock then we do not need to verify the signature of the instant lock
+        // As we know this outpoint was already considered final and locked.
+
+        if !validation_result.has_data() {
+            let is_instant_lock_signature_valid = self.instant_lock().verify_signature(
+                platform_ref.core_rpc,
+                platform_ref.state.last_committed_core_height(),
+            )?;
+
+            if !is_instant_lock_signature_valid {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    InvalidInstantAssetLockProofSignatureError::new().into(),
+                ));
+            }
+        }
+
+        Ok(validation_result)
     }
 }

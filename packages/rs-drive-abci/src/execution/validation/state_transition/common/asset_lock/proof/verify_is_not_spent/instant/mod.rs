@@ -30,14 +30,8 @@ impl AssetLockProofVerifyIsNotSpent for InstantAssetLockProof {
             )));
         };
 
-        let outpoint_bytes = asset_lock_outpoint.try_into().map_err(|e| {
-            Error::Execution(ExecutionError::Conversion(format!(
-                "can't convert output to bytes: {e}",
-            )))
-        })?;
-
         let stored_asset_lock_info = platform_ref.drive.fetch_asset_lock_outpoint_info(
-            &Bytes36::new(outpoint_bytes),
+            &Bytes36::new(asset_lock_outpoint.into()),
             transaction,
             &platform_version.drive,
         )?;
