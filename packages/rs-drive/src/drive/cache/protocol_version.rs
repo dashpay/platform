@@ -1,4 +1,5 @@
 use crate::drive::Drive;
+use crate::error::cache::CacheError;
 use crate::error::Error;
 use dpp::util::deserializer::ProtocolVersion;
 use grovedb::TransactionArg;
@@ -14,7 +15,7 @@ pub struct ProtocolVersionsCache {
     pub global_cache: IntMap<ProtocolVersion, u64>,
     block_cache: IntMap<ProtocolVersion, u64>,
     loaded: bool,
-    needs_wipe: bool,
+    is_global_cache_blocked: bool,
 }
 
 #[cfg(feature = "full")]
@@ -46,23 +47,40 @@ impl ProtocolVersionsCache {
     /// Tries to get a version from block cache if present
     /// if block cache doesn't have the version set
     /// then it tries get the version from global cache
-    pub fn get(&self, version: &ProtocolVersion) -> Option<&u64> {
-        if let Some(count) = self.block_cache.get(version) {
+    pub fn get(&self, version: &ProtocolVersion) -> Result<Option<&u64>, Error> {
+        if self.is_global_cache_blocked {
+            return Err(Error::Cache(CacheError::GlobalCacheIsBlocked));
+        }
+
+        let counter = if let Some(count) = self.block_cache.get(version) {
             Some(count)
         } else {
             self.global_cache.get(version)
-        }
+        };
+
+        Ok(counter)
+    }
+
+    /// Disable the global cache to do not allow get counters
+    /// If global cache is blocked then [get] will return an error
+    pub fn block_global_cache(&mut self) {
+        self.is_global_cache_blocked = true;
+    }
+
+    /// Unblock the global cache
+    /// This function enables the normal behaviour of [get] function
+    pub fn unblock_global_cache(&mut self) {
+        self.is_global_cache_blocked = false;
     }
 
     /// Merge block cache to global cache
     pub fn merge_block_cache(&mut self) {
-        if self.needs_wipe {
-            self.global_cache.clear();
-            self.block_cache.clear();
-            self.needs_wipe = false;
-        } else {
-            self.global_cache.extend(self.block_cache.drain());
-        }
+        self.global_cache.extend(self.block_cache.drain());
+    }
+
+    /// Clears the global cache
+    pub fn clear_global_cache(&mut self) {
+        self.global_cache.clear();
     }
 
     /// Clear block cache
@@ -70,19 +88,15 @@ impl ProtocolVersionsCache {
         self.block_cache.clear()
     }
 
-    /// Versions passing threshold
-    pub fn versions_passing_threshold(
-        &mut self,
-        required_upgraded_hpns: u64,
-    ) -> Vec<ProtocolVersion> {
-        self.needs_wipe = true;
+    /// Collect versions passing threshold
+    pub fn versions_passing_threshold(&self, required_upgraded_hpmns: u64) -> Vec<ProtocolVersion> {
         let mut cache = self.global_cache.clone();
 
-        cache.extend(self.block_cache.drain());
+        cache.extend(self.block_cache.iter());
         cache
             .into_iter()
             .filter_map(|(protocol_version, count)| {
-                if count >= required_upgraded_hpns {
+                if count >= required_upgraded_hpmns {
                     Some(protocol_version)
                 } else {
                     None

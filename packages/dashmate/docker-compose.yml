@@ -201,7 +201,6 @@ services:
 volumes:
   core_data:
   drive_abci_data:
-  drive_abci_logs:
   drive_tenderdash:
 
 networks:

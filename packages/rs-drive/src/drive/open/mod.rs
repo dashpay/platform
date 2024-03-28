@@ -39,6 +39,8 @@ impl Drive {
 
         let protocol_version = Drive::fetch_current_protocol_version_with_grovedb(&grove, None)?;
 
+        // At this point we don't know the version what we need to process next block or initialize the chain
+        // so version related data should be updated on init chain or on block execution
         let platform_version =
             PlatformVersion::get(protocol_version.unwrap_or(INITIAL_PROTOCOL_VERSION))
                 .map_err(ProtocolError::PlatformVersionError)?;

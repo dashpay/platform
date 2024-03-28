@@ -133,6 +133,7 @@ mod tests {
 
         let mut version_count = version_counter
             .get(&version.protocol_version)
+            .expect("expected to get version count")
             .cloned()
             .unwrap_or_default();
 
@@ -255,6 +256,7 @@ mod tests {
 
         let mut version_count = version_counter
             .get(&version.protocol_version)
+            .expect("expected to get version count")
             .cloned()
             .unwrap_or_default();
 

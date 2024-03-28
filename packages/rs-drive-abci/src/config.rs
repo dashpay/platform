@@ -31,6 +31,7 @@ use std::path::PathBuf;
 
 use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::config::DriveConfig;
+use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::logging::LogConfigs;
@@ -111,6 +112,11 @@ pub struct ExecutionConfig {
         deserialize_with = "from_str_or_number"
     )]
     pub epoch_time_length_s: u64,
+
+    /// The percentage needed of HPMNs to upgrade the protocol
+    /// It always needs to be higher than the rounded amount after applying the percentage
+    #[serde(default = "ExecutionConfig::default_protocol_version_upgrade_percentage_needed")]
+    pub protocol_version_upgrade_percentage_needed: u64,
 }
 
 fn from_str_or_number<'de, D, T>(deserializer: D) -> Result<T, D::Error>
@@ -234,12 +240,15 @@ impl ExecutionConfig {
     fn default_epoch_time_length_s() -> u64 {
         788400
     }
+
+    fn default_protocol_version_upgrade_percentage_needed() -> u64 {
+        75
+    }
 }
 
 impl PlatformConfig {
     fn default_initial_protocol_version() -> ProtocolVersion {
-        //todo: versioning
-        1
+        INITIAL_PROTOCOL_VERSION
     }
 
     fn default_tokio_console_address() -> String {
@@ -317,6 +326,8 @@ impl Default for ExecutionConfig {
             validator_set_rotation_block_count:
                 ExecutionConfig::default_validator_set_rotation_block_count(),
             epoch_time_length_s: ExecutionConfig::default_epoch_time_length_s(),
+            protocol_version_upgrade_percentage_needed:
+                Self::default_protocol_version_upgrade_percentage_needed(),
         }
     }
 }
@@ -346,7 +357,7 @@ impl PlatformConfig {
             tokio_console_enabled: false,
             tokio_console_address: PlatformConfig::default_tokio_console_address(),
             tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
-            initial_protocol_version: 1,
+            initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
         }
@@ -366,7 +377,7 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
-            initial_protocol_version: 1,
+            initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
             tokio_console_enabled: false,
@@ -389,7 +400,7 @@ impl PlatformConfig {
             execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
-            initial_protocol_version: 1,
+            initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
             grpc_bind_address: "0.0.0.0:26670".to_string(),
             tokio_console_enabled: false,

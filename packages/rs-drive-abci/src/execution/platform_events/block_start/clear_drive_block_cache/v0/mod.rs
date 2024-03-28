@@ -14,6 +14,9 @@ where
 
         let mut protocol_versions_counter = self.drive.cache.protocol_versions_counter.write();
 
-        protocol_versions_counter.clear_block_cache()
+        protocol_versions_counter.clear_block_cache();
+        // Getter is disabled in case of epoch change so we need to enable it back
+        // For more information read comments in `upgrade_protocol_version_v0` function
+        protocol_versions_counter.unblock_global_cache();
     }
 }

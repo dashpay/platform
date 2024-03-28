@@ -1,3 +1,4 @@
+use chrono::{TimeZone, Utc};
 use dpp::block::epoch::Epoch;
 
 use dpp::validation::ValidationResult;
@@ -77,13 +78,30 @@ where
             block_proposal.round,
         );
 
+        // Run block proposal determines version by itself based on the previous
+        // state and block time.
+        // It should provide correct version on prepare proposal to block header
+        // and validate it on process proposal.
+        // If version set to 0 (default number value) it means we are on prepare proposal,
+        // so there is no need for validation.
+        if !known_from_us
+            && block_proposal.consensus_versions.app != platform_version.protocol_version as u64
+        {
+            return Ok(ValidationResult::new_with_error(
+                AbciError::BadRequest(format!(
+                    "received a block proposal with protocol version {}, expected: {}",
+                    block_proposal.consensus_versions.app, platform_version.protocol_version
+                ))
+                .into(),
+            ));
+        }
+
         let last_block_time_ms = last_committed_platform_state.last_committed_block_time_ms();
         let last_block_height = last_committed_platform_state.last_committed_known_block_height_or(
             self.config.abci.genesis_height.saturating_sub(1),
         );
         let last_block_core_height = last_committed_platform_state
             .last_committed_known_core_height_or(self.config.abci.genesis_core_height);
-        let hpmn_list_len = last_committed_platform_state.hpmn_list_len() as u32;
 
         // Create a bock state from previous committed state
         let mut block_platform_state = last_committed_platform_state.clone();
@@ -121,6 +139,86 @@ where
             Epoch::new(epoch_info.current_epoch_index())
                 .expect("current epoch index should be in range"),
         );
+
+        // Update protocol version for this block
+        let previous_block_protocol_version = last_committed_platform_state
+            .current_platform_version()?
+            .protocol_version;
+        let current_block_protocol_version = platform_version.protocol_version;
+
+        // Protocol version can be changed only on epoch change
+        if epoch_info.is_epoch_change_but_not_genesis() {
+            tracing::info!(
+                epoch_index = epoch_info.current_epoch_index(),
+                "epoch change occurring from epoch {} to epoch {}",
+                epoch_info
+                    .previous_epoch_index()
+                    .expect("must be set since we aren't on genesis"),
+                epoch_info.current_epoch_index(),
+            );
+
+            if current_block_protocol_version == previous_block_protocol_version {
+                tracing::info!(
+                    epoch_index = epoch_info.current_epoch_index(),
+                    "protocol version remains the same {}",
+                    current_block_protocol_version,
+                );
+            } else {
+                tracing::info!(
+                    epoch_index = epoch_info.current_epoch_index(),
+                    "protocol version changed from {} to {}",
+                    previous_block_protocol_version,
+                    current_block_protocol_version,
+                );
+
+                block_platform_state
+                    .set_current_protocol_version_in_consensus(current_block_protocol_version);
+            };
+
+            // Update block platform state with current and next epoch protocol versions
+            // if it was proposed
+            // This should happen only on epoch change
+            self.upgrade_protocol_version(
+                last_committed_platform_state,
+                &mut block_platform_state,
+                transaction,
+                platform_version,
+            )?;
+        } else if current_block_protocol_version != previous_block_protocol_version {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "unexpected protocol upgrade: it should happen only on epoch change",
+            )));
+        }
+
+        // Warn user to update software if the next protocol version is not supported
+        let latest_supported_protocol_version = PlatformVersion::latest().protocol_version;
+        let next_epoch_protocol_version = block_platform_state.next_epoch_protocol_version();
+        if block_platform_state.next_epoch_protocol_version() > latest_supported_protocol_version {
+            let genesis_time_ms = self.get_genesis_time(
+                block_info.height,
+                block_info.time_ms,
+                transaction,
+                platform_version,
+            )?;
+
+            let next_epoch_activation_datetime_ms = genesis_time_ms
+                + (epoch_info.current_epoch_index() as u64
+                    * self.config.execution.epoch_time_length_s
+                    * 1000);
+
+            let next_epoch_activation_datetime = Utc
+                .timestamp_millis_opt(next_epoch_activation_datetime_ms as i64)
+                .single()
+                .expect("next_epoch_activation_date must always be in the range");
+
+            tracing::warn!(
+                next_epoch_protocol_version,
+                latest_supported_protocol_version,
+                "The node doesn't support new protocol version {} that will be activated starting from {}. Please update your software, otherwise the node won't be able to participate in the network. https://docs.dash.org/platform-protocol-upgrade",
+                next_epoch_protocol_version,
+                next_epoch_activation_datetime.to_rfc2822(),
+            );
+        }
 
         // If there is a core chain lock update, we should start by verifying it
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
@@ -218,6 +316,7 @@ where
         )?;
 
         // Update the validator proposed app version
+        // It should be called after protocol version upgrade
         self.drive
             .update_validator_proposed_app_version(
                 proposer_pro_tx_hash,
@@ -228,55 +327,6 @@ where
             .map_err(|e| {
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
             })?; // This is a system error
-
-        // Determine a new protocol version if enough proposers voted
-        if epoch_info.is_epoch_change_but_not_genesis() {
-            tracing::info!(
-                epoch_index = epoch_info.current_epoch_index(),
-                "epoch change occurring from epoch {} to epoch {}",
-                epoch_info
-                    .previous_epoch_index()
-                    .expect("must be set since we aren't on genesis"),
-                epoch_info.current_epoch_index(),
-            );
-
-            if block_platform_state.current_protocol_version_in_consensus()
-                == block_platform_state.next_epoch_protocol_version()
-            {
-                tracing::trace!(
-                    epoch_index = epoch_info.current_epoch_index(),
-                    "protocol version remains the same {}",
-                    block_platform_state.current_protocol_version_in_consensus(),
-                );
-            } else {
-                tracing::info!(
-                    epoch_index = epoch_info.current_epoch_index(),
-                    "protocol version changed from {} to {}",
-                    block_platform_state.current_protocol_version_in_consensus(),
-                    block_platform_state.next_epoch_protocol_version(),
-                );
-            }
-
-            // Set current protocol version to the version from upcoming epoch
-            block_platform_state.set_current_protocol_version_in_consensus(
-                block_platform_state.next_epoch_protocol_version(),
-            );
-
-            // Determine new protocol version based on votes for the next epoch
-            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
-                hpmn_list_len,
-                block_platform_state.current_protocol_version_in_consensus(),
-                transaction,
-            )?;
-
-            if let Some(new_protocol_version) = maybe_new_protocol_version {
-                block_platform_state.set_next_epoch_protocol_version(new_protocol_version);
-            } else {
-                block_platform_state.set_next_epoch_protocol_version(
-                    block_platform_state.current_protocol_version_in_consensus(),
-                );
-            }
-        }
 
         // Mark all previously broadcasted and chainlocked withdrawals as complete
         // only when we are on a new core height
@@ -327,7 +377,9 @@ where
             block_execution_context::v0::BlockExecutionContextV0 {
                 block_state_info: block_state_info.into(),
                 epoch_info: epoch_info.clone(),
-                hpmn_count: hpmn_list_len,
+                // TODO: It doesn't seem correct to use previous block count of hpmns.
+                //  We currently not using this field in the codebase. We probably should just remove it.
+                hpmn_count: last_committed_platform_state.hpmn_list_len() as u32,
                 unsigned_withdrawal_transactions: unsigned_withdrawal_transaction_bytes,
                 block_platform_state,
                 proposer_results: None,
@@ -380,7 +432,6 @@ where
                 app_hash: root_hash,
                 state_transitions_result,
                 validator_set_update,
-                // TODO: We already know the version outside sine we have state and platform version what pass here
                 protocol_version: platform_version.protocol_version,
                 block_execution_context,
             },

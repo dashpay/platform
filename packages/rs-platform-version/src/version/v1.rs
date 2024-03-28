@@ -527,6 +527,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             },
             protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
                 check_for_desired_protocol_upgrade: 0,
+                upgrade_protocol_version: 0,
             },
             block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
                 add_process_epoch_change_operations: 0,

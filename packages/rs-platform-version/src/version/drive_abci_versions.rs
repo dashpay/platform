@@ -265,6 +265,7 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciProtocolUpgradeMethodVersions {
     pub check_for_desired_protocol_upgrade: FeatureVersion,
+    pub upgrade_protocol_version: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

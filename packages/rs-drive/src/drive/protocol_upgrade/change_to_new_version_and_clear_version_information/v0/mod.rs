@@ -13,6 +13,7 @@ use dpp::ProtocolError;
 use grovedb::TransactionArg;
 
 impl Drive {
+    /// TODO: Should work with Epoch trees. Will be reworked in upcoming PR
     /// Clear all version information from the backing store, this is done on epoch change in
     /// execution logic
     pub(super) fn change_to_new_version_and_clear_version_information_v0(

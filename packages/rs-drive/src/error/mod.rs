@@ -1,4 +1,5 @@
 use self::drive::DriveError;
+use crate::error::cache::CacheError;
 use crate::error::contract::DataContractError;
 use crate::error::proof::ProofError;
 use crate::error::storage_flags::StorageFlagsError;
@@ -10,6 +11,8 @@ use fee::FeeError;
 use identity::IdentityError;
 use query::QuerySyntaxError;
 
+/// Cache errors
+pub mod cache;
 ///DataContract errors
 pub mod contract;
 /// Document module
@@ -63,6 +66,9 @@ pub enum Error {
     ///DataContract error
     #[error("contract: {0}")]
     DataContract(#[from] DataContractError),
+    ///Cache error
+    #[error("contract: {0}")]
+    Cache(#[from] CacheError),
 }
 
 impl From<ProtocolDataContractError> for Error {

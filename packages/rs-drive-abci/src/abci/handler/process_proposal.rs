@@ -51,6 +51,7 @@ where
                     tx_results: proposal_info.tx_results.clone(),
                     consensus_param_updates: proposal_info.consensus_param_updates.clone(),
                     validator_set_update: proposal_info.validator_set_update.clone(),
+                    events: Vec::new(),
                 });
             }
 
@@ -131,6 +132,7 @@ where
                     tx_results,
                     consensus_param_updates,
                     validator_set_update,
+                    events: Vec::new(),
                 });
             } else {
                 tracing::warn!(
@@ -239,6 +241,7 @@ where
             validator_set_update,
             // TODO: Implement consensus param updates
             consensus_param_updates: None,
+            events: Vec::new(),
         };
 
         let elapsed_time_ms = timer.elapsed().as_millis();

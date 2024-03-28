@@ -121,7 +121,6 @@ where
         mut block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
 
-    // TODO: This is current protocol version and can be read from the state
     let platform_version = PlatformVersion::get(protocol_version)
         .expect("must be set in run block proposal from existing protocol version");
 
@@ -190,6 +189,7 @@ where
         validator_set_update,
         // TODO: implement consensus param updates
         consensus_param_updates: None,
+        app_version: protocol_version as u64,
     };
 
     block_execution_context.set_proposer_results(Some(response.clone()));

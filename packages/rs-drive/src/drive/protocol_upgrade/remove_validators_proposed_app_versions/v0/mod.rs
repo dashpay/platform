@@ -107,7 +107,7 @@ impl Drive {
     where
         I: IntoIterator<Item = [u8; 32]>,
     {
-        let version_counter = &mut self.cache.protocol_versions_counter.write();
+        let mut version_counter = self.cache.protocol_versions_counter.write();
 
         version_counter.load_if_needed(self, transaction, drive_version)?;
 
@@ -146,12 +146,17 @@ impl Drive {
         }
 
         for (previous_version, change) in previous_versions_removals {
-            let previous_count = *version_counter.get(&previous_version).ok_or(Error::Drive(
-                DriveError::CorruptedCacheState(
+            let previous_count = version_counter
+                .get(&previous_version)
+                .map_err(|error| {
+                    DriveError::CorruptedCacheState(format!(
+                        "{error}. we should never face with blocked global cache when we get previous count because version counter trees must be empty at this point"
+                    ))
+                })?
+                .ok_or(Error::Drive(DriveError::CorruptedCacheState(
                     "trying to lower the count of a version from cache that is not found"
                         .to_string(),
-                ),
-            ))?;
+                )))?;
             let removed_count = previous_count.checked_sub(change).ok_or(Error::Drive(DriveError::CorruptedDriveState(
                 "trying to lower the count of a version from cache that would result in a negative value"
                     .to_string(),

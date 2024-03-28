@@ -15,6 +15,17 @@ use serde::{Deserialize, Serialize};
 pub mod v0;
 
 /// Info pertinent to the current epoch.
+///
+/// BE AWARE BEFORE YOU MODIFY THIS CODE
+///
+/// Please be aware epoch information is gathered with previous platform version
+/// on epoch change (1st block of the epoch), despite we are switching to a new version
+/// in this block. Thus, the previous version of EpochInfo might also be used for the first block.
+/// A new version of EpochInfo will be used for the rest of epoch blocks
+/// and first block of the next epoch.
+/// This means that if we ever want to update EpochInfo, we will need to do so on a release
+/// where the new fields of epoch info are not being used. Then make another version once
+/// that one is activated.
 #[derive(Clone, Serialize, Deserialize, Debug, From, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum EpochInfo {
