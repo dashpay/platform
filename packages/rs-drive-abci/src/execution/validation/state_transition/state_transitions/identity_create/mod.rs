@@ -34,11 +34,24 @@ use drive::grovedb::TransactionArg;
 use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 
-impl StateTransitionActionTransformerV0 for IdentityCreateTransition {
-    fn transform_into_action<C: CoreRPCLike>(
+/// A trait for transforming into an action for the identity create transition
+pub trait StateTransitionActionTransformerForIdentityCreateTransitionV0 {
+    /// Transforming into the action
+    fn transform_into_action_for_identity_create_transition<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        _block_info: &BlockInfo,
+        signable_bytes: Vec<u8>,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+}
+
+impl StateTransitionActionTransformerForIdentityCreateTransitionV0 for IdentityCreateTransition {
+    fn transform_into_action_for_identity_create_transition<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
@@ -53,6 +66,7 @@ impl StateTransitionActionTransformerV0 for IdentityCreateTransition {
         {
             0 => self.transform_into_action_v0(
                 platform,
+                signable_bytes,
                 validation_mode,
                 execution_context,
                 tx,
@@ -143,12 +157,23 @@ impl StateTransitionStructureKnownInStateValidationForIdentityCreateTransitionV0
     }
 }
 
-impl StateTransitionStateValidationV0 for IdentityCreateTransition {
-    fn validate_state<C: CoreRPCLike>(
+/// A trait for state validation for the identity create transition
+pub trait StateTransitionStateValidationForIdentityCreateTransitionV0 {
+    /// Validate state
+    fn validate_state_for_identity_create_transition<C: CoreRPCLike>(
         &self,
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
-        _validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+}
+
+impl StateTransitionStateValidationForIdentityCreateTransitionV0 for IdentityCreateTransition {
+    fn validate_state_for_identity_create_transition<C: CoreRPCLike>(
+        &self,
+        action: Option<StateTransitionAction>,
+        platform: &PlatformRef<C>,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {

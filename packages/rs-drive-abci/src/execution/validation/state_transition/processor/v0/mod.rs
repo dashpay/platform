@@ -20,7 +20,7 @@ use drive::state_transition_action::StateTransitionAction;
 
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext};
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{ValidateStateTransitionIdentitySignature};
-use crate::execution::validation::state_transition::identity_create::StateTransitionStructureKnownInStateValidationForIdentityCreateTransitionV0;
+use crate::execution::validation::state_transition::identity_create::{StateTransitionStateValidationForIdentityCreateTransitionV0, StateTransitionStructureKnownInStateValidationForIdentityCreateTransitionV0};
 use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
 use crate::execution::validation::state_transition::state_transitions::identity_update::advanced_structure::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_top_up::identity_retrieval::v0::IdentityTopUpStateTransitionIdentityRetrievalV0;
@@ -714,9 +714,13 @@ impl StateTransitionStateValidationV0 for StateTransition {
             StateTransition::DataContractUpdate(st) => {
                 st.validate_state(action, platform, validation_mode, execution_context, tx)
             }
-            StateTransition::IdentityCreate(st) => {
-                st.validate_state(action, platform, validation_mode, execution_context, tx)
-            }
+            StateTransition::IdentityCreate(st) => st
+                .validate_state_for_identity_create_transition(
+                    action,
+                    platform,
+                    execution_context,
+                    tx,
+                ),
             StateTransition::IdentityUpdate(st) => {
                 st.validate_state(action, platform, validation_mode, execution_context, tx)
             }

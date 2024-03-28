@@ -52,6 +52,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::identi
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
@@ -114,6 +115,7 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
@@ -171,9 +173,6 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
         }
 
         // Verify one time signature
-
-        // todo: remove this clone
-        let signable_bytes = StateTransition::IdentityCreate(self.clone()).signable_bytes()?;
 
         let public_key_hash = tx_out
             .script_pubkey
