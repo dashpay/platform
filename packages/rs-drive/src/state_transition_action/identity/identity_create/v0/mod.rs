@@ -97,13 +97,16 @@ impl IdentityFromIdentityCreateTransitionActionV0 for Identity {
             .identity_versions
             .identity_structure_version
         {
-            0 => Ok((IdentityV0 {
-                id: identity_id,
-                public_keys: public_keys.into_iter().map(|key| (key.id(), key)).collect(),
-                balance: asset_lock_value_to_be_consumed.remaining_credit_value(),
-                revision: 0,
-            }
-            .into(), asset_lock_value_to_be_consumed)),
+            0 => Ok((
+                IdentityV0 {
+                    id: identity_id,
+                    public_keys: public_keys.into_iter().map(|key| (key.id(), key)).collect(),
+                    balance: asset_lock_value_to_be_consumed.remaining_credit_value(),
+                    revision: 0,
+                }
+                .into(),
+                asset_lock_value_to_be_consumed,
+            )),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "Identity::try_from_identity_create_transition_action_v0".to_string(),
                 known_versions: vec![0],

@@ -184,9 +184,7 @@ impl StateTransitionStateValidationForIdentityCreateTransitionV0 for IdentityCre
             .identity_create_state_transition
             .state
         {
-            0 => {
-                self.validate_state_v0(platform, action, execution_context, tx, platform_version)
-            }
+            0 => self.validate_state_v0(platform, action, execution_context, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create transition: validate_state".to_string(),
                 known_versions: vec![0],

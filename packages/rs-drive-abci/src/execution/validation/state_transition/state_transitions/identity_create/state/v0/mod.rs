@@ -7,8 +7,8 @@ use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 
 use dpp::consensus::state::identity::invalid_asset_lock_proof_value::InvalidAssetLockProofValueError;
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
-use dpp::dashcore::{ScriptBuf, signer};
 use dpp::dashcore::signer::double_sha;
+use dpp::dashcore::{signer, ScriptBuf};
 use dpp::identity::KeyType;
 
 use dpp::identity::state_transition::AssetLockProved;
@@ -97,13 +97,18 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
 
         if unique_public_key_validation_result.is_valid() {
             // We just pass the action that was given to us
-            Ok(ConsensusValidationResult::new_with_data(StateTransitionAction::IdentityCreateAction(action)))
+            Ok(ConsensusValidationResult::new_with_data(
+                StateTransitionAction::IdentityCreateAction(action),
+            ))
         } else {
             // It's not valid, we need to give back the action that partially uses the asset lock
 
             let used_credits = 1000; //todo: figure this out
 
-            let bump_action = PartiallyUseAssetLockAction::from_identity_create_transition_action(action, used_credits);
+            let bump_action = PartiallyUseAssetLockAction::from_identity_create_transition_action(
+                action,
+                used_credits,
+            );
             Ok(ConsensusValidationResult::new_with_data_and_errors(
                 bump_action.into(),
                 unique_public_key_validation_result.errors,
@@ -231,8 +236,7 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
             let initial_balance_amount = tx_out.value * CREDITS_PER_DUFF;
             AssetLockValue::new(
                 initial_balance_amount,
-                tx_out
-                    .script_pubkey.0,
+                tx_out.script_pubkey.0,
                 initial_balance_amount,
                 platform_version,
             )?

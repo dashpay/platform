@@ -724,14 +724,13 @@ impl StateTransitionStateValidationV0 for StateTransition {
                         "action must be a identity create transition action",
                     )));
                 };
-                st
-                    .validate_state_for_identity_create_transition(
-                        action,
-                        platform,
-                        execution_context,
-                        tx,
-                    )
-            },
+                st.validate_state_for_identity_create_transition(
+                    action,
+                    platform,
+                    execution_context,
+                    tx,
+                )
+            }
             StateTransition::IdentityUpdate(st) => {
                 st.validate_state(action, platform, validation_mode, execution_context, tx)
             }

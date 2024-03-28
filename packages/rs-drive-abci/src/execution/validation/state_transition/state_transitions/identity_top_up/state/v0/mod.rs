@@ -6,8 +6,8 @@ use dpp::balances::credits::CREDITS_PER_DUFF;
 
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 use dpp::consensus::state::identity::invalid_asset_lock_proof_value::InvalidAssetLockProofValueError;
-use dpp::dashcore::{ScriptBuf, signer};
 use dpp::dashcore::signer::double_sha;
+use dpp::dashcore::{signer, ScriptBuf};
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::identity::KeyType;
 
@@ -79,7 +79,7 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
                 asset_lock_proof_validation.errors,
             ));
         }
-        
+
         let asset_lock_value_to_be_consumed = if asset_lock_proof_validation.has_data() {
             let asset_lock_value = asset_lock_proof_validation.into_data()?;
             let tx_out_script_pubkey = ScriptBuf(asset_lock_value.tx_out_script().clone());
@@ -165,8 +165,7 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
             let initial_balance_amount = tx_out.value * CREDITS_PER_DUFF;
             AssetLockValue::new(
                 initial_balance_amount,
-                tx_out
-                    .script_pubkey.0,
+                tx_out.script_pubkey.0,
                 initial_balance_amount,
                 platform_version,
             )?

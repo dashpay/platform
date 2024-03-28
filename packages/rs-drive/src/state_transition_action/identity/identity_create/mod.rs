@@ -113,7 +113,10 @@ impl IdentityFromIdentityCreateTransitionAction for Identity {
     ) -> Result<(Self, AssetLockValue), ProtocolError> {
         match value {
             IdentityCreateTransitionAction::V0(v0) => {
-                Identity::try_from_identity_create_transition_action_returning_asset_lock_value_v0(v0, platform_version)
+                Identity::try_from_identity_create_transition_action_returning_asset_lock_value_v0(
+                    v0,
+                    platform_version,
+                )
             }
         }
     }

@@ -20,7 +20,10 @@ impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
         let asset_lock_outpoint = self.asset_lock_outpoint();
 
         let (identity, mut asset_lock_value) =
-            Identity::try_from_identity_create_transition_action_returning_asset_lock_value(self, platform_version)?;
+            Identity::try_from_identity_create_transition_action_returning_asset_lock_value(
+                self,
+                platform_version,
+            )?;
 
         let initial_balance = asset_lock_value.remaining_credit_value();
 

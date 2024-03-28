@@ -14,7 +14,6 @@ impl DriveHighLevelOperationConverter for IdentityTopUpTransitionAction {
         _epoch: &Epoch,
         _platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
-
         let identity_id = self.identity_id();
         let asset_lock_outpoint = self.asset_lock_outpoint();
 
