@@ -41,7 +41,7 @@ use dpp::state_transition::data_contract_update_transition::methods::DataContrac
 use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
-use rand::{thread_rng, Rng};
+use rand::Rng;
 use tracing::error;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use bincode::{Decode, Encode};
@@ -125,6 +125,7 @@ pub struct StartIdentities {
     pub number_of_identities: u8,
     pub keys_per_identity: u8,
     pub starting_balances: u64, // starting balance in duffs
+    pub extra_keys: KeyMaps,
 }
 
 /// Identities to register on the first block of the strategy
@@ -417,8 +418,6 @@ impl Strategy {
         // Create state_transitions vec and identities vec based on identity_state_transitions outcome
         let (identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
-
-        // Do we also need to add identities to the identity_nonce_counter?
 
         // Add initial contracts for contracts_with_updates on first block of strategy
         if block_info.height == config.start_block_height {
@@ -999,7 +998,7 @@ impl Strategy {
                                     }
 
                                     // Select a random identity from the current_identities
-                                    let random_index = thread_rng().gen_range(0..identities_count);
+                                    let random_index = rng.gen_range(0..identities_count);
                                     let random_identity = &mut current_identities[random_index];
 
                                     // Get keys already added
@@ -1072,23 +1071,40 @@ impl Strategy {
 
                     // Generate state transition for identity transfer operation
                     OperationType::IdentityTransfer if current_identities.len() > 1 => {
-                        let identities_clone = current_identities.to_owned();
-                        // Sender is the first in the list, which should be loaded_identity
-                        let owner = &mut current_identities[0];
-                        // Recipient is the second in the list
-                        let recipient = &identities_clone[1];
                         for _ in 0..count {
+                            let identities_count = current_identities.len();
+                            if identities_count == 0 {
+                                break;
+                            }
+
+                            // Select a random identity from the current_identities for the sender
+                            let random_index_sender = rng.gen_range(0..identities_count);
+
+                            // Clone current_identities to a Vec for manipulation
+                            let mut unused_identities: Vec<_> =
+                                current_identities.iter().cloned().collect();
+                            unused_identities.remove(random_index_sender); // Remove the sender
+                            let unused_identities_count = unused_identities.len();
+
+                            // Select a random identity from the remaining ones for the recipient
+                            let random_index_recipient = rng.gen_range(0..unused_identities_count);
+                            let recipient = &unused_identities[random_index_recipient];
+
+                            // Use the sender index on the original slice
+                            let sender = &mut current_identities[random_index_sender];
+
                             let state_transition =
                                 crate::transitions::create_identity_credit_transfer_transition(
-                                    owner,
+                                    sender,
                                     recipient,
                                     identity_nonce_counter,
                                     signer,
-                                    1000,
+                                    300000,
                                 );
                             operations.push(state_transition);
                         }
                     }
+
                     OperationType::ContractCreate(params, doc_type_range)
                         if !current_identities.is_empty() =>
                     {
@@ -1326,9 +1342,9 @@ impl Strategy {
             && self.start_identities.number_of_identities > 0
         {
             let mut new_transitions = crate::transitions::create_identities_state_transitions(
-                self.start_identities.number_of_identities.into(), // number of identities
-                self.start_identities.keys_per_identity.into(),    // number of keys per identity
-                &self.identities_inserts.extra_keys,
+                self.start_identities.number_of_identities.into(),
+                self.start_identities.keys_per_identity.into(),
+                &self.start_identities.extra_keys,
                 amount,
                 signer,
                 rng,
@@ -1343,10 +1359,11 @@ impl Strategy {
         if block_info.height > config.start_block_height {
             let frequency = &self.identities_inserts.frequency;
             if frequency.check_hit(rng) {
-                let count = frequency.events(rng);
+                let count = frequency.events(rng); // number of identities to create
+
                 let mut new_transitions = crate::transitions::create_identities_state_transitions(
-                    count,                                       // number of identities
-                    self.identities_inserts.start_keys as KeyID, // number of keys per identity
+                    count,
+                    self.identities_inserts.start_keys as KeyID,
                     &self.identities_inserts.extra_keys,
                     200000, // 0.002 dash
                     signer,
@@ -1725,6 +1742,7 @@ mod tests {
                 number_of_identities: 2,
                 keys_per_identity: 3,
                 starting_balances: 100_000_000,
+                extra_keys: BTreeMap::new(),
             },
             identities_inserts: Default::default(),
             identity_contract_nonce_gaps: None,

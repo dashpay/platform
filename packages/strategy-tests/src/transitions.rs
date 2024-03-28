@@ -292,8 +292,14 @@ pub fn create_identity_update_transition_add_keys(
 ) -> (StateTransition, (Identifier, Vec<IdentityPublicKey>)) {
     identity.bump_revision();
 
-    let start_id =
-        (identity.public_keys().len() as u32 + keys_already_added_this_block_count) as KeyID;
+    let start_id = (identity
+        .public_keys()
+        .values()
+        .map(|pk| pk.id())
+        .max()
+        .expect("Expected a max public key id") as u32
+        + keys_already_added_this_block_count
+        + 1) as KeyID;
 
     let keys = IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(
         start_id,
