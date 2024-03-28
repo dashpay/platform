@@ -120,6 +120,10 @@ impl MockDashPlatformSdk {
                     self.load_expectation::<proto::GetDataContractsRequest>(filename)
                         .await?
                 }
+                "GetDataContractHistoryRequest" => {
+                    self.load_expectation::<proto::GetDataContractHistoryRequest>(filename)
+                        .await?
+                }
                 "IdentityRequest" => self.load_expectation::<IdentityRequest>(filename).await?,
                 "GetIdentityRequest" => {
                     self.load_expectation::<proto::GetIdentityRequest>(filename)

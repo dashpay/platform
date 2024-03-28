@@ -219,6 +219,10 @@ impl Fetch for drive_proof_verifier::types::IdentityBalanceAndRevision {
     type Request = platform_proto::GetIdentityBalanceAndRevisionRequest;
 }
 
+impl Fetch for drive_proof_verifier::types::DataContractHistory {
+    type Request = platform_proto::GetDataContractHistoryRequest;
+}
+
 impl Fetch for ExtendedEpochInfo {
     type Request = platform_proto::GetEpochsInfoRequest;
 }
