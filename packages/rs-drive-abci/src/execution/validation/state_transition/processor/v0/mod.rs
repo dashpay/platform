@@ -35,30 +35,9 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let mut state_transition_execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
-    let action = if state_transition.requires_state_to_validate_identity_and_signatures() {
-        let state_transition_action_result = state_transition.transform_into_action(
-            platform,
-            block_info,
-            ValidationMode::Validator,
-            &mut state_transition_execution_context,
-            transaction,
-        )?;
-        if !state_transition_action_result.is_valid_with_data() {
-            return Ok(
-                ConsensusValidationResult::<ExecutionEvent>::new_with_errors(
-                    state_transition_action_result.errors,
-                ),
-            );
-        }
-        Some(state_transition_action_result.into_data()?)
-    } else {
-        None
-    };
-
     // Validating signatures
     let result = state_transition.validate_identity_and_signatures(
         platform.drive,
-        action.as_ref(),
         transaction,
         &mut state_transition_execution_context,
         platform_version,
@@ -111,7 +90,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
     }
 
-    if state_transition.has_advanced_structure_validation() {
+    if state_transition.has_advanced_structure_validation_without_state() {
         // Next we have advanced structure validation, this is structure validation that does not require
         // state but isn't checked on check_tx. If advanced structure fails identity nonces or identity
         // contract nonces will be bumped
@@ -139,35 +118,38 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
     }
 
-    let action = if state_transition.requires_advance_structure_validation_from_state() {
-        let action = if let Some(action) = action {
-            action
-        } else {
-            let state_transition_action_result = state_transition.transform_into_action(
-                platform,
-                block_info,
-                ValidationMode::Validator,
-                &mut state_transition_execution_context,
-                transaction,
-            )?;
-            if !state_transition_action_result.is_valid_with_data() {
-                return state_transition_action_result.map_result(|action| {
-                    ExecutionEvent::create_from_state_transition_action(
-                        action,
-                        maybe_identity,
-                        platform.state.last_committed_block_epoch_ref(),
-                        state_transition_execution_context,
-                        platform_version,
-                    )
-                });
-            }
-            state_transition_action_result.into_data()?
-        };
+    let action = if state_transition.has_advanced_structure_validation_with_state() {
+        let state_transition_action_result = state_transition.transform_into_action(
+            platform,
+            block_info,
+            ValidationMode::Validator,
+            &mut state_transition_execution_context,
+            transaction,
+        )?;
+        if !state_transition_action_result.is_valid_with_data() {
+            return state_transition_action_result.map_result(|action| {
+                ExecutionEvent::create_from_state_transition_action(
+                    action,
+                    maybe_identity,
+                    platform.state.last_committed_block_epoch_ref(),
+                    state_transition_execution_context,
+                    platform_version,
+                )
+            });
+        }
+        let action = state_transition_action_result.into_data()?;
+
+        let identity_ref = maybe_identity.as_ref().ok_or(Error::Execution(
+            ExecutionError::CorruptedCodeExecution(
+                "The identity must be known on advanced structure validation",
+            ),
+        ))?;
 
         // Validating structure
         let result = state_transition.validate_advanced_structure_from_state(
             &platform.into(),
             &action,
+            identity_ref,
             platform_version,
         )?;
         if !result.is_valid() {
@@ -243,16 +225,10 @@ pub(crate) trait StateTransitionSignatureValidationV0 {
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
-        action: Option<&StateTransitionAction>,
         tx: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error>;
-
-    /// This means we should transform into the action before validation of the identity and signatures
-    fn requires_state_to_validate_identity_and_signatures(&self) -> bool {
-        false
-    }
 }
 
 /// A trait for validating state transitions within a blockchain.
@@ -302,7 +278,7 @@ pub(crate) trait StateTransitionAdvancedStructureValidationV0 {
 
     /// True if the state transition has advanced structure validation.
     /// This structure validation makes users pay if there is a failure
-    fn has_advanced_structure_validation(&self) -> bool;
+    fn has_advanced_structure_validation_without_state(&self) -> bool;
 }
 
 /// A trait for validating state transitions within a blockchain.
@@ -348,11 +324,12 @@ pub(crate) trait StateTransitionStructureKnownInStateValidationV0 {
         &self,
         platform: &PlatformStateRef,
         action: &StateTransitionAction,
+        identity: &PartialIdentity,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
     /// This means we should transform into the action before validation of the structure
-    fn requires_advance_structure_validation_from_state(&self) -> bool {
+    fn has_advanced_structure_validation_with_state(&self) -> bool {
         false
     }
 }
@@ -522,7 +499,7 @@ impl StateTransitionBalanceValidationV0 for StateTransition {
 }
 
 impl StateTransitionAdvancedStructureValidationV0 for StateTransition {
-    fn has_advanced_structure_validation(&self) -> bool {
+    fn has_advanced_structure_validation_without_state(&self) -> bool {
         matches!(self, StateTransition::IdentityUpdate(_))
     }
 
@@ -574,18 +551,22 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
         &self,
         platform: &PlatformStateRef,
         action: &StateTransitionAction,
+        identity: &PartialIdentity,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
-            StateTransition::DocumentsBatch(st) => {
-                st.validate_advanced_structure_from_state(platform, action, platform_version)
-            }
+            StateTransition::DocumentsBatch(st) => st.validate_advanced_structure_from_state(
+                platform,
+                action,
+                identity,
+                platform_version,
+            ),
             _ => Ok(ConsensusValidationResult::new()),
         }
     }
 
     /// This means we should transform into the action before validation of the structure
-    fn requires_advance_structure_validation_from_state(&self) -> bool {
+    fn has_advanced_structure_validation_with_state(&self) -> bool {
         matches!(self, StateTransition::DocumentsBatch(_))
     }
 }
@@ -594,7 +575,6 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
-        action: Option<&StateTransitionAction>,
         tx: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -609,7 +589,6 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                 Ok(self
                     .validate_state_transition_identity_signed(
                         drive,
-                        action,
                         false,
                         tx,
                         execution_context,
@@ -622,7 +601,6 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                 Ok(self
                     .validate_state_transition_identity_signed(
                         drive,
-                        action,
                         true,
                         tx,
                         execution_context,
@@ -697,11 +675,6 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                 }
             }
         }
-    }
-
-    /// This means we should transform into the action before validation of the identity and signatures
-    fn requires_state_to_validate_identity_and_signatures(&self) -> bool {
-        matches!(self, StateTransition::DocumentsBatch(_))
     }
 }
 
