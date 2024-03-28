@@ -476,7 +476,7 @@ describe('Platform', () => {
 
         // Creating ST that tries to spend the same output
 
-        const anotherIdentity = await client.platform.identities.register(150000);
+        const anotherIdentity = await client.platform.identities.register(200000);
 
         // Additional wait time to mitigate testnet latency
         await waitForSTPropagated();
