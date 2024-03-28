@@ -14,7 +14,7 @@ pub struct ProtocolVersionsCache {
     pub global_cache: IntMap<ProtocolVersion, u64>,
     block_cache: IntMap<ProtocolVersion, u64>,
     loaded: bool,
-    is_getter_disabled: bool,
+    is_counter_getter_disabled: bool,
 }
 
 #[cfg(feature = "full")]
@@ -56,22 +56,22 @@ impl ProtocolVersionsCache {
 
     /// Disable the getter
     /// If disabled, then `get_if_enabled` will return None
-    pub fn disable_getter(&mut self) {
-        self.is_getter_disabled = true;
+    pub fn disable_counter_getter(&mut self) {
+        self.is_counter_getter_disabled = true;
     }
 
     /// Enable the getter
     /// If disabled, then [get_if_enabled] will return None
     /// This function enable the normal behaviour of the [get] function
-    pub fn enabled_getter(&mut self) {
-        self.is_getter_disabled = false;
+    pub fn enabled_counter_getter(&mut self) {
+        self.is_counter_getter_disabled = false;
     }
 
     /// Calls the [get] function if enabled
     /// or return `None` if disabled
-    /// See [disable_getter] and [enabled_getter]
+    /// See [disable_counter_getter] and [enabled_counter_getter]
     pub fn get_if_enabled(&self, version: &ProtocolVersion) -> Option<&u64> {
-        if self.is_getter_disabled {
+        if self.is_counter_getter_disabled {
             None
         } else {
             self.get(version)
