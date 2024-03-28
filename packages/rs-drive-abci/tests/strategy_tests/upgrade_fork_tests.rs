@@ -129,7 +129,10 @@ mod tests {
                     );
                     assert_eq!(state.current_protocol_version_in_consensus(), 1);
                     assert_eq!(
-                        (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                        (
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
+                        ),
                         (Some(&17), Some(&414))
                     );
                     //most nodes were hit (63 were not)
@@ -194,8 +197,8 @@ mod tests {
                     );
                     assert_eq!(state.current_protocol_version_in_consensus(), 1);
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
-                    assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&154));
+                    assert_eq!(counter.get(&1).unwrap(), None); //no one has proposed 1 yet
+                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&154));
                 }
 
                 // we locked in
@@ -248,8 +251,8 @@ mod tests {
                         TEST_PROTOCOL_VERSION_2
                     );
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
-                    assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&123));
+                    assert_eq!(counter.get(&1).unwrap(), None); //no one has proposed 1 yet
+                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&123));
                 }
             })
             .expect("Failed to create thread with custom stack size");
@@ -368,7 +371,10 @@ mod tests {
                     assert_eq!(state.current_protocol_version_in_consensus(), 1);
                     assert_eq!(state.next_epoch_protocol_version(), 1);
                     assert_eq!(
-                        (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                        (
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
+                        ),
                         (Some(&6), Some(&44))
                     );
                     //most nodes were hit (63 were not)
@@ -428,8 +434,8 @@ mod tests {
                     );
                     assert_eq!(state.current_protocol_version_in_consensus(), 1);
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
-                    assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&1));
+                    assert_eq!(counter.get(&1).unwrap(), None); //no one has proposed 1 yet
+                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&1));
                 }
 
                 // we locked in
@@ -479,8 +485,8 @@ mod tests {
                         TEST_PROTOCOL_VERSION_2
                     );
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
-                    assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&1));
+                    assert_eq!(counter.get(&1).unwrap(), None); //no one has proposed 1 yet
+                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&1));
                 }
             })
             .expect("Failed to create thread with custom stack size");
@@ -594,7 +600,10 @@ mod tests {
                     assert_eq!(state.next_epoch_protocol_version(), 1);
                     let counter = &platform.drive.cache.protocol_versions_counter.read();
                     assert_eq!(
-                        (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                        (
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
+                        ),
                         (Some(&35), Some(&64))
                     );
                 }
@@ -656,7 +665,10 @@ mod tests {
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     // the counter is for the current voting during that window
                     assert_eq!(
-                        (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                        (
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
+                        ),
                         (Some(&8), Some(&79))
                     );
                 }
@@ -876,7 +888,10 @@ mod tests {
                     assert_eq!(state.current_protocol_version_in_consensus(), 1);
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     assert_eq!(
-                        (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                        (
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
+                        ),
                         (Some(&18), Some(&112))
                     );
                     //not all nodes have upgraded
@@ -957,7 +972,10 @@ mod tests {
                 {
                     let counter = &platform.drive.cache.protocol_versions_counter.read();
                     assert_eq!(
-                        (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                        (
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
+                        ),
                         (Some(&172), Some(&24))
                     );
                     //a lot nodes reverted to previous version, however this won't impact things
@@ -1009,7 +1027,10 @@ mod tests {
                 {
                     let counter = &platform.drive.cache.protocol_versions_counter.read();
                     assert_eq!(
-                        (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                        (
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
+                        ),
                         (Some(&24), Some(&2))
                     );
                     assert_eq!(
@@ -1135,9 +1156,9 @@ mod tests {
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     assert_eq!(
                         (
-                            counter.get(&1),
-                            counter.get(&TEST_PROTOCOL_VERSION_2),
-                            counter.get(&TEST_PROTOCOL_VERSION_3)
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_3).unwrap()
                         ),
                         (Some(&2), Some(&68), Some(&3))
                     ); //some nodes reverted to previous version
@@ -1223,9 +1244,9 @@ mod tests {
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_3);
                     assert_eq!(
                         (
-                            counter.get(&1),
-                            counter.get(&TEST_PROTOCOL_VERSION_2),
-                            counter.get(&TEST_PROTOCOL_VERSION_3)
+                            counter.get(&1).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(),
+                            counter.get(&TEST_PROTOCOL_VERSION_3).unwrap()
                         ),
                         (None, Some(&3), Some(&143))
                     );

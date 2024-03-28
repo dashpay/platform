@@ -146,9 +146,6 @@ where
             .protocol_version;
         let current_block_protocol_version = platform_version.protocol_version;
 
-        block_platform_state
-            .set_current_protocol_version_in_consensus(current_block_protocol_version);
-
         // Protocol version can be changed only on epoch change
         if epoch_info.is_epoch_change_but_not_genesis() {
             tracing::info!(
@@ -173,6 +170,9 @@ where
                     previous_block_protocol_version,
                     current_block_protocol_version,
                 );
+
+                block_platform_state
+                    .set_current_protocol_version_in_consensus(current_block_protocol_version);
             };
 
             // Update block platform state with current and next epoch protocol versions
@@ -185,10 +185,9 @@ where
                 platform_version,
             )?;
         } else if current_block_protocol_version != previous_block_protocol_version {
-            // It might happen only in case of error in the code.
-            return Err(Error::Execution(
-                ExecutionError::UnexpectedProtocolVersionUpgrade,
-            ));
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "unexpected protocol upgrade: it should happen only on epoch change",
+            )));
         }
 
         // Warn user to update software if the next protocol version is not supported
@@ -215,7 +214,7 @@ where
             tracing::warn!(
                 next_epoch_protocol_version,
                 latest_supported_protocol_version,
-                "The node doesn't support new protocol version {} that will be activated starting from {}. Please update your software, otherwise the node won't be able to participate in the network.",
+                "The node doesn't support new protocol version {} that will be activated starting from {}. Please update your software, otherwise the node won't be able to participate in the network. https://docs.dash.org/platform-protocol-upgrade",
                 next_epoch_protocol_version,
                 next_epoch_activation_datetime.to_rfc2822(),
             );

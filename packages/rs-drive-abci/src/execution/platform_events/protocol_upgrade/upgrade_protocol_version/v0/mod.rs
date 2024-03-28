@@ -64,7 +64,7 @@ impl<C> Platform<C> {
         // of the block processing in [clear_drive_block_cache].
 
         let mut protocol_versions_counter = self.drive.cache.protocol_versions_counter.write();
-        protocol_versions_counter.disable_counter_getter();
+        protocol_versions_counter.block_global_cache();
         drop(protocol_versions_counter);
 
         Ok(())
