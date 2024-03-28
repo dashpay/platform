@@ -134,11 +134,11 @@ describe('Platform', () => {
           let identity8PublicKeyHash;
 
           before(async () => {
-            identityAtKey5 = await dashClient.platform.identities.register(150000);
+            identityAtKey5 = await dashClient.platform.identities.register(200000);
 
-            identityAtKey6 = await dashClient.platform.identities.register(150000);
+            identityAtKey6 = await dashClient.platform.identities.register(200000);
 
-            identityAtKey8 = await dashClient.platform.identities.register(150000);
+            identityAtKey8 = await dashClient.platform.identities.register(200000);
 
             // await waitForBalanceToChange(walletAccount);
 

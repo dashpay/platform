@@ -24,14 +24,8 @@ impl AssetLockProofVerifyIsNotSpent for ChainAssetLockProof {
     ) -> Result<ConsensusValidationResult<AssetLockValue>, Error> {
         // Make sure that asset lock isn't spent yet
 
-        let outpoint_bytes = self.out_point.try_into().map_err(|_e| {
-            Error::Execution(ExecutionError::Conversion(String::from(
-                "can't convert output to bytes",
-            )))
-        })?;
-
         let stored_asset_lock_info = platform_ref.drive.fetch_asset_lock_outpoint_info(
-            &Bytes36::new(outpoint_bytes),
+            &Bytes36::new(self.out_point.into()),
             transaction,
             &platform_version.drive,
         )?;

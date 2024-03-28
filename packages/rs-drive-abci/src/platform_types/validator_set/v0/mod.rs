@@ -59,8 +59,8 @@ impl ValidatorSetV0 {
             return Err(Error::Execution(ExecutionError::CorruptedCachedState(
                 format!(
                     "updating validator set doesn't match quorum hash ours: {} theirs: {}",
-                    self.quorum_hash.to_string(),
-                    rhs.quorum_hash.to_string()
+                    self.quorum_hash,
+                    rhs.quorum_hash
                 ),
             )));
         }
