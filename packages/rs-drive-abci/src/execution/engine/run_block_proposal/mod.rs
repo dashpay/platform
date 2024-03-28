@@ -48,13 +48,13 @@ where
         transaction: &Transaction,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
-        // TODO: We should do it above and validate version from request
-        //  prepare proposal should set this version
         // Epoch information is always calculated with the last committed platform version
         // even if we are switching to a new version in this block.
         let last_committed_platform_version = platform_state.current_platform_version()?;
 
-        let epoch_info = self.gather_epoch_info(
+        // This EpochInfo is based on the last committed platform version
+        // it must be replaced with new version
+        let mut epoch_info = self.gather_epoch_info(
             &block_proposal,
             transaction,
             platform_state,
@@ -65,14 +65,14 @@ where
         let block_platform_version = if epoch_info.is_epoch_change_but_not_genesis() {
             // Switch to next proposed platform version if we are on the first block of the new epoch
             // This version must be set to the state as current one during block processing
-            let protocol_version = platform_state.next_epoch_protocol_version();
+            let next_protocol_version = platform_state.next_epoch_protocol_version();
 
-            // If this node is not supported a new protocol version we exit with panic
-            PlatformVersion::get(protocol_version).map_err(|error| {
-                format!(
-                    r#"Failed to upgrade the network protocol version {protocol_version}. Please update your software to the latest version.
+            // We should panic if this node is not supported a new protocol version
+            let Ok(next_platform_version) = PlatformVersion::get(next_protocol_version) else {
+                panic!(
+                    r#"Failed to upgrade the network protocol version {next_protocol_version}. Please update your software to the latest version.
 
-{}% of evo masternodes voted to upgrade for the network protocol version from {} to {protocol_version}.
+{}% of evo masternodes voted to upgrade for the network protocol version from {} to {next_protocol_version}.
 
 Your software version: {}, latest supported protocol version: {}."#,
                     self.config
@@ -82,7 +82,21 @@ Your software version: {}, latest supported protocol version: {}."#,
                     env!("CARGO_PKG_VERSION"),
                     PlatformVersion::latest().protocol_version
                 );
-            }).unwrap()
+            };
+
+            // Replace EpochInfo created to the new protocol version if needed
+            if platform_state.current_protocol_version_in_consensus() != next_protocol_version {
+                // TODO: We are calculating epoch info once again which is not great
+                //  but it happens only once on protocol version upgrade (once a month?)
+                epoch_info = self.gather_epoch_info(
+                    &block_proposal,
+                    transaction,
+                    platform_state,
+                    next_platform_version,
+                )?;
+            }
+
+            next_platform_version
         } else {
             // Stay on the last committed platform version
             last_committed_platform_version
