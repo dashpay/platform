@@ -66,7 +66,23 @@ where
             // Switch to next proposed platform version if we are on the first block of the new epoch
             // This version must be set to the state as current one during block processing
             let protocol_version = platform_state.next_epoch_protocol_version();
-            PlatformVersion::get(protocol_version)?
+
+            // If this node is not supported a new protocol version we exit with panic
+            PlatformVersion::get(protocol_version).map_err(|error| {
+                format!(
+                    r#"Failed to upgrade the network protocol version {protocol_version}. Please update your software to the latest version.
+
+{}% of evo masternodes voted to upgrade for the network protocol version from {} to {protocol_version}.
+
+Your software version: {}, latest supported protocol version: {}."#,
+                    self.config
+                        .execution
+                        .protocol_version_upgrade_percentage_needed,
+                    last_committed_platform_version.protocol_version,
+                    env!("CARGO_PKG_VERSION"),
+                    PlatformVersion::latest().protocol_version
+                );
+            }).unwrap()
         } else {
             // Stay on the last committed platform version
             last_committed_platform_version

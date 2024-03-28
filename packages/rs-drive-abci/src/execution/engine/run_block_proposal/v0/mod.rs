@@ -1,3 +1,4 @@
+use chrono::{TimeZone, Utc};
 use dpp::block::epoch::Epoch;
 
 use dpp::validation::ValidationResult;
@@ -111,6 +112,22 @@ where
             last_block_time_ms,
         );
 
+        // destructure the block proposal
+        let block_proposal::v0::BlockProposal {
+            core_chain_locked_height,
+            core_chain_lock_update,
+            proposed_app_version,
+            proposer_pro_tx_hash,
+            validator_set_quorum_hash,
+            raw_state_transitions,
+            ..
+        } = block_proposal;
+
+        let block_info = block_state_info.to_block_info(
+            Epoch::new(epoch_info.current_epoch_index())
+                .expect("current epoch index should be in range"),
+        );
+
         // First let's check that this is the follower to a previous block
         if !block_state_info.next_block_to(last_block_height, last_block_core_height)? {
             // we are on the wrong height or round
@@ -174,21 +191,35 @@ where
             ));
         }
 
-        // destructure the block proposal
-        let block_proposal::v0::BlockProposal {
-            core_chain_locked_height,
-            core_chain_lock_update,
-            proposed_app_version,
-            proposer_pro_tx_hash,
-            validator_set_quorum_hash,
-            raw_state_transitions,
-            ..
-        } = block_proposal;
+        // Warn user to update software if the next protocol version is not supported
+        let latest_supported_protocol_version = PlatformVersion::latest().protocol_version;
+        let next_epoch_protocol_version = block_platform_state.next_epoch_protocol_version();
+        if block_platform_state.next_epoch_protocol_version() > latest_supported_protocol_version {
+            let genesis_time_ms = self.get_genesis_time(
+                block_info.height,
+                block_info.time_ms,
+                transaction,
+                platform_version,
+            )?;
 
-        let block_info = block_state_info.to_block_info(
-            Epoch::new(epoch_info.current_epoch_index())
-                .expect("current epoch index should be in range"),
-        );
+            let next_epoch_activation_datetime_ms = genesis_time_ms
+                + (epoch_info.current_epoch_index() as u64
+                    * self.config.execution.epoch_time_length_s
+                    * 1000);
+
+            let next_epoch_activation_datetime = Utc
+                .timestamp_millis_opt(next_epoch_activation_datetime_ms as i64)
+                .single()
+                .expect("next_epoch_activation_date must always be in the range");
+
+            tracing::warn!(
+                next_epoch_protocol_version,
+                latest_supported_protocol_version,
+                "The node doesn't support new protocol version {} that will be activated starting from {}. Please update your software, otherwise the node won't be able to participate in the network.",
+                next_epoch_protocol_version,
+                next_epoch_activation_datetime.to_rfc2822(),
+            );
+        }
 
         // If there is a core chain lock update, we should start by verifying it
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
