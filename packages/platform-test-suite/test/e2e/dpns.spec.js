@@ -59,7 +59,7 @@ describe('DPNS', () => {
 
     before(async () => {
       ownerClient = await createClientWithFundedWallet(
-        10000,
+        200000,
         process.env.DPNS_OWNER_PRIVATE_KEY,
       );
 
