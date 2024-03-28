@@ -41,7 +41,7 @@ use dpp::state_transition::data_contract_update_transition::methods::DataContrac
 use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
-use rand::{thread_rng, Rng};
+use rand::Rng;
 use tracing::error;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use bincode::{Decode, Encode};
@@ -998,7 +998,7 @@ impl Strategy {
                                     }
 
                                     // Select a random identity from the current_identities
-                                    let random_index = thread_rng().gen_range(0..identities_count);
+                                    let random_index = rng.gen_range(0..identities_count);
                                     let random_identity = &mut current_identities[random_index];
 
                                     // Get keys already added
@@ -1078,7 +1078,7 @@ impl Strategy {
                             }
 
                             // Select a random identity from the current_identities for the sender
-                            let random_index_sender = thread_rng().gen_range(0..identities_count);
+                            let random_index_sender = rng.gen_range(0..identities_count);
 
                             // Clone current_identities to a Vec for manipulation
                             let mut unused_identities: Vec<_> =
@@ -1087,8 +1087,7 @@ impl Strategy {
                             let unused_identities_count = unused_identities.len();
 
                             // Select a random identity from the remaining ones for the recipient
-                            let random_index_recipient =
-                                thread_rng().gen_range(0..unused_identities_count);
+                            let random_index_recipient = rng.gen_range(0..unused_identities_count);
                             let recipient = &unused_identities[random_index_recipient];
 
                             // Use the sender index on the original slice
