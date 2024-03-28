@@ -112,6 +112,18 @@ where
             last_block_time_ms,
         );
 
+        // First let's check that this is the follower to a previous block
+        if !block_state_info.next_block_to(last_block_height, last_block_core_height)? {
+            // we are on the wrong height or round
+            return Ok(ValidationResult::new_with_error(AbciError::WrongBlockReceived(format!(
+                "received a block proposal for height: {} core height: {}, current height: {} core height: {}",
+                block_state_info.height, block_state_info.core_chain_locked_height, last_block_height, last_block_core_height
+            )).into()));
+        }
+
+        // Cleanup block cache before we execute a new proposal
+        self.clear_drive_block_cache(platform_version)?;
+
         // destructure the block proposal
         let block_proposal::v0::BlockProposal {
             core_chain_locked_height,
@@ -127,18 +139,6 @@ where
             Epoch::new(epoch_info.current_epoch_index())
                 .expect("current epoch index should be in range"),
         );
-
-        // First let's check that this is the follower to a previous block
-        if !block_state_info.next_block_to(last_block_height, last_block_core_height)? {
-            // we are on the wrong height or round
-            return Ok(ValidationResult::new_with_error(AbciError::WrongBlockReceived(format!(
-                "received a block proposal for height: {} core height: {}, current height: {} core height: {}",
-                block_state_info.height, block_state_info.core_chain_locked_height, last_block_height, last_block_core_height
-            )).into()));
-        }
-
-        // Cleanup block cache before we execute a new proposal
-        self.clear_drive_block_cache(platform_version)?;
 
         // Update protocol version for this block
         let previous_block_protocol_version = last_committed_platform_state
