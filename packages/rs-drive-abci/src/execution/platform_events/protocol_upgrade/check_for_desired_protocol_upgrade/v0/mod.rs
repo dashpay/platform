@@ -4,10 +4,6 @@ use crate::platform_types::platform::Platform;
 
 use drive::dpp::util::deserializer::ProtocolVersion;
 
-/// The percentage needed of HPMNs to upgrade the protocol
-/// It always needs to be higher than the rounded amount after applying the percentage
-const PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED: u64 = 75;
-
 impl<C> Platform<C> {
     /// checks for a network upgrade and resets activation window
     /// this should only be called on epoch change
@@ -17,7 +13,11 @@ impl<C> Platform<C> {
     ) -> Result<Option<ProtocolVersion>, Error> {
         let required_upgraded_hpns = 1
             + (total_hpmns as u64)
-                .checked_mul(PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED)
+                .checked_mul(
+                    self.config
+                        .execution
+                        .protocol_version_upgrade_percentage_needed,
+                )
                 .and_then(|product| product.checked_div(100))
                 .ok_or(Error::Execution(ExecutionError::Overflow(
                     "overflow for required block count",

@@ -173,11 +173,8 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             consensus_param_updates: _,
             core_chain_lock_update,
             validator_set_update,
-            app_version, // TODO: Not optional
+            app_version,
         } = response_prepare_proposal;
-
-        let current_protocol_version =
-            app_version.expect("expected app version") as ProtocolVersion;
 
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
             core_height = core_chain_lock_update.core_block_height;
@@ -235,7 +232,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
 
         let state_id = StateId {
             app_hash: app_hash.clone(),
-            app_version: current_protocol_version as u64,
+            app_version,
             core_chain_locked_height: core_height,
             height,
             time: time.to_milis(),
@@ -275,7 +272,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             proposed_app_version: proposed_version as u64,
             version: Some(Consensus {
                 block: 0,
-                app: current_protocol_version as u64,
+                app: app_version,
             }),
             quorum_hash: current_quorum.quorum_hash.to_byte_array().to_vec(),
         };
@@ -523,7 +520,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             header: Some(Header {
                 version: Some(Consensus {
                     block: 0, //todo
-                    app: current_protocol_version as u64,
+                    app: app_version,
                 }),
                 chain_id: CHAIN_ID.to_string(),
                 height: height as i64,
@@ -594,7 +591,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
 
         Ok(MimicExecuteBlockOutcome {
             state_transaction_results,
-            app_version: current_protocol_version as u64,
+            app_version,
             withdrawal_transactions,
             validator_set_update,
             next_validator_set_hash,

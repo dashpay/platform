@@ -1,8 +1,8 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
 use crate::rpc::core::CoreRPCLike;
 use std::sync::atomic::Ordering;
 use tenderdash_abci::proto::abci as proto;
@@ -71,8 +71,5 @@ where
         .committed_block_height_guard
         .store(block_height, Ordering::Relaxed);
 
-    Ok(proto::ResponseFinalizeBlock {
-        events: vec![],
-        retain_height: 0,
-    })
+    Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
 }

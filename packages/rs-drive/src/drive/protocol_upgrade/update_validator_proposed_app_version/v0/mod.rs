@@ -90,12 +90,13 @@ impl Drive {
                     )))
                     .map(|(value, _)| value)?;
                 //we should remove 1 from the previous version
-                let previous_count = version_counter.get(&previous_version).ok_or(Error::Drive(
-                    DriveError::CorruptedCacheState(
-                        "trying to lower the count of a version from cache that is not found"
-                            .to_string(),
-                    ),
-                ))?;
+                let previous_count =
+                    version_counter
+                        .get_if_enabled(&previous_version)
+                        .ok_or(Error::Drive(DriveError::CorruptedCacheState(
+                            "trying to lower the count of a version from cache that is not found"
+                                .to_string(),
+                        )))?;
                 if previous_count == &0 {
                     return Err(Error::Drive(DriveError::CorruptedCacheState(
                         "trying to lower the count of a version from cache that is already at 0"
@@ -115,7 +116,10 @@ impl Drive {
                 )?;
             }
 
-            let mut version_count = version_counter.get(&version).cloned().unwrap_or_default();
+            let mut version_count = version_counter
+                .get_if_enabled(&version)
+                .cloned()
+                .unwrap_or_default();
 
             version_count += 1;
 

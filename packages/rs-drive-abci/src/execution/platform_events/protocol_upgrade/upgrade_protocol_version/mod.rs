@@ -2,7 +2,6 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::version::PlatformVersion;
@@ -10,6 +9,8 @@ use drive::grovedb::Transaction;
 
 impl<C> Platform<C> {
     /// Sets current protocol version and next epoch protocol version to block platform state
+    ///
+    /// This function should be called on very top of bock production before we add new proposed version for the next epoch
     ///
     /// It takes five parameters:
     /// * `epoch_info`: Information about the current epoch.
@@ -23,7 +24,6 @@ impl<C> Platform<C> {
     /// This function will return an error if the previous block protocol version does not match the current block protocol version not on epoch change
     pub fn upgrade_protocol_version(
         &self,
-        epoch_info: &EpochInfo,
         last_committed_platform_state: &PlatformState,
         block_platform_state: &mut PlatformState,
         transaction: &Transaction,
@@ -36,7 +36,6 @@ impl<C> Platform<C> {
             .upgrade_protocol_version
         {
             0 => self.upgrade_protocol_version_v0(
-                epoch_info,
                 last_committed_platform_state,
                 block_platform_state,
                 transaction,
