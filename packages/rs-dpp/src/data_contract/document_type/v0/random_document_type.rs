@@ -345,7 +345,7 @@ impl DocumentTypeV0 {
                         },
                         ArrayItemType::Identifier => json!({"type": "array"}),
                         ArrayItemType::Boolean => json!({"type": "bool"}),
-                        ArrayItemType::Date => json!({"type": "date"}), 
+                        ArrayItemType::Date => json!({"type": "date"}),
                     };
 
                     json!({
@@ -402,7 +402,6 @@ impl DocumentTypeV0 {
 
         // Combine everything into the final schema
         let schema = json!({
-            "title": name,
             "type": "object",
             "properties": properties_json_schema,
             "required": required_fields.iter().cloned().collect::<Vec<_>>(),

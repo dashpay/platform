@@ -64,6 +64,7 @@ use crate::errors::consensus::basic::data_contract::{
     DataContractImmutablePropertiesUpdateErrorWasm,
     DataContractInvalidIndexDefinitionUpdateErrorWasm, DataContractUniqueIndicesChangedErrorWasm,
     IncompatibleDataContractSchemaErrorWasm, InvalidDataContractIdErrorWasm,
+    InvalidDocumentTypeNameErrorWasm,
 };
 use crate::errors::consensus::basic::document::{
     DuplicateDocumentTransitionsWithIdsErrorWasm, DuplicateDocumentTransitionsWithIndicesErrorWasm,
@@ -320,6 +321,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::NonceOutOfBoundsError(err) => {
             IdentityContractNonceOutOfBoundsErrorWasm::from(err).into()
+        }
+        BasicError::InvalidDocumentTypeNameError(err) => {
+            InvalidDocumentTypeNameErrorWasm::from(err).into()
         }
         ProtocolVersionParsingError(e) => ProtocolVersionParsingErrorWasm::from(e).into(),
         SerializedObjectParsingError(e) => SerializedObjectParsingErrorWasm::from(e).into(),
