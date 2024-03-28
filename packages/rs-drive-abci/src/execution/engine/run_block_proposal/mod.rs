@@ -62,7 +62,7 @@ where
         )?;
 
         // Determine a protocol version for this block
-        let block_platform_version = if epoch_info.is_epoch_change_but_not_genesis() {
+        let platform_version = if epoch_info.is_epoch_change_but_not_genesis() {
             // Switch to next proposed platform version if we are on the first block of the new epoch
             // This version must be set to the state as current one during block processing
             let next_protocol_version = platform_state.next_epoch_protocol_version();
@@ -102,7 +102,7 @@ Your software version: {}, latest supported protocol version: {}."#,
             last_committed_platform_version
         };
 
-        match block_platform_version
+        match platform_version
             .drive_abci
             .methods
             .engine
@@ -114,7 +114,7 @@ Your software version: {}, latest supported protocol version: {}."#,
                 epoch_info,
                 transaction,
                 platform_state,
-                block_platform_version,
+                platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "run_block_proposal".to_string(),
