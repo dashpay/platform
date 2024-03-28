@@ -1,0 +1,3715 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../getAddress/">
+      
+      
+        <link rel="next" href="../getPrivateKeys/">
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.4.2, mkdocs-material-9.0.6">
+    
+    
+      
+        <title>getConfirmedBalance - Dash Platform</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.558e4712.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.2505c338.min.css">
+      
+      
+
+    
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="" data-md-color-accent="">
+  
+    
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Dash Platform" class="md-header__button md-logo" aria-label="Dash Platform" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54Z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Dash Platform
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              getConfirmedBalance
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Dash Platform" class="md-nav__button md-logo" aria-label="Dash Platform" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54Z"/></svg>
+
+    </a>
+    Dash Platform
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        Home
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DOCKER/" class="md-nav__link">
+        Dash Platform Docker Development tips
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DRIVE-ABCI/" class="md-nav__link">
+        Drive-ABCI server
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_4" type="checkbox" id="__nav_4" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_4" tabindex="0" aria-expanded="false">
+          DAPI Client
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="DAPI Client" data-md-level="1">
+        <label class="md-nav__title" for="__nav_4">
+          <span class="md-nav__icon md-icon"></span>
+          DAPI Client
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/" class="md-nav__link">
+        Index
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/Overview/" class="md-nav__link">
+        Overview
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_4_3" type="checkbox" id="__nav_4_3" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_4_3" tabindex="0" aria-expanded="false">
+          Getting started
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Getting started" data-md-level="2">
+        <label class="md-nav__title" for="__nav_4_3">
+          <span class="md-nav__icon md-icon"></span>
+          Getting started
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/getting-started/quickstart/" class="md-nav__link">
+        Quick start
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_4_4" type="checkbox" id="__nav_4_4" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_4_4" tabindex="0" aria-expanded="false">
+          Usage
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Usage" data-md-level="2">
+        <label class="md-nav__title" for="__nav_4_4">
+          <span class="md-nav__icon md-icon"></span>
+          Usage
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_4_4_1" type="checkbox" id="__nav_4_4_1" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_4_4_1" tabindex="0" aria-expanded="false">
+          Application
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Application" data-md-level="3">
+        <label class="md-nav__title" for="__nav_4_4_1">
+          <span class="md-nav__icon md-icon"></span>
+          Application
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/application/DAPIClient/" class="md-nav__link">
+        DAPIClient
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/application/getDataContract/" class="md-nav__link">
+        getDataContract
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/application/getDocuments/" class="md-nav__link">
+        getDocuments
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/application/getIdentity/" class="md-nav__link">
+        getIdentity
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/application/getIdentityByFirstPublicKey/" class="md-nav__link">
+        getIdentityByFirstPublicKey
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/application/getIdentityIdByFirstPublicKey/" class="md-nav__link">
+        getIdentityIdByFirstPublicKey
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_4_4_1_7" type="checkbox" id="__nav_4_4_1_7" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_4_4_1_7" tabindex="0" aria-expanded="false">
+          Core
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Core" data-md-level="4">
+        <label class="md-nav__title" for="__nav_4_4_1_7">
+          <span class="md-nav__icon md-icon"></span>
+          Core
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/application/core/broadcastTransaction/" class="md-nav__link">
+        broadcastTransaction
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/application/core/generateToAddress/" class="md-nav__link">
+        generateToAddress
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/application/core/getBestBlockHash/" class="md-nav__link">
+        getBestBlockHash
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/application/core/getBlockByHash/" class="md-nav__link">
+        getBlockByHash
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/application/core/getBlockByHeight/" class="md-nav__link">
+        getBlockByHeight
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/application/core/getBlockHash/" class="md-nav__link">
+        getBlockHash
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/application/core/getMnListDiff/" class="md-nav__link">
+        getMnListDiff
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/application/core/getStatus/" class="md-nav__link">
+        getStatus
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/application/core/getTransaction/" class="md-nav__link">
+        getTransaction
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_4_4_1_8" type="checkbox" id="__nav_4_4_1_8" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_4_4_1_8" tabindex="0" aria-expanded="false">
+          Platform
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Platform" data-md-level="4">
+        <label class="md-nav__title" for="__nav_4_4_1_8">
+          <span class="md-nav__icon md-icon"></span>
+          Platform
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/application/platform/broadcastStateTransition/" class="md-nav__link">
+        broadcastStateTransition
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_4_4_2" type="checkbox" id="__nav_4_4_2" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_4_4_2" tabindex="0" aria-expanded="false">
+          Utils
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Utils" data-md-level="3">
+        <label class="md-nav__title" for="__nav_4_4_2">
+          <span class="md-nav__icon md-icon"></span>
+          Utils
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../DAPI-Client/usage/utils/subscribeToTransactionsWithProofs/" class="md-nav__link">
+        subscribeToTransactionsWithProofs
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_5" type="checkbox" id="__nav_5" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5" tabindex="0" aria-expanded="false">
+          SDK
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="SDK" data-md-level="1">
+        <label class="md-nav__title" for="__nav_5">
+          <span class="md-nav__icon md-icon"></span>
+          SDK
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/" class="md-nav__link">
+        Dash SDK
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/Overview/" class="md-nav__link">
+        Overview
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_5_3" type="checkbox" id="__nav_5_3" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3" tabindex="0" aria-expanded="false">
+          Examples
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Examples" data-md-level="2">
+        <label class="md-nav__title" for="__nav_5_3">
+          <span class="md-nav__icon md-icon"></span>
+          Examples
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/examples/fetch-an-identity-from-its-name/" class="md-nav__link">
+        Fetch an identity from its name
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/examples/generate-a-new-mnemonic/" class="md-nav__link">
+        Generate a new mnemonic
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/examples/pay-to-another-address/" class="md-nav__link">
+        Pay to another address
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/examples/receive-money-and-check-balance/" class="md-nav__link">
+        Receive money and check balance
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/examples/sign-and-verify-messages/" class="md-nav__link">
+        Sign and verify messages
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/examples/use-different-account/" class="md-nav__link">
+        Use different account
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_5_4" type="checkbox" id="__nav_5_4" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_4" tabindex="0" aria-expanded="false">
+          Getting started
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Getting started" data-md-level="2">
+        <label class="md-nav__title" for="__nav_5_4">
+          <span class="md-nav__icon md-icon"></span>
+          Getting started
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/getting-started/about-schemas/" class="md-nav__link">
+        About schemas
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/getting-started/core-concepts/" class="md-nav__link">
+        Core concepts
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/getting-started/dash-platform-applications/" class="md-nav__link">
+        Dash platform applications
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/getting-started/multiple-apps/" class="md-nav__link">
+        Working with multiple apps
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/getting-started/quickstart/" class="md-nav__link">
+        Quick start
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/getting-started/with-typescript/" class="md-nav__link">
+        With typescript
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_5_5" type="checkbox" id="__nav_5_5" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_5" tabindex="0" aria-expanded="false">
+          Platform
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Platform" data-md-level="2">
+        <label class="md-nav__title" for="__nav_5_5">
+          <span class="md-nav__icon md-icon"></span>
+          Platform
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/about-platform/" class="md-nav__link">
+        About platform
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_5_5_2" type="checkbox" id="__nav_5_5_2" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_5_2" tabindex="0" aria-expanded="false">
+          Contracts
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Contracts" data-md-level="3">
+        <label class="md-nav__title" for="__nav_5_5_2">
+          <span class="md-nav__icon md-icon"></span>
+          Contracts
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/contracts/about-contracts/" class="md-nav__link">
+        About contracts
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/contracts/create/" class="md-nav__link">
+        Create
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/contracts/get/" class="md-nav__link">
+        Get
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/contracts/publish/" class="md-nav__link">
+        Publish
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/contracts/update/" class="md-nav__link">
+        Update
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_5_5_3" type="checkbox" id="__nav_5_5_3" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_5_3" tabindex="0" aria-expanded="false">
+          Documents
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Documents" data-md-level="3">
+        <label class="md-nav__title" for="__nav_5_5_3">
+          <span class="md-nav__icon md-icon"></span>
+          Documents
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/documents/about-documents/" class="md-nav__link">
+        About documents
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/documents/broadcast/" class="md-nav__link">
+        Broadcast
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/documents/create/" class="md-nav__link">
+        Create
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/documents/get/" class="md-nav__link">
+        Get
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_5_5_4" type="checkbox" id="__nav_5_5_4" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_5_4" tabindex="0" aria-expanded="false">
+          Identities
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Identities" data-md-level="3">
+        <label class="md-nav__title" for="__nav_5_5_4">
+          <span class="md-nav__icon md-icon"></span>
+          Identities
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/identities/about-identity/" class="md-nav__link">
+        About identity
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/identities/get/" class="md-nav__link">
+        Get
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/identities/register/" class="md-nav__link">
+        Register
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/identities/topUp/" class="md-nav__link">
+        topUp
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_5_5_5" type="checkbox" id="__nav_5_5_5" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_5_5" tabindex="0" aria-expanded="false">
+          Names
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Names" data-md-level="3">
+        <label class="md-nav__title" for="__nav_5_5_5">
+          <span class="md-nav__icon md-icon"></span>
+          Names
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/names/about-dpns/" class="md-nav__link">
+        About dpns
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/names/register/" class="md-nav__link">
+        Register
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/names/resolve/" class="md-nav__link">
+        Resolve
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/names/resolveByRecord/" class="md-nav__link">
+        resolveByRecord
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/platform/names/search/" class="md-nav__link">
+        Search
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_5_6" type="checkbox" id="__nav_5_6" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_6" tabindex="0" aria-expanded="false">
+          Usage
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Usage" data-md-level="2">
+        <label class="md-nav__title" for="__nav_5_6">
+          <span class="md-nav__icon md-icon"></span>
+          Usage
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/usage/dapi/" class="md-nav__link">
+        Dapi
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/usage/dashcorelib-primitives/" class="md-nav__link">
+        Dashcore Lib primitives
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_5_7" type="checkbox" id="__nav_5_7" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_7" tabindex="0" aria-expanded="false">
+          Wallet
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Wallet" data-md-level="2">
+        <label class="md-nav__title" for="__nav_5_7">
+          <span class="md-nav__icon md-icon"></span>
+          Wallet
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/wallet/about-wallet-lib/" class="md-nav__link">
+        About wallet lib
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/wallet/accounts/" class="md-nav__link">
+        Accounts
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../SDK/wallet/signing-encrypt/" class="md-nav__link">
+        Signing encrypt
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+    
+  
+  
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_6" type="checkbox" id="__nav_6" checked>
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6" tabindex="0" aria-expanded="true">
+          Wallet library
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Wallet library" data-md-level="1">
+        <label class="md-nav__title" for="__nav_6">
+          <span class="md-nav__icon md-icon"></span>
+          Wallet library
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../" class="md-nav__link">
+        Index
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Overview/" class="md-nav__link">
+        Overview
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+    
+  
+  
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_6_3" type="checkbox" id="__nav_6_3" checked>
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6_3" tabindex="0" aria-expanded="true">
+          Account
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Account" data-md-level="2">
+        <label class="md-nav__title" for="__nav_6_3">
+          <span class="md-nav__icon md-icon"></span>
+          Account
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Account/" class="md-nav__link">
+        Account
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../broadcastTransaction/" class="md-nav__link">
+        broadcastTransaction
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../connect/" class="md-nav__link">
+        Connect
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../createTransaction/" class="md-nav__link">
+        createTransaction
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../decode/" class="md-nav__link">
+        Decode
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../decrypt/" class="md-nav__link">
+        Decrypt
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../disconnect/" class="md-nav__link">
+        Disconnect
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../encode/" class="md-nav__link">
+        Encode
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../encrypt/" class="md-nav__link">
+        Encrypt
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fetchAddressInfo/" class="md-nav__link">
+        fetchAddressInfo
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fetchStatus/" class="md-nav__link">
+        fetchStatus
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fetchTransactionInfo/" class="md-nav__link">
+        fetchTransactionInfo
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../forceRefreshAccount/" class="md-nav__link">
+        forceRefreshAccount
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../generateAddress/" class="md-nav__link">
+        generateAddress
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getAddress/" class="md-nav__link">
+        getAddress
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+    
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
+      
+      
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        getConfirmedBalance
+      </a>
+      
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getPrivateKeys/" class="md-nav__link">
+        getPrivateKeys
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getTotalBalance/" class="md-nav__link">
+        getTotalBalance
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getTransaction/" class="md-nav__link">
+        getTransaction
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getTransactionHistory/" class="md-nav__link">
+        getTransactionHistory
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getTransactions/" class="md-nav__link">
+        getTransactions
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getUTXOS/" class="md-nav__link">
+        getUTXOS
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getUnconfirmedBalance/" class="md-nav__link">
+        getUnconfirmedBalance
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sign/" class="md-nav__link">
+        Sign
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_6_4" type="checkbox" id="__nav_6_4" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6_4" tabindex="0" aria-expanded="false">
+          Develop
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Develop" data-md-level="2">
+        <label class="md-nav__title" for="__nav_6_4">
+          <span class="md-nav__icon md-icon"></span>
+          Develop
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../develop/logging/" class="md-nav__link">
+        Logging
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../develop/persistence/" class="md-nav__link">
+        Persistence
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_6_5" type="checkbox" id="__nav_6_5" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6_5" tabindex="0" aria-expanded="false">
+          Events
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Events" data-md-level="2">
+        <label class="md-nav__title" for="__nav_6_5">
+          <span class="md-nav__icon md-icon"></span>
+          Events
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../events/blockheight_changed/" class="md-nav__link">
+        Blockheight changed
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../events/confirmed_balance_changed/" class="md-nav__link">
+        Confirmed balance changed
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../events/fetched_confirmed_transaction/" class="md-nav__link">
+        Fetched confirmed transaction
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../events/fetched_unconfirmed_transaction/" class="md-nav__link">
+        Fetched unconfirmed transaction
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../events/ready/" class="md-nav__link">
+        Ready
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../events/unconfirmed_balance_changed/" class="md-nav__link">
+        Unconfirmed balance changed
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_6_6" type="checkbox" id="__nav_6_6" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6_6" tabindex="0" aria-expanded="false">
+          Getting started
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Getting started" data-md-level="2">
+        <label class="md-nav__title" for="__nav_6_6">
+          <span class="md-nav__icon md-icon"></span>
+          Getting started
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/core-concepts/" class="md-nav__link">
+        Core concepts
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        Quick start
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_6_7" type="checkbox" id="__nav_6_7" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6_7" tabindex="0" aria-expanded="false">
+          Identities
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Identities" data-md-level="2">
+        <label class="md-nav__title" for="__nav_6_7">
+          <span class="md-nav__icon md-icon"></span>
+          Identities
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../identities/Identities/" class="md-nav__link">
+        Identities
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../identities/getIdentityHDKeyByIndex/" class="md-nav__link">
+        getIdentityHDKeyByIndex
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_6_8" type="checkbox" id="__nav_6_8" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6_8" tabindex="0" aria-expanded="false">
+          Keychain
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Keychain" data-md-level="2">
+        <label class="md-nav__title" for="__nav_6_8">
+          <span class="md-nav__icon md-icon"></span>
+          Keychain
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../keychain/KeyChain/" class="md-nav__link">
+        KeyChain
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../keychain/generateKeyForChild/" class="md-nav__link">
+        generateKeyForChild
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../keychain/generateKeyForPath/" class="md-nav__link">
+        generateKeyForPath
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../keychain/getDIP15ExtendedKey/" class="md-nav__link">
+        getDIP15ExtendedKey
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../keychain/getHardenedBIP44HDKey/" class="md-nav__link">
+        getHardenedBIP44HDKey
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../keychain/getHardenedDIP15AccountKey/" class="md-nav__link">
+        getHardenedDIP15AccountKey
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../keychain/getHardenedDIP9FeatureHDKey/" class="md-nav__link">
+        getHardenedDIP9FeatureHDKey
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../keychain/getKeyForChild/" class="md-nav__link">
+        getKeyForChild
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../keychain/getKeyForPath/" class="md-nav__link">
+        getKeyForPath
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../keychain/getPrivateKey/" class="md-nav__link">
+        getPrivateKey
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../keychain/sign/" class="md-nav__link">
+        Sign
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_6_9" type="checkbox" id="__nav_6_9" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6_9" tabindex="0" aria-expanded="false">
+          Plugins
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Plugins" data-md-level="2">
+        <label class="md-nav__title" for="__nav_6_9">
+          <span class="md-nav__icon md-icon"></span>
+          Plugins
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../plugins/community-plugins/" class="md-nav__link">
+        Community plugins
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../plugins/using-a-plugin/" class="md-nav__link">
+        Using a plugin
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../plugins/wallet-workers/" class="md-nav__link">
+        Wallet workers
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../plugins/writing-a-new-plugin/" class="md-nav__link">
+        Writing a new plugin
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_6_10" type="checkbox" id="__nav_6_10" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6_10" tabindex="0" aria-expanded="false">
+          Storage
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Storage" data-md-level="2">
+        <label class="md-nav__title" for="__nav_6_10">
+          <span class="md-nav__icon md-icon"></span>
+          Storage
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/Storage/" class="md-nav__link">
+        Storage
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/addNewTxToAddress/" class="md-nav__link">
+        addNewTxToAddress
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/addUTXOToAddress/" class="md-nav__link">
+        addUTXOToAddress
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/announce/" class="md-nav__link">
+        Announce
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/calculateDuffBalance/" class="md-nav__link">
+        calculateDuffBalance
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/clearAll/" class="md-nav__link">
+        clearAll
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/configure/" class="md-nav__link">
+        Configure
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/createChain/" class="md-nav__link">
+        createChain
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/createWallet/" class="md-nav__link">
+        createWallet
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/getStore/" class="md-nav__link">
+        getStore
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/getTransaction/" class="md-nav__link">
+        getTransaction
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/getTransactionMetadata/" class="md-nav__link">
+        getTransactionMetadata
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/importAccounts/" class="md-nav__link">
+        importAccounts
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/importAddress/" class="md-nav__link">
+        importAddress
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/importAddresses/" class="md-nav__link">
+        importAddresses
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/importSingleAddress/" class="md-nav__link">
+        importSingleAddress
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/importTransaction/" class="md-nav__link">
+        importTransaction
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/importTransactions/" class="md-nav__link">
+        importTransactions
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/rehydrateState/" class="md-nav__link">
+        rehydrateState
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/saveState/" class="md-nav__link">
+        saveState
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/searchAddress/" class="md-nav__link">
+        searchAddress
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/searchAddressesWithTx/" class="md-nav__link">
+        searchAddressesWithTx
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/searchBlockHeader/" class="md-nav__link">
+        searchBlockHeader
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/searchTransaction/" class="md-nav__link">
+        searchTransaction
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/searchTransactionMetadata/" class="md-nav__link">
+        searchTransactionMetadata
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/searchWallet/" class="md-nav__link">
+        searchWallet
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/startWorker/" class="md-nav__link">
+        startWorker
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/stopWorker/" class="md-nav__link">
+        stopWorker
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/updateAddress/" class="md-nav__link">
+        updateAddress
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/updateTransaction/" class="md-nav__link">
+        updateTransaction
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_6_11" type="checkbox" id="__nav_6_11" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6_11" tabindex="0" aria-expanded="false">
+          Usage
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Usage" data-md-level="2">
+        <label class="md-nav__title" for="__nav_6_11">
+          <span class="md-nav__icon md-icon"></span>
+          Usage
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/coinSelection/" class="md-nav__link">
+        Coin Selection
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/dapi/" class="md-nav__link">
+        Dapi
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/events/" class="md-nav__link">
+        Events
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../usage/examples/" class="md-nav__link">
+        Examples
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_6_12" type="checkbox" id="__nav_6_12" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6_12" tabindex="0" aria-expanded="false">
+          Utils
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Utils" data-md-level="2">
+        <label class="md-nav__title" for="__nav_6_12">
+          <span class="md-nav__icon md-icon"></span>
+          Utils
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/calculateTransactionFees/" class="md-nav__link">
+        calculateTransactionFees
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/categorizeTransactions/" class="md-nav__link">
+        categorizeTransactions
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/classifyAddresses/" class="md-nav__link">
+        classifyAddresses
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/coinSelection/" class="md-nav__link">
+        coinSelection
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/dashToDuffs/" class="md-nav__link">
+        dashToDuffs
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/duffsToDash/" class="md-nav__link">
+        duffsToDash
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/extendTransactionsWithMetadata/" class="md-nav__link">
+        extendTransactionsWithMetadata
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/filterTransactions/" class="md-nav__link">
+        filterTransactions
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/getBytesOf/" class="md-nav__link">
+        getBytesOf
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_6_12_10" type="checkbox" id="__nav_6_12_10" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6_12_10" tabindex="0" aria-expanded="false">
+          Mnemonic
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Mnemonic" data-md-level="3">
+        <label class="md-nav__title" for="__nav_6_12_10">
+          <span class="md-nav__icon md-icon"></span>
+          Mnemonic
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/mnemonic/generateNewMnemonic/" class="md-nav__link">
+        generateNewMnemonic
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/mnemonic/mnemonicToHDPrivateKey/" class="md-nav__link">
+        mnemonicToHDPrivateKey
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/mnemonic/mnemonicToSeed/" class="md-nav__link">
+        mnemonicToSeed
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/mnemonic/mnemonicToWalletId/" class="md-nav__link">
+        mnemonicToWalletId
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/mnemonic/seedToHDPrivateKey/" class="md-nav__link">
+        seedToHDPrivateKey
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_6_13" type="checkbox" id="__nav_6_13" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6_13" tabindex="0" aria-expanded="false">
+          Wallet
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Wallet" data-md-level="2">
+        <label class="md-nav__title" for="__nav_6_13">
+          <span class="md-nav__icon md-icon"></span>
+          Wallet
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../wallet/Wallet/" class="md-nav__link">
+        Wallet
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../wallet/createAccount/" class="md-nav__link">
+        createAccount
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../wallet/disconnect/" class="md-nav__link">
+        Disconnect
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../wallet/dumpStorage/" class="md-nav__link">
+        dumpStorage
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../wallet/exportWallet/" class="md-nav__link">
+        exportWallet
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../wallet/fromHDPrivateKey/" class="md-nav__link">
+        fromHDPrivateKey
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../wallet/fromHDPublicKey/" class="md-nav__link">
+        fromHDPublicKey
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../wallet/fromMnemonic/" class="md-nav__link">
+        fromMnemonic
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../wallet/fromPrivateKey/" class="md-nav__link">
+        fromPrivateKey
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../wallet/fromSeed/" class="md-nav__link">
+        fromSeed
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../wallet/generateNewWalletId/" class="md-nav__link">
+        generateNewWalletId
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../wallet/getAccount/" class="md-nav__link">
+        getAccount
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<p><strong>Usage</strong>: <code>account.getConfirmedBalance(displayDuffs)</code>      <br />
+<strong>Description</strong>: This method will return the confirmed balance (included in a block) of an account    </p>
+<p>Parameters:   </p>
+<table>
+<thead>
+<tr>
+<th>parameters</th>
+<th>type</th>
+<th>required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>displayDuffs</strong></td>
+<td>boolean</td>
+<td>no (default: true)</td>
+<td>When set at true return in Duffs (satoshis), if false, returns in Dash</td>
+</tr>
+</tbody>
+</table>
+<p>Return : number</p>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    <script id="__config" type="application/json">{"base": "../../..", "features": [], "search": "../../../assets/javascripts/workers/search.e5c33ebb.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.51d95adb.min.js"></script>
+      
+    
+  </body>
+</html>
