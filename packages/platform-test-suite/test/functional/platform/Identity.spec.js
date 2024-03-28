@@ -60,7 +60,7 @@ describe('Platform', () => {
       let broadcastError;
 
       try {
-        await client.platform.identities.register(117000);
+        await client.platform.identities.register(197000);
       } catch (e) {
         broadcastError = e;
       }
