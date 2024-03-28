@@ -34,7 +34,9 @@ impl IdentityCreateTransitionAction {
     /// The initial balance is equal to the remaining credit value in the asset lock value
     pub fn asset_lock_value_to_be_consumed(&self) -> AssetLockValue {
         match self {
-            IdentityCreateTransitionAction::V0(transition) => transition.asset_lock_value_to_be_consumed,
+            IdentityCreateTransitionAction::V0(transition) => {
+                transition.asset_lock_value_to_be_consumed
+            }
         }
     }
 

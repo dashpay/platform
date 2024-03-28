@@ -2,9 +2,9 @@ mod transformer;
 
 use dpp::identifier::Identifier;
 
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::platform_value::Bytes36;
 use dpp::prelude::UserFeeIncrease;
-use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 
 /// action v0
 #[derive(Debug, Clone)]

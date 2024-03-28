@@ -1,11 +1,11 @@
 mod chain;
 mod instant;
 
-use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
-use dpp::fee::Credits;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
+use dpp::fee::Credits;
 use dpp::prelude::AssetLockProof;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -45,12 +45,18 @@ impl AssetLockProofValidation for AssetLockProof {
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<AssetLockValue>, Error> {
         match self {
-            AssetLockProof::Instant(proof) => {
-                proof.validate(platform_ref, required_balance, transaction, platform_version)
-            }
-            AssetLockProof::Chain(proof) => {
-                proof.validate(platform_ref, required_balance, transaction, platform_version)
-            }
+            AssetLockProof::Instant(proof) => proof.validate(
+                platform_ref,
+                required_balance,
+                transaction,
+                platform_version,
+            ),
+            AssetLockProof::Chain(proof) => proof.validate(
+                platform_ref,
+                required_balance,
+                transaction,
+                platform_version,
+            ),
         }
     }
 }

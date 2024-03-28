@@ -33,6 +33,7 @@ impl ValidationMode {
             ValidationMode::CheckTx => false,
             ValidationMode::RecheckTx => false,
             ValidationMode::Validator => true,
+            ValidationMode::NoValidation => false,
         }
     }
 }

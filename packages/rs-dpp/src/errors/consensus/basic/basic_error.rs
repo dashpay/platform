@@ -27,7 +27,27 @@ use crate::consensus::basic::document::{
     MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
     MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
-use crate::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError, IdentityAssetLockProofLockedTransactionMismatchError, IdentityAssetLockTransactionIsNotFoundError, IdentityAssetLockTransactionOutPointAlreadyConsumedError, IdentityAssetLockTransactionOutPointNotEnoughBalanceError, IdentityAssetLockTransactionOutputNotFoundError, IdentityCreditTransferToSelfError, InvalidAssetLockProofCoreChainHeightError, InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError, InvalidIdentityAssetLockProofChainLockValidationError, InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError, InvalidIdentityCreditTransferAmountError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityCreditWithdrawalTransitionCoreFeeError, InvalidIdentityCreditWithdrawalTransitionOutputScriptError, InvalidIdentityKeySignatureError, InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError, MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError, TooManyMasterPublicKeyError};
+use crate::consensus::basic::identity::{
+    DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
+    DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
+    IdentityAssetLockProofLockedTransactionMismatchError,
+    IdentityAssetLockTransactionIsNotFoundError,
+    IdentityAssetLockTransactionOutPointAlreadyConsumedError,
+    IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
+    IdentityAssetLockTransactionOutputNotFoundError, IdentityCreditTransferToSelfError,
+    InvalidAssetLockProofCoreChainHeightError, InvalidAssetLockProofTransactionHeightError,
+    InvalidAssetLockTransactionOutputReturnSizeError,
+    InvalidIdentityAssetLockProofChainLockValidationError,
+    InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
+    InvalidIdentityCreditTransferAmountError, InvalidIdentityCreditWithdrawalTransitionAmountError,
+    InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
+    InvalidIdentityCreditWithdrawalTransitionOutputScriptError, InvalidIdentityKeySignatureError,
+    InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
+    InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError,
+    InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
+    MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
+    TooManyMasterPublicKeyError,
+};
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
     InvalidStateTransitionTypeError, MissingStateTransitionTypeError,
@@ -224,7 +244,6 @@ pub enum BasicError {
     IdentityAssetLockTransactionOutPointNotEnoughBalanceError(
         IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     ),
-
 
     #[error(transparent)]
     IdentityAssetLockTransactionOutputNotFoundError(

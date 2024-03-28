@@ -1,11 +1,11 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
+use crate::fee::Credits;
 use bincode::{Decode, Encode};
 use dashcore::Txid;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
-use crate::fee::Credits;
 
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
@@ -28,7 +28,13 @@ pub struct IdentityAssetLockTransactionOutPointNotEnoughBalanceError {
 }
 
 impl IdentityAssetLockTransactionOutPointNotEnoughBalanceError {
-    pub fn new(transaction_id: Txid, output_index: usize, initial_asset_lock_credits: Credits, credits_left: Credits, credits_required: Credits) -> Self {
+    pub fn new(
+        transaction_id: Txid,
+        output_index: usize,
+        initial_asset_lock_credits: Credits,
+        credits_left: Credits,
+        credits_required: Credits,
+    ) -> Self {
         Self {
             transaction_id,
             output_index,

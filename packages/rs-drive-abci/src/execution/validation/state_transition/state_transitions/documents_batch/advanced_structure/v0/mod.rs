@@ -26,6 +26,7 @@ use dpp::state_transition::documents_batch_transition::document_create_transitio
 use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::execution::ExecutionError;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchStateTransitionStructureValidationV0
 {
@@ -33,6 +34,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
         &self,
         action: &DocumentsBatchTransitionAction,
         identity: &PartialIdentity,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -42,6 +44,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
         &self,
         action: &DocumentsBatchTransitionAction,
         identity: &PartialIdentity,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let security_levels = action.contract_based_security_level_requirement()?;

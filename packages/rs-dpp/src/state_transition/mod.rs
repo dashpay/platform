@@ -50,6 +50,8 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 pub use traits::*;
 
+use crate::balances::credits::CREDITS_PER_DUFF;
+use crate::fee::Credits;
 #[cfg(any(
     feature = "state-transition-signing",
     feature = "state-transition-validation"
@@ -67,8 +69,6 @@ use crate::identity::{IdentityPublicKey, KeyType};
 use crate::identity::{KeyID, SecurityLevel};
 use crate::prelude::{AssetLockProof, UserFeeIncrease};
 pub use state_transitions::*;
-use crate::balances::credits::CREDITS_PER_DUFF;
-use crate::fee::Credits;
 
 use crate::serialization::Signable;
 use crate::state_transition::data_contract_create_transition::{
@@ -288,10 +288,29 @@ impl StateTransition {
         )
     }
 
-    pub fn required_asset_lock_balance_for_processing_start(&self, platform_version: &PlatformVersion) -> Credits {
+    pub fn required_asset_lock_balance_for_processing_start(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
         match self {
-            StateTransition::IdentityCreate(_) => platform_version.dpp.state_transitions.identities.asset_locks.required_asset_lock_duff_balance_for_processing_start_for_identity_create * CREDITS_PER_DUFF,
-            StateTransition::IdentityTopUp(_) => platform_version.dpp.state_transitions.identities.asset_locks.required_asset_lock_duff_balance_for_processing_start_for_identity_top_up * CREDITS_PER_DUFF,
+            StateTransition::IdentityCreate(_) => {
+                platform_version
+                    .dpp
+                    .state_transitions
+                    .identities
+                    .asset_locks
+                    .required_asset_lock_duff_balance_for_processing_start_for_identity_create
+                    * CREDITS_PER_DUFF
+            }
+            StateTransition::IdentityTopUp(_) => {
+                platform_version
+                    .dpp
+                    .state_transitions
+                    .identities
+                    .asset_locks
+                    .required_asset_lock_duff_balance_for_processing_start_for_identity_top_up
+                    * CREDITS_PER_DUFF
+            }
             _ => 0,
         }
     }

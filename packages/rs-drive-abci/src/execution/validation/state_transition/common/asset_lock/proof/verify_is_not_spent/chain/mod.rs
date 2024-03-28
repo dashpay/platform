@@ -22,7 +22,6 @@ impl AssetLockProofVerifyIsNotSpent for ChainAssetLockProof {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<AssetLockValue>, Error> {
-
         // Make sure that asset lock isn't spent yet
 
         let outpoint_bytes = self.out_point.try_into().map_err(|_e| {
@@ -40,27 +39,41 @@ impl AssetLockProofVerifyIsNotSpent for ChainAssetLockProof {
         match stored_asset_lock_info {
             StoredAssetLockInfo::Present => {
                 // It was already entirely spent
-                Ok(ConsensusValidationResult::new_with_error(IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
-                    self.out_point.txid,
-                    self.out_point.vout as usize,
-                ).into()))
-            }
-            StoredAssetLockInfo::PresentWithInfo(reduced_asset_lock_value) => {
-                if reduced_asset_lock_value.remaining_credit_value() < required_balance {
-                    Ok(ConsensusValidationResult::new_with_error(IdentityAssetLockTransactionOutPointNotEnoughBalanceError::new(
+                Ok(ConsensusValidationResult::new_with_error(
+                    IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
                         self.out_point.txid,
                         self.out_point.vout as usize,
-                        reduced_asset_lock_value.initial_credit_value(),
-                        reduced_asset_lock_value.remaining_credit_value(),
-                        required_balance,
-                    ).into()))
+                    )
+                    .into(),
+                ))
+            }
+            StoredAssetLockInfo::PresentWithInfo(reduced_asset_lock_value) => {
+                if reduced_asset_lock_value.remaining_credit_value() == 0 {
+                    Ok(ConsensusValidationResult::new_with_error(
+                        IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
+                            self.out_point.txid,
+                            self.out_point.vout as usize,
+                        )
+                        .into(),
+                    ))
+                } else if reduced_asset_lock_value.remaining_credit_value() < required_balance {
+                    Ok(ConsensusValidationResult::new_with_error(
+                        IdentityAssetLockTransactionOutPointNotEnoughBalanceError::new(
+                            self.out_point.txid,
+                            self.out_point.vout as usize,
+                            reduced_asset_lock_value.initial_credit_value(),
+                            reduced_asset_lock_value.remaining_credit_value(),
+                            required_balance,
+                        )
+                        .into(),
+                    ))
                 } else {
-                    Ok(ConsensusValidationResult::new_with_data(reduced_asset_lock_value))
+                    Ok(ConsensusValidationResult::new_with_data(
+                        reduced_asset_lock_value,
+                    ))
                 }
             }
-            StoredAssetLockInfo::NotPresent => {
-                Ok(ConsensusValidationResult::new())
-            }
+            StoredAssetLockInfo::NotPresent => Ok(ConsensusValidationResult::new()),
         }
     }
 }

@@ -1,4 +1,4 @@
-use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
+use crate::validation::ConsensusValidationResult;
 use crate::ProtocolError;
 use dashcore::{Transaction, TxOut};
 use platform_version::version::PlatformVersion;
@@ -18,7 +18,10 @@ pub fn validate_asset_lock_transaction_structure(
         .asset_locks
         .validate_asset_lock_transaction_structure
     {
-        0 => Ok(v0::validate_asset_lock_transaction_structure_v0(transaction, output_index)),
+        0 => Ok(v0::validate_asset_lock_transaction_structure_v0(
+            transaction,
+            output_index,
+        )),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "validate_asset_lock_transaction_structure".to_string(),
             known_versions: vec![0],

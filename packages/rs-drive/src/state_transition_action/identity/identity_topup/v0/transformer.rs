@@ -2,11 +2,11 @@ use crate::state_transition_action::identity::identity_topup::v0::IdentityTopUpT
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
 
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::Bytes36;
 use dpp::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use std::io;
-use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 
 impl IdentityTopUpTransitionActionV0 {
     /// try from
@@ -27,14 +27,10 @@ impl IdentityTopUpTransitionActionV0 {
             )
         })?;
 
-        let outpoint_bytes = asset_lock_outpoint
-            .try_into()
-            .map_err(|e: io::Error| SerializedObjectParsingError::new(e.to_string()))?;
-
         Ok(IdentityTopUpTransitionActionV0 {
             top_up_asset_lock_value,
             identity_id,
-            asset_lock_outpoint: Bytes36::new(outpoint_bytes),
+            asset_lock_outpoint: Bytes36::new(asset_lock_outpoint.into()),
             user_fee_increase,
         })
     }
@@ -57,14 +53,10 @@ impl IdentityTopUpTransitionActionV0 {
             )
         })?;
 
-        let outpoint_bytes = asset_lock_outpoint
-            .try_into()
-            .map_err(|e: io::Error| SerializedObjectParsingError::new(e.to_string()))?;
-
         Ok(IdentityTopUpTransitionActionV0 {
             top_up_asset_lock_value,
             identity_id: *identity_id,
-            asset_lock_outpoint: Bytes36::new(outpoint_bytes),
+            asset_lock_outpoint: Bytes36::new(asset_lock_outpoint.into()),
             user_fee_increase: *user_fee_increase,
         })
     }

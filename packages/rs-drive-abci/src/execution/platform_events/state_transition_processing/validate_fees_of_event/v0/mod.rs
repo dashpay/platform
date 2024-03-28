@@ -146,7 +146,7 @@ where
                     ))
                 }
             }
-            ExecutionEvent::Free { .. } => Ok(ConsensusValidationResult::new_with_data(
+            _ => Ok(ConsensusValidationResult::new_with_data(
                 FeeResult::default(),
             )),
         }

@@ -20,7 +20,7 @@ pub enum StateTransitionExecutionResult {
     /// State Transition execution failed due to the internal drive-abci error
     InternalError(String),
     /// State Transition was successfully executed
-    SuccessfulExecution(EstimatedFeeResult, FeeResult),
+    SuccessfulExecution(Option<EstimatedFeeResult>, FeeResult),
 }
 
 /// State Transitions Processing Result produced by [process_raw_state_transitions] and represents

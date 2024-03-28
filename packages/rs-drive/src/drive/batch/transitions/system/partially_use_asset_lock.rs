@@ -1,4 +1,3 @@
-use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 use crate::drive::batch::DriveOperation::SystemOperation;
 use crate::drive::batch::{DriveOperation, SystemOperationType};
@@ -6,6 +5,7 @@ use crate::error::Error;
 use crate::state_transition_action::system::partially_use_asset_lock_action::{
     PartiallyUseAssetLockAction, PartiallyUseAssetLockActionAccessorsV0,
 };
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 
@@ -27,7 +27,11 @@ impl DriveHighLevelOperationConverter for PartiallyUseAssetLockAction {
             }),
             SystemOperation(SystemOperationType::AddUsedAssetLock {
                 asset_lock_outpoint,
-                asset_lock_value: AssetLockValue::new(initial_credit_value, remaining_credit_value, platform_version)?,
+                asset_lock_value: AssetLockValue::new(
+                    initial_credit_value,
+                    remaining_credit_value,
+                    platform_version,
+                )?,
             }),
         ];
         Ok(drive_operations)

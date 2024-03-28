@@ -1,7 +1,7 @@
-use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 
@@ -36,6 +36,7 @@ use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_not_in_state;
 use crate::execution::validation::state_transition::identity_create::transform_into_partially_used_asset_lock_action::TransformIntoPartiallyUsedAssetLockAction;
+use crate::execution::validation::state_transition::ValidationMode;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_create) trait IdentityCreateStateTransitionStateValidationV0
 {
@@ -51,6 +52,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::identi
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -83,7 +85,8 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
         }
 
         // Now we should check the state of added keys to make sure there aren't any that already exist
-        let unique_public_key_validation_result = validate_unique_identity_public_key_hashes_not_in_state(
+        let unique_public_key_validation_result =
+            validate_unique_identity_public_key_hashes_not_in_state(
                 self.public_keys(),
                 drive,
                 &mut state_transition_execution_context,
@@ -98,31 +101,48 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
             // It's not valid, we need to give back the action that partially uses the asset lock
 
             let used_credits = 1000; //todo: figure this out
-            self.transform_into_partially_used_asset_lock_action(unique_public_key_validation_result.errors, used_credits, &platform.into(), transaction, platform_version)
+            self.transform_into_partially_used_asset_lock_action(
+                unique_public_key_validation_result.errors,
+                used_credits,
+                &platform.into(),
+                transaction,
+                platform_version,
+            )
         }
     }
 
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-
         // Todo: we might want a lowered required balance
-        let required_balance = platform_version.dpp.state_transitions.identities.asset_locks.required_asset_lock_duff_balance_for_processing_start_for_identity_create;
+        let required_balance = platform_version
+            .dpp
+            .state_transitions
+            .identities
+            .asset_locks
+            .required_asset_lock_duff_balance_for_processing_start_for_identity_create;
 
         // Validate asset lock proof state
-        let asset_lock_proof_validation = self.asset_lock_proof().validate(
-            platform,
-            required_balance,
-            transaction,
-            platform_version,
-        )?;
+        let asset_lock_proof_validation = if validation_mode != ValidationMode::NoValidation {
+            self.asset_lock_proof().validate(
+                platform,
+                required_balance,
+                transaction,
+                platform_version,
+            )?
+        } else {
+            ConsensusValidationResult::new()
+        };
 
         if !asset_lock_proof_validation.is_valid() {
-            return Ok(ConsensusValidationResult::new_with_errors(asset_lock_proof_validation.errors));
+            return Ok(ConsensusValidationResult::new_with_errors(
+                asset_lock_proof_validation.errors,
+            ));
         }
 
         let tx_out_validation = fetch_asset_lock_transaction_output_sync(
@@ -138,7 +158,12 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
         }
 
         let tx_out = tx_out_validation.into_data()?;
-        let min_value = platform_version.dpp.state_transitions.identities.asset_locks.required_asset_lock_duff_balance_for_processing_start_for_identity_create;
+        let min_value = platform_version
+            .dpp
+            .state_transitions
+            .identities
+            .asset_locks
+            .required_asset_lock_duff_balance_for_processing_start_for_identity_create;
         if tx_out.value < min_value {
             return Ok(ConsensusValidationResult::new_with_error(
                 InvalidAssetLockProofValueError::new(tx_out.value, min_value).into(),
@@ -178,19 +203,19 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
             asset_lock_proof_validation.into_data()?
         } else {
             let initial_balance_amount = tx_out.value * CREDITS_PER_DUFF;
-            AssetLockValue::new(initial_balance_amount, initial_balance_amount, platform_version)?
+            AssetLockValue::new(
+                initial_balance_amount,
+                initial_balance_amount,
+                platform_version,
+            )?
         };
 
         match IdentityCreateTransitionAction::try_from_borrowed(
             self,
             asset_lock_value_to_be_consumed,
         ) {
-            Ok(action) => {
-                Ok(ConsensusValidationResult::new_with_data(action.into()))
-            }
-            Err(error) => {
-                Ok(ConsensusValidationResult::new_with_error(error))
-            }
+            Ok(action) => Ok(ConsensusValidationResult::new_with_data(action.into())),
+            Err(error) => Ok(ConsensusValidationResult::new_with_error(error)),
         }
     }
 }

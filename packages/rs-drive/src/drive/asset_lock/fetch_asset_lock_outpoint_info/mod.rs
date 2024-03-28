@@ -9,8 +9,8 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::platform_value::Bytes36;
 use dpp::version::drive_versions::DriveVersion;
 
-use grovedb::TransactionArg;
 use dpp::asset_lock::StoredAssetLockInfo;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Checks if a given `outpoint` is present as an asset lock in the transaction.
@@ -29,7 +29,11 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<StoredAssetLockInfo, Error> {
-        match drive_version.methods.asset_lock.fetch_asset_lock_outpoint_info {
+        match drive_version
+            .methods
+            .asset_lock
+            .fetch_asset_lock_outpoint_info
+        {
             0 => self.fetch_asset_lock_outpoint_info_v0(outpoint, transaction, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_asset_lock_outpoint_info".to_string(),
@@ -59,7 +63,11 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<StoredAssetLockInfo, Error> {
-        match drive_version.methods.asset_lock.fetch_asset_lock_outpoint_info {
+        match drive_version
+            .methods
+            .asset_lock
+            .fetch_asset_lock_outpoint_info
+        {
             0 => self.fetch_asset_lock_outpoint_info_add_operations_v0(
                 apply,
                 drive_operations,

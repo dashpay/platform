@@ -1,10 +1,10 @@
 mod chain;
 mod instant;
 
-use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
-use dpp::fee::Credits;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
+use dpp::fee::Credits;
 
 use dpp::prelude::AssetLockProof;
 use dpp::validation::ConsensusValidationResult;
@@ -46,12 +46,18 @@ impl AssetLockProofVerifyIsNotSpent for AssetLockProof {
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<AssetLockValue>, Error> {
         match self {
-            AssetLockProof::Instant(proof) => {
-                proof.verify_is_not_spent_and_has_enough_balance(platform_ref, required_balance, transaction, platform_version)
-            }
-            AssetLockProof::Chain(proof) => {
-                proof.verify_is_not_spent_and_has_enough_balance(platform_ref, required_balance,  transaction, platform_version)
-            }
+            AssetLockProof::Instant(proof) => proof.verify_is_not_spent_and_has_enough_balance(
+                platform_ref,
+                required_balance,
+                transaction,
+                platform_version,
+            ),
+            AssetLockProof::Chain(proof) => proof.verify_is_not_spent_and_has_enough_balance(
+                platform_ref,
+                required_balance,
+                transaction,
+                platform_version,
+            ),
         }
     }
 }

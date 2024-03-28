@@ -4,13 +4,13 @@ pub mod transformer;
 use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, IdentityV0, PartialIdentity};
 
+use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
 use dpp::platform_value::Bytes36;
 use dpp::prelude::UserFeeIncrease;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
 
 /// action v0
 #[derive(Debug, Clone)]

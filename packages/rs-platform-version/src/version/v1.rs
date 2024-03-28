@@ -11,7 +11,25 @@ use crate::version::dpp_versions::{
     RecursiveSchemaValidatorVersions, StateTransitionConversionVersions,
     StateTransitionMethodVersions, StateTransitionSerializationVersions, StateTransitionVersions,
 };
-use crate::version::drive_abci_versions::{DriveAbciAssetLockValidationVersions, DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions, DriveAbciBlockStartMethodVersions, DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreChainLockMethodVersionsAndConstants, DriveAbciCoreSubsidyMethodVersions, DriveAbciDocumentsStateTransitionValidationVersions, DriveAbciEngineMethodVersions, DriveAbciEpochMethodVersions, DriveAbciFeePoolInwardsDistributionMethodVersions, DriveAbciFeePoolOutwardsDistributionMethodVersions, DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions, DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions, DriveAbciPlatformStateStorageMethodVersions, DriveAbciProtocolUpgradeMethodVersions, DriveAbciQueryDataContractVersions, DriveAbciQueryIdentityVersions, DriveAbciQuerySystemVersions, DriveAbciQueryVersions, DriveAbciStateTransitionCommonValidationVersions, DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion, DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions, DriveAbciValidationDataTriggerAndBindingVersions, DriveAbciValidationDataTriggerVersions, DriveAbciValidationVersions, DriveAbciVersion, PenaltyAmounts};
+use crate::version::drive_abci_versions::{
+    DriveAbciAssetLockValidationVersions, DriveAbciBlockEndMethodVersions,
+    DriveAbciBlockFeeProcessingMethodVersions, DriveAbciBlockStartMethodVersions,
+    DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreChainLockMethodVersionsAndConstants,
+    DriveAbciCoreSubsidyMethodVersions, DriveAbciDocumentsStateTransitionValidationVersions,
+    DriveAbciEngineMethodVersions, DriveAbciEpochMethodVersions,
+    DriveAbciFeePoolInwardsDistributionMethodVersions,
+    DriveAbciFeePoolOutwardsDistributionMethodVersions,
+    DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
+    DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
+    DriveAbciPlatformStateStorageMethodVersions, DriveAbciProtocolUpgradeMethodVersions,
+    DriveAbciQueryDataContractVersions, DriveAbciQueryIdentityVersions,
+    DriveAbciQuerySystemVersions, DriveAbciQueryVersions,
+    DriveAbciStateTransitionCommonValidationVersions,
+    DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion,
+    DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions,
+    DriveAbciValidationDataTriggerAndBindingVersions, DriveAbciValidationDataTriggerVersions,
+    DriveAbciValidationVersions, DriveAbciVersion, PenaltyAmounts,
+};
 use crate::version::drive_versions::{
     DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
     DriveContractApplyMethodVersions, DriveContractCostsMethodVersions,
@@ -608,26 +626,28 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     transform_into_action: 0,
                     transform_into_partially_used_asset_lock_action: Some(0),
                 },
-                identity_credit_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion {
-                    basic_structure: Some(0),
-                    advanced_structure: None,
-                    identity_signatures: None,
-                    balance: Some(0),
-                    nonce: Some(0),
-                    state: 0,
-                    transform_into_action: 0,
-                    transform_into_partially_used_asset_lock_action: None,
-                },
-                identity_credit_transfer_state_transition: DriveAbciStateTransitionValidationVersion {
-                    basic_structure: Some(0),
-                    advanced_structure: None,
-                    identity_signatures: None,
-                    balance: Some(0),
-                    nonce: Some(0),
-                    state: 0,
-                    transform_into_action: 0,
-                    transform_into_partially_used_asset_lock_action: None,
-                },
+                identity_credit_withdrawal_state_transition:
+                    DriveAbciStateTransitionValidationVersion {
+                        basic_structure: Some(0),
+                        advanced_structure: None,
+                        identity_signatures: None,
+                        balance: Some(0),
+                        nonce: Some(0),
+                        state: 0,
+                        transform_into_action: 0,
+                        transform_into_partially_used_asset_lock_action: None,
+                    },
+                identity_credit_transfer_state_transition:
+                    DriveAbciStateTransitionValidationVersion {
+                        basic_structure: Some(0),
+                        advanced_structure: None,
+                        identity_signatures: None,
+                        balance: Some(0),
+                        nonce: Some(0),
+                        state: 0,
+                        transform_into_action: 0,
+                        transform_into_partially_used_asset_lock_action: None,
+                    },
                 contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
                     advanced_structure: None,
@@ -677,7 +697,11 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             },
             process_state_transition: 0,
             state_transition_to_execution_event_for_check_tx: 0,
-            penalties: PenaltyAmounts { identity_id_not_correct: 5000000, validation_of_added_keys_failure: 1000000 },
+            penalties: PenaltyAmounts {
+                identity_id_not_correct: 5000000,
+                validation_of_added_keys_structure_failure: 1000000,
+                validation_of_added_keys_proof_of_possession_failure: 5000000,
+            },
         },
         query: DriveAbciQueryVersions {
             response_metadata: 0,
@@ -898,8 +922,10 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             identities: IdentityTransitionVersions {
                 max_public_keys_in_creation: 6,
                 asset_locks: IdentityTransitionAssetLockVersions {
-                    required_asset_lock_duff_balance_for_processing_start_for_identity_create: 200000,
-                    required_asset_lock_duff_balance_for_processing_start_for_identity_top_up: 100000,
+                    required_asset_lock_duff_balance_for_processing_start_for_identity_create:
+                        200000,
+                    required_asset_lock_duff_balance_for_processing_start_for_identity_top_up:
+                        100000,
                     validate_asset_lock_transaction_structure: 0,
                     validate_instant_asset_lock_proof_structure: 0,
                 },

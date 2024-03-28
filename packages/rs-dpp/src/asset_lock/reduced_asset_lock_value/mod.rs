@@ -1,6 +1,4 @@
-use crate::asset_lock::reduced_asset_lock_value::v0::{
-    AssetLockValueV0,
-};
+use crate::asset_lock::reduced_asset_lock_value::v0::AssetLockValueV0;
 use crate::fee::Credits;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};

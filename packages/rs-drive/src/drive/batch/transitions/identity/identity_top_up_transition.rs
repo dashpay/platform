@@ -1,7 +1,7 @@
-use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValueGettersV0, AssetLockValueSettersV0};
 use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 use crate::drive::batch::DriveOperation::{IdentityOperation, SystemOperation};
 use crate::drive::batch::{DriveOperation, IdentityOperationType, SystemOperationType};
+use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValueGettersV0, AssetLockValueSettersV0};
 
 use crate::error::Error;
 use crate::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;

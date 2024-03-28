@@ -20,6 +20,8 @@ use drive::state_transition_action::StateTransitionAction;
 
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext};
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{ValidateStateTransitionIdentitySignature};
+use crate::execution::validation::state_transition::identity_create::StateTransitionStructureKnownInStateValidationForIdentityCreateTransitionV0;
+use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
 use crate::execution::validation::state_transition::state_transitions::identity_update::advanced_structure::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_top_up::identity_retrieval::v0::IdentityTopUpStateTransitionIdentityRetrievalV0;
 use crate::execution::validation::state_transition::ValidationMode;
@@ -33,9 +35,12 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let mut state_transition_execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
+    // Only identity create does not use identity in state validation, because it doesn't yet have the identity in state
     let mut maybe_identity = if state_transition.uses_identity_in_state() {
+        // Validating signature for identity based state transitions (all those except identity create and identity top up)
+        // As we already have removed identity create above, it just splits between identity top up (below - false) and
+        // all other state transitions (above - true)
         let result = if state_transition.validates_signature_based_on_identity_info() {
-            // Validating signature for identity based state transitions (all those except identity create and identity top up)
             state_transition.validate_identity_signed_state_transition(
                 platform.drive,
                 transaction,
@@ -65,6 +70,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         None
     };
 
+    // Only identity top up and identity create do not have nonces validation
     if state_transition.has_nonces_validation() {
         // Validating identity contract nonce, this must happen after validating the signature
         let result = state_transition.validate_nonces(
@@ -83,6 +89,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
     }
 
+    // Only Data contract update does not have basic structure validation
     if state_transition.has_basic_structure_validation() {
         // We validate basic structure validation after verifying the identity,
         // this is structure validation that does not require state and is already checked on check_tx
@@ -102,6 +109,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
     }
 
+    // Only identity update has advanced structure validation without state
     if state_transition.has_advanced_structure_validation_without_state() {
         // Currently only used for Identity Update
         // Next we have advanced structure validation, this is structure validation that does not require
@@ -131,6 +139,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
     }
 
+    // Identity create and documents batch both have advanced structure validation with state
     let action = if state_transition.has_advanced_structure_validation_with_state() {
         // Currently used for identity create and documents batch
         let state_transition_action_result = state_transition.transform_into_action(
@@ -157,6 +166,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         let result = state_transition.validate_advanced_structure_from_state(
             &action,
             maybe_identity.as_ref(),
+            &mut state_transition_execution_context,
             platform_version,
         )?;
         if !result.is_valid() {
@@ -176,6 +186,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         None
     };
 
+    // This is for identity credit withdrawal and identity credit transfers
     if state_transition.has_balance_validation() {
         // Validating that we have sufficient balance for a transfer or withdrawal,
         // this must happen after validating the signature
@@ -193,6 +204,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     }
 
     // Validating state
+    // Only identity Top up does not validate state and instead just returns the action for topping up
     let result = state_transition.validate_state(
         action,
         platform,
@@ -345,6 +357,7 @@ pub(crate) trait StateTransitionStructureKnownInStateValidationV0 {
         &self,
         action: &StateTransitionAction,
         maybe_identity: Option<&PartialIdentity>,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
@@ -572,32 +585,41 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
         &self,
         action: &StateTransitionAction,
         maybe_identity: Option<&PartialIdentity>,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
-            StateTransition::DocumentsBatch(st) => {
-
-                st.validate_advanced_structure_from_state(
-                    action,
-                    maybe_identity,
-                    platform_version,
-                )
-            },
+            StateTransition::DocumentsBatch(st) => st.validate_advanced_structure_from_state(
+                action,
+                maybe_identity,
+                execution_context,
+                platform_version,
+            ),
             StateTransition::IdentityCreate(st) => {
-
-                st.validate_advanced_structure_from_state(
-                    action,
-                    maybe_identity,
+                let signable_bytes = self.signable_bytes()?;
+                let StateTransitionAction::IdentityCreateAction(identity_create_action) = action
+                else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "action must be a identity create transition action",
+                    )));
+                };
+                st.validate_advanced_structure_from_state_for_identity_create_transition(
+                    identity_create_action,
+                    signable_bytes,
+                    execution_context,
                     platform_version,
                 )
-            },
+            }
             _ => Ok(ConsensusValidationResult::new()),
         }
     }
 
     /// This means we should transform into the action before validation of the advanced structure
     fn has_advanced_structure_validation_with_state(&self) -> bool {
-        matches!(self, StateTransition::DocumentsBatch(_) | StateTransition::IdentityCreate(_))
+        matches!(
+            self,
+            StateTransition::DocumentsBatch(_) | StateTransition::IdentityCreate(_)
+        )
     }
 
     /// This means we should transform into the action before validation of the advanced structure,
@@ -622,38 +644,41 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::DocumentsBatch(_) => {
                 //Basic signature verification
-                Ok(self
-                    .validate_state_transition_identity_signed(
-                        drive,
-                        false,
-                        tx,
-                        execution_context,
-                        platform_version,
-                    )?)
+                Ok(self.validate_state_transition_identity_signed(
+                    drive,
+                    false,
+                    tx,
+                    execution_context,
+                    platform_version,
+                )?)
             }
             StateTransition::IdentityUpdate(_) => {
                 //Basic signature verification
-                Ok(self
-                    .validate_state_transition_identity_signed(
-                        drive,
-                        true,
-                        tx,
-                        execution_context,
-                        platform_version,
-                    )?)
+                Ok(self.validate_state_transition_identity_signed(
+                    drive,
+                    true,
+                    tx,
+                    execution_context,
+                    platform_version,
+                )?)
             }
             StateTransition::IdentityCreate(_) => Ok(ConsensusValidationResult::new()),
             StateTransition::IdentityTopUp(_) => Ok(ConsensusValidationResult::new()),
         }
     }
 
-    fn retrieve_identity_info(&self, drive: &Drive, tx: TransactionArg, execution_context: &mut StateTransitionExecutionContext, platform_version: &PlatformVersion) -> Result<ConsensusValidationResult<PartialIdentity>, Error> {
+    fn retrieve_identity_info(
+        &self,
+        drive: &Drive,
+        tx: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<PartialIdentity>, Error> {
         match self {
             StateTransition::IdentityTopUp(st) => {
-                Ok(st
-                    .retrieve_topped_up_identity(drive, tx, platform_version)?)
-                }
-            _ => Ok(ConsensusValidationResult::new())
+                Ok(st.retrieve_topped_up_identity(drive, tx, platform_version)?)
+            }
+            _ => Ok(ConsensusValidationResult::new()),
         }
     }
 
@@ -664,7 +689,10 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
 
     /// Do we validate the signature based on identity info?
     fn validates_signature_based_on_identity_info(&self) -> bool {
-        !matches!(self, StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_))
+        !matches!(
+            self,
+            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_)
+        )
     }
 }
 
@@ -692,9 +720,18 @@ impl StateTransitionStateValidationV0 for StateTransition {
             StateTransition::IdentityUpdate(st) => {
                 st.validate_state(action, platform, validation_mode, execution_context, tx)
             }
-            StateTransition::IdentityTopUp(_) => {
+            StateTransition::IdentityTopUp(st) => {
                 // Nothing to validate from state
-                Ok(ConsensusValidationResult::new())
+                if let Some(action) = action {
+                    Ok(ConsensusValidationResult::new_with_data(action))
+                } else {
+                    st.transform_top_up_into_action(
+                        platform,
+                        validation_mode,
+                        execution_context,
+                        tx,
+                    )
+                }
             }
             StateTransition::IdentityCreditWithdrawal(st) => {
                 st.validate_state(action, platform, validation_mode, execution_context, tx)

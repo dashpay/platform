@@ -6,11 +6,11 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
 
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 
 /// Operations on the System
 #[derive(Clone, Debug)]

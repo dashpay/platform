@@ -1,11 +1,11 @@
+use crate::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
+use crate::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use crate::state_transition_action::system::partially_use_asset_lock_action::v0::PartiallyUseAssetLockActionV0;
 use crate::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockAction;
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use crate::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
-use crate::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 
 impl PartiallyUseAssetLockAction {
     /// try from identity create transition
@@ -54,12 +54,13 @@ impl PartiallyUseAssetLockAction {
         used_credits: Credits,
     ) -> Self {
         match value {
-            IdentityCreateTransitionAction::V0(v0) => 
+            IdentityCreateTransitionAction::V0(v0) => {
                 PartiallyUseAssetLockActionV0::from_identity_create_transition_action(
                     v0,
                     used_credits,
                 )
-                    .into(),
+                .into()
+            }
         }
     }
 
@@ -69,12 +70,13 @@ impl PartiallyUseAssetLockAction {
         used_credits: Credits,
     ) -> Self {
         match value {
-            IdentityCreateTransitionAction::V0(v0) => 
+            IdentityCreateTransitionAction::V0(v0) => {
                 PartiallyUseAssetLockActionV0::from_borrowed_identity_create_transition_action(
                     v0,
                     used_credits,
                 )
-                    .into(),
+                .into()
+            }
         }
     }
 
@@ -124,12 +126,13 @@ impl PartiallyUseAssetLockAction {
         used_credits: Credits,
     ) -> Self {
         match value {
-            IdentityTopUpTransitionAction::V0(v0) => 
+            IdentityTopUpTransitionAction::V0(v0) => {
                 PartiallyUseAssetLockActionV0::from_identity_top_up_transition_action(
                     v0,
                     used_credits,
                 )
-                    .into(),
+                .into()
+            }
         }
     }
 
@@ -139,12 +142,13 @@ impl PartiallyUseAssetLockAction {
         used_credits: Credits,
     ) -> Self {
         match value {
-            IdentityTopUpTransitionAction::V0(v0) => 
+            IdentityTopUpTransitionAction::V0(v0) => {
                 PartiallyUseAssetLockActionV0::from_borrowed_identity_top_up_transition_action(
                     v0,
                     used_credits,
                 )
-                    .into(),
+                .into()
+            }
         }
     }
 }

@@ -9,11 +9,11 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 
-use dpp::platform_value::Bytes36;
-use grovedb::TransactionArg;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::asset_lock::StoredAssetLockInfo;
+use dpp::platform_value::Bytes36;
 use dpp::serialization::PlatformDeserializable;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Checks if a given `outpoint` is present as an asset lock in the transaction.
@@ -73,20 +73,26 @@ impl Drive {
             }
         };
 
-        Ok(self.grove_get_raw_optional(
-            (&asset_lock_storage_path).into(),
-            outpoint.as_slice(),
-            query_type,
-            transaction,
-            drive_operations,
-            drive_version,
-        )?.map(|element| {
-            let item_bytes = element.as_item_bytes()?;
-            if item_bytes.is_empty() {
-                Ok::<StoredAssetLockInfo, Error>(StoredAssetLockInfo::Present)
-            } else {
-                Ok(StoredAssetLockInfo::PresentWithInfo(AssetLockValue::deserialize_from_bytes(item_bytes)?))
-            }
-        }).transpose()?.unwrap_or(StoredAssetLockInfo::NotPresent))
+        Ok(self
+            .grove_get_raw_optional(
+                (&asset_lock_storage_path).into(),
+                outpoint.as_slice(),
+                query_type,
+                transaction,
+                drive_operations,
+                drive_version,
+            )?
+            .map(|element| {
+                let item_bytes = element.as_item_bytes()?;
+                if item_bytes.is_empty() {
+                    Ok::<StoredAssetLockInfo, Error>(StoredAssetLockInfo::Present)
+                } else {
+                    Ok(StoredAssetLockInfo::PresentWithInfo(
+                        AssetLockValue::deserialize_from_bytes(item_bytes)?,
+                    ))
+                }
+            })
+            .transpose()?
+            .unwrap_or(StoredAssetLockInfo::NotPresent))
     }
 }

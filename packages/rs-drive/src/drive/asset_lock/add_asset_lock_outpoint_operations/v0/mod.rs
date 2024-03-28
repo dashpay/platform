@@ -7,7 +7,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
-use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
+use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
 use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
 use dpp::serialization::PlatformSerializable;
@@ -46,7 +46,13 @@ impl Drive {
             )?;
         }
 
-        let item_bytes = asset_lock_value.serialize_to_bytes()?;
+        let item_bytes = if asset_lock_value.remaining_credit_value() > 0 {
+            asset_lock_value.serialize_to_bytes()?
+        } else {
+            // If there is no credit value we don't actually put any system credits,
+            // This is to save space, since the information can be retrieved from the core chain.
+            vec![]
+        };
 
         self.batch_insert(
             PathFixedSizeKeyRefElement((

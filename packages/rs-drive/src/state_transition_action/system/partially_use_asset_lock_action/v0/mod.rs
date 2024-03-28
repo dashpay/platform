@@ -13,6 +13,7 @@ pub struct PartiallyUseAssetLockActionV0 {
     /// remaining credit value AFTER used credits are deducted
     pub remaining_credit_value: Credits,
     /// the used credits for processing, this is what will go to Evonodes for processing
+    /// this is after applying the user fee increase
     pub used_credits: Credits,
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,

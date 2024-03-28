@@ -203,19 +203,26 @@ where
             // 3. The revision given by the state transition isn't allowed based on the state
             let state_transition_execution_result = if is_st_asset_lock_funded {
                 StateTransitionExecutionResult::UnpaidConsensusError(first_consensus_error)
-            } else if let Ok(execution_event) = validation_result.into_data() {
+            } else if let Ok((execution_event, errors)) = validation_result.into_data_and_errors() {
                 // In this case the execution event will be to pay for the state transition processing
                 // This ONLY pays for what is needed to prevent attacks on the system
 
                 let event_execution_result = self
-                    .execute_event(execution_event, block_info, transaction, platform_version)
+                    .execute_event(
+                        execution_event,
+                        errors,
+                        block_info,
+                        transaction,
+                        platform_version,
+                    )
                     .map_err(|error| StateTransitionAwareError {
                         error,
                         raw_state_transition: raw_state_transition.clone(),
                     })?;
 
                 match event_execution_result {
-                    EventExecutionResult::SuccessfulPaidExecution(_, actual_fees) => {
+                    EventExecutionResult::SuccessfulPaidExecution(_, actual_fees)
+                    | EventExecutionResult::UnsuccessfulPaidExecution(_, actual_fees, _) => {
                         tracing::debug!(
                             "{} state transition ({}) not processed, but paid for processing",
                             state_transition_name,
@@ -236,9 +243,8 @@ where
 
                         StateTransitionExecutionResult::UnpaidConsensusError(first_consensus_error)
                     }
-                    EventExecutionResult::ConsensusExecutionError(mut validation_result) => {
-                        let payment_consensus_error = validation_result
-                            .errors
+                    EventExecutionResult::UnpaidConsensusExecutionError(mut errors) => {
+                        let payment_consensus_error = errors
                             // the first error must be present for an invalid result
                             .remove(0);
 
@@ -263,16 +269,22 @@ where
             return Ok(state_transition_execution_result);
         }
 
-        let execution_event =
-            validation_result
-                .into_data()
-                .map_err(|error| StateTransitionAwareError {
+        let (execution_event, errors) =
+            validation_result.into_data_and_errors().map_err(|error| {
+                StateTransitionAwareError {
                     error: error.into(),
                     raw_state_transition: raw_state_transition.clone(),
-                })?;
+                }
+            })?;
 
         let event_execution_result = self
-            .execute_event(execution_event, block_info, transaction, platform_version)
+            .execute_event(
+                execution_event,
+                errors,
+                block_info,
+                transaction,
+                platform_version,
+            )
             .map_err(|error| StateTransitionAwareError {
                 error,
                 raw_state_transition: raw_state_transition.clone(),
@@ -288,6 +300,22 @@ where
 
                 StateTransitionExecutionResult::SuccessfulExecution(estimated_fees, actual_fees)
             }
+            EventExecutionResult::UnsuccessfulPaidExecution(_, actual_fees, mut errors) => {
+                tracing::debug!(
+                    "{} state transition ({}) not successfully processed",
+                    state_transition_name,
+                    st_hash,
+                );
+
+                let payment_consensus_error = errors
+                    // the first error must be present for an invalid result
+                    .remove(0);
+
+                StateTransitionExecutionResult::PaidConsensusError(
+                    payment_consensus_error,
+                    actual_fees,
+                )
+            }
             EventExecutionResult::SuccessfulFreeExecution => {
                 tracing::debug!(
                     "Free {} state transition ({}) successfully processed",
@@ -295,18 +323,14 @@ where
                     st_hash,
                 );
 
-                StateTransitionExecutionResult::SuccessfulExecution(
-                    FeeResult::default(),
-                    FeeResult::default(),
-                )
+                StateTransitionExecutionResult::SuccessfulExecution(None, FeeResult::default())
             }
-            EventExecutionResult::ConsensusExecutionError(mut validation_result) => {
+            EventExecutionResult::UnpaidConsensusExecutionError(mut errors) => {
                 // TODO: In case of balance is not enough, we need to reduce balance only for processing fees
                 //  and return paid consensus error.
                 //  Unpaid consensus error should be only if balance not enough even
                 //  to cover processing fees
-                let first_consensus_error = validation_result
-                    .errors
+                let first_consensus_error = errors
                     // the first error must be present for an invalid result
                     .remove(0);
 

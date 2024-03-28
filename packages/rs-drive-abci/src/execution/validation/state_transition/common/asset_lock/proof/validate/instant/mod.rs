@@ -1,8 +1,8 @@
-use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::rpc::signature::CoreSignatureVerification;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
 use dpp::fee::Credits;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
@@ -23,7 +23,6 @@ impl AssetLockProofValidation for InstantAssetLockProof {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<AssetLockValue>, Error> {
-
         // Verify instant lock signature with Core
 
         let is_instant_lock_signature_valid = self.instant_lock().verify_signature(
@@ -32,9 +31,16 @@ impl AssetLockProofValidation for InstantAssetLockProof {
         )?;
 
         if !is_instant_lock_signature_valid {
-            return Ok(ConsensusValidationResult::new_with_error(InvalidInstantAssetLockProofSignatureError::new().into()));
+            return Ok(ConsensusValidationResult::new_with_error(
+                InvalidInstantAssetLockProofSignatureError::new().into(),
+            ));
         }
 
-        self.verify_is_not_spent_and_has_enough_balance(platform_ref, required_balance, transaction, platform_version)
+        self.verify_is_not_spent_and_has_enough_balance(
+            platform_ref,
+            required_balance,
+            transaction,
+            platform_version,
+        )
     }
 }

@@ -23,14 +23,21 @@ impl AssetLockProofValidation for ChainAssetLockProof {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<AssetLockValue>, Error> {
-
         if platform_ref.state.last_committed_core_height() < self.core_chain_locked_height {
-            return Ok(ConsensusValidationResult::new_with_error(InvalidAssetLockProofCoreChainHeightError::new(
-                self.core_chain_locked_height,
-                platform_ref.state.last_committed_core_height(),
-            ).into()));
+            return Ok(ConsensusValidationResult::new_with_error(
+                InvalidAssetLockProofCoreChainHeightError::new(
+                    self.core_chain_locked_height,
+                    platform_ref.state.last_committed_core_height(),
+                )
+                .into(),
+            ));
         }
 
-        self.verify_is_not_spent_and_has_enough_balance(platform_ref, required_balance, transaction, platform_version)
+        self.verify_is_not_spent_and_has_enough_balance(
+            platform_ref,
+            required_balance,
+            transaction,
+            platform_version,
+        )
     }
 }

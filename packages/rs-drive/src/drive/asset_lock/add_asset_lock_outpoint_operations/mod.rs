@@ -11,10 +11,10 @@ use dpp::platform_value::Bytes36;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::fee::Credits;
 use grovedb::EstimatedLayerInformation;
 use std::collections::HashMap;
-use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 
 impl Drive {
     /// Adds operations to a given `outpoint` if it is present in the estimated costs.

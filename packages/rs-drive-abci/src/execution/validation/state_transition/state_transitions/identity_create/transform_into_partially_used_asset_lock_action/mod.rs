@@ -25,17 +25,39 @@ pub(in crate::execution::validation::state_transition::state_transitions::identi
 }
 
 impl TransformIntoPartiallyUsedAssetLockAction for IdentityCreateTransition {
-    fn transform_into_partially_used_asset_lock_action(&self, errors: Vec<ConsensusError>, used_credits: Credits, platform: &PlatformStateRef, transaction: TransactionArg, platform_version: &PlatformVersion) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        match platform_version.drive_abci.validation_and_processing.state_transitions.identity_create_state_transition.transform_into_partially_used_asset_lock_action
+    fn transform_into_partially_used_asset_lock_action(
+        &self,
+        errors: Vec<ConsensusError>,
+        used_credits: Credits,
+        platform: &PlatformStateRef,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .identity_create_state_transition
+            .transform_into_partially_used_asset_lock_action
         {
-            Some(0) => self.transform_into_partially_used_asset_lock_action_v0(errors, used_credits, platform, transaction, platform_version),
+            Some(0) => self.transform_into_partially_used_asset_lock_action_v0(
+                errors,
+                used_credits,
+                platform,
+                transaction,
+                platform_version,
+            ),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "identity create transition: transform_into_partially_used_asset_lock_action".to_string(),
+                method:
+                    "identity create transition: transform_into_partially_used_asset_lock_action"
+                        .to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
-                method: "identity create transition: transform_into_partially_used_asset_lock_action".to_string(),
+                method:
+                    "identity create transition: transform_into_partially_used_asset_lock_action"
+                        .to_string(),
                 known_versions: vec![0],
             })),
         }
