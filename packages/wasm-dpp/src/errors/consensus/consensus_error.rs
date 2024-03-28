@@ -17,6 +17,7 @@ use crate::errors::consensus::basic::identity::{
     InvalidIdentityAssetLockProofChainLockValidationErrorWasm,
     InvalidIdentityAssetLockTransactionErrorWasm,
     InvalidIdentityAssetLockTransactionOutputErrorWasm,
+    InvalidIdentityCreditTransferAmountErrorWasm,
     InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm,
     InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm,
     InvalidIdentityKeySignatureErrorWasm, InvalidIdentityPublicKeyDataErrorWasm,
@@ -40,6 +41,7 @@ use dpp::consensus::basic::BasicError::{
     InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
     InvalidIdentityAssetLockProofChainLockValidationError,
     InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
+    InvalidIdentityCreditTransferAmountError,
     InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
     InvalidIdentityCreditWithdrawalTransitionOutputScriptError, InvalidIdentityPublicKeyDataError,
     InvalidIdentityPublicKeySecurityLevelError, InvalidInstantAssetLockProofError,
@@ -379,6 +381,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         InvalidAssetLockProofTransactionHeightError(e) => {
             InvalidAssetLockProofTransactionHeightErrorWasm::from(e).into()
+        }
+        InvalidIdentityCreditTransferAmountError(e) => {
+            InvalidIdentityCreditTransferAmountErrorWasm::from(e).into()
         }
         InvalidIdentityCreditWithdrawalTransitionCoreFeeError(e) => {
             InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm::from(e).into()
