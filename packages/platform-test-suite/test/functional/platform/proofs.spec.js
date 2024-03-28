@@ -32,7 +32,7 @@ describe('Platform', () => {
     let contractId;
 
     before(async () => {
-      dashClient = await createClientWithFundedWallet(500000);
+      dashClient = await createClientWithFundedWallet(1000000);
 
       await dashClient.platform.initialize();
 

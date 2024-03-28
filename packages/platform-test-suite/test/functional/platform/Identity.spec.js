@@ -342,7 +342,7 @@ describe('Platform', () => {
       });
 
       it('should fail to create more documents if there are no more credits', async () => {
-        const lowBalanceIdentity = await client.platform.identities.register(150000);
+        const lowBalanceIdentity = await client.platform.identities.register(200000);
 
         // Additional wait time to mitigate testnet latency
         await waitForSTPropagated();
