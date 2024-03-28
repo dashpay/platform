@@ -1,4 +1,8 @@
+/* eslint-disable no-console */
 import { Listr } from 'listr2';
+import { NETWORK_LOCAL } from '../../constants.js';
+
+const MIN_BLOCKS_BEFORE_DKG = 6;
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -35,6 +39,38 @@ export default function stopNodeTaskFactory(
         },
       },
       {
+        title: 'Check node is participating in DKG',
+        enable: (ctx) => !ctx.isForce && config.get('network') !== NETWORK_LOCAL,
+        task: async (ctx, task) => {
+          const rpcClient = createRpcClient({
+            port: config.get('core.rpc.port'),
+            user: config.get('core.rpc.user'),
+            pass: config.get('core.rpc.password'),
+            host: await getConnectionHost(config, 'core', 'core.rpc.host'),
+          });
+
+          const { result: dkgInfo } = await rpcClient.quorum('dkginfo');
+
+          const { active_dkgs: activeDkgs, next_dkg: nextDkg } = dkgInfo;
+
+          if (activeDkgs !== 0 || nextDkg < MIN_BLOCKS_BEFORE_DKG) {
+            const agreement = await task.prompt({
+              type: 'toggle',
+              name: 'confirm',
+              header: 'Your node is currently participating in DKG exchange session, restarting may '
+                + 'result in PoSE ban.\n Do you want to proceed?',
+              message: 'Restart node?',
+              enabled: 'Yes',
+              disabled: 'No',
+            });
+
+            if (!agreement) {
+              throw new Error('Node is currently in the DKG window');
+            }
+          }
+        },
+      },
+      {
         title: 'Save core node time',
         enabled: () => config.get('group') === 'local',
         skip: (ctx) => ctx.isForce,
@@ -58,7 +94,6 @@ export default function stopNodeTaskFactory(
           if (ctx.platformOnly) {
             profiles.push('platform');
           }
-
           await dockerCompose.stop(config, { profiles });
         },
       },
