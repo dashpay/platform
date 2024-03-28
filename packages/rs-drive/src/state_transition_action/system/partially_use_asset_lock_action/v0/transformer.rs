@@ -16,6 +16,7 @@ impl PartiallyUseAssetLockActionV0 {
     pub fn try_from_identity_create_transition(
         value: IdentityCreateTransitionV0,
         asset_lock_initial_balance_amount: Credits,
+        asset_lock_output_script: Vec<u8>,
         asset_lock_remaining_balance_amount: Credits,
         desired_used_credits: Credits,
     ) -> Result<Self, ConsensusError> {
@@ -39,6 +40,7 @@ impl PartiallyUseAssetLockActionV0 {
         Ok(PartiallyUseAssetLockActionV0 {
             asset_lock_outpoint: Bytes36::new(asset_lock_outpoint.into()),
             initial_credit_value: asset_lock_initial_balance_amount,
+            asset_lock_script: asset_lock_output_script,
             remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
             used_credits,
             user_fee_increase,
@@ -49,6 +51,7 @@ impl PartiallyUseAssetLockActionV0 {
     pub fn try_from_borrowed_identity_create_transition(
         value: &IdentityCreateTransitionV0,
         asset_lock_initial_balance_amount: Credits,
+        asset_lock_output_script: Vec<u8>,
         asset_lock_remaining_balance_amount: Credits,
         desired_used_credits: Credits,
     ) -> Result<Self, ConsensusError> {
@@ -74,6 +77,7 @@ impl PartiallyUseAssetLockActionV0 {
         Ok(PartiallyUseAssetLockActionV0 {
             asset_lock_outpoint: Bytes36::new(asset_lock_outpoint.into()),
             initial_credit_value: asset_lock_initial_balance_amount,
+            asset_lock_script: asset_lock_output_script,
             remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
             used_credits,
             user_fee_increase: *user_fee_increase,
@@ -104,6 +108,7 @@ impl PartiallyUseAssetLockActionV0 {
         PartiallyUseAssetLockActionV0 {
             asset_lock_outpoint,
             initial_credit_value: asset_lock_value_to_be_consumed.initial_credit_value(),
+            asset_lock_script: asset_lock_value_to_be_consumed.tx_out_script_owned(),
             remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
             used_credits,
             user_fee_increase,
@@ -134,6 +139,7 @@ impl PartiallyUseAssetLockActionV0 {
         PartiallyUseAssetLockActionV0 {
             asset_lock_outpoint: *asset_lock_outpoint,
             initial_credit_value: asset_lock_value_to_be_consumed.initial_credit_value(),
+            asset_lock_script: asset_lock_value_to_be_consumed.tx_out_script().clone(),
             remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
             used_credits,
             user_fee_increase: *user_fee_increase,
@@ -144,6 +150,7 @@ impl PartiallyUseAssetLockActionV0 {
     pub fn try_from_identity_top_up_transition(
         value: IdentityTopUpTransitionV0,
         asset_lock_initial_balance_amount: Credits,
+        asset_lock_output_script: Vec<u8>,
         asset_lock_remaining_balance_amount: Credits,
         desired_used_credits: Credits,
     ) -> Result<Self, ConsensusError> {
@@ -167,6 +174,7 @@ impl PartiallyUseAssetLockActionV0 {
         Ok(PartiallyUseAssetLockActionV0 {
             asset_lock_outpoint: Bytes36::new(asset_lock_outpoint.into()),
             initial_credit_value: asset_lock_initial_balance_amount,
+            asset_lock_script: asset_lock_output_script,
             remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
             used_credits,
             user_fee_increase,
@@ -177,6 +185,7 @@ impl PartiallyUseAssetLockActionV0 {
     pub fn try_from_borrowed_identity_top_up_transition(
         value: &IdentityTopUpTransitionV0,
         asset_lock_initial_balance_amount: Credits,
+        asset_lock_output_script: Vec<u8>,
         asset_lock_remaining_balance_amount: Credits,
         desired_used_credits: Credits,
     ) -> Result<Self, ConsensusError> {
@@ -200,6 +209,7 @@ impl PartiallyUseAssetLockActionV0 {
         Ok(PartiallyUseAssetLockActionV0 {
             asset_lock_outpoint: Bytes36::new(asset_lock_outpoint.into()),
             initial_credit_value: asset_lock_initial_balance_amount,
+            asset_lock_script: asset_lock_output_script,
             remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
             used_credits,
             user_fee_increase: *user_fee_increase,
@@ -230,6 +240,7 @@ impl PartiallyUseAssetLockActionV0 {
         PartiallyUseAssetLockActionV0 {
             asset_lock_outpoint,
             initial_credit_value: top_up_asset_lock_value.initial_credit_value(),
+            asset_lock_script: top_up_asset_lock_value.tx_out_script_owned(),
             remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
             used_credits,
             user_fee_increase,
@@ -260,6 +271,7 @@ impl PartiallyUseAssetLockActionV0 {
         PartiallyUseAssetLockActionV0 {
             asset_lock_outpoint: *asset_lock_outpoint,
             initial_credit_value: top_up_asset_lock_value.initial_credit_value(),
+            asset_lock_script: top_up_asset_lock_value.tx_out_script().clone(),
             remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
             used_credits,
             user_fee_increase: *user_fee_increase,

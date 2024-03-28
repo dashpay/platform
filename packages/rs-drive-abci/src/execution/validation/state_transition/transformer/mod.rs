@@ -10,6 +10,7 @@ use dpp::serialization::Signable;
 use dpp::state_transition::StateTransition;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
+use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
 
 /// A trait for validating state transitions within a blockchain.
 pub trait StateTransitionActionTransformerV0 {
@@ -80,13 +81,16 @@ impl StateTransitionActionTransformerV0 for StateTransition {
                 execution_context,
                 tx,
             ),
-            StateTransition::IdentityTopUp(st) => st.transform_into_action(
-                platform,
-                block_info,
-                validation_mode,
-                execution_context,
-                tx,
-            ),
+            StateTransition::IdentityTopUp(st) => {
+                let signable_bytes = self.signable_bytes()?;
+                st.transform_into_action_for_identity_top_up_transition(
+                    platform,
+                    signable_bytes,
+                    validation_mode,
+                    execution_context,
+                    tx,
+                )
+            },
             StateTransition::IdentityCreditWithdrawal(st) => st.transform_into_action(
                 platform,
                 block_info,

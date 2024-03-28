@@ -714,13 +714,24 @@ impl StateTransitionStateValidationV0 for StateTransition {
             StateTransition::DataContractUpdate(st) => {
                 st.validate_state(action, platform, validation_mode, execution_context, tx)
             }
-            StateTransition::IdentityCreate(st) => st
-                .validate_state_for_identity_create_transition(
-                    action,
-                    platform,
-                    execution_context,
-                    tx,
-                ),
+            StateTransition::IdentityCreate(st) => {
+                let action =
+                    action.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "identity create validation should always an action",
+                    )))?;
+                let StateTransitionAction::IdentityCreateAction(action) = action else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "action must be a identity create transition action",
+                    )));
+                };
+                st
+                    .validate_state_for_identity_create_transition(
+                        action,
+                        platform,
+                        execution_context,
+                        tx,
+                    )
+            },
             StateTransition::IdentityUpdate(st) => {
                 st.validate_state(action, platform, validation_mode, execution_context, tx)
             }
@@ -729,8 +740,10 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 if let Some(action) = action {
                     Ok(ConsensusValidationResult::new_with_data(action))
                 } else {
-                    st.transform_top_up_into_action(
+                    let signable_bytes = self.signable_bytes()?;
+                    st.transform_into_action_for_identity_top_up_transition(
                         platform,
+                        signable_bytes,
                         validation_mode,
                         execution_context,
                         tx,

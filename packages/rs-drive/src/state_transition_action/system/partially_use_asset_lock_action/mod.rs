@@ -29,6 +29,18 @@ impl PartiallyUseAssetLockActionAccessorsV0 for PartiallyUseAssetLockAction {
         }
     }
 
+    fn asset_lock_script(&self) -> &Vec<u8> {
+        match self {
+            PartiallyUseAssetLockAction::V0(transition) => &transition.asset_lock_script,
+        }
+    }
+
+    fn asset_lock_script_owned(self) -> Vec<u8> {
+        match self {
+            PartiallyUseAssetLockAction::V0(transition) => transition.asset_lock_script,
+        }
+    }
+
     fn remaining_credit_value(&self) -> Credits {
         match self {
             PartiallyUseAssetLockAction::V0(transition) => transition.remaining_credit_value,

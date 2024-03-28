@@ -27,9 +27,10 @@ use crate::execution::validation::state_transition::ValidationMode;
 /// A trait to transform into a top up action
 pub trait StateTransitionIdentityTopUpTransitionActionTransformer {
     /// Transform into a top up action
-    fn transform_top_up_into_action<C: CoreRPCLike>(
+    fn transform_into_action_for_identity_top_up_transition<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
@@ -37,9 +38,10 @@ pub trait StateTransitionIdentityTopUpTransitionActionTransformer {
 }
 
 impl StateTransitionIdentityTopUpTransitionActionTransformer for IdentityTopUpTransition {
-    fn transform_top_up_into_action<C: CoreRPCLike>(
+    fn transform_into_action_for_identity_top_up_transition<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
@@ -55,6 +57,7 @@ impl StateTransitionIdentityTopUpTransitionActionTransformer for IdentityTopUpTr
         {
             0 => self.transform_into_action_v0(
                 platform,
+                signable_bytes,
                 validation_mode,
                 execution_context,
                 tx,
@@ -62,40 +65,6 @@ impl StateTransitionIdentityTopUpTransitionActionTransformer for IdentityTopUpTr
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity top up transition: transform_top_up_into_action".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
-    }
-}
-
-impl StateTransitionActionTransformerV0 for IdentityTopUpTransition {
-    fn transform_into_action<C: CoreRPCLike>(
-        &self,
-        platform: &PlatformRef<C>,
-        _block_info: &BlockInfo,
-        validation_mode: ValidationMode,
-        execution_context: &mut StateTransitionExecutionContext,
-        tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version = platform.state.current_platform_version()?;
-
-        match platform_version
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .identity_top_up_state_transition
-            .transform_into_action
-        {
-            0 => self.transform_into_action_v0(
-                platform,
-                validation_mode,
-                execution_context,
-                tx,
-                platform_version,
-            ),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "identity top up transition: transform_into_action".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

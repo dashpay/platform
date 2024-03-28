@@ -1,13 +1,13 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
+use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 
 use dpp::consensus::state::identity::invalid_asset_lock_proof_value::InvalidAssetLockProofValueError;
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
-use dpp::dashcore::signer;
+use dpp::dashcore::{ScriptBuf, signer};
 use dpp::dashcore::signer::double_sha;
 use dpp::identity::KeyType;
 
@@ -32,10 +32,10 @@ use crate::execution::types::state_transition_execution_context::{
 use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
 use dpp::version::DefaultForPlatformVersion;
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockAction;
 
 use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_not_in_state;
-use crate::execution::validation::state_transition::identity_create::transform_into_partially_used_asset_lock_action::TransformIntoPartiallyUsedAssetLockAction;
 use crate::execution::validation::state_transition::ValidationMode;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_create) trait IdentityCreateStateTransitionStateValidationV0
@@ -43,7 +43,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::identi
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        action: StateTransitionAction,
+        action: IdentityCreateTransitionAction,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -64,7 +64,7 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        action: StateTransitionAction,
+        action: IdentityCreateTransitionAction,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -97,18 +97,17 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
 
         if unique_public_key_validation_result.is_valid() {
             // We just pass the action that was given to us
-            Ok(ConsensusValidationResult::new_with_data(action))
+            Ok(ConsensusValidationResult::new_with_data(StateTransitionAction::IdentityCreateAction(action)))
         } else {
             // It's not valid, we need to give back the action that partially uses the asset lock
 
             let used_credits = 1000; //todo: figure this out
-            self.transform_into_partially_used_asset_lock_action(
+
+            let bump_action = PartiallyUseAssetLockAction::from_identity_create_transition_action(action, used_credits);
+            Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action.into(),
                 unique_public_key_validation_result.errors,
-                used_credits,
-                &platform.into(),
-                transaction,
-                platform_version,
-            )
+            ))
         }
     }
 
@@ -147,63 +146,93 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
             ));
         }
 
-        let tx_out_validation = fetch_asset_lock_transaction_output_sync(
-            platform.core_rpc,
-            self.asset_lock_proof(),
-            platform_version,
-        )?;
-
-        if !tx_out_validation.is_valid() {
-            return Ok(ConsensusValidationResult::new_with_errors(
-                tx_out_validation.errors,
-            ));
-        }
-
-        let tx_out = tx_out_validation.into_data()?;
-        let min_value = platform_version
-            .dpp
-            .state_transitions
-            .identities
-            .asset_locks
-            .required_asset_lock_duff_balance_for_processing_start_for_identity_create;
-        if tx_out.value < min_value {
-            return Ok(ConsensusValidationResult::new_with_error(
-                InvalidAssetLockProofValueError::new(tx_out.value, min_value).into(),
-            ));
-        }
-
-        // Verify one time signature
-
-        let public_key_hash = tx_out
-            .script_pubkey
-            .p2pkh_public_key_hash_bytes()
-            .ok_or_else(|| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "output must be a valid p2pkh already",
-                ))
-            })?;
-
-        execution_context.add_operation(ValidationOperation::DoubleSha256);
-        execution_context.add_operation(ValidationOperation::SignatureVerification(
-            SignatureVerificationOperation::new(KeyType::ECDSA_HASH160),
-        ));
-
-        if let Err(e) = signer::verify_hash_signature(
-            &double_sha(signable_bytes),
-            self.signature().as_slice(),
-            public_key_hash,
-        ) {
-            return Ok(ConsensusValidationResult::new_with_error(
-                SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())).into(),
-            ));
-        }
-
         let asset_lock_value_to_be_consumed = if asset_lock_proof_validation.has_data() {
-            asset_lock_proof_validation.into_data()?
+            let asset_lock_value = asset_lock_proof_validation.into_data()?;
+            let tx_out_script_pubkey = ScriptBuf(asset_lock_value.tx_out_script().clone());
+
+            // Verify one time signature
+
+            let public_key_hash = tx_out_script_pubkey
+                .p2pkh_public_key_hash_bytes()
+                .ok_or_else(|| {
+                    Error::Execution(ExecutionError::CorruptedCachedState(
+                        "the script inside the state must be a p2pkh".to_string(),
+                    ))
+                })?;
+
+            execution_context.add_operation(ValidationOperation::DoubleSha256);
+            execution_context.add_operation(ValidationOperation::SignatureVerification(
+                SignatureVerificationOperation::new(KeyType::ECDSA_HASH160),
+            ));
+
+            if let Err(e) = signer::verify_hash_signature(
+                &double_sha(signable_bytes),
+                self.signature().as_slice(),
+                public_key_hash,
+            ) {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())).into(),
+                ));
+            }
+            asset_lock_value
         } else {
+            let tx_out_validation = fetch_asset_lock_transaction_output_sync(
+                platform.core_rpc,
+                self.asset_lock_proof(),
+                platform_version,
+            )?;
+
+            if !tx_out_validation.is_valid() {
+                return Ok(ConsensusValidationResult::new_with_errors(
+                    tx_out_validation.errors,
+                ));
+            }
+
+            let tx_out = tx_out_validation.into_data()?;
+
+            let min_value = platform_version
+                .dpp
+                .state_transitions
+                .identities
+                .asset_locks
+                .required_asset_lock_duff_balance_for_processing_start_for_identity_create;
+            if tx_out.value < min_value {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    InvalidAssetLockProofValueError::new(tx_out.value, min_value).into(),
+                ));
+            }
+
+            // Verify one time signature
+
+            let public_key_hash = tx_out
+                .script_pubkey
+                .p2pkh_public_key_hash_bytes()
+                .ok_or_else(|| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "output must be a valid p2pkh already",
+                    ))
+                })?;
+
+            execution_context.add_operation(ValidationOperation::DoubleSha256);
+            execution_context.add_operation(ValidationOperation::SignatureVerification(
+                SignatureVerificationOperation::new(KeyType::ECDSA_HASH160),
+            ));
+
+            if let Err(e) = signer::verify_hash_signature(
+                &double_sha(signable_bytes),
+                self.signature().as_slice(),
+                public_key_hash,
+            ) {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())).into(),
+                ));
+            }
+
             let initial_balance_amount = tx_out.value * CREDITS_PER_DUFF;
             AssetLockValue::new(
                 initial_balance_amount,
+                tx_out
+                    .script_pubkey.0,
                 initial_balance_amount,
                 platform_version,
             )?

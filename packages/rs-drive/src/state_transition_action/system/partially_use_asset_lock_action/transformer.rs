@@ -12,6 +12,7 @@ impl PartiallyUseAssetLockAction {
     pub fn try_from_identity_create_transition(
         value: IdentityCreateTransition,
         asset_lock_initial_balance_amount: Credits,
+        asset_lock_output_script: Vec<u8>,
         asset_lock_remaining_balance_amount: Credits,
         used_credits: Credits,
     ) -> Result<Self, ConsensusError> {
@@ -20,6 +21,7 @@ impl PartiallyUseAssetLockAction {
                 PartiallyUseAssetLockActionV0::try_from_identity_create_transition(
                     v0,
                     asset_lock_initial_balance_amount,
+                    asset_lock_output_script,
                     asset_lock_remaining_balance_amount,
                     used_credits,
                 )?
@@ -32,6 +34,7 @@ impl PartiallyUseAssetLockAction {
     pub fn try_from_borrowed_identity_create_transition(
         value: &IdentityCreateTransition,
         asset_lock_initial_balance_amount: Credits,
+        asset_lock_output_script: Vec<u8>,
         asset_lock_remaining_balance_amount: Credits,
         used_credits: Credits,
     ) -> Result<Self, ConsensusError> {
@@ -40,6 +43,7 @@ impl PartiallyUseAssetLockAction {
                 PartiallyUseAssetLockActionV0::try_from_borrowed_identity_create_transition(
                     v0,
                     asset_lock_initial_balance_amount,
+                    asset_lock_output_script,
                     asset_lock_remaining_balance_amount,
                     used_credits,
                 )?
@@ -84,6 +88,7 @@ impl PartiallyUseAssetLockAction {
     pub fn try_from_identity_top_up_transition(
         value: IdentityTopUpTransition,
         asset_lock_initial_balance_amount: Credits,
+        asset_lock_output_script: Vec<u8>,
         asset_lock_remaining_balance_amount: Credits,
         used_credits: Credits,
     ) -> Result<Self, ConsensusError> {
@@ -92,6 +97,7 @@ impl PartiallyUseAssetLockAction {
                 PartiallyUseAssetLockActionV0::try_from_identity_top_up_transition(
                     v0,
                     asset_lock_initial_balance_amount,
+                    asset_lock_output_script,
                     asset_lock_remaining_balance_amount,
                     used_credits,
                 )?
@@ -104,6 +110,7 @@ impl PartiallyUseAssetLockAction {
     pub fn try_from_borrowed_identity_top_up_transition(
         value: &IdentityTopUpTransition,
         asset_lock_initial_balance_amount: Credits,
+        asset_lock_output_script: Vec<u8>,
         asset_lock_remaining_balance_amount: Credits,
         used_credits: Credits,
     ) -> Result<Self, ConsensusError> {
@@ -112,6 +119,7 @@ impl PartiallyUseAssetLockAction {
                 PartiallyUseAssetLockActionV0::try_from_borrowed_identity_top_up_transition(
                     v0,
                     asset_lock_initial_balance_amount,
+                    asset_lock_output_script,
                     asset_lock_remaining_balance_amount,
                     used_credits,
                 )?

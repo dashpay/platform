@@ -11,7 +11,7 @@ mod v0;
 pub use v0::{AssetLockValueGettersV0, AssetLockValueSettersV0};
 
 #[derive(
-    Debug, Clone, Copy, Encode, Decode, PlatformSerialize, PlatformDeserialize, From, PartialEq,
+    Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, From, PartialEq,
 )]
 #[platform_serialize(unversioned)]
 pub enum AssetLockValue {
@@ -21,6 +21,7 @@ pub enum AssetLockValue {
 impl AssetLockValue {
     pub fn new(
         initial_credit_value: Credits,
+        tx_out_script: Vec<u8>,
         remaining_credit_value: Credits,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
@@ -32,6 +33,7 @@ impl AssetLockValue {
         {
             0 => Ok(AssetLockValue::V0(AssetLockValueV0 {
                 initial_credit_value,
+                tx_out_script,
                 remaining_credit_value,
             })),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -50,6 +52,18 @@ impl AssetLockValueGettersV0 for AssetLockValue {
         }
     }
 
+    fn tx_out_script(&self) -> &Vec<u8> {
+        match self {
+            AssetLockValue::V0(v0) => &v0.tx_out_script,
+        }
+    }
+
+    fn tx_out_script_owned(self) -> Vec<u8> {
+        match self {
+            AssetLockValue::V0(v0) => v0.tx_out_script,
+        }
+    }
+
     fn remaining_credit_value(&self) -> Credits {
         match self {
             AssetLockValue::V0(v0) => v0.remaining_credit_value,
@@ -61,6 +75,12 @@ impl AssetLockValueSettersV0 for AssetLockValue {
     fn set_initial_credit_value(&mut self, value: Credits) {
         match self {
             AssetLockValue::V0(v0) => v0.initial_credit_value = value,
+        }
+    }
+
+    fn set_tx_out_script(&mut self, value: Vec<u8>) {
+        match self {
+            AssetLockValue::V0(v0) => v0.tx_out_script = value,
         }
     }
 

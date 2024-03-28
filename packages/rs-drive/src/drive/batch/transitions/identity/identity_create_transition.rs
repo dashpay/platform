@@ -17,11 +17,12 @@ impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
         _epoch: &Epoch,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
-        let mut asset_lock_value = self.asset_lock_value_to_be_consumed();
         let asset_lock_outpoint = self.asset_lock_outpoint();
+
+        let (identity, mut asset_lock_value) =
+            Identity::try_from_identity_create_transition_action_returning_asset_lock_value(self, platform_version)?;
+
         let initial_balance = asset_lock_value.remaining_credit_value();
-        let identity =
-            Identity::try_from_identity_create_transition_action(self, platform_version)?;
 
         asset_lock_value.set_remaining_credit_value(0); // We are using the entire value
 

@@ -21,6 +21,8 @@ impl DriveHighLevelOperationConverter for PartiallyUseAssetLockAction {
         let used_credits = self.used_credits();
         let asset_lock_outpoint = self.asset_lock_outpoint();
 
+        let tx_out_script = self.asset_lock_script_owned();
+
         let drive_operations = vec![
             SystemOperation(SystemOperationType::AddToSystemCredits {
                 amount: used_credits,
@@ -29,6 +31,7 @@ impl DriveHighLevelOperationConverter for PartiallyUseAssetLockAction {
                 asset_lock_outpoint,
                 asset_lock_value: AssetLockValue::new(
                     initial_credit_value,
+                    tx_out_script,
                     remaining_credit_value,
                     platform_version,
                 )?,

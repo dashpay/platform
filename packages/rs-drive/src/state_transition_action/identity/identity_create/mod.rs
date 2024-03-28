@@ -32,7 +32,17 @@ impl IdentityCreateTransitionAction {
 
     /// Asset lock value to be consumed
     /// The initial balance is equal to the remaining credit value in the asset lock value
-    pub fn asset_lock_value_to_be_consumed(&self) -> AssetLockValue {
+    pub fn asset_lock_value_to_be_consumed(&self) -> &AssetLockValue {
+        match self {
+            IdentityCreateTransitionAction::V0(transition) => {
+                &transition.asset_lock_value_to_be_consumed
+            }
+        }
+    }
+
+    /// Asset lock value to be consumed
+    /// The initial balance is equal to the remaining credit value in the asset lock value
+    pub fn asset_lock_value_to_be_consumed_owned(self) -> AssetLockValue {
         match self {
             IdentityCreateTransitionAction::V0(transition) => {
                 transition.asset_lock_value_to_be_consumed
@@ -81,10 +91,10 @@ impl From<&IdentityCreateTransitionAction> for PartialIdentity {
 /// action
 pub trait IdentityFromIdentityCreateTransitionAction {
     /// try from
-    fn try_from_identity_create_transition_action(
+    fn try_from_identity_create_transition_action_returning_asset_lock_value(
         value: IdentityCreateTransitionAction,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
+    ) -> Result<(Self, AssetLockValue), ProtocolError>
     where
         Self: Sized;
     /// try from borrowed
@@ -97,13 +107,13 @@ pub trait IdentityFromIdentityCreateTransitionAction {
 }
 
 impl IdentityFromIdentityCreateTransitionAction for Identity {
-    fn try_from_identity_create_transition_action(
+    fn try_from_identity_create_transition_action_returning_asset_lock_value(
         value: IdentityCreateTransitionAction,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<(Self, AssetLockValue), ProtocolError> {
         match value {
             IdentityCreateTransitionAction::V0(v0) => {
-                Identity::try_from_identity_create_transition_action_v0(v0, platform_version)
+                Identity::try_from_identity_create_transition_action_returning_asset_lock_value_v0(v0, platform_version)
             }
         }
     }

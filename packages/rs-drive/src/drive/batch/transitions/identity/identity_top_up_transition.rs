@@ -14,9 +14,11 @@ impl DriveHighLevelOperationConverter for IdentityTopUpTransitionAction {
         _epoch: &Epoch,
         _platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
-        let mut asset_lock_value = self.top_up_asset_lock_value();
+
         let identity_id = self.identity_id();
         let asset_lock_outpoint = self.asset_lock_outpoint();
+
+        let mut asset_lock_value = self.top_up_asset_lock_value_consume();
 
         let added_balance = asset_lock_value.remaining_credit_value();
 

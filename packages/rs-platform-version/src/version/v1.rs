@@ -604,7 +604,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     nonce: None,
                     state: 0,
                     transform_into_action: 0,
-                    transform_into_partially_used_asset_lock_action: Some(0),
                 },
                 identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
@@ -614,7 +613,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     nonce: Some(0),
                     state: 0,
                     transform_into_action: 0,
-                    transform_into_partially_used_asset_lock_action: None,
                 },
                 identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
@@ -624,7 +622,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     nonce: None,
                     state: 0,
                     transform_into_action: 0,
-                    transform_into_partially_used_asset_lock_action: Some(0),
                 },
                 identity_credit_withdrawal_state_transition:
                     DriveAbciStateTransitionValidationVersion {
@@ -635,7 +632,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                         nonce: Some(0),
                         state: 0,
                         transform_into_action: 0,
-                        transform_into_partially_used_asset_lock_action: None,
                     },
                 identity_credit_transfer_state_transition:
                     DriveAbciStateTransitionValidationVersion {
@@ -646,7 +642,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                         nonce: Some(0),
                         state: 0,
                         transform_into_action: 0,
-                        transform_into_partially_used_asset_lock_action: None,
                     },
                 contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
@@ -656,7 +651,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     nonce: Some(0),
                     state: 0,
                     transform_into_action: 0,
-                    transform_into_partially_used_asset_lock_action: None,
                 },
                 contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: None,
@@ -666,7 +660,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     nonce: Some(0),
                     state: 0,
                     transform_into_action: 0,
-                    transform_into_partially_used_asset_lock_action: None,
                 },
                 documents_batch_state_transition:
                     DriveAbciDocumentsStateTransitionValidationVersions {

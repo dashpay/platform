@@ -2,7 +2,6 @@ mod advanced_structure;
 mod basic_structure;
 pub(crate) mod identity_and_signatures;
 mod state;
-mod transform_into_partially_used_asset_lock_action;
 
 use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
@@ -162,7 +161,7 @@ pub trait StateTransitionStateValidationForIdentityCreateTransitionV0 {
     /// Validate state
     fn validate_state_for_identity_create_transition<C: CoreRPCLike>(
         &self,
-        action: Option<StateTransitionAction>,
+        action: IdentityCreateTransitionAction,
         platform: &PlatformRef<C>,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
@@ -172,7 +171,7 @@ pub trait StateTransitionStateValidationForIdentityCreateTransitionV0 {
 impl StateTransitionStateValidationForIdentityCreateTransitionV0 for IdentityCreateTransition {
     fn validate_state_for_identity_create_transition<C: CoreRPCLike>(
         &self,
-        action: Option<StateTransitionAction>,
+        action: IdentityCreateTransitionAction,
         platform: &PlatformRef<C>,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
@@ -186,15 +185,6 @@ impl StateTransitionStateValidationForIdentityCreateTransitionV0 for IdentityCre
             .state
         {
             0 => {
-                let action =
-                    action.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "identity create validation should always an action",
-                    )))?;
-                let StateTransitionAction::IdentityCreateAction(_) = &action else {
-                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "action must be a identity create transition action",
-                    )));
-                };
                 self.validate_state_v0(platform, action, execution_context, tx, platform_version)
             }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {

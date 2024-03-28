@@ -137,7 +137,6 @@ pub struct DriveAbciStateTransitionValidationVersion {
     pub nonce: OptionalFeatureVersion,
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,
-    pub transform_into_partially_used_asset_lock_action: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

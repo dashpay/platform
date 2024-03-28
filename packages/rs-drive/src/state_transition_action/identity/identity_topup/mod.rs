@@ -19,7 +19,14 @@ pub enum IdentityTopUpTransitionAction {
 
 impl IdentityTopUpTransitionAction {
     /// The balance being topped up
-    pub fn top_up_asset_lock_value(&self) -> AssetLockValue {
+    pub fn top_up_asset_lock_value(&self) -> &AssetLockValue {
+        match self {
+            IdentityTopUpTransitionAction::V0(transition) => &transition.top_up_asset_lock_value,
+        }
+    }
+
+    /// The balance being topped up
+    pub fn top_up_asset_lock_value_consume(self) -> AssetLockValue {
         match self {
             IdentityTopUpTransitionAction::V0(transition) => transition.top_up_asset_lock_value,
         }
