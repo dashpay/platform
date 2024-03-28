@@ -1,7 +1,7 @@
 use super::config::Config;
 use dpp::prelude::{DataContract, Identifier};
 use drive_proof_verifier::types::DataContractHistory;
-use rs_sdk::platform::{Fetch, FetchMany};
+use rs_sdk::platform::{Fetch, FetchMany, LimitQuery};
 
 /// Given some dummy data contract ID, when I fetch data contract, I get None because it doesn't exist.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -99,7 +99,7 @@ async fn test_data_contract_history_read() {
 
     let result = DataContractHistory::fetch(
         &sdk,
-        (id, 0),
+        LimitQuery::from((id, 0)),
     ).await;
 
     if let Err(e) = result {
