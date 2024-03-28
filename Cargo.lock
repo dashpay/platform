@@ -1249,7 +1249,7 @@ dependencies = [
  "env_logger 0.9.3",
  "getrandom",
  "hex",
- "indexmap 2.1.0",
+ "indexmap 2.2.6",
  "integer-encoding 4.0.0",
  "itertools 0.10.5",
  "json-patch",
@@ -1299,7 +1299,7 @@ dependencies = [
  "grovedb-path",
  "grovedb-storage",
  "hex",
- "indexmap 2.1.0",
+ "indexmap 2.2.6",
  "integer-encoding 4.0.0",
  "intmap",
  "itertools 0.11.0",
@@ -1913,7 +1913,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http",
- "indexmap 2.1.0",
+ "indexmap 2.2.6",
  "slab",
  "tokio",
  "tokio-util",
@@ -2069,7 +2069,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.4.10",
+ "socket2 0.5.5",
  "tokio",
  "tower-service",
  "tracing",
@@ -2140,9 +2140,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.1.0"
+version = "2.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d530e1a18b1cb4c484e6e34556a0d948706958449fca0cab753d649f2bce3d1f"
+checksum = "168fb715dda47215e360912c096649d23d58bf392ac62f73919e831745e40f26"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.3",
@@ -2861,7 +2861,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1d3afd2628e69da2be385eb6f2fd57c8ac7977ceeff6dc166ff1657b0e386a9"
 dependencies = [
  "fixedbitset",
- "indexmap 2.1.0",
+ "indexmap 2.2.6",
 ]
 
 [[package]]
@@ -2939,7 +2939,7 @@ dependencies = [
  "bs58 0.4.0",
  "ciborium",
  "hex",
- "indexmap 2.1.0",
+ "indexmap 2.2.6",
  "lazy_static",
  "platform-serialization",
  "platform-version",
@@ -3205,7 +3205,7 @@ checksum = "c55e02e35260070b6f716a2423c2ff1c3bb1642ddca6f99e1f26d06268a0e2d2"
 dependencies = [
  "bytes",
  "heck",
- "itertools 0.10.5",
+ "itertools 0.11.0",
  "log",
  "multimap",
  "once_cell",
@@ -3239,7 +3239,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "efb6c9a1dd1def8e2124d17e83a20af56f1570d6c2d2bd9e266ccb768df3840e"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "syn 2.0.48",
@@ -3897,11 +3897,11 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.111"
+version = "1.0.115"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "176e46fa42316f18edd598015a5166857fc835ec732f5215eac6b7bdbf0a84f4"
+checksum = "12dc5c46daa8e9fdf4f5e71b6cf9a53f2487da0e86e55808e2d35539666497dd"
 dependencies = [
- "indexmap 2.1.0",
+ "indexmap 2.2.6",
  "itoa",
  "ryu",
  "serde",
@@ -4275,8 +4275,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "0.14.0-dev.9"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#af64c65d94ef233053be8616e4c92f571fb5aae0"
+version = "0.14.0-dev.11"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#52a0b7cd37d7adcffea7b35eaf9ee10c7a6c8135"
 dependencies = [
  "bytes",
  "futures",
@@ -4284,6 +4284,7 @@ dependencies = [
  "lhash",
  "prost 0.12.3",
  "semver",
+ "serde_json",
  "tenderdash-proto",
  "thiserror",
  "tokio",
@@ -4296,8 +4297,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "0.14.0-dev.9"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#af64c65d94ef233053be8616e4c92f571fb5aae0"
+version = "0.14.0-dev.11"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#52a0b7cd37d7adcffea7b35eaf9ee10c7a6c8135"
 dependencies = [
  "bytes",
  "chrono",
@@ -4316,8 +4317,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto-compiler"
-version = "0.14.0-dev.9"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#af64c65d94ef233053be8616e4c92f571fb5aae0"
+version = "0.14.0-dev.11"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#52a0b7cd37d7adcffea7b35eaf9ee10c7a6c8135"
 dependencies = [
  "fs_extra",
  "prost-build 0.12.3",
@@ -4561,7 +4562,7 @@ version = "0.19.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b5bb770da30e5cbfde35a2d7b9b8a2c4b8ef89548a7a6aeab5c9a576e3e7421"
 dependencies = [
- "indexmap 2.1.0",
+ "indexmap 2.2.6",
  "toml_datetime",
  "winnow",
 ]
@@ -4572,7 +4573,7 @@ version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d34d383cd00a163b4a5b85053df514d45bc330f6de7737edfe0a93311d1eaa03"
 dependencies = [
- "indexmap 2.1.0",
+ "indexmap 2.2.6",
  "toml_datetime",
  "winnow",
 ]

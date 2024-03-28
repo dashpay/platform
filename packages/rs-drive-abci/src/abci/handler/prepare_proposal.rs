@@ -189,7 +189,7 @@ where
         validator_set_update,
         // TODO: implement consensus param updates
         consensus_param_updates: None,
-        app_version: Some(protocol_version as u64),
+        app_version: protocol_version as u64,
     };
 
     block_execution_context.set_proposer_results(Some(response.clone()));
