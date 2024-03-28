@@ -8,7 +8,6 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
-use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;

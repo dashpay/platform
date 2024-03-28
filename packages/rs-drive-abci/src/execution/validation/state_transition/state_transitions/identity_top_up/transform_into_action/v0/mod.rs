@@ -12,10 +12,9 @@ use dpp::identity::state_transition::AssetLockProved;
 use dpp::identity::KeyType;
 
 use dpp::prelude::ConsensusValidationResult;
-use dpp::serialization::Signable;
 
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::state_transition::StateTransitionLike;
 
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;

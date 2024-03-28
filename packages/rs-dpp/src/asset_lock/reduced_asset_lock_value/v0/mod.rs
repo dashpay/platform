@@ -1,6 +1,5 @@
 use crate::fee::Credits;
 use bincode::{Decode, Encode};
-use platform_value::Value;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq)]
 pub struct AssetLockValueV0 {

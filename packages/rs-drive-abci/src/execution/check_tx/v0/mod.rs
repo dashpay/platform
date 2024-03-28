@@ -20,8 +20,6 @@ use crate::execution::validation::state_transition::processor::process_state_tra
 use crate::platform_types::platform_state::PlatformState;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
-#[cfg(test)]
-use dpp::validation::SimpleConsensusValidationResult;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 #[cfg(test)]

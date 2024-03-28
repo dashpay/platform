@@ -2,7 +2,6 @@ use crate::error::Error;
 use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::identity::state_transition::AssetLockProved;
-use dpp::prelude::AssetLockProof;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;

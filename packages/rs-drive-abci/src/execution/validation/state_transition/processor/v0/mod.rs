@@ -671,7 +671,7 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
         &self,
         drive: &Drive,
         tx: TransactionArg,
-        execution_context: &mut StateTransitionExecutionContext,
+        _execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<PartialIdentity>, Error> {
         match self {

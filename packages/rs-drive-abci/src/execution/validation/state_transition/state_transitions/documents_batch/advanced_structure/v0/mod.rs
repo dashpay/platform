@@ -44,7 +44,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
         &self,
         action: &DocumentsBatchTransitionAction,
         identity: &PartialIdentity,
-        execution_context: &mut StateTransitionExecutionContext,
+        _execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let security_levels = action.contract_based_security_level_requirement()?;

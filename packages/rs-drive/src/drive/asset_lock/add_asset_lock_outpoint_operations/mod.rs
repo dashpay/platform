@@ -12,7 +12,6 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
-use dpp::fee::Credits;
 use grovedb::EstimatedLayerInformation;
 use std::collections::HashMap;
 

@@ -13,11 +13,10 @@ use dpp::identity::KeyType;
 
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::serialization::Signable;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
-use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::state_transition::StateTransitionLike;
 
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
@@ -65,7 +64,7 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
         &self,
         platform: &PlatformRef<C>,
         action: IdentityCreateTransitionAction,
-        execution_context: &mut StateTransitionExecutionContext,
+        _execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
