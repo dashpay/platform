@@ -50,7 +50,7 @@ pub struct DocumentsBatchTransitionVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DocumentsBatchTransitionValidationVersions {
     pub find_duplicates_by_id: FeatureVersion,
-    pub validate_basic_structure: FeatureVersion,
+    pub validate_base_structure: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

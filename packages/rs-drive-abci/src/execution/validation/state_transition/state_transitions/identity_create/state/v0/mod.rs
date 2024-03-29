@@ -29,7 +29,6 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
-use dpp::version::DefaultForPlatformVersion;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockAction;
 

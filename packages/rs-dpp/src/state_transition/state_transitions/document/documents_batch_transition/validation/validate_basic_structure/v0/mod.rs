@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 
 impl DocumentsBatchTransition {
     #[inline(always)]
-    pub(super) fn validate_basic_structure_v0(
+    pub(super) fn validate_base_structure_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {

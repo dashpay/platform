@@ -911,7 +911,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 documents_batch_transition: DocumentsBatchTransitionVersions {
                     validation: DocumentsBatchTransitionValidationVersions {
                         find_duplicates_by_id: 0,
-                        validate_basic_structure: 0,
+                        validate_base_structure: 0,
                     },
                 },
             },
