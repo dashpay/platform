@@ -92,7 +92,7 @@ impl ValidatorSetV0 {
                         Some(Err(Error::Execution(ExecutionError::CorruptedCachedState(
                             format!(
                                 "validator set does not contain all same members, missing {}",
-                                pro_tx_hash.to_string()
+                                pro_tx_hash
                             ),
                         ))))
                     },
