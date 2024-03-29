@@ -81,7 +81,7 @@ impl StateTransitionBasicStructureValidationV0 for IdentityTopUpTransition {
             .identity_top_up_state_transition
             .basic_structure
         {
-            Some(0) => self.validate_base_structure_v0(platform_version),
+            Some(0) => self.validate_basic_structure_v0(platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity top up transition: validate_basic_structure".to_string(),
                 known_versions: vec![0],

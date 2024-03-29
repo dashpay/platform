@@ -2,6 +2,7 @@ mod chain;
 mod instant;
 
 use crate::error::Error;
+use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
@@ -31,6 +32,7 @@ pub trait AssetLockProofValidation {
         &self,
         platform_ref: &PlatformRef<C>,
         required_balance: Credits,
+        validation_mode: ValidationMode,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<AssetLockValue>, Error>;
@@ -41,6 +43,7 @@ impl AssetLockProofValidation for AssetLockProof {
         &self,
         platform_ref: &PlatformRef<C>,
         required_balance: Credits,
+        validation_mode: ValidationMode,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<AssetLockValue>, Error> {
@@ -48,12 +51,14 @@ impl AssetLockProofValidation for AssetLockProof {
             AssetLockProof::Instant(proof) => proof.validate(
                 platform_ref,
                 required_balance,
+                validation_mode,
                 transaction,
                 platform_version,
             ),
             AssetLockProof::Chain(proof) => proof.validate(
                 platform_ref,
                 required_balance,
+                validation_mode,
                 transaction,
                 platform_version,
             ),

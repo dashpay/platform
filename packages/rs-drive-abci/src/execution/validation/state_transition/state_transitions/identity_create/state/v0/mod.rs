@@ -64,13 +64,11 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
         &self,
         platform: &PlatformRef<C>,
         action: IdentityCreateTransitionAction,
-        _execution_context: &mut StateTransitionExecutionContext,
+        execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let drive = platform.drive;
-        let mut state_transition_execution_context =
-            StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
         let identity_id = self.identity_id();
         let balance =
@@ -89,7 +87,7 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
             validate_unique_identity_public_key_hashes_not_in_state(
                 self.public_keys(),
                 drive,
-                &mut state_transition_execution_context,
+                execution_context,
                 transaction,
                 platform_version,
             )?;
@@ -130,13 +128,16 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
             .state_transitions
             .identities
             .asset_locks
-            .required_asset_lock_duff_balance_for_processing_start_for_identity_create;
+            .required_asset_lock_duff_balance_for_processing_start_for_identity_create
+            * CREDITS_PER_DUFF;
 
         // Validate asset lock proof state
+        // The required balance is in credits because we verify the asset lock value (which is in credits)
         let asset_lock_proof_validation = if validation_mode != ValidationMode::NoValidation {
             self.asset_lock_proof().validate(
                 platform,
                 required_balance,
+                validation_mode,
                 transaction,
                 platform_version,
             )?
@@ -150,33 +151,13 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
             ));
         }
 
+        let mut needs_signature_verification = true;
+
         let asset_lock_value_to_be_consumed = if asset_lock_proof_validation.has_data() {
             let asset_lock_value = asset_lock_proof_validation.into_data()?;
-            let tx_out_script_pubkey = ScriptBuf(asset_lock_value.tx_out_script().clone());
 
-            // Verify one time signature
-
-            let public_key_hash = tx_out_script_pubkey
-                .p2pkh_public_key_hash_bytes()
-                .ok_or_else(|| {
-                    Error::Execution(ExecutionError::CorruptedCachedState(
-                        "the script inside the state must be a p2pkh".to_string(),
-                    ))
-                })?;
-
-            execution_context.add_operation(ValidationOperation::DoubleSha256);
-            execution_context.add_operation(ValidationOperation::SignatureVerification(
-                SignatureVerificationOperation::new(KeyType::ECDSA_HASH160),
-            ));
-
-            if let Err(e) = signer::verify_hash_signature(
-                &double_sha(signable_bytes),
-                self.signature().as_slice(),
-                public_key_hash,
-            ) {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())).into(),
-                ));
+            if validation_mode == ValidationMode::RecheckTx {
+                needs_signature_verification = false;
             }
             asset_lock_value
         } else {
@@ -208,12 +189,30 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
 
             // Verify one time signature
 
-            let public_key_hash = tx_out
-                .script_pubkey
+            if validation_mode == ValidationMode::RecheckTx {
+                needs_signature_verification = false;
+            }
+
+            let initial_balance_amount = tx_out.value * CREDITS_PER_DUFF;
+            AssetLockValue::new(
+                initial_balance_amount,
+                tx_out.script_pubkey.0,
+                initial_balance_amount,
+                platform_version,
+            )?
+        };
+
+        if needs_signature_verification {
+            let tx_out_script_pubkey =
+                ScriptBuf(asset_lock_value_to_be_consumed.tx_out_script().clone());
+
+            // Verify one time signature
+
+            let public_key_hash = tx_out_script_pubkey
                 .p2pkh_public_key_hash_bytes()
                 .ok_or_else(|| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "output must be a valid p2pkh already",
+                    Error::Execution(ExecutionError::CorruptedCachedState(
+                        "the script inside the state must be a p2pkh".to_string(),
                     ))
                 })?;
 
@@ -231,15 +230,7 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
                     SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())).into(),
                 ));
             }
-
-            let initial_balance_amount = tx_out.value * CREDITS_PER_DUFF;
-            AssetLockValue::new(
-                initial_balance_amount,
-                tx_out.script_pubkey.0,
-                initial_balance_amount,
-                platform_version,
-            )?
-        };
+        }
 
         match IdentityCreateTransitionAction::try_from_borrowed(
             self,

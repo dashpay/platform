@@ -9,14 +9,14 @@ use dpp::version::PlatformVersion;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_create) trait IdentityCreateStateTransitionBasicStructureValidationV0
 {
-    fn validate_base_structure_v0(
+    fn validate_basic_structure_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
 impl IdentityCreateStateTransitionBasicStructureValidationV0 for IdentityCreateTransition {
-    fn validate_base_structure_v0(
+    fn validate_basic_structure_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {

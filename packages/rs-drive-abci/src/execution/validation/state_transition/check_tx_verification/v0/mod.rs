@@ -7,7 +7,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
 
-use dpp::state_transition::{StateTransition};
+use dpp::state_transition::StateTransition;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;

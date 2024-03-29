@@ -8,11 +8,11 @@ use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_create) trait DataContractCreatedStateTransitionBasicStructureValidationV0 {
-    fn validate_base_structure_v0(&self, platform_version: &PlatformVersion) -> Result<SimpleConsensusValidationResult, Error>;
+    fn validate_basic_structure_v0(&self, platform_version: &PlatformVersion) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
 impl DataContractCreatedStateTransitionBasicStructureValidationV0 for DataContractCreateTransition {
-    fn validate_base_structure_v0(
+    fn validate_basic_structure_v0(
         &self,
         _platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {

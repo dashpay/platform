@@ -86,7 +86,7 @@ impl StateTransitionBasicStructureValidationV0 for DocumentsBatchTransition {
             .basic_structure
         {
             0 => self
-                .validate_base_structure(platform_version)
+                .validate_basic_structure(platform_version)
                 .map_err(Error::Protocol),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: base structure".to_string(),

@@ -59,13 +59,14 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
             .state_transitions
             .identities
             .asset_locks
-            .required_asset_lock_duff_balance_for_processing_start_for_identity_create;
+            .required_asset_lock_duff_balance_for_processing_start_for_identity_top_up;
 
         // Validate asset lock proof state
         let asset_lock_proof_validation = if validation_mode != ValidationMode::NoValidation {
             self.asset_lock_proof().validate(
                 platform,
                 required_balance,
+                validation_mode,
                 transaction,
                 platform_version,
             )?
@@ -79,9 +80,65 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
             ));
         }
 
+        let mut needs_signature_verification = true;
+
         let asset_lock_value_to_be_consumed = if asset_lock_proof_validation.has_data() {
             let asset_lock_value = asset_lock_proof_validation.into_data()?;
-            let tx_out_script_pubkey = ScriptBuf(asset_lock_value.tx_out_script().clone());
+            // There is no needed to recheck signatures on recheck tx
+            if validation_mode == ValidationMode::RecheckTx {
+                needs_signature_verification = false;
+            }
+            asset_lock_value
+        } else {
+            let tx_out_validation = fetch_asset_lock_transaction_output_sync(
+                platform.core_rpc,
+                self.asset_lock_proof(),
+                platform_version,
+            )?;
+
+            if !tx_out_validation.is_valid() {
+                return Ok(ConsensusValidationResult::new_with_errors(
+                    tx_out_validation.errors,
+                ));
+            }
+
+            let tx_out = tx_out_validation.into_data()?;
+
+            // We should always check that the balance is enough as it's very cheap and we could have
+            // had a version change that would have changed the minimum duff balance for processing
+            // start
+
+            let min_value = platform_version
+                .dpp
+                .state_transitions
+                .identities
+                .asset_locks
+                .required_asset_lock_duff_balance_for_processing_start_for_identity_top_up;
+            if tx_out.value < min_value {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    InvalidAssetLockProofValueError::new(tx_out.value, min_value).into(),
+                ));
+            }
+
+            // Verify one time signature
+            // This is not necessary on recheck
+
+            if validation_mode == ValidationMode::RecheckTx {
+                needs_signature_verification = false;
+            }
+
+            let initial_balance_amount = tx_out.value * CREDITS_PER_DUFF;
+            AssetLockValue::new(
+                initial_balance_amount,
+                tx_out.script_pubkey.0,
+                initial_balance_amount,
+                platform_version,
+            )?
+        };
+
+        if needs_signature_verification {
+            let tx_out_script_pubkey =
+                ScriptBuf(asset_lock_value_to_be_consumed.tx_out_script().clone());
 
             // Verify one time signature
 
@@ -107,68 +164,7 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
                     SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())).into(),
                 ));
             }
-            asset_lock_value
-        } else {
-            let tx_out_validation = fetch_asset_lock_transaction_output_sync(
-                platform.core_rpc,
-                self.asset_lock_proof(),
-                platform_version,
-            )?;
-
-            if !tx_out_validation.is_valid() {
-                return Ok(ConsensusValidationResult::new_with_errors(
-                    tx_out_validation.errors,
-                ));
-            }
-
-            let tx_out = tx_out_validation.into_data()?;
-
-            let min_value = platform_version
-                .dpp
-                .state_transitions
-                .identities
-                .asset_locks
-                .required_asset_lock_duff_balance_for_processing_start_for_identity_top_up;
-            if tx_out.value < min_value {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    InvalidAssetLockProofValueError::new(tx_out.value, min_value).into(),
-                ));
-            }
-
-            // Verify one time signature
-
-            let public_key_hash = tx_out
-                .script_pubkey
-                .p2pkh_public_key_hash_bytes()
-                .ok_or_else(|| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "output must be a valid p2pkh already",
-                    ))
-                })?;
-
-            execution_context.add_operation(ValidationOperation::DoubleSha256);
-            execution_context.add_operation(ValidationOperation::SignatureVerification(
-                SignatureVerificationOperation::new(KeyType::ECDSA_HASH160),
-            ));
-
-            if let Err(e) = signer::verify_hash_signature(
-                &double_sha(signable_bytes),
-                self.signature().as_slice(),
-                public_key_hash,
-            ) {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())).into(),
-                ));
-            }
-
-            let initial_balance_amount = tx_out.value * CREDITS_PER_DUFF;
-            AssetLockValue::new(
-                initial_balance_amount,
-                tx_out.script_pubkey.0,
-                initial_balance_amount,
-                platform_version,
-            )?
-        };
+        }
 
         match IdentityTopUpTransitionAction::try_from_borrowed(
             self,
