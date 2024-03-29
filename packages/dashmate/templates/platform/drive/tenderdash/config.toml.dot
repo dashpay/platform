@@ -362,7 +362,7 @@ tx-recv-rate-punish-peer = false
 
 # Maximum size of a single transaction.
 # NOTE: the max size of a tx transmitted over the network is {max-tx-bytes}.
-max-tx-bytes = 1048576
+max-tx-bytes = 50000
 
 # Maximum size of a batch of transactions to send to a peer
 # Including space needed by encoding (one varint per transaction).
