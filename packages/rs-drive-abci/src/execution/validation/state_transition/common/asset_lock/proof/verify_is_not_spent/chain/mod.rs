@@ -1,16 +1,14 @@
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
-use dpp::asset_lock::StoredAssetLockInfo;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
-use dpp::consensus::basic::identity::{IdentityAssetLockTransactionOutPointAlreadyConsumedError, IdentityAssetLockTransactionOutPointNotEnoughBalanceError};
 use dpp::fee::Credits;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-use dpp::platform_value::Bytes36;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
-use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
+
+use super::verify_asset_lock_is_not_spent_and_has_enough_balance;
 
 // TODO: Versioning
 impl AssetLockProofVerifyIsNotSpent for ChainAssetLockProof {
@@ -21,52 +19,12 @@ impl AssetLockProofVerifyIsNotSpent for ChainAssetLockProof {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<AssetLockValue>, Error> {
-        // Make sure that asset lock isn't spent yet
-
-        let stored_asset_lock_info = platform_ref.drive.fetch_asset_lock_outpoint_info(
-            &Bytes36::new(self.out_point.into()),
+        verify_asset_lock_is_not_spent_and_has_enough_balance(
+            platform_ref,
+            self.out_point.clone(),
+            required_balance,
             transaction,
-            &platform_version.drive,
-        )?;
-
-        match stored_asset_lock_info {
-            StoredAssetLockInfo::FullyConsumed => {
-                // It was already entirely spent
-                Ok(ConsensusValidationResult::new_with_error(
-                    IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
-                        self.out_point.txid,
-                        self.out_point.vout as usize,
-                    )
-                    .into(),
-                ))
-            }
-            StoredAssetLockInfo::PartiallyConsumed(reduced_asset_lock_value) => {
-                if reduced_asset_lock_value.remaining_credit_value() == 0 {
-                    Ok(ConsensusValidationResult::new_with_error(
-                        IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
-                            self.out_point.txid,
-                            self.out_point.vout as usize,
-                        )
-                        .into(),
-                    ))
-                } else if reduced_asset_lock_value.remaining_credit_value() < required_balance {
-                    Ok(ConsensusValidationResult::new_with_error(
-                        IdentityAssetLockTransactionOutPointNotEnoughBalanceError::new(
-                            self.out_point.txid,
-                            self.out_point.vout as usize,
-                            reduced_asset_lock_value.initial_credit_value(),
-                            reduced_asset_lock_value.remaining_credit_value(),
-                            required_balance,
-                        )
-                        .into(),
-                    ))
-                } else {
-                    Ok(ConsensusValidationResult::new_with_data(
-                        reduced_asset_lock_value,
-                    ))
-                }
-            }
-            StoredAssetLockInfo::NotPresent => Ok(ConsensusValidationResult::new()),
-        }
+            platform_version,
+        )
     }
 }

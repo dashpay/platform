@@ -49,18 +49,17 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<EventExecutionResult, Error> {
-        let maybe_fee_validation_result = if matches!(
-            event,
-            ExecutionEvent::PaidFromAssetLock { .. } | ExecutionEvent::Paid { .. }
-        ) {
-            Some(self.validate_fees_of_event(
-                &event,
-                block_info,
-                Some(transaction),
-                platform_version,
-            )?)
-        } else {
-            None
+        let maybe_fee_validation_result = match event {
+            ExecutionEvent::PaidFromAssetLock { .. } | ExecutionEvent::Paid { .. } => {
+                Some(self.validate_fees_of_event(
+                    &event,
+                    block_info,
+                    Some(transaction),
+                    platform_version,
+                )?)
+            }
+            ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. }
+            | ExecutionEvent::Free { .. } => None,
         };
 
         match event {

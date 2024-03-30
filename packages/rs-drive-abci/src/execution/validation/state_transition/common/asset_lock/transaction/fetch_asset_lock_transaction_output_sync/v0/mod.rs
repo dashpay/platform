@@ -96,6 +96,7 @@ pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
 
             // Validate asset lock transaction
 
+            // TODO: We don't need this validation for ReCheck
             validate_asset_lock_transaction_structure(&transaction, output_index, platform_version)
                 .map_err(Error::Protocol)
         }
