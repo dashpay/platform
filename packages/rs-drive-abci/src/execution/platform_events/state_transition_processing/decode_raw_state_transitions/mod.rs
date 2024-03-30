@@ -38,13 +38,13 @@ where
             .drive_abci
             .methods
             .state_transition_processing
-            .process_raw_state_transitions
+            .decode_raw_state_transitions
         {
             0 => Ok(self
                 .decode_raw_state_transitions_v0(raw_state_transitions, platform_version)
                 .into()),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "process_raw_state_transitions".to_string(),
+                method: "decode_raw_state_transitions".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

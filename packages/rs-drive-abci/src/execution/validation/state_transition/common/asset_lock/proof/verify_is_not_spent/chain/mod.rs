@@ -21,7 +21,7 @@ impl AssetLockProofVerifyIsNotSpent for ChainAssetLockProof {
     ) -> Result<ConsensusValidationResult<AssetLockValue>, Error> {
         verify_asset_lock_is_not_spent_and_has_enough_balance(
             platform_ref,
-            self.out_point.clone(),
+            self.out_point,
             required_balance,
             transaction,
             platform_version,

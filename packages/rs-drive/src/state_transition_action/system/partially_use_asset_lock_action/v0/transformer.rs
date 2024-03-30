@@ -33,6 +33,9 @@ impl PartiallyUseAssetLockActionV0 {
         let remaining_balance_after_used_credits_are_deducted =
             asset_lock_remaining_balance_amount.saturating_sub(desired_used_credits);
 
+        // In the case that we want to pay for processing on a partially used asset lock, and we have already done that
+        // processing, and also that the processing was more than the balance on the asset lock it's better just to take
+        // the remaining balance.
         let used_credits = std::cmp::min(asset_lock_remaining_balance_amount, desired_used_credits);
 
         Ok(PartiallyUseAssetLockActionV0 {
@@ -69,7 +72,9 @@ impl PartiallyUseAssetLockActionV0 {
         let remaining_balance_after_used_credits_are_deducted =
             asset_lock_remaining_balance_amount.saturating_sub(desired_used_credits);
 
-        // we can only charge what is left, since the operation already happened, we just take what is left.
+        // In the case that we want to pay for processing on a partially used asset lock, and we have already done that
+        // processing, and also that the processing was more than the balance on the asset lock it's better just to take
+        // the remaining balance.
         let used_credits = std::cmp::min(asset_lock_remaining_balance_amount, desired_used_credits);
 
         Ok(PartiallyUseAssetLockActionV0 {
@@ -167,6 +172,9 @@ impl PartiallyUseAssetLockActionV0 {
         let remaining_balance_after_used_credits_are_deducted =
             asset_lock_remaining_balance_amount.saturating_sub(desired_used_credits);
 
+        // In the case that we want to pay for processing on a partially used asset lock, and we have already done that
+        // processing, and also that the processing was more than the balance on the asset lock it's better just to take
+        // the remaining balance.
         let used_credits = std::cmp::min(asset_lock_remaining_balance_amount, desired_used_credits);
 
         Ok(PartiallyUseAssetLockActionV0 {
@@ -202,6 +210,9 @@ impl PartiallyUseAssetLockActionV0 {
         let remaining_balance_after_used_credits_are_deducted =
             asset_lock_remaining_balance_amount.saturating_sub(desired_used_credits);
 
+        // In the case that we want to pay for processing on a partially used asset lock, and we have already done that
+        // processing, and also that the processing was more than the balance on the asset lock it's better just to take
+        // the remaining balance.
         let used_credits = std::cmp::min(asset_lock_remaining_balance_amount, desired_used_credits);
 
         Ok(PartiallyUseAssetLockActionV0 {

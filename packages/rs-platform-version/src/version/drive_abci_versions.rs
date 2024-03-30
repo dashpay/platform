@@ -166,6 +166,7 @@ pub struct DriveAbciStateTransitionCommonValidationVersions {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciAssetLockValidationVersions {
     pub fetch_asset_lock_transaction_output_sync: FeatureVersion,
+    pub verify_asset_lock_is_not_spent_and_has_enough_balance: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -280,5 +281,6 @@ pub struct DriveAbciProtocolUpgradeMethodVersions {
 pub struct DriveAbciStateTransitionProcessingMethodVersions {
     pub execute_event: FeatureVersion,
     pub process_raw_state_transitions: FeatureVersion,
+    pub decode_raw_state_transitions: FeatureVersion,
     pub validate_fees_of_event: FeatureVersion,
 }

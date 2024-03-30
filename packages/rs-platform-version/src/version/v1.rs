@@ -564,6 +564,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
                 execute_event: 0,
                 process_raw_state_transitions: 0,
+                decode_raw_state_transitions: 0,
                 validate_fees_of_event: 0,
             },
             epoch: DriveAbciEpochMethodVersions {
@@ -588,6 +589,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 common_validation_methods: DriveAbciStateTransitionCommonValidationVersions {
                     asset_locks: DriveAbciAssetLockValidationVersions {
                         fetch_asset_lock_transaction_output_sync: 0,
+                        verify_asset_lock_is_not_spent_and_has_enough_balance: 0,
                     },
                     validate_identity_public_key_contract_bounds: 0,
                     validate_identity_public_key_ids_dont_exist_in_state: 0,

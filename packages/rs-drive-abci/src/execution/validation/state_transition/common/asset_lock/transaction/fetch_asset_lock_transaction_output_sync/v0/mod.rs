@@ -96,7 +96,11 @@ pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
 
             // Validate asset lock transaction
 
-            // TODO: We don't need this validation for ReCheck
+            // While we don't need this validation for recheck, we still need to get the tx_out
+            // To get the Tx_out we need some sanity checks, then this checks that we are p2pkh.
+            // The check for p2pkh is only marginally more expensive than the check to see if we are
+            // on a recheck, so there's no point making the code more complicated and stripping
+            // out a very cheap check on recheck tx
             validate_asset_lock_transaction_structure(&transaction, output_index, platform_version)
                 .map_err(Error::Protocol)
         }
