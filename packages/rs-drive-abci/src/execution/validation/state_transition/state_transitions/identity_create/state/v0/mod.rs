@@ -3,12 +3,13 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
 use dpp::balances::credits::CREDITS_PER_DUFF;
+use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointNotEnoughBalanceError;
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 
-use dpp::consensus::state::identity::invalid_asset_lock_proof_value::InvalidAssetLockProofValueError;
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::dashcore::signer::double_sha;
-use dpp::dashcore::{signer, ScriptBuf};
+use dpp::dashcore::{signer, ScriptBuf, Txid};
+use dpp::dashcore::hashes::Hash;
 use dpp::identity::KeyType;
 
 use dpp::identity::state_transition::AssetLockProved;
@@ -182,7 +183,7 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
                 .required_asset_lock_duff_balance_for_processing_start_for_identity_create;
             if tx_out.value < min_value {
                 return Ok(ConsensusValidationResult::new_with_error(
-                    InvalidAssetLockProofValueError::new(tx_out.value, min_value).into(),
+                    IdentityAssetLockTransactionOutPointNotEnoughBalanceError::new(self.asset_lock_proof().out_point().map(|outpoint| outpoint.txid).unwrap_or(Txid::all_zeros()), self.asset_lock_proof().output_index() as usize,  tx_out.value, tx_out.value, min_value).into(),
                 ));
             }
 
