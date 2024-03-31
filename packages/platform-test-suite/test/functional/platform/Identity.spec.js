@@ -23,6 +23,7 @@ const {
     IdentityPublicKey,
     InvalidInstantAssetLockProofSignatureError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     BasicECDSAError,
     IdentityPublicKeyWithWitness,
     IdentityInsufficientBalanceError,
@@ -67,7 +68,7 @@ describe('Platform', () => {
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
       expect(broadcastError.getCause().getCode()).to.equal(10530);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
-          IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
+        IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
       );
     });
 
