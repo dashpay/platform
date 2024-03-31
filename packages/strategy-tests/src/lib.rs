@@ -333,7 +333,7 @@ impl Strategy {
     /// # Parameters
     /// - `document_query_callback`: Callback for querying documents based on specified criteria.
     /// - `identity_fetch_callback`: Callback for fetching identity details, including public keys.
-    /// - `create_asset_lock`: Callback for creating asset lock proofs, primarily for identity transactions.
+    /// - `asset_lock_proofs`: A vector of asset lock proofs and associated private keys.
     /// - `block_info`: Information about the current block, such as its height and timestamp.
     /// - `current_identities`: A mutable list of identities present in the simulation, potentially expanded with new identities.
     /// - `known_contracts`: A mutable map of contracts known in the simulation, including any updates.
@@ -357,7 +357,7 @@ impl Strategy {
     /// let (state_transitions, finalize_ops) = strategy.state_transitions_for_block(
     ///     &mut document_query_callback,
     ///     &mut identity_fetch_callback,
-    ///     &mut create_asset_lock,
+    ///     &mut asset_lock_proofs,
     ///     &block_info,
     ///     &mut current_identities,
     ///     &mut known_contracts,
@@ -381,7 +381,7 @@ impl Strategy {
             Identifier,
             Option<IdentityKeysRequest>,
         ) -> PartialIdentity,
-        create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
+        asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         known_contracts: &mut BTreeMap<String, DataContract>,
@@ -404,7 +404,7 @@ impl Strategy {
             self.start_identities.starting_balances,
             signer,
             rng,
-            create_asset_lock,
+            asset_lock_proofs,
             config,
             platform_version,
         ) {
@@ -435,7 +435,7 @@ impl Strategy {
                 .operations_based_transitions(
                     document_query_callback,
                     identity_fetch_callback,
-                    create_asset_lock,
+                    asset_lock_proofs,
                     block_info,
                     current_identities,
                     known_contracts,
@@ -480,7 +480,7 @@ impl Strategy {
     /// # Parameters
     /// - `document_query_callback`: A callback function for querying existing documents based on specified criteria.
     /// - `identity_fetch_callback`: A callback function for fetching identity information, including public keys.
-    /// - `create_asset_lock`: A callback function for creating asset lock proofs for identity transactions.
+    /// - `asset_lock_proofs`: A vector of asset lock proofs and associated private keys.
     /// - `block_info`: Information about the current block, including height and time.
     /// - `current_identities`: A mutable reference to the list of current identities involved in the operations.
     /// - `known_contracts`: A mutable reference to a map of known contracts and their updates.
@@ -505,7 +505,7 @@ impl Strategy {
     /// let (state_transitions, finalize_ops) = strategy.operations_based_transitions(
     ///     &mut document_query_callback,
     ///     &mut identity_fetch_callback,
-    ///     &mut create_asset_lock,
+    ///     &mut asset_lock_proofs,
     ///     &block_info,
     ///     &mut current_identities,
     ///     &mut known_contracts,
@@ -527,7 +527,7 @@ impl Strategy {
             Identifier,
             Option<IdentityKeysRequest>,
         ) -> PartialIdentity,
-        create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
+        asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
         block_info: &BlockInfo,
         current_identities: &mut [Identity],
         known_contracts: &mut BTreeMap<String, DataContract>,
@@ -968,7 +968,7 @@ impl Strategy {
                         for random_identity in cyclic_identities.take(count.into()) {
                             match crate::transitions::create_identity_top_up_transition(
                                 random_identity,
-                                create_asset_lock,
+                                asset_lock_proofs,
                                 platform_version,
                             ) {
                                 Ok(transition) => operations.push(transition),
@@ -1301,7 +1301,7 @@ impl Strategy {
     /// - `block_info`: Provides details about the current block, such as height, to guide the generation of state transitions.
     /// - `signer`: A mutable reference to a signer instance, used for signing the state transitions of identities.
     /// - `rng`: A mutable reference to a random number generator, for creating randomized elements where necessary.
-    /// - `create_asset_lock`: A mutable reference to a callback function that generates an asset lock proof and associated private key, used in identity creation transactions.
+    /// - `asset_lock_proofs`: A vector of asset lock proofs and associated private keys.
     /// - `config`: Configuration details of the strategy, including the start block height.
     /// - `platform_version`: Specifies the version of the Dash Platform, ensuring compatibility with its features and behaviors.
     ///
@@ -1311,7 +1311,7 @@ impl Strategy {
     /// # Examples
     /// ```ignore
     /// // Assuming `strategy` is an instance of `Strategy`, with `block_info`, `signer`, `rng`,
-    /// // `create_asset_lock`, `config`, and `platform_version` properly initialized:
+    /// // `asset_lock_proofs`, `config`, and `platform_version` properly initialized:
     /// let identity_transitions = strategy.identity_state_transitions_for_block(
     ///     &block_info,
     ///     &mut signer,
@@ -1331,7 +1331,7 @@ impl Strategy {
         amount: u64,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
-        create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
+        asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
         config: &StrategyConfig,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
@@ -1348,7 +1348,7 @@ impl Strategy {
                 amount,
                 signer,
                 rng,
-                create_asset_lock,
+                asset_lock_proofs,
                 platform_version,
             )?;
             state_transitions.append(&mut new_transitions);
@@ -1368,7 +1368,7 @@ impl Strategy {
                     200000, // 0.002 dash
                     signer,
                     rng,
-                    create_asset_lock,
+                    asset_lock_proofs,
                     platform_version,
                 )?;
                 state_transitions.append(&mut new_transitions);
