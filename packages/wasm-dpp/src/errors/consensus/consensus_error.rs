@@ -10,9 +10,10 @@ use crate::errors::consensus::basic::identity::{
     IdentityAssetLockProofLockedTransactionMismatchErrorWasm,
     IdentityAssetLockTransactionIsNotFoundErrorWasm,
     IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm,
+    IdentityAssetLockTransactionOutPointNotEnoughBalanceErrorWasm,
     IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityCreditTransferToSelfErrorWasm,
     IdentityInsufficientBalanceErrorWasm, InvalidAssetLockProofCoreChainHeightErrorWasm,
-    InvalidAssetLockProofTransactionHeightErrorWasm, InvalidAssetLockProofValueErrorWasm,
+    InvalidAssetLockProofTransactionHeightErrorWasm,
     InvalidAssetLockTransactionOutputReturnSizeErrorWasm,
     InvalidIdentityAssetLockProofChainLockValidationErrorWasm,
     InvalidIdentityAssetLockTransactionErrorWasm,
@@ -36,6 +37,7 @@ use dpp::consensus::basic::BasicError::{
     IdentityAssetLockProofLockedTransactionMismatchError,
     IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyConsumedError,
+    IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     IdentityAssetLockTransactionOutputNotFoundError, IncompatibleProtocolVersionError,
     IncompatibleRe2PatternError, InvalidAssetLockProofCoreChainHeightError,
     InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
@@ -209,9 +211,6 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DataContractConfigUpdateError(e) => {
             DataContractConfigUpdateErrorWasm::from(e).into()
-        }
-        StateError::InvalidAssetLockProofValueError(e) => {
-            InvalidAssetLockProofValueErrorWasm::from(e).into()
         }
         StateError::InvalidIdentityNonceError(e) => InvalidIdentityNonceErrorWasm::from(e).into(),
         // TODO(versioning): restore
@@ -393,6 +392,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         NotImplementedIdentityCreditWithdrawalTransitionPoolingError(e) => {
             NotImplementedIdentityCreditWithdrawalTransitionPoolingErrorWasm::from(e).into()
+        }
+        IdentityAssetLockTransactionOutPointNotEnoughBalanceError(e) => {
+            IdentityAssetLockTransactionOutPointNotEnoughBalanceErrorWasm::from(e).into()
         }
         IncompatibleRe2PatternError(err) => IncompatibleRe2PatternErrorWasm::from(err).into(),
         // TODO(versioning): cover other errors

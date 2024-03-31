@@ -205,8 +205,7 @@ impl ErrorWithCode for StateError {
             Self::MissingIdentityPublicKeyIdsError { .. } => 40209,
             Self::IdentityInsufficientBalanceError(_) => 40210,
             Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 40211,
-            Self::InvalidAssetLockProofValueError(_) => 40212,
-            Self::DocumentTypeUpdateError(_) => 40213,
+            Self::DocumentTypeUpdateError(_) => 40212,
 
             // Data trigger errors: 40500-40799
             #[cfg(feature = "state-transition-validation")]

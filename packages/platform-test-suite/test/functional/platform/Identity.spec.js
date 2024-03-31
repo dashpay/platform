@@ -22,7 +22,6 @@ const {
     Identifier,
     IdentityPublicKey,
     InvalidInstantAssetLockProofSignatureError,
-    InvalidAssetLockProofValueError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     BasicECDSAError,
     IdentityPublicKeyWithWitness,
@@ -66,9 +65,9 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(40212);
+      expect(broadcastError.getCause().getCode()).to.equal(10530);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
-        InvalidAssetLockProofValueError,
+          IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
       );
     });
 

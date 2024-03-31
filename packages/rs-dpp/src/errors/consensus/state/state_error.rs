@@ -29,7 +29,6 @@ use crate::consensus::state::identity::{
 use crate::consensus::ConsensusError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
-use crate::consensus::state::identity::invalid_asset_lock_proof_value::InvalidAssetLockProofValueError;
 use crate::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
@@ -81,9 +80,6 @@ pub enum StateError {
 
     #[error(transparent)]
     IdentityPublicKeyIsReadOnlyError(IdentityPublicKeyIsReadOnlyError),
-
-    #[error(transparent)]
-    InvalidAssetLockProofValueError(InvalidAssetLockProofValueError),
 
     #[error(transparent)]
     MissingIdentityPublicKeyIdsError(MissingIdentityPublicKeyIdsError),
