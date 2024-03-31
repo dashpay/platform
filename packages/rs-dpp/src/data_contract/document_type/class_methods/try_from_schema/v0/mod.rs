@@ -753,7 +753,7 @@ mod tests {
                 "additionalProperties": false
             });
 
-            let result = DocumentTypeV0::try_from_schema_v0(
+            let _result = DocumentTypeV0::try_from_schema_v0(
                 Identifier::new([1; 32]),
                 "valid_name-a-b-123",
                 schema,

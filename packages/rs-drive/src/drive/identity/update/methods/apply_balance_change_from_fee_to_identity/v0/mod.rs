@@ -57,8 +57,6 @@ impl Drive {
     ) -> Result<(Vec<LowLevelDriveOperation>, FeeResult), Error> {
         let mut drive_operations = vec![];
 
-        let _drive_version = &platform_version.drive;
-
         if matches!(balance_change.change(), BalanceChange::NoBalanceChange) {
             return Ok((drive_operations, balance_change.into_fee_result()));
         }

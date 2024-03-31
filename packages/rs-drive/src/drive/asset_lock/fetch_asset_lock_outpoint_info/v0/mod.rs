@@ -9,7 +9,10 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
+use dpp::asset_lock::StoredAssetLockInfo;
 use dpp::platform_value::Bytes36;
+use dpp::serialization::PlatformDeserializable;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -24,13 +27,13 @@ impl Drive {
     /// # Returns
     ///
     /// Returns a `Result` which is `Ok` if the outpoint exists in the transaction or an `Error` otherwise.
-    pub(super) fn has_asset_lock_outpoint_v0(
+    pub(super) fn fetch_asset_lock_outpoint_info_v0(
         &self,
         outpoint: &Bytes36,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
-    ) -> Result<bool, Error> {
-        self.has_asset_lock_outpoint_add_operations(
+    ) -> Result<StoredAssetLockInfo, Error> {
+        self.fetch_asset_lock_outpoint_info_add_operations(
             true,
             &mut vec![],
             outpoint,
@@ -52,14 +55,14 @@ impl Drive {
     /// # Returns
     ///
     /// Returns a `Result` which is `Ok` if the outpoint exists in the transaction or an `Error` otherwise.
-    pub(super) fn has_asset_lock_outpoint_add_operations_v0(
+    pub(super) fn fetch_asset_lock_outpoint_info_add_operations_v0(
         &self,
         apply: bool,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         outpoint: &Bytes36,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
-    ) -> Result<bool, Error> {
+    ) -> Result<StoredAssetLockInfo, Error> {
         let asset_lock_storage_path = asset_lock_storage_path();
         let query_type = if apply {
             StatefulDirectQuery
@@ -70,13 +73,26 @@ impl Drive {
             }
         };
 
-        self.grove_has_raw(
-            (&asset_lock_storage_path).into(),
-            outpoint.as_slice(),
-            query_type,
-            transaction,
-            drive_operations,
-            drive_version,
-        )
+        Ok(self
+            .grove_get_raw_optional(
+                (&asset_lock_storage_path).into(),
+                outpoint.as_slice(),
+                query_type,
+                transaction,
+                drive_operations,
+                drive_version,
+            )?
+            .map(|element| {
+                let item_bytes = element.as_item_bytes()?;
+                if item_bytes.is_empty() {
+                    Ok::<StoredAssetLockInfo, Error>(StoredAssetLockInfo::FullyConsumed)
+                } else {
+                    Ok(StoredAssetLockInfo::PartiallyConsumed(
+                        AssetLockValue::deserialize_from_bytes(item_bytes)?,
+                    ))
+                }
+            })
+            .transpose()?
+            .unwrap_or(StoredAssetLockInfo::NotPresent))
     }
 }

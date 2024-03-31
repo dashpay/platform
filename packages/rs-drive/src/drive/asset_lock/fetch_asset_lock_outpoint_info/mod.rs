@@ -9,6 +9,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::platform_value::Bytes36;
 use dpp::version::drive_versions::DriveVersion;
 
+use dpp::asset_lock::StoredAssetLockInfo;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -22,16 +23,20 @@ impl Drive {
     /// # Returns
     ///
     /// Returns a `Result` which is `Ok` if the outpoint exists in the transaction or an `Error` otherwise.
-    pub fn has_asset_lock_outpoint(
+    pub fn fetch_asset_lock_outpoint_info(
         &self,
         outpoint: &Bytes36,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
-    ) -> Result<bool, Error> {
-        match drive_version.methods.asset_lock.has_asset_lock_outpoint {
-            0 => self.has_asset_lock_outpoint_v0(outpoint, transaction, drive_version),
+    ) -> Result<StoredAssetLockInfo, Error> {
+        match drive_version
+            .methods
+            .asset_lock
+            .fetch_asset_lock_outpoint_info
+        {
+            0 => self.fetch_asset_lock_outpoint_info_v0(outpoint, transaction, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "has_asset_lock_outpoint".to_string(),
+                method: "fetch_asset_lock_outpoint_info".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -50,16 +55,20 @@ impl Drive {
     /// # Returns
     ///
     /// Returns a `Result` which is `Ok` if the outpoint exists in the transaction or an `Error` otherwise.
-    pub(crate) fn has_asset_lock_outpoint_add_operations(
+    pub(crate) fn fetch_asset_lock_outpoint_info_add_operations(
         &self,
         apply: bool,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         outpoint: &Bytes36,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
-    ) -> Result<bool, Error> {
-        match drive_version.methods.asset_lock.has_asset_lock_outpoint {
-            0 => self.has_asset_lock_outpoint_add_operations_v0(
+    ) -> Result<StoredAssetLockInfo, Error> {
+        match drive_version
+            .methods
+            .asset_lock
+            .fetch_asset_lock_outpoint_info
+        {
+            0 => self.fetch_asset_lock_outpoint_info_add_operations_v0(
                 apply,
                 drive_operations,
                 outpoint,
@@ -67,7 +76,7 @@ impl Drive {
                 drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "has_asset_lock_outpoint_add_operations".to_string(),
+                method: "fetch_asset_lock_outpoint_info_add_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

@@ -40,6 +40,7 @@ impl ValidationMode {
             ValidationMode::CheckTx => false,
             ValidationMode::RecheckTx => false,
             ValidationMode::Validator => true,
+            ValidationMode::NoValidation => false,
         }
     }
 }
@@ -129,9 +130,9 @@ impl StateTransitionNonceValidationV0 for DocumentsBatchTransition {
 impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransition {
     fn validate_advanced_structure_from_state(
         &self,
-        _platform: &PlatformStateRef,
         action: &StateTransitionAction,
-        identity: &PartialIdentity,
+        identity: Option<&PartialIdentity>,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match platform_version
@@ -142,6 +143,10 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
             .advanced_structure
         {
             0 => {
+                let identity =
+                    identity.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "The identity must be known on advanced structure validation",
+                    )))?;
                 let StateTransitionAction::DocumentsBatchAction(documents_batch_transition_action) =
                     action
                 else {
@@ -152,6 +157,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
                 self.validate_advanced_structure_from_state_v0(
                     documents_batch_transition_action,
                     identity,
+                    execution_context,
                     platform_version,
                 )
             }
@@ -164,6 +170,10 @@ impl StateTransitionStructureKnownInStateValidationV0 for DocumentsBatchTransiti
     }
 
     fn has_advanced_structure_validation_with_state(&self) -> bool {
+        true
+    }
+
+    fn requires_advanced_structure_validation_with_state_on_check_tx(&self) -> bool {
         true
     }
 }
