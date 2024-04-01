@@ -1,6 +1,6 @@
 mod v0;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -33,7 +33,7 @@ impl Drive {
     /// during the operation.
     pub fn fetch_identities_keys(
         &self,
-        identity_ids: &[[u8; 32]],
+        identities_keys_ids: &HashMap<[u8; 32], Vec<u32>>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result::<BTreeMap::<[u8; 32], BTreeMap<KeyID, IdentityPublicKey>>, Error> {
@@ -46,7 +46,7 @@ impl Drive {
             .fetch_identities_keys
         {
             0 => self.fetch_identities_keys_v0(
-                identity_ids,
+                identities_keys_ids,
                 transaction,
                 platform_version,
             ),

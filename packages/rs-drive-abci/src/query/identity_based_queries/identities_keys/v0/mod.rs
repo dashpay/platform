@@ -1,4 +1,3 @@
-
 use std::collections::HashMap;
 use crate::error::query::QueryError;
 use crate::error::Error;
@@ -12,26 +11,32 @@ use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::{check_validation_result_with_data, ProtocolError};
+use dpp::platform_value::string_encoding::Encoding;
 
 impl<C> Platform<C> {
     pub(super) fn query_identities_v0(
         &self,
-        GetIdentitiesKeysRequestV0 { ids, prove }: GetIdentitiesKeysRequestV0,
+        GetIdentitiesKeysRequestV0 { entries, prove }: GetIdentitiesKeysRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetIdentitiesKeysResponseV0>, Error> {
-        let identity_ids = check_validation_result_with_data!(ids
+        let identities_keys_ids = check_validation_result_with_data!(entries
             .into_iter()
-            .map(|identity_id_vec| {
-                Bytes32::from_vec(identity_id_vec)
+            .map(|(identity_id, specific_keys)| {
+                let identity_id = Bytes32::from_string(
+                        &identity_id,
+                        Encoding::Hex
+                    )
                     .map(|bytes| bytes.0)
                     .map_err(|_| {
                         QueryError::InvalidArgument(
                             "id must be a valid identifier (32 bytes long)".to_string(),
                         )
-                    })
+                    })?;
+
+                Ok((identity_id, specific_keys.key_ids))
             })
-            .collect::<Result<Vec<[u8; 32]>, QueryError>>());
+            .collect::<Result<HashMap<[u8; 32], Vec<u32>>, QueryError>>());
 
         let response = if prove {
             todo!()
@@ -49,7 +54,7 @@ impl<C> Platform<C> {
             // }
         } else {
             let identities_keys = self.drive.fetch_identities_keys(
-                identity_ids.as_slice(),
+                &identities_keys_ids,
                 None,
                 platform_version,
             )?;
@@ -63,7 +68,7 @@ impl<C> Platform<C> {
                         .into_iter()
                         .map(|(_, key)| key.serialize_to_bytes())
                         .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()?;
-                    
+
                     Ok((hex::encode(&key), Keys { keys_bytes }))
                 })
                 .collect::<Result<HashMap<String, Keys>, ProtocolError>>()?;

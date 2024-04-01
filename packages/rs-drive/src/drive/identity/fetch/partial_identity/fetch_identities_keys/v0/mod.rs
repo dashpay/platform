@@ -5,26 +5,40 @@ use dpp::identity::{KeyID};
 use grovedb::TransactionArg;
 
 use dpp::version::PlatformVersion;
-use std::collections::{BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 use dpp::prelude::IdentityPublicKey;
+use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 
 impl Drive {
     /// Fetches the Identity's balance with keys as PartialIdentityInfo from the backing store
     /// Passing apply as false get the estimated cost instead
     pub(super) fn fetch_identities_keys_v0(
         &self,
-        identity_ids: &[[u8; 32]],
+        identities_key_ids: &HashMap<[u8; 32], Vec<u32>>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<[u8; 32], BTreeMap<KeyID, IdentityPublicKey>>, Error> {
-        identity_ids
+        identities_key_ids
             .iter()
-            .map(|identity_id| {
+            .map(|(identity_id, key_ids)| {
+                let key_ids = key_ids
+                    .into_iter()
+                    .map(|id| *id as KeyID)
+                    .collect();
+
+                // TODO: put an upper bound on the number of keys that can be fetched?
+                let key_request = IdentityKeysRequest {
+                    identity_id: *identity_id,
+                    request_type: KeyRequestType::SpecificKeys(key_ids),
+                    limit: None,
+                    offset: None,
+                };
+
                 let public_keys = self
-                    .fetch_all_identity_keys(
-                        *identity_id,
+                    .fetch_identity_keys(
+                        key_request,
                         transaction,
-                        platform_version
+                        platform_version,
                     )?;
 
                 Ok((*identity_id, public_keys))
