@@ -30,7 +30,7 @@ impl IdentityCreditTransferTransitionBalanceValidationV0 for IdentityCreditWithd
                     "expected to have a balance on identity for credit withdrawal transition",
                 )))?;
 
-        if balance < self.amount().checked_add(platform_version.fee_version.processing.min_leftover_credits_before_processing).ok_or(Error::Execution(ExecutionError::Overflow("overflow when adding amount and min_leftover_credits_before_processing in identity credit withdrawal")))? {
+        if balance < self.amount().checked_add(platform_version.fee_version.state_transition_min_fees.credit_withdrawal).ok_or(Error::Execution(ExecutionError::Overflow("overflow when adding amount and min_leftover_credits_before_processing in identity credit withdrawal")))? {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 IdentityInsufficientBalanceError::new(self.identity_id(), balance, self.amount())
                     .into(),

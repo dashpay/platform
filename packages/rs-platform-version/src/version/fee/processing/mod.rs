@@ -8,5 +8,4 @@ pub struct FeeProcessingVersion {
     pub fetch_identity_cost_per_look_up_key_by_id: u64,
     pub fetch_single_identity_key_processing_cost: u64,
     pub validate_key_structure: u64,
-    pub min_leftover_credits_before_processing: u64,
 }

@@ -77,7 +77,6 @@ impl StateTransitionActionTransformerForIdentityCreateTransitionV0 for IdentityC
 impl StateTransitionBasicStructureValidationV0 for IdentityCreateTransition {
     fn validate_basic_structure(
         &self,
-        _execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version

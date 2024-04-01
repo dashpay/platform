@@ -31,7 +31,7 @@ impl IdentityCreditTransferTransitionBalanceValidationV0 for IdentityCreditTrans
                     "expected to have a balance on identity for credit transfer transition",
                 )))?;
 
-        if balance < self.amount().checked_add(platform_version.fee_version.processing.min_leftover_credits_before_processing).ok_or(Error::Execution(ExecutionError::Overflow("overflow when adding amount and min_leftover_credits_before_processing in identity credit transfer")))? {
+        if balance < self.amount().checked_add(platform_version.fee_version.state_transition_min_fees.credit_transfer).ok_or(Error::Execution(ExecutionError::Overflow("overflow when adding amount and min_leftover_credits_before_processing in identity credit transfer")))? {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 IdentityInsufficientBalanceError::new(self.identity_id(), balance, self.amount())
                     .into(),

@@ -52,7 +52,6 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             if state_transition.has_basic_structure_validation() {
                 // First we validate the basic structure
                 let result = state_transition.validate_basic_structure(
-                    &mut state_transition_execution_context,
                     platform_version,
                 )?;
 
@@ -142,7 +141,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             };
 
             // This is for identity credit withdrawal and identity credit transfers
-            if state_transition.has_balance_validation() {
+            if state_transition.has_balance_pre_check_validation() {
                 // Validating that we have sufficient balance for a transfer or withdrawal,
                 // this must happen after validating the signature
                 let identity =

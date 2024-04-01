@@ -10,11 +10,11 @@ use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
-use dpp::validation::SimpleConsensusValidationResult;
 
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
+use dpp::validation::SimpleConsensusValidationResult;
 
 /// Represents a request to determine the uniqueness of data.
 /// This structure is defined to handle index uniqueness within a document.

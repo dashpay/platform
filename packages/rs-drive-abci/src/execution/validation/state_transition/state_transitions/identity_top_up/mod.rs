@@ -72,7 +72,6 @@ impl StateTransitionIdentityTopUpTransitionActionTransformer for IdentityTopUpTr
 impl StateTransitionBasicStructureValidationV0 for IdentityTopUpTransition {
     fn validate_basic_structure(
         &self,
-        _execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version

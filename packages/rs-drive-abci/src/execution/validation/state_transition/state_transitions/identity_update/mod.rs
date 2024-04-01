@@ -58,7 +58,6 @@ impl StateTransitionActionTransformerV0 for IdentityUpdateTransition {
 impl StateTransitionBasicStructureValidationV0 for IdentityUpdateTransition {
     fn validate_basic_structure(
         &self,
-        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
@@ -68,7 +67,7 @@ impl StateTransitionBasicStructureValidationV0 for IdentityUpdateTransition {
             .identity_update_state_transition
             .basic_structure
         {
-            Some(0) => self.validate_basic_structure_v0(execution_context, platform_version),
+            Some(0) => self.validate_basic_structure_v0(platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity update transition: validate_basic_structure".to_string(),
                 known_versions: vec![0],

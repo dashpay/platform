@@ -19,7 +19,7 @@ impl StateTransitionBalanceValidationV0 for IdentityCreditTransferTransition {
             .validation_and_processing
             .state_transitions
             .identity_credit_transfer_state_transition
-            .balance_pre_check
+            .advanced_balance_pre_check
         {
             Some(0) => self.validate_balance_pre_check_v0(identity, platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
