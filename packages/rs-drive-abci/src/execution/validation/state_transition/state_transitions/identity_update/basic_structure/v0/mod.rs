@@ -78,7 +78,7 @@ impl IdentityUpdateStateTransitionStructureValidationV0 for IdentityUpdateTransi
         if !result.is_valid() {
             return Ok(result);
         }
-        
+
         IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
             self.public_keys_to_add(),
             false,

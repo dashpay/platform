@@ -7,9 +7,9 @@ use crate::version::fee::storage::FeeStorageVersion;
 mod hashing;
 mod processing;
 pub mod signature;
+pub mod state_transition_min_fees;
 pub mod storage;
 pub mod v1;
-pub mod state_transition_min_fees;
 
 #[derive(Clone, Debug, Default)]
 pub struct FeeVersion {

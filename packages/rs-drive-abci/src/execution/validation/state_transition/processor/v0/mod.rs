@@ -96,8 +96,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     if state_transition.has_basic_structure_validation() {
         // We validate basic structure validation after verifying the identity,
         // this is structure validation that does not require state and is already checked on check_tx
-        let consensus_result = state_transition
-            .validate_basic_structure(platform_version)?;
+        let consensus_result = state_transition.validate_basic_structure(platform_version)?;
 
         if !consensus_result.is_valid() {
             // Basic structure validation is extremely cheap to process, because of this attacks are
@@ -206,7 +205,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     } else {
         None
     };
-    
+
     // Validating state
     // Only identity Top up does not validate state and instead just returns the action for topping up
     let result = state_transition.validate_state(
@@ -437,33 +436,27 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
-            StateTransition::DataContractCreate(_)
-            | StateTransition::DataContractUpdate(_) => {
+            StateTransition::DataContractCreate(_) | StateTransition::DataContractUpdate(_) => {
                 // no basic structure validation
                 Ok(SimpleConsensusValidationResult::new())
             }
-            StateTransition::IdentityCreate(st) => {
-                st.validate_basic_structure(platform_version)
-            }
-            StateTransition::IdentityUpdate(st) => {
-                st.validate_basic_structure(platform_version)
-            }
-            StateTransition::IdentityTopUp(st) => {
-                st.validate_basic_structure(platform_version)
-            }
+            StateTransition::IdentityCreate(st) => st.validate_basic_structure(platform_version),
+            StateTransition::IdentityUpdate(st) => st.validate_basic_structure(platform_version),
+            StateTransition::IdentityTopUp(st) => st.validate_basic_structure(platform_version),
             StateTransition::IdentityCreditWithdrawal(st) => {
                 st.validate_basic_structure(platform_version)
             }
-            StateTransition::DocumentsBatch(st) => {
-                st.validate_basic_structure(platform_version)
-            }
+            StateTransition::DocumentsBatch(st) => st.validate_basic_structure(platform_version),
             StateTransition::IdentityCreditTransfer(st) => {
                 st.validate_basic_structure(platform_version)
             }
         }
     }
     fn has_basic_structure_validation(&self) -> bool {
-        !matches!(self, StateTransition::DataContractCreate(_) | StateTransition::DataContractUpdate(_))
+        !matches!(
+            self,
+            StateTransition::DataContractCreate(_) | StateTransition::DataContractUpdate(_)
+        )
     }
 }
 
@@ -549,14 +542,15 @@ impl StateTransitionBalanceValidationV0 for StateTransition {
             StateTransition::IdentityCreditWithdrawal(st) => {
                 st.validate_balance_pre_check(identity, platform_version)
             }
-            StateTransition::DataContractCreate(_) | 
-            StateTransition::DataContractUpdate(_) |
-            StateTransition::DocumentsBatch(_) |
-            StateTransition::IdentityUpdate(_) => {
+            StateTransition::DataContractCreate(_)
+            | StateTransition::DataContractUpdate(_)
+            | StateTransition::DocumentsBatch(_)
+            | StateTransition::IdentityUpdate(_) => {
                 self.validate_simple_pre_check_balance(identity, platform_version)
             }
-            StateTransition::IdentityCreate(_) |
-            StateTransition::IdentityTopUp(_) => Ok(SimpleConsensusValidationResult::new()),
+            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => {
+                Ok(SimpleConsensusValidationResult::new())
+            }
         }
     }
 
@@ -564,11 +558,11 @@ impl StateTransitionBalanceValidationV0 for StateTransition {
         matches!(
             self,
             StateTransition::IdentityCreditTransfer(_)
-            | StateTransition::IdentityCreditWithdrawal(_)
-            | StateTransition::DataContractCreate(_) 
-            | StateTransition::DataContractUpdate(_)
-            | StateTransition::DocumentsBatch(_)
-            | StateTransition::IdentityUpdate(_)
+                | StateTransition::IdentityCreditWithdrawal(_)
+                | StateTransition::DataContractCreate(_)
+                | StateTransition::DataContractUpdate(_)
+                | StateTransition::DocumentsBatch(_)
+                | StateTransition::IdentityUpdate(_)
         )
     }
 }
@@ -613,18 +607,17 @@ impl StateTransitionAdvancedStructureValidationV0 for StateTransition {
                 }
             }
             StateTransition::DataContractCreate(st) => {
-                st.validate_advanced_structure(
-                    identity,
-                    execution_context,
-                    platform_version,
-                )
+                st.validate_advanced_structure(identity, execution_context, platform_version)
             }
             _ => Ok(ConsensusValidationResult::<StateTransitionAction>::new()),
         }
     }
 
     fn has_advanced_structure_validation_without_state(&self) -> bool {
-        matches!(self, StateTransition::IdentityUpdate(_) | StateTransition::DataContractCreate(_))
+        matches!(
+            self,
+            StateTransition::IdentityUpdate(_) | StateTransition::DataContractCreate(_)
+        )
     }
 }
 

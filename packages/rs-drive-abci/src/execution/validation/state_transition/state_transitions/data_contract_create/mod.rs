@@ -21,7 +21,9 @@ use crate::execution::validation::state_transition::data_contract_create::state:
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
-use crate::execution::validation::state_transition::processor::v0::{StateTransitionAdvancedStructureValidationV0, StateTransitionStateValidationV0};
+use crate::execution::validation::state_transition::processor::v0::{
+    StateTransitionAdvancedStructureValidationV0, StateTransitionStateValidationV0,
+};
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
 
@@ -66,7 +68,12 @@ impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
 }
 
 impl StateTransitionAdvancedStructureValidationV0 for DataContractCreateTransition {
-    fn validate_advanced_structure(&self, _identity: &PartialIdentity, execution_context: &mut StateTransitionExecutionContext, platform_version: &PlatformVersion) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    fn validate_advanced_structure(
+        &self,
+        _identity: &PartialIdentity,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match platform_version
             .drive_abci
             .validation_and_processing

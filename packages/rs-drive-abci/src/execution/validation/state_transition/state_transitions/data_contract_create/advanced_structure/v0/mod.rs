@@ -9,14 +9,16 @@ use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::ConsensusValidationResult;
-use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceAction;
+use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_create) trait DataContractCreatedStateTransitionAdvancedStructureValidationV0 {
     fn validate_advanced_structure_v0(&self, execution_context: &mut StateTransitionExecutionContext) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
-impl DataContractCreatedStateTransitionAdvancedStructureValidationV0 for DataContractCreateTransition {
+impl DataContractCreatedStateTransitionAdvancedStructureValidationV0
+    for DataContractCreateTransition
+{
     fn validate_advanced_structure_v0(
         &self,
         execution_context: &mut StateTransitionExecutionContext,
@@ -42,7 +44,7 @@ impl DataContractCreatedStateTransitionAdvancedStructureValidationV0 for DataCon
                         generated_id.to_vec(),
                         self.data_contract().id().to_vec(),
                     ))
-                        .into(),
+                    .into(),
                 ],
             ));
         }

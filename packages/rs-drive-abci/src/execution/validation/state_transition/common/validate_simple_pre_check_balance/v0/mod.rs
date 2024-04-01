@@ -1,10 +1,10 @@
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use crate::error::Error;
-use crate::error::execution::ExecutionError;
 
 pub trait ValidateSimplePreCheckBalanceV0 {
     fn validate_simple_pre_check_balance_v0(
@@ -21,14 +21,43 @@ impl ValidateSimplePreCheckBalanceV0 for StateTransition {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let amount = match self {
-            StateTransition::DataContractCreate(_) => platform_version.fee_version.state_transition_min_fees.contract_create,
-            StateTransition::DataContractUpdate(_) => platform_version.fee_version.state_transition_min_fees.contract_update,
-            StateTransition::DocumentsBatch(_) => platform_version.fee_version.state_transition_min_fees.document_batch_transition,
-            StateTransition::IdentityCreate(_)
-            | StateTransition::IdentityTopUp(_) => 0,
-            StateTransition::IdentityCreditWithdrawal(_) => platform_version.fee_version.state_transition_min_fees.credit_withdrawal,
-            StateTransition::IdentityUpdate(_) => platform_version.fee_version.state_transition_min_fees.identity_update,
-            StateTransition::IdentityCreditTransfer(_) => platform_version.fee_version.state_transition_min_fees.credit_transfer,
+            StateTransition::DataContractCreate(_) => {
+                platform_version
+                    .fee_version
+                    .state_transition_min_fees
+                    .contract_create
+            }
+            StateTransition::DataContractUpdate(_) => {
+                platform_version
+                    .fee_version
+                    .state_transition_min_fees
+                    .contract_update
+            }
+            StateTransition::DocumentsBatch(_) => {
+                platform_version
+                    .fee_version
+                    .state_transition_min_fees
+                    .document_batch_transition
+            }
+            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => 0,
+            StateTransition::IdentityCreditWithdrawal(_) => {
+                platform_version
+                    .fee_version
+                    .state_transition_min_fees
+                    .credit_withdrawal
+            }
+            StateTransition::IdentityUpdate(_) => {
+                platform_version
+                    .fee_version
+                    .state_transition_min_fees
+                    .identity_update
+            }
+            StateTransition::IdentityCreditTransfer(_) => {
+                platform_version
+                    .fee_version
+                    .state_transition_min_fees
+                    .credit_transfer
+            }
         };
 
         let balance =
@@ -40,8 +69,7 @@ impl ValidateSimplePreCheckBalanceV0 for StateTransition {
 
         if balance < amount {
             return Ok(SimpleConsensusValidationResult::new_with_error(
-                IdentityInsufficientBalanceError::new(identity.id, balance, amount)
-                    .into(),
+                IdentityInsufficientBalanceError::new(identity.id, balance, amount).into(),
             ));
         }
 
