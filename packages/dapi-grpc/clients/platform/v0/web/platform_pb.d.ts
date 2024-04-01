@@ -1122,13 +1122,8 @@ export namespace GetIdentitiesKeysRequest {
   }
 
   export class GetIdentitiesKeysRequestV0 extends jspb.Message {
-    clearIdsList(): void;
-    getIdsList(): Array<Uint8Array | string>;
-    getIdsList_asU8(): Array<Uint8Array>;
-    getIdsList_asB64(): Array<string>;
-    setIdsList(value: Array<Uint8Array | string>): void;
-    addIds(value: Uint8Array | string, index?: number): Uint8Array | string;
-
+    getEntriesMap(): jspb.Map<string, SpecificKeys>;
+    clearEntriesMap(): void;
     getProve(): boolean;
     setProve(value: boolean): void;
 
@@ -1144,7 +1139,7 @@ export namespace GetIdentitiesKeysRequest {
 
   export namespace GetIdentitiesKeysRequestV0 {
     export type AsObject = {
-      idsList: Array<Uint8Array | string>,
+      entriesMap: Array<[string, SpecificKeys.AsObject]>,
       prove: boolean,
     }
   }

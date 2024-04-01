@@ -9372,7 +9372,7 @@ $root.org = (function() {
                              * Properties of a GetIdentitiesKeysRequestV0.
                              * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest
                              * @interface IGetIdentitiesKeysRequestV0
-                             * @property {Array.<Uint8Array>|null} [ids] GetIdentitiesKeysRequestV0 ids
+                             * @property {Object.<string,org.dash.platform.dapi.v0.ISpecificKeys>|null} [entries] GetIdentitiesKeysRequestV0 entries
                              * @property {boolean|null} [prove] GetIdentitiesKeysRequestV0 prove
                              */
 
@@ -9385,7 +9385,7 @@ $root.org = (function() {
                              * @param {org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.IGetIdentitiesKeysRequestV0=} [properties] Properties to set
                              */
                             function GetIdentitiesKeysRequestV0(properties) {
-                                this.ids = [];
+                                this.entries = {};
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -9393,12 +9393,12 @@ $root.org = (function() {
                             }
 
                             /**
-                             * GetIdentitiesKeysRequestV0 ids.
-                             * @member {Array.<Uint8Array>} ids
+                             * GetIdentitiesKeysRequestV0 entries.
+                             * @member {Object.<string,org.dash.platform.dapi.v0.ISpecificKeys>} entries
                              * @memberof org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0
                              * @instance
                              */
-                            GetIdentitiesKeysRequestV0.prototype.ids = $util.emptyArray;
+                            GetIdentitiesKeysRequestV0.prototype.entries = $util.emptyObject;
 
                             /**
                              * GetIdentitiesKeysRequestV0 prove.
@@ -9432,9 +9432,11 @@ $root.org = (function() {
                             GetIdentitiesKeysRequestV0.encode = function encode(message, writer) {
                                 if (!writer)
                                     writer = $Writer.create();
-                                if (message.ids != null && message.ids.length)
-                                    for (var i = 0; i < message.ids.length; ++i)
-                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.ids[i]);
+                                if (message.entries != null && Object.hasOwnProperty.call(message, "entries"))
+                                    for (var keys = Object.keys(message.entries), i = 0; i < keys.length; ++i) {
+                                        writer.uint32(/* id 1, wireType 2 =*/10).fork().uint32(/* id 1, wireType 2 =*/10).string(keys[i]);
+                                        $root.org.dash.platform.dapi.v0.SpecificKeys.encode(message.entries[keys[i]], writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim().ldelim();
+                                    }
                                 if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                     writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
                                 return writer;
@@ -9467,14 +9469,31 @@ $root.org = (function() {
                             GetIdentitiesKeysRequestV0.decode = function decode(reader, length) {
                                 if (!(reader instanceof $Reader))
                                     reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0();
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0(), key, value;
                                 while (reader.pos < end) {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
                                     case 1:
-                                        if (!(message.ids && message.ids.length))
-                                            message.ids = [];
-                                        message.ids.push(reader.bytes());
+                                        if (message.entries === $util.emptyObject)
+                                            message.entries = {};
+                                        var end2 = reader.uint32() + reader.pos;
+                                        key = "";
+                                        value = null;
+                                        while (reader.pos < end2) {
+                                            var tag2 = reader.uint32();
+                                            switch (tag2 >>> 3) {
+                                            case 1:
+                                                key = reader.string();
+                                                break;
+                                            case 2:
+                                                value = $root.org.dash.platform.dapi.v0.SpecificKeys.decode(reader, reader.uint32());
+                                                break;
+                                            default:
+                                                reader.skipType(tag2 & 7);
+                                                break;
+                                            }
+                                        }
+                                        message.entries[key] = value;
                                         break;
                                     case 2:
                                         message.prove = reader.bool();
@@ -9514,12 +9533,15 @@ $root.org = (function() {
                             GetIdentitiesKeysRequestV0.verify = function verify(message) {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
-                                if (message.ids != null && message.hasOwnProperty("ids")) {
-                                    if (!Array.isArray(message.ids))
-                                        return "ids: array expected";
-                                    for (var i = 0; i < message.ids.length; ++i)
-                                        if (!(message.ids[i] && typeof message.ids[i].length === "number" || $util.isString(message.ids[i])))
-                                            return "ids: buffer[] expected";
+                                if (message.entries != null && message.hasOwnProperty("entries")) {
+                                    if (!$util.isObject(message.entries))
+                                        return "entries: object expected";
+                                    var key = Object.keys(message.entries);
+                                    for (var i = 0; i < key.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.SpecificKeys.verify(message.entries[key[i]]);
+                                        if (error)
+                                            return "entries." + error;
+                                    }
                                 }
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     if (typeof message.prove !== "boolean")
@@ -9539,15 +9561,15 @@ $root.org = (function() {
                                 if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0)
                                     return object;
                                 var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0();
-                                if (object.ids) {
-                                    if (!Array.isArray(object.ids))
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.ids: array expected");
-                                    message.ids = [];
-                                    for (var i = 0; i < object.ids.length; ++i)
-                                        if (typeof object.ids[i] === "string")
-                                            $util.base64.decode(object.ids[i], message.ids[i] = $util.newBuffer($util.base64.length(object.ids[i])), 0);
-                                        else if (object.ids[i].length >= 0)
-                                            message.ids[i] = object.ids[i];
+                                if (object.entries) {
+                                    if (typeof object.entries !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.entries: object expected");
+                                    message.entries = {};
+                                    for (var keys = Object.keys(object.entries), i = 0; i < keys.length; ++i) {
+                                        if (typeof object.entries[keys[i]] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.entries: object expected");
+                                        message.entries[keys[i]] = $root.org.dash.platform.dapi.v0.SpecificKeys.fromObject(object.entries[keys[i]]);
+                                    }
                                 }
                                 if (object.prove != null)
                                     message.prove = Boolean(object.prove);
@@ -9567,14 +9589,15 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.arrays || options.defaults)
-                                    object.ids = [];
+                                if (options.objects || options.defaults)
+                                    object.entries = {};
                                 if (options.defaults)
                                     object.prove = false;
-                                if (message.ids && message.ids.length) {
-                                    object.ids = [];
-                                    for (var j = 0; j < message.ids.length; ++j)
-                                        object.ids[j] = options.bytes === String ? $util.base64.encode(message.ids[j], 0, message.ids[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.ids[j]) : message.ids[j];
+                                var keys2;
+                                if (message.entries && (keys2 = Object.keys(message.entries)).length) {
+                                    object.entries = {};
+                                    for (var j = 0; j < keys2.length; ++j)
+                                        object.entries[keys2[j]] = $root.org.dash.platform.dapi.v0.SpecificKeys.toObject(message.entries[keys2[j]], options);
                                 }
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     object.prove = message.prove;

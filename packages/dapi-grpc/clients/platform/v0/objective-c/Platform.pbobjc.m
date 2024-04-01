@@ -2487,12 +2487,12 @@ void GetIdentitiesKeysRequest_ClearVersionOneOfCase(GetIdentitiesKeysRequest *me
 
 @implementation GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0
 
-@dynamic idsArray, idsArray_Count;
+@dynamic entries, entries_Count;
 @dynamic prove;
 
 typedef struct GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0__storage_ {
   uint32_t _has_storage_[1];
-  NSMutableArray *idsArray;
+  NSMutableDictionary *entries;
 } GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -2502,13 +2502,13 @@ typedef struct GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0__storage_ {
   if (!descriptor) {
     static GPBMessageFieldDescription fields[] = {
       {
-        .name = "idsArray",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0_FieldNumber_IdsArray,
+        .name = "entries",
+        .dataTypeSpecific.clazz = GPBObjCClass(SpecificKeys),
+        .number = GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0_FieldNumber_Entries,
         .hasIndex = GPBNoHasBit,
-        .offset = (uint32_t)offsetof(GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0__storage_, idsArray),
-        .flags = GPBFieldRepeated,
-        .dataType = GPBDataTypeBytes,
+        .offset = (uint32_t)offsetof(GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0__storage_, entries),
+        .flags = GPBFieldMapKeyString,
+        .dataType = GPBDataTypeMessage,
       },
       {
         .name = "prove",

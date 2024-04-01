@@ -730,9 +730,11 @@ pub mod get_identities_keys_request {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetIdentitiesKeysRequestV0 {
-        #[prost(bytes = "vec", repeated, tag = "1")]
-        #[serde(with = "crate::deserialization::vec_base64string")]
-        pub ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+        #[prost(map = "string, message", tag = "1")]
+        pub entries: ::std::collections::HashMap<
+            ::prost::alloc::string::String,
+            super::SpecificKeys,
+        >,
         #[prost(bool, tag = "2")]
         pub prove: bool,
     }

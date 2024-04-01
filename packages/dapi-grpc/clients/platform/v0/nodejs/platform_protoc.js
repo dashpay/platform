@@ -968,7 +968,7 @@ if (goog.DEBUG && !COMPILED) {
  * @constructor
  */
 proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.repeatedFields_, null);
+  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
 };
 goog.inherits(proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
@@ -9849,13 +9849,6 @@ proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.serializeBinaryToWriter
 
 
 
-/**
- * List of repeated fields within this message type.
- * @private {!Array<number>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.repeatedFields_ = [1];
-
 
 
 if (jspb.Message.GENERATE_TO_OBJECT) {
@@ -9887,7 +9880,7 @@ proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysReques
  */
 proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.toObject = function(includeInstance, msg) {
   var f, obj = {
-    idsList: msg.getIdsList_asB64(),
+    entriesMap: (f = msg.getEntriesMap()) ? f.toObject(includeInstance, proto.org.dash.platform.dapi.v0.SpecificKeys.toObject) : [],
     prove: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
   };
 
@@ -9926,8 +9919,10 @@ proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysReques
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.addIds(value);
+      var value = msg.getEntriesMap();
+      reader.readMessage(value, function(message, reader) {
+        jspb.Map.deserializeBinary(message, reader, jspb.BinaryReader.prototype.readString, jspb.BinaryReader.prototype.readMessage, proto.org.dash.platform.dapi.v0.SpecificKeys.deserializeBinaryFromReader, "", new proto.org.dash.platform.dapi.v0.SpecificKeys());
+         });
       break;
     case 2:
       var value = /** @type {boolean} */ (reader.readBool());
@@ -9962,12 +9957,9 @@ proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysReques
  */
 proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = message.getIdsList_asU8();
-  if (f.length > 0) {
-    writer.writeRepeatedBytes(
-      1,
-      f
-    );
+  f = message.getEntriesMap(true);
+  if (f && f.getLength() > 0) {
+    f.serializeBinary(1, writer, jspb.BinaryWriter.prototype.writeString, jspb.BinaryWriter.prototype.writeMessage, proto.org.dash.platform.dapi.v0.SpecificKeys.serializeBinaryToWriter);
   }
   f = message.getProve();
   if (f) {
@@ -9980,64 +9972,25 @@ proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysReques
 
 
 /**
- * repeated bytes ids = 1;
- * @return {!Array<string>}
+ * map<string, SpecificKeys> entries = 1;
+ * @param {boolean=} opt_noLazyCreate Do not create the map if
+ * empty, instead returning `undefined`
+ * @return {!jspb.Map<string,!proto.org.dash.platform.dapi.v0.SpecificKeys>}
  */
-proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.prototype.getIdsList = function() {
-  return /** @type {!Array<string>} */ (jspb.Message.getRepeatedField(this, 1));
+proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.prototype.getEntriesMap = function(opt_noLazyCreate) {
+  return /** @type {!jspb.Map<string,!proto.org.dash.platform.dapi.v0.SpecificKeys>} */ (
+      jspb.Message.getMapField(this, 1, opt_noLazyCreate,
+      proto.org.dash.platform.dapi.v0.SpecificKeys));
 };
 
 
 /**
- * repeated bytes ids = 1;
- * This is a type-conversion wrapper around `getIdsList()`
- * @return {!Array<string>}
- */
-proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.prototype.getIdsList_asB64 = function() {
-  return /** @type {!Array<string>} */ (jspb.Message.bytesListAsB64(
-      this.getIdsList()));
-};
-
-
-/**
- * repeated bytes ids = 1;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getIdsList()`
- * @return {!Array<!Uint8Array>}
- */
-proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.prototype.getIdsList_asU8 = function() {
-  return /** @type {!Array<!Uint8Array>} */ (jspb.Message.bytesListAsU8(
-      this.getIdsList()));
-};
-
-
-/**
- * @param {!(Array<!Uint8Array>|Array<string>)} value
+ * Clears values from the map. The map will be non-null.
  * @return {!proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.prototype.setIdsList = function(value) {
-  return jspb.Message.setField(this, 1, value || []);
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @param {number=} opt_index
- * @return {!proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.prototype.addIds = function(value, opt_index) {
-  return jspb.Message.addToRepeatedField(this, 1, value, opt_index);
-};
-
-
-/**
- * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.prototype.clearIdsList = function() {
-  return this.setIdsList([]);
-};
+proto.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.GetIdentitiesKeysRequestV0.prototype.clearEntriesMap = function() {
+  this.getEntriesMap().clear();
+  return this;};
 
 
 /**

@@ -976,15 +976,15 @@ void GetIdentitiesKeysRequest_ClearVersionOneOfCase(GetIdentitiesKeysRequest *me
 #pragma mark - GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0
 
 typedef GPB_ENUM(GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0_FieldNumber) {
-  GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0_FieldNumber_IdsArray = 1,
+  GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0_FieldNumber_Entries = 1,
   GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0_FieldNumber_Prove = 2,
 };
 
 GPB_FINAL @interface GetIdentitiesKeysRequest_GetIdentitiesKeysRequestV0 : GPBMessage
 
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *idsArray;
-/** The number of items in @c idsArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger idsArray_Count;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableDictionary<NSString*, SpecificKeys*> *entries;
+/** The number of items in @c entries without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entries_Count;
 
 @property(nonatomic, readwrite) BOOL prove;
 
