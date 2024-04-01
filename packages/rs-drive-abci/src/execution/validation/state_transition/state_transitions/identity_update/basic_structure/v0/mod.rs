@@ -1,10 +1,15 @@
 use crate::error::Error;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use dpp::consensus::basic::identity::{
     DisablingKeyIdAlsoBeingAddedInSameTransitionError, DuplicatedIdentityPublicKeyIdBasicError,
     InvalidIdentityUpdateTransitionEmptyError,
 };
 use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 use dpp::consensus::ConsensusError;
+use dpp::identity::KeyCount;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
@@ -19,6 +24,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::identi
 {
     fn validate_basic_structure_v0(
         &self,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
@@ -26,6 +32,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::identi
 impl IdentityUpdateStateTransitionStructureValidationV0 for IdentityUpdateTransition {
     fn validate_basic_structure_v0(
         &self,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let mut result = SimpleConsensusValidationResult::default();
@@ -78,6 +85,10 @@ impl IdentityUpdateStateTransitionStructureValidationV0 for IdentityUpdateTransi
         if !result.is_valid() {
             return Ok(result);
         }
+
+        execution_context.add_operation(ValidationOperation::ValidateKeyStructure(
+            self.public_keys_to_add().len() as KeyCount,
+        ));
 
         IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
             self.public_keys_to_add(),

@@ -77,6 +77,7 @@ impl StateTransitionActionTransformerForIdentityCreateTransitionV0 for IdentityC
 impl StateTransitionBasicStructureValidationV0 for IdentityCreateTransition {
     fn validate_basic_structure(
         &self,
+        _execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
@@ -86,7 +87,10 @@ impl StateTransitionBasicStructureValidationV0 for IdentityCreateTransition {
             .identity_create_state_transition
             .basic_structure
         {
-            Some(0) => self.validate_basic_structure_v0(platform_version),
+            Some(0) => {
+                // There is nothing expensive to add as validation methods to the execution context
+                self.validate_basic_structure_v0(platform_version)
+            }
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create transition: validate_basic_structure".to_string(),
                 known_versions: vec![0],

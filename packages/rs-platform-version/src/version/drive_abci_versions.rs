@@ -133,7 +133,7 @@ pub struct DriveAbciStateTransitionValidationVersion {
     pub basic_structure: OptionalFeatureVersion,
     pub advanced_structure: OptionalFeatureVersion,
     pub identity_signatures: OptionalFeatureVersion,
-    pub balance: OptionalFeatureVersion,
+    pub balance_pre_check: OptionalFeatureVersion,
     pub nonce: OptionalFeatureVersion,
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,

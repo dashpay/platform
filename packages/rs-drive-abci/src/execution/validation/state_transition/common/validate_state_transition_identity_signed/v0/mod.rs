@@ -9,7 +9,7 @@ use dpp::consensus::signature::{
 use dpp::identity::PartialIdentity;
 
 use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
-use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::execution_operation::{RetrieveIdentityInfo, ValidationOperation};
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
@@ -89,12 +89,18 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
         let key_request = IdentityKeysRequest::new_specific_key_query(owner_id.as_bytes(), key_id);
 
         let maybe_partial_identity = if request_identity_revision {
+            execution_context.add_operation(ValidationOperation::RetrieveIdentity(
+                RetrieveIdentityInfo::one_key_and_balance_and_revision(),
+            ));
             drive.fetch_identity_balance_with_keys_and_revision(
                 key_request,
                 transaction,
                 platform_version,
             )?
         } else {
+            execution_context.add_operation(ValidationOperation::RetrieveIdentity(
+                RetrieveIdentityInfo::one_key_and_balance(),
+            ));
             drive.fetch_identity_balance_with_keys(key_request, transaction, platform_version)?
         };
 
@@ -116,6 +122,7 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
             return Ok(validation_result);
         }
 
+        // This is very cheap because there will only be 1 key
         let Some(public_key) = partial_identity.loaded_public_keys.get(&key_id) else {
             validation_result.add_error(SignatureError::MissingPublicKeyError(
                 MissingPublicKeyError::new(key_id),
@@ -123,6 +130,7 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
             return Ok(validation_result);
         };
 
+        // Todo: is this needed?
         if !SUPPORTED_KEY_TYPES.contains(&public_key.key_type()) {
             validation_result.add_error(SignatureError::InvalidIdentityPublicKeyTypeError(
                 InvalidIdentityPublicKeyTypeError::new(public_key.key_type()),

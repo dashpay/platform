@@ -1,8 +1,10 @@
 use crate::error::execution::ExecutionError;
 
+use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::v0::StateTransitionExecutionContextV0;
 use derive_more::From;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 
 /// V0 module
@@ -32,6 +34,9 @@ pub trait StateTransitionExecutionContextMethodsV0 {
     fn enable_dry_run(&mut self);
     /// Set us not to be in a dry run
     fn disable_dry_run(&mut self);
+
+    /// Get the fee costs of all operations in the execution context
+    fn fee_cost(&self, platform_version: &PlatformVersion) -> Result<FeeResult, Error>;
 }
 
 impl StateTransitionExecutionContextMethodsV0 for StateTransitionExecutionContext {
@@ -74,6 +79,19 @@ impl StateTransitionExecutionContextMethodsV0 for StateTransitionExecutionContex
     fn disable_dry_run(&mut self) {
         match self {
             StateTransitionExecutionContext::V0(v0) => v0.dry_run = false,
+        }
+    }
+    fn fee_cost(&self, platform_version: &PlatformVersion) -> Result<FeeResult, Error> {
+        match self {
+            StateTransitionExecutionContext::V0(v0) => {
+                let mut fee_result = FeeResult::default();
+                ValidationOperation::add_many_to_fee_result(
+                    v0.operations.as_slice(),
+                    &mut fee_result,
+                    platform_version,
+                )?;
+                Ok(fee_result)
+            }
         }
     }
 }

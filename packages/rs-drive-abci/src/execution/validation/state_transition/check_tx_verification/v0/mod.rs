@@ -6,6 +6,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::ProtocolError;
 
 use dpp::state_transition::StateTransition;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
@@ -22,18 +23,19 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     check_tx_level: CheckTxLevel,
     platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<Option<ExecutionEvent<'a>>>, Error> {
+    // we need to validate the structure, the fees, and the signature
+    let mut state_transition_execution_context =
+        StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
+
     match check_tx_level {
         CheckTxLevel::FirstTimeCheck => {
-            // we need to validate the structure, the fees, and the signature
-            let mut state_transition_execution_context =
-                StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
-
             // Only identity top up and identity create do not have nonces validation
             if state_transition.has_nonces_validation() {
                 let result = state_transition.validate_nonces(
                     &platform.into(),
                     platform.state.last_block_info(),
                     None,
+                    &mut state_transition_execution_context,
                     platform_version,
                 )?;
 
@@ -49,7 +51,10 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             // Only Data contract update does not have basic structure validation
             if state_transition.has_basic_structure_validation() {
                 // First we validate the basic structure
-                let result = state_transition.validate_basic_structure(platform_version)?;
+                let result = state_transition.validate_basic_structure(
+                    &mut state_transition_execution_context,
+                    platform_version,
+                )?;
 
                 if !result.is_valid() {
                     return Ok(
@@ -140,13 +145,15 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             if state_transition.has_balance_validation() {
                 // Validating that we have sufficient balance for a transfer or withdrawal,
                 // this must happen after validating the signature
-                let result = state_transition.validate_balance(
-                    maybe_identity.as_mut(),
-                    &platform.into(),
-                    platform.state.last_block_info(),
-                    None,
-                    platform_version,
-                )?;
+                let identity =
+                    maybe_identity
+                        .as_mut()
+                        .ok_or(ProtocolError::CorruptedCodeExecution(
+                            "identity must be known to validate the balance".to_string(),
+                        ))?;
+
+                let result =
+                    state_transition.validate_balance_pre_check(identity, platform_version)?;
 
                 if !result.is_valid() {
                     return Ok(
@@ -218,6 +225,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         &platform.into(),
                         platform.state.last_block_info(),
                         None,
+                        &mut state_transition_execution_context,
                         platform_version,
                     )?;
 
@@ -229,13 +237,6 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         );
                     }
                 }
-
-                // TODO: We aren't calculating processing fees atm. We probably should reconsider this
-
-                let mut state_transition_execution_context =
-                    StateTransitionExecutionContext::default_for_platform_version(
-                        platform_version,
-                    )?;
 
                 let state_transition_action_result = state_transition.transform_into_action(
                     platform,

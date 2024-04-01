@@ -57,6 +57,7 @@ impl StateTransitionActionTransformerV0 for IdentityCreditWithdrawalTransition {
 impl StateTransitionBasicStructureValidationV0 for IdentityCreditWithdrawalTransition {
     fn validate_basic_structure(
         &self,
+        _execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
@@ -66,7 +67,10 @@ impl StateTransitionBasicStructureValidationV0 for IdentityCreditWithdrawalTrans
             .identity_credit_withdrawal_state_transition
             .basic_structure
         {
-            Some(0) => self.validate_basic_structure_v0(),
+            Some(0) => {
+                // There is nothing expensive here
+                self.validate_basic_structure_v0()
+            }
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity credit withdrawal transition: validate_basic_structure"
                     .to_string(),

@@ -72,6 +72,7 @@ impl StateTransitionIdentityTopUpTransitionActionTransformer for IdentityTopUpTr
 impl StateTransitionBasicStructureValidationV0 for IdentityTopUpTransition {
     fn validate_basic_structure(
         &self,
+        _execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
@@ -81,7 +82,10 @@ impl StateTransitionBasicStructureValidationV0 for IdentityTopUpTransition {
             .identity_top_up_state_transition
             .basic_structure
         {
-            Some(0) => self.validate_basic_structure_v0(platform_version),
+            Some(0) => {
+                // There is nothing expensive here, so need to ask users to pay for anything
+                self.validate_basic_structure_v0(platform_version)
+            }
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity top up transition: validate_basic_structure".to_string(),
                 known_versions: vec![0],
