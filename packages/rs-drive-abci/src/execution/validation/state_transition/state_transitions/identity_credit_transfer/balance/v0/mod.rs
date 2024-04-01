@@ -11,7 +11,7 @@ use dpp::version::PlatformVersion;
 
 pub(in crate::execution::validation::state_transition::state_transitions) trait IdentityCreditTransferTransitionBalanceValidationV0
 {
-    fn validate_balance_pre_check_v0(
+    fn validate_advanced_minimum_balance_pre_check_v0(
         &self,
         identity: &PartialIdentity,
         platform_version: &PlatformVersion,
@@ -19,7 +19,7 @@ pub(in crate::execution::validation::state_transition::state_transitions) trait 
 }
 
 impl IdentityCreditTransferTransitionBalanceValidationV0 for IdentityCreditTransferTransition {
-    fn validate_balance_pre_check_v0(
+    fn validate_advanced_minimum_balance_pre_check_v0(
         &self,
         identity: &PartialIdentity,
         platform_version: &PlatformVersion,

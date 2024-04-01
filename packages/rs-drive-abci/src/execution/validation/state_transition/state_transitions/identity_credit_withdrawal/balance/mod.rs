@@ -19,9 +19,9 @@ impl StateTransitionBalanceValidationV0 for IdentityCreditWithdrawalTransition {
             .validation_and_processing
             .state_transitions
             .identity_credit_withdrawal_state_transition
-            .advanced_balance_pre_check
+            .advanced_miminum_balance_pre_check
         {
-            Some(0) => self.validate_balance_pre_check_v0(identity, platform_version),
+            Some(0) => self.validate_advanced_minimum_balance_pre_check_v0(identity, platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity credit withdrawal transition: validate_balance".to_string(),
                 known_versions: vec![0],
