@@ -295,6 +295,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                         fetch_identity_balance_with_keys: 0,
                         fetch_identity_balance_with_keys_and_revision: 0,
                         fetch_identity_with_balance: 0,
+                        fetch_identities_keys: 0
                     },
                     full_identity: DriveIdentityFetchFullIdentityMethodVersions {
                         fetch_full_identity: Some(0),
@@ -716,12 +717,12 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
-                identities: FeatureVersionBounds {
+                keys: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
                 },
-                keys: FeatureVersionBounds {
+                identities_keys: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
@@ -747,11 +748,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 identity_by_public_key_hash: FeatureVersionBounds {
-                    min_version: 0,
-                    max_version: 0,
-                    default_current_version: 0,
-                },
-                identities_by_public_key_hashes: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
