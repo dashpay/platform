@@ -54,7 +54,7 @@ where
 
         // !!!! This EpochInfo is based on the last committed platform version
         // !!!! and will be used for the first block of the epoch.
-        let mut epoch_info = self.gather_epoch_info(
+        let epoch_info = self.gather_epoch_info(
             &block_proposal,
             transaction,
             platform_state,
