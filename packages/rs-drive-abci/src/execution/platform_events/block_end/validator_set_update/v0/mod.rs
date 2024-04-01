@@ -20,6 +20,7 @@ where
 {
     /// We need to validate against the platform state for rotation and not the block execution
     /// context state
+    #[inline(always)]
     pub(super) fn validator_set_update_v0(
         &self,
         platform_state: &PlatformState,

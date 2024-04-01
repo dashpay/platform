@@ -33,6 +33,7 @@ impl ValidationMode {
             ValidationMode::CheckTx => false,
             ValidationMode::RecheckTx => false,
             ValidationMode::Validator => true,
+            ValidationMode::NoValidation => false,
         }
     }
 }
@@ -77,7 +78,7 @@ impl StateTransitionBasicStructureValidationV0 for DataContractCreateTransition 
             .contract_create_state_transition
             .basic_structure
         {
-            Some(0) => self.validate_base_structure_v0(platform_version),
+            Some(0) => self.validate_basic_structure_v0(platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_basic_structure".to_string(),
                 known_versions: vec![0],

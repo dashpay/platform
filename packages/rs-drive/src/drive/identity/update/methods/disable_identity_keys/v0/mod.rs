@@ -93,7 +93,8 @@ impl Drive {
     /// A `Result` containing a vector of `LowLevelDriveOperation` which represents the operations
     /// performed during the disabling process, or an `Error` if the operation fails.
     ///
-    pub fn disable_identity_keys_operations_v0(
+    #[inline(always)]
+    pub(super) fn disable_identity_keys_operations_v0(
         &self,
         identity_id: [u8; 32],
         key_ids: Vec<KeyID>,

@@ -18,8 +18,6 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
-const MAX_PUBLIC_KEYS: usize = 6;
-
 lazy_static! {
     static ref ALLOWED_SECURITY_LEVELS: HashMap<Purpose, Vec<SecurityLevel>> = {
         let mut m = HashMap::new();
@@ -42,15 +40,28 @@ impl IdentityPublicKeyInCreation {
     /// This validation will validate the count of new keys, that there are no duplicates either by
     /// id or by data. This is done before signature and state validation to remove potential
     /// attack vectors.
+    #[inline(always)]
     pub(super) fn validate_identity_public_keys_structure_v0(
         identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
         in_create_identity: bool,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        if identity_public_keys_with_witness.len() > MAX_PUBLIC_KEYS {
+        if identity_public_keys_with_witness.len()
+            > platform_version
+                .dpp
+                .state_transitions
+                .identities
+                .max_public_keys_in_creation as usize
+        {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 StateError::MaxIdentityPublicKeyLimitReachedError(
-                    MaxIdentityPublicKeyLimitReachedError::new(MAX_PUBLIC_KEYS),
+                    MaxIdentityPublicKeyLimitReachedError::new(
+                        platform_version
+                            .dpp
+                            .state_transitions
+                            .identities
+                            .max_public_keys_in_creation as usize,
+                    ),
                 )
                 .into(),
             ));

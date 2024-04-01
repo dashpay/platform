@@ -1,6 +1,9 @@
 use crate::error::Error;
 use dpp::consensus::basic::document::InvalidDocumentTransitionIdError;
+use dpp::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, SignatureError};
 use dpp::document::Document;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::PartialIdentity;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::{
@@ -8,7 +11,7 @@ use dpp::state_transition::documents_batch_transition::document_transition::{
 };
 
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
-use dpp::state_transition::StateTransitionLike;
+use dpp::state_transition::{StateTransitionIdentitySigned, StateTransitionLike};
 
 use dpp::validation::ConsensusValidationResult;
 
@@ -23,12 +26,15 @@ use dpp::state_transition::documents_batch_transition::document_create_transitio
 use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::execution::ExecutionError;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchStateTransitionStructureValidationV0
 {
     fn validate_advanced_structure_from_state_v0(
         &self,
         action: &DocumentsBatchTransitionAction,
+        identity: &PartialIdentity,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -37,8 +43,40 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
     fn validate_advanced_structure_from_state_v0(
         &self,
         action: &DocumentsBatchTransitionAction,
+        identity: &PartialIdentity,
+        _execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let security_levels = action.contract_based_security_level_requirement()?;
+
+        let signing_key = identity.loaded_public_keys.get(&self.signature_public_key_id()).ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution("the key must exist for advanced structure validation as we already fetched it during signature validation")))?;
+
+        if !security_levels.contains(&signing_key.security_level()) {
+            // We only need to bump the first identity data contract nonce as that will make a replay
+            // attack not possible
+
+            let first_transition = self.transitions().first().ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution("There must be at least one state transition as this is already verified in basic validation")))?;
+
+            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                    first_transition.base(),
+                    self.owner_id(),
+                    self.user_fee_increase(),
+                ),
+            );
+
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action,
+                vec![SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+                    InvalidSignaturePublicKeySecurityLevelError::new(
+                        signing_key.security_level(),
+                        security_levels,
+                    ),
+                )
+                .into()],
+            ));
+        }
+
         // We should validate that all newly created documents have valid ids
         for transition in self.transitions() {
             if let DocumentTransition::Create(create_transition) = transition {

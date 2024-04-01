@@ -9,7 +9,8 @@ use crate::validation::SimpleConsensusValidationResult;
 
 const MAX_DEPTH: usize = 500;
 
-pub fn validate_max_depth_v0(value: &Value) -> SimpleConsensusValidationResult {
+#[inline(always)]
+pub(super) fn validate_max_depth_v0(value: &Value) -> SimpleConsensusValidationResult {
     let mut result = SimpleConsensusValidationResult::default();
     let schema_depth = match calculate_max_depth(value) {
         Ok(depth) => depth,

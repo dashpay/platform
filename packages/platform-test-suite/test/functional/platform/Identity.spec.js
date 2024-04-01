@@ -22,8 +22,8 @@ const {
     Identifier,
     IdentityPublicKey,
     InvalidInstantAssetLockProofSignatureError,
-    InvalidAssetLockProofValueError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     BasicECDSAError,
     IdentityPublicKeyWithWitness,
     IdentityInsufficientBalanceError,
@@ -60,15 +60,15 @@ describe('Platform', () => {
       let broadcastError;
 
       try {
-        await client.platform.identities.register(117000);
+        await client.platform.identities.register(197000);
       } catch (e) {
         broadcastError = e;
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(40212);
+      expect(broadcastError.getCause().getCode()).to.equal(10530);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
-        InvalidAssetLockProofValueError,
+        IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
       );
     });
 
@@ -79,7 +79,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction(1);
+      } = await client.platform.identities.utils.createAssetLockTransaction(200000);
 
       const invalidInstantLock = createFakeInstantLock(transaction.hash);
       const assetLockProof = await client.platform.dpp.identity.createInstantAssetLockProof(
@@ -118,7 +118,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction(150000);
+      } = await client.platform.identities.utils.createAssetLockTransaction(200000);
 
       const account = await client.getWalletAccount();
 
@@ -169,7 +169,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction(15);
+      } = await client.platform.identities.utils.createAssetLockTransaction(210000);
 
       const account = await client.getWalletAccount();
 
@@ -262,7 +262,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identities.utils.createAssetLockTransaction(150000);
+        } = await client.platform.identities.utils.createAssetLockTransaction(200000);
 
         const account = await client.getWalletAccount();
 
@@ -342,7 +342,7 @@ describe('Platform', () => {
       });
 
       it('should fail to create more documents if there are no more credits', async () => {
-        const lowBalanceIdentity = await client.platform.identities.register(150000);
+        const lowBalanceIdentity = await client.platform.identities.register(200000);
 
         // Additional wait time to mitigate testnet latency
         await waitForSTPropagated();
@@ -377,7 +377,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identities.utils.createAssetLockTransaction(15);
+        } = await client.platform.identities.utils.createAssetLockTransaction(200000);
 
         const instantLock = createFakeInstantLock(transaction.hash);
         const assetLockProof = await client.platform.dpp.identity
@@ -459,7 +459,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identities.utils.createAssetLockTransaction(1000);
+        } = await client.platform.identities.utils.createAssetLockTransaction(200000);
 
         const account = await client.getWalletAccount();
 
@@ -476,7 +476,7 @@ describe('Platform', () => {
 
         // Creating ST that tries to spend the same output
 
-        const anotherIdentity = await client.platform.identities.register(150000);
+        const anotherIdentity = await client.platform.identities.register(200000);
 
         // Additional wait time to mitigate testnet latency
         await waitForSTPropagated();

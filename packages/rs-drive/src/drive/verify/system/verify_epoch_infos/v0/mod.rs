@@ -38,6 +38,7 @@ impl Drive {
     ///
     /// - The proof is corrupted.
     /// - The GroveDb query fails.
+    #[inline(always)]
     pub(super) fn verify_epoch_infos_v0(
         proof: &[u8],
         current_epoch: EpochIndex,

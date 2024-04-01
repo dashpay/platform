@@ -17,14 +17,14 @@ const MAX_KEYS_TO_DISABLE: usize = 10;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_update) trait IdentityUpdateStateTransitionStructureValidationV0
 {
-    fn validate_base_structure_v0(
+    fn validate_basic_structure_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
 impl IdentityUpdateStateTransitionStructureValidationV0 for IdentityUpdateTransition {
-    fn validate_base_structure_v0(
+    fn validate_basic_structure_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {

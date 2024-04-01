@@ -32,6 +32,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the contract fetching fails.
+    #[inline(always)]
     pub(super) fn get_contract_with_fetch_info_v0(
         &self,
         contract_id: [u8; 32],
@@ -73,6 +74,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the contract fetching or fee calculation fails.
+    #[inline(always)]
     pub(super) fn get_contract_with_fetch_info_and_fee_v0(
         &self,
         contract_id: [u8; 32],
@@ -105,6 +107,7 @@ impl Drive {
     }
 
     /// Returns the contract with fetch info and operations with the given ID.
+    #[inline(always)]
     pub(super) fn get_contract_with_fetch_info_and_add_to_operations_v0(
         &self,
         contract_id: [u8; 32],

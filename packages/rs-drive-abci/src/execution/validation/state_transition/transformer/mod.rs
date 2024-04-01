@@ -1,10 +1,13 @@
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::identity_create::StateTransitionActionTransformerForIdentityCreateTransitionV0;
+use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::serialization::Signable;
 use dpp::state_transition::StateTransition;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
@@ -61,13 +64,16 @@ impl StateTransitionActionTransformerV0 for StateTransition {
                 execution_context,
                 tx,
             ),
-            StateTransition::IdentityCreate(st) => st.transform_into_action(
-                platform,
-                block_info,
-                validation_mode,
-                execution_context,
-                tx,
-            ),
+            StateTransition::IdentityCreate(st) => {
+                let signable_bytes = self.signable_bytes()?;
+                st.transform_into_action_for_identity_create_transition(
+                    platform,
+                    signable_bytes,
+                    validation_mode,
+                    execution_context,
+                    tx,
+                )
+            }
             StateTransition::IdentityUpdate(st) => st.transform_into_action(
                 platform,
                 block_info,
@@ -75,13 +81,16 @@ impl StateTransitionActionTransformerV0 for StateTransition {
                 execution_context,
                 tx,
             ),
-            StateTransition::IdentityTopUp(st) => st.transform_into_action(
-                platform,
-                block_info,
-                validation_mode,
-                execution_context,
-                tx,
-            ),
+            StateTransition::IdentityTopUp(st) => {
+                let signable_bytes = self.signable_bytes()?;
+                st.transform_into_action_for_identity_top_up_transition(
+                    platform,
+                    signable_bytes,
+                    validation_mode,
+                    execution_context,
+                    tx,
+                )
+            }
             StateTransition::IdentityCreditWithdrawal(st) => st.transform_into_action(
                 platform,
                 block_info,

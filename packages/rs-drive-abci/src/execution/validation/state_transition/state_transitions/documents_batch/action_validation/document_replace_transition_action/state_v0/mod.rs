@@ -39,6 +39,9 @@ impl DocumentReplaceTransitionActionStateValidationV0 for DocumentReplaceTransit
             ));
         };
 
+        // There is no need to verify that the document already existed, since this is done when
+        // transforming into an action
+
         // The rest of state validation is actually happening in documents batch transition transformer
         // TODO: Think more about this architecture
 

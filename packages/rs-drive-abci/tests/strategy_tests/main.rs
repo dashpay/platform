@@ -111,6 +111,9 @@ mod tests {
     use itertools::Itertools;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
 
+    use dpp::data_contract::document_type::v0::random_document_type::{
+        FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
+    };
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::state_transition::StateTransition;
     use tenderdash_abci::Application;
@@ -1227,6 +1230,100 @@ mod tests {
             .unwrap()
             .expect("expected to execute the fetch of a contract")
             .expect("expected to get a contract");
+    }
+
+    #[test]
+    fn run_chain_insert_one_new_identity_and_many_big_contracts() {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::ContractCreate(
+                        RandomDocumentTypeParameters {
+                            new_fields_optional_count_range: 1..30,
+                            new_fields_required_count_range: 1..40,
+                            new_indexes_count_range: 10..11,
+                            field_weights: FieldTypeWeights {
+                                string_weight: 50,
+                                float_weight: 50,
+                                integer_weight: 50,
+                                date_weight: 50,
+                                boolean_weight: 20,
+                                byte_array_weight: 70,
+                            },
+                            field_bounds: FieldMinMaxBounds {
+                                string_min_len: 1..10,
+                                string_has_min_len_chance: 0.5,
+                                string_max_len: 10..63,
+                                string_has_max_len_chance: 0.5,
+                                integer_min: 1..10,
+                                integer_has_min_chance: 0.5,
+                                integer_max: 10..10000,
+                                integer_has_max_chance: 0.5,
+                                float_min: 0.1..10.0,
+                                float_has_min_chance: 0.5,
+                                float_max: 10.0..1000.0,
+                                float_has_max_chance: 0.5,
+                                date_min: 0,
+                                date_max: 0,
+                                byte_array_min_len: 1..10,
+                                byte_array_has_min_len_chance: 0.0,
+                                byte_array_max_len: 10..255,
+                                byte_array_has_max_len_chance: 0.0,
+                            },
+                            keep_history_chance: 1.0,
+                            documents_mutable_chance: 1.0,
+                        },
+                        30..31,
+                    ),
+                    frequency: Frequency {
+                        times_per_block_range: 30..31,
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: StartIdentities::default(),
+                identities_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set_quorum_size: 100,
+            validator_set_quorum_type: "llmq_100_67".to_string(),
+            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_rotation_block_count: 25,
+                ..Default::default()
+            },
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        run_chain_for_strategy(&mut platform, 30, strategy, config, 15);
     }
 
     #[test]

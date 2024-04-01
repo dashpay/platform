@@ -11,6 +11,9 @@ const testProofStructure = require('../../../lib/test/testProofStructure');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
 const {
+  Core: {
+    PrivateKey,
+  },
   PlatformProtocol: {
     Identifier,
   },
@@ -29,7 +32,7 @@ describe('Platform', () => {
     let contractId;
 
     before(async () => {
-      dashClient = await createClientWithFundedWallet(500000);
+      dashClient = await createClientWithFundedWallet(1000000);
 
       await dashClient.platform.initialize();
 
@@ -124,9 +127,26 @@ describe('Platform', () => {
         describe('Proofs', () => {
           let identity;
           let identityAtKey5;
+          let identityAtKey6;
+          let identityAtKey8;
+          let nonIncludedIdentityPubKeyHash;
+          let identity6PublicKeyHash;
+          let identity8PublicKeyHash;
 
           before(async () => {
-            identityAtKey5 = await dashClient.platform.identities.register(150000);
+            identityAtKey5 = await dashClient.platform.identities.register(200000);
+
+            identityAtKey6 = await dashClient.platform.identities.register(200000);
+
+            identityAtKey8 = await dashClient.platform.identities.register(200000);
+
+            // await waitForBalanceToChange(walletAccount);
+
+            nonIncludedIdentityPubKeyHash = new PrivateKey().toPublicKey().hash;
+
+            // Public key hashes
+            identity6PublicKeyHash = identityAtKey6.getPublicKeyById(0).hash();
+            identity8PublicKeyHash = identityAtKey8.getPublicKeyById(0).hash();
           });
 
           it('should be able to get and verify proof that identity exists with getIdentity', async () => {
@@ -210,6 +230,134 @@ describe('Platform', () => {
             // expect(verificationResult.length).to.be.equal(1);
             // // Identity with id at index 0 doesn't exist
             // expect(verificationResult[0]).to.be.null();
+          });
+
+          // eslint-disable-next max-len
+          it('should be able to verify that multiple identities exist with getIdentitiesByPublicKeyHashes', async () => {
+            const publicKeyHashes = [
+              identity6PublicKeyHash,
+              nonIncludedIdentityPubKeyHash,
+              identity8PublicKeyHash,
+            ];
+
+            /* Requesting identities by public key hashes and verifying the structure */
+
+            const identityProof = await dashClient.getDAPIClient().platform
+              .getIdentitiesByPublicKeyHashes(publicKeyHashes, { prove: true });
+
+            const fullProof = identityProof.proof;
+
+            testProofStructure(expect, fullProof);
+
+            // const identitiesProofBuffer = fullProof.storeTreeProofs.getIdentitiesProof();
+            // const publicKeyHashesProofBuffer = fullProof.storeTreeProofs
+            //   .getPublicKeyHashesToIdentityIdsProof();
+            //
+            // /* Parsing values from the proof */
+            //
+            // const parsedIdentitiesStoreTreeProof = parseStoreTreeProof(identitiesProofBuffer);
+            //
+            // // Existing identities should be in the identitiesProof, as it also serves
+            // // as an inclusion proof
+            // const restoredIdentities = parsedIdentitiesStoreTreeProof.values.map(
+            //   (identityBuffer) => dashClient.platform.dpp.identity.createFromBuffer(
+            //     identityBuffer,
+            //   ),
+            // );
+            //
+            // /* Figuring out what was found */
+            //
+            // const foundIdentityIds = [];
+            // const notFoundPublicKeyHashes = [];
+            //
+            // // Scanning through public keys to figure out what identities were found
+            // for (const publicKeyHash of publicKeyHashes) {
+            //   const foundIdentity = restoredIdentities
+            //     .find(
+            //       (restoredIdentity) => restoredIdentity.getPublicKeyById(0)
+            //         .hash().toString('hex') === publicKeyHash.toString('hex'),
+            //     );
+            //   if (foundIdentity) {
+            //     foundIdentityIds.push(foundIdentity.getId());
+            //   } else {
+            //     notFoundPublicKeyHashes.push(publicKeyHash);
+            //   }
+            // }
+            //
+            // // We expect to find 2 identities out of 3 keys
+            // expect(foundIdentityIds.length).to.be.equal(2);
+            // expect(notFoundPublicKeyHashes.length).to.be.equal(1);
+            //
+            // // Note that identities in the proof won't necessary preserve the order in which they
+            // // were requested. This happens due to the proof structure: sorting values in the
+            // // proof would result in a different root hash.
+            // expect(foundIdentityIds.findIndex(
+            //   (identityId) => identityId.toString('hex') ===
+            //   identityAtKey6.getId().toString('hex'),
+            // )).to.be.greaterThan(-1);
+            // expect(foundIdentityIds.findIndex(
+            //   (identityId) => identityId.toString('hex') ===
+            //   identityAtKey8.getId().toString('hex'),
+            // )).to.be.greaterThan(-1);
+            //
+            // expect(notFoundPublicKeyHashes[0]).to.be.deep.equal(nonIncludedIdentityPubKeyHash);
+            //
+            // // Non-existing public key hash should be included into the identityIdsProof,
+            // // as it serves as a non-inclusion proof for the public keys
+            //
+            // /* Extracting root */
+            //
+            // // While extracting the root isn't specifically useful for this test,
+            // // it is needed to fit those roots into the root tree later.
+            // const { rootHash: identityLeafRoot } = executeProof(identitiesProofBuffer);
+            // const { rootHash: identityIdsLeafRoot } = executeProof(publicKeyHashesProofBuffer);
+            //
+            // /* Inclusion proof */
+            //
+            // // Note that you first has to parse values from the
+            // // proof and find identity ids you were looking for
+            // const inclusionVerificationResult = verifyProof(
+            //   identitiesProofBuffer,
+            //   foundIdentityIds,
+            //   identityLeafRoot,
+            // );
+            //
+            // expect(inclusionVerificationResult.length).to.be.equal(2);
+            //
+            // const firstRecoveredIdentityBuffer = inclusionVerificationResult[0];
+            // const secondRecoveredIdentityBuffer = inclusionVerificationResult[1];
+            // expect(firstRecoveredIdentityBuffer).to.be.an.instanceof(Uint8Array);
+            // expect(secondRecoveredIdentityBuffer).to.be.an.instanceof(Uint8Array);
+            //
+            // const firstRecoveredIdentity = dashClient.platform.dpp
+            //   .identity.createFromBuffer(firstRecoveredIdentityBuffer);
+            //
+            // const secondRecoveredIdentity = dashClient.platform.dpp
+            //   .identity.createFromBuffer(secondRecoveredIdentityBuffer);
+            //
+            // // Deep equal won't work in this case, because identity returned by the register
+            // const actualIdentityAtKey6 = identityAtKey6.toObject();
+            // const actualIdentityAtKey8 = identityAtKey8.toObject();
+            // // Because the actual identity state is before the registration, and the
+            // // balance wasn't added to it yet
+            // actualIdentityAtKey6.balance = firstRecoveredIdentity.toObject().balance;
+            // actualIdentityAtKey8.balance = secondRecoveredIdentity.toObject().balance;
+            //
+            // expect(firstRecoveredIdentity.toObject()).to.be.deep.equal(actualIdentityAtKey6);
+            // expect(secondRecoveredIdentity.toObject()).to.be.deep.equal(actualIdentityAtKey8);
+            //
+            // /* Non-inclusion proof */
+            //
+            // const nonInclusionVerificationResult = verifyProof(
+            //   publicKeyHashesProofBuffer,
+            //   notFoundPublicKeyHashes,
+            //   identityIdsLeafRoot,
+            // );
+            //
+            // expect(nonInclusionVerificationResult.length).to.be.equal(1);
+            //
+            // const nonIncludedIdentityId = nonInclusionVerificationResult[0];
+            // expect(nonIncludedIdentityId).to.be.null();
           });
         });
       });

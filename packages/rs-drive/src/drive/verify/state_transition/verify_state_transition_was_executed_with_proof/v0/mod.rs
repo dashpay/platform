@@ -36,6 +36,7 @@ use crate::error::proof::ProofError;
 use crate::query::SingleDocumentDriveQuery;
 
 impl Drive {
+    #[inline(always)]
     pub(super) fn verify_state_transition_was_executed_with_proof_v0(
         state_transition: &StateTransition,
         block_info: &BlockInfo,

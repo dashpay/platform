@@ -103,14 +103,15 @@ impl ErrorWithCode for BasicError {
             Self::MissingPositionsInDocumentTypePropertiesError { .. } => 10411,
             Self::MaxDocumentsTransitionsExceededError { .. } => 10412,
             Self::DocumentTransitionsAreAbsentError { .. } => 10413,
-            Self::IdentityContractNonceOutOfBoundsError(_) => 10414,
+            Self::NonceOutOfBoundsError(_) => 10414,
+            Self::InvalidDocumentTypeNameError(_) => 10415,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
             Self::DuplicatedIdentityPublicKeyIdBasicError(_) => 10501,
             Self::IdentityAssetLockProofLockedTransactionMismatchError(_) => 10502,
             Self::IdentityAssetLockTransactionIsNotFoundError(_) => 10503,
-            Self::IdentityAssetLockTransactionOutPointAlreadyExistsError(_) => 10504,
+            Self::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_) => 10504,
             Self::IdentityAssetLockTransactionOutputNotFoundError(_) => 10505,
             Self::InvalidAssetLockProofCoreChainHeightError(_) => 10506,
             Self::InvalidAssetLockProofTransactionHeightError(_) => 10507,
@@ -136,6 +137,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidIdentityUpdateTransitionDisableKeysError(_) => 10527,
             Self::IdentityCreditTransferToSelfError(_) => 10528,
             Self::MasterPublicKeyUpdateError(_) => 10529,
+            Self::IdentityAssetLockTransactionOutPointNotEnoughBalanceError(_) => 10530,
 
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,
@@ -203,8 +205,7 @@ impl ErrorWithCode for StateError {
             Self::MissingIdentityPublicKeyIdsError { .. } => 40209,
             Self::IdentityInsufficientBalanceError(_) => 40210,
             Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 40211,
-            Self::InvalidAssetLockProofValueError(_) => 40212,
-            Self::DocumentTypeUpdateError(_) => 40213,
+            Self::DocumentTypeUpdateError(_) => 40212,
 
             // Data trigger errors: 40500-40799
             #[cfg(feature = "state-transition-validation")]

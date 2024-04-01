@@ -13,6 +13,12 @@ impl IdentityCreateTransitionAccessorsV0 for IdentityCreateTransition {
         }
     }
 
+    fn public_keys_mut(&mut self) -> &mut Vec<IdentityPublicKeyInCreation> {
+        match self {
+            IdentityCreateTransition::V0(transition) => transition.public_keys_mut(),
+        }
+    }
+
     fn set_public_keys(&mut self, public_keys: Vec<IdentityPublicKeyInCreation>) {
         match self {
             IdentityCreateTransition::V0(transition) => transition.set_public_keys(public_keys),

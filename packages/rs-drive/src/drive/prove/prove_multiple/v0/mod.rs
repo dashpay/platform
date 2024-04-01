@@ -24,6 +24,7 @@ impl Drive {
     /// # Returns
     /// Returns a `Result` with a `Vec<u8>` containing the proof data if the function succeeds,
     /// or an `Error` if the function fails.
+    #[inline(always)]
     pub(super) fn prove_multiple_v0(
         &self,
         identity_queries: &[IdentityDriveQuery],
