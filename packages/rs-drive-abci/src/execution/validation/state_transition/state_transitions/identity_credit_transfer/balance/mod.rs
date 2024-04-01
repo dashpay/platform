@@ -9,7 +9,7 @@ use dpp::version::PlatformVersion;
 
 pub(crate) mod v0;
 impl StateTransitionBalanceValidationV0 for IdentityCreditTransferTransition {
-    fn validate_balance_pre_check(
+    fn validate_minimum_balance_pre_check(
         &self,
         identity: &PartialIdentity,
         platform_version: &PlatformVersion,

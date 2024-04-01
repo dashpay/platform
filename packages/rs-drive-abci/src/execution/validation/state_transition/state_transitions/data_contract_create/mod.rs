@@ -6,7 +6,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
 use drive::grovedb::TransactionArg;

@@ -112,7 +112,10 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
     }
 
-    // This is for identity credit withdrawal and identity credit transfers
+    // For identity credit withdrawal and identity credit transfers we have a balance pre check that includes a
+    // processing amount and the transfer amount.
+    // For other state transitions we only check a min balance for an amount set per version.
+    // This is not done for identity create and identity top up who don't have this check here
     if state_transition.has_balance_pre_check_validation() {
         // Validating that we have sufficient balance for a transfer or withdrawal,
         // this must happen after validating the signature
@@ -122,7 +125,8 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
             .ok_or(ProtocolError::CorruptedCodeExecution(
                 "identity must be known to validate the balance".to_string(),
             ))?;
-        let result = state_transition.validate_balance_pre_check(identity, platform_version)?;
+        let result =
+            state_transition.validate_minimum_balance_pre_check(identity, platform_version)?;
 
         if !result.is_valid() {
             return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
@@ -388,7 +392,7 @@ pub(crate) trait StateTransitionBalanceValidationV0 {
     /// # Returns
     ///
     /// * `Result<ConsensusValidationResult<StateTransitionAction>, Error>` - A result with either a ConsensusValidationResult containing a StateTransitionAction or an Error.
-    fn validate_balance_pre_check(
+    fn validate_minimum_balance_pre_check(
         &self,
         identity: &PartialIdentity,
         platform_version: &PlatformVersion,
@@ -530,23 +534,23 @@ impl StateTransitionNonceValidationV0 for StateTransition {
 }
 
 impl StateTransitionBalanceValidationV0 for StateTransition {
-    fn validate_balance_pre_check(
+    fn validate_minimum_balance_pre_check(
         &self,
         identity: &PartialIdentity,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
             StateTransition::IdentityCreditTransfer(st) => {
-                st.validate_balance_pre_check(identity, platform_version)
+                st.validate_minimum_balance_pre_check(identity, platform_version)
             }
             StateTransition::IdentityCreditWithdrawal(st) => {
-                st.validate_balance_pre_check(identity, platform_version)
+                st.validate_minimum_balance_pre_check(identity, platform_version)
             }
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
             | StateTransition::DocumentsBatch(_)
             | StateTransition::IdentityUpdate(_) => {
-                self.validate_simple_pre_check_balance(identity, platform_version)
+                self.validate_simple_pre_check_minimum_balance(identity, platform_version)
             }
             StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => {
                 Ok(SimpleConsensusValidationResult::new())

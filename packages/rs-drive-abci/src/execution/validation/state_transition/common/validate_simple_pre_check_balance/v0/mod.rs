@@ -7,7 +7,7 @@ use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
 pub trait ValidateSimplePreCheckBalanceV0 {
-    fn validate_simple_pre_check_balance_v0(
+    fn validate_simple_pre_check_minimum_balance_v0(
         &self,
         identity: &PartialIdentity,
         platform_version: &PlatformVersion,
@@ -15,7 +15,7 @@ pub trait ValidateSimplePreCheckBalanceV0 {
 }
 
 impl ValidateSimplePreCheckBalanceV0 for StateTransition {
-    fn validate_simple_pre_check_balance_v0(
+    fn validate_simple_pre_check_minimum_balance_v0(
         &self,
         identity: &PartialIdentity,
         platform_version: &PlatformVersion,

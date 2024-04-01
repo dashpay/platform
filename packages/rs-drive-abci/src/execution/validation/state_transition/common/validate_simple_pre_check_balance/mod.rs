@@ -8,7 +8,7 @@ use dpp::version::PlatformVersion;
 pub mod v0;
 
 pub trait ValidateSimplePreCheckBalance {
-    fn validate_simple_pre_check_balance(
+    fn validate_simple_pre_check_minimum_balance(
         &self,
         identity: &PartialIdentity,
         platform_version: &PlatformVersion,
@@ -16,7 +16,7 @@ pub trait ValidateSimplePreCheckBalance {
 }
 
 impl ValidateSimplePreCheckBalance for StateTransition {
-    fn validate_simple_pre_check_balance(
+    fn validate_simple_pre_check_minimum_balance(
         &self,
         identity: &PartialIdentity,
         platform_version: &PlatformVersion,
@@ -28,7 +28,7 @@ impl ValidateSimplePreCheckBalance for StateTransition {
             .common_validation_methods
             .validate_simple_pre_check_balance
         {
-            0 => self.validate_simple_pre_check_balance_v0(identity, platform_version),
+            0 => self.validate_simple_pre_check_minimum_balance_v0(identity, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "StateTransition::validate_simple_pre_check_balance".to_string(),
                 known_versions: vec![0],
