@@ -368,6 +368,7 @@ mod tests {
                             .index,
                         0
                     );
+                    assert_eq!(state.last_committed_block_epoch().index, 0);
                     assert_eq!(state.current_protocol_version_in_consensus(), 1);
                     assert_eq!(state.next_epoch_protocol_version(), 1);
                     assert_eq!(
@@ -379,6 +380,16 @@ mod tests {
                     );
                     //most nodes were hit (63 were not)
                 }
+
+                // Propose a new version for next epoch
+
+                let mut next_epoch_strategy = strategy.clone();
+
+                next_epoch_strategy.upgrading_info = Some(UpgradingInfo {
+                    current_protocol_version: 1,
+                    proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_3, 1)],
+                    upgrade_three_quarters_life: 0.0,
+                });
 
                 let platform = abci_app.platform;
 
@@ -408,13 +419,13 @@ mod tests {
                         proposers,
                         quorums,
                         current_quorum_hash,
-                        current_proposer_versions: Some(current_proposer_versions.clone()),
+                        current_proposer_versions: None,
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
-                    strategy.clone(),
+                    next_epoch_strategy,
                     config.clone(),
                     StrategyRandomness::SeedEntropy(7),
                 );
@@ -432,10 +443,12 @@ mod tests {
                             .index,
                         1
                     );
+                    assert_eq!(state.last_committed_block_epoch().index, 1);
                     assert_eq!(state.current_protocol_version_in_consensus(), 1);
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     assert_eq!(counter.get(&1).unwrap(), None); //no one has proposed 1 yet
-                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&1));
+                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), None);
+                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_3).unwrap(), Some(&1));
                 }
 
                 // we locked in
@@ -484,6 +497,7 @@ mod tests {
                         state.current_protocol_version_in_consensus(),
                         TEST_PROTOCOL_VERSION_2
                     );
+                    assert_eq!(state.last_committed_block_epoch().index, 2);
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     assert_eq!(counter.get(&1).unwrap(), None); //no one has proposed 1 yet
                     assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&1));
