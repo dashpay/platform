@@ -1,5 +1,8 @@
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use crate::execution::validation::state_transition::identity_create::identity_and_signatures::v0::IdentityCreateStateTransitionIdentityAndSignaturesValidationV0;
 use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use dpp::consensus::basic::BasicError;
@@ -10,6 +13,7 @@ use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockAction;
 use drive::state_transition_action::StateTransitionAction;
@@ -38,6 +42,11 @@ impl IdentityCreateStateTransitionAdvancedStructureValidationV0 for IdentityCrea
         // We don't need to return a consensus error here because the outpoint will already have been checked in the transformation into an action
         let identifier_from_outpoint = self.asset_lock_proof().create_identifier()?;
 
+        // Creating an identifier costs 1 block hash (64 bytes)
+        // The cost should come here after, as the protocol error is just if no outpoint exists
+
+        execution_context.add_operation(ValidationOperation::DoubleSha256(1));
+
         if identifier_from_outpoint != self.identity_id() {
             let penalty = platform_version
                 .drive_abci
@@ -45,8 +54,9 @@ impl IdentityCreateStateTransitionAdvancedStructureValidationV0 for IdentityCrea
                 .penalties
                 .identity_id_not_correct;
 
-            // todo: pay for processing
-            let used_credits = penalty; // + processing
+            let used_credits = penalty
+                .checked_add(execution_context.fee_cost(platform_version)?.processing_fee)
+                .ok_or(ProtocolError::Overflow("processing fee overflow error"))?;
 
             // Most probably an attempted attack
             let bump_action = StateTransitionAction::PartiallyUseAssetLockAction(
@@ -82,8 +92,9 @@ impl IdentityCreateStateTransitionAdvancedStructureValidationV0 for IdentityCrea
                 .penalties
                 .validation_of_added_keys_structure_failure;
 
-            // todo: pay for processing
-            let used_credits = penalty; // + processing
+            let used_credits = penalty
+                .checked_add(execution_context.fee_cost(platform_version)?.processing_fee)
+                .ok_or(ProtocolError::Overflow("processing fee overflow error"))?;
 
             let bump_action = StateTransitionAction::PartiallyUseAssetLockAction(
                 PartiallyUseAssetLockAction::from_borrowed_identity_create_transition_action(
@@ -111,8 +122,9 @@ impl IdentityCreateStateTransitionAdvancedStructureValidationV0 for IdentityCrea
                 .penalties
                 .validation_of_added_keys_proof_of_possession_failure;
 
-            // todo: pay for processing
-            let used_credits = penalty; // + processing
+            let used_credits = penalty
+                .checked_add(execution_context.fee_cost(platform_version)?.processing_fee)
+                .ok_or(ProtocolError::Overflow("processing fee overflow error"))?;
 
             let bump_action = StateTransitionAction::PartiallyUseAssetLockAction(
                 PartiallyUseAssetLockAction::from_borrowed_identity_create_transition_action(

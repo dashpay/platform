@@ -66,6 +66,7 @@ use crate::version::drive_versions::{
     DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions,
     DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions, DriveVersion,
 };
+use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
 
@@ -597,12 +598,13 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     validate_state_transition_identity_signed: 0,
                     validate_unique_identity_public_key_hashes_in_state: 0,
                     validate_master_key_uniqueness: 0,
+                    validate_simple_pre_check_balance: 0,
                 },
                 identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
                     advanced_structure: Some(0),
                     identity_signatures: Some(0),
-                    balance: None,
+                    advanced_minimum_balance_pre_check: None,
                     nonce: None,
                     state: 0,
                     transform_into_action: 0,
@@ -611,7 +613,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     basic_structure: Some(0),
                     advanced_structure: Some(0),
                     identity_signatures: Some(0),
-                    balance: None,
+                    advanced_minimum_balance_pre_check: None,
                     nonce: Some(0),
                     state: 0,
                     transform_into_action: 0,
@@ -620,7 +622,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     basic_structure: Some(0),
                     advanced_structure: None,
                     identity_signatures: None,
-                    balance: None,
+                    advanced_minimum_balance_pre_check: None,
                     nonce: None,
                     state: 0,
                     transform_into_action: 0,
@@ -630,7 +632,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                         basic_structure: Some(0),
                         advanced_structure: None,
                         identity_signatures: None,
-                        balance: Some(0),
+                        advanced_minimum_balance_pre_check: Some(0),
                         nonce: Some(0),
                         state: 0,
                         transform_into_action: 0,
@@ -640,7 +642,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                         basic_structure: Some(0),
                         advanced_structure: None,
                         identity_signatures: None,
-                        balance: Some(0),
+                        advanced_minimum_balance_pre_check: Some(0),
                         nonce: Some(0),
                         state: 0,
                         transform_into_action: 0,
@@ -649,7 +651,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     basic_structure: Some(0),
                     advanced_structure: None,
                     identity_signatures: None,
-                    balance: None,
+                    advanced_minimum_balance_pre_check: None,
                     nonce: Some(0),
                     state: 0,
                     transform_into_action: 0,
@@ -658,7 +660,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     basic_structure: None,
                     advanced_structure: None,
                     identity_signatures: None,
-                    balance: None,
+                    advanced_minimum_balance_pre_check: None,
                     nonce: Some(0),
                     state: 0,
                     transform_into_action: 0,
@@ -1018,4 +1020,5 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         masternode_reward_shares: 1,
         feature_flags: 1,
     },
+    fee_version: FEE_VERSION1,
 };

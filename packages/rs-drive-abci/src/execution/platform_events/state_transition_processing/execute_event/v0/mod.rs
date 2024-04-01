@@ -95,7 +95,6 @@ where
                     ValidationOperation::add_many_to_fee_result(
                         &execution_operations,
                         &mut individual_fee_result,
-                        &block_info.epoch,
                         platform_version,
                     )?;
 
@@ -126,6 +125,8 @@ where
                     Ok(UnpaidConsensusExecutionError(consensus_errors))
                 }
             }
+            // This is for Partially used Asset Locks
+            // NOT used for identity create or identity top up
             ExecutionEvent::PaidFromAssetLockWithoutIdentity {
                 processing_fees,
                 operations,

@@ -133,7 +133,7 @@ pub struct DriveAbciStateTransitionValidationVersion {
     pub basic_structure: OptionalFeatureVersion,
     pub advanced_structure: OptionalFeatureVersion,
     pub identity_signatures: OptionalFeatureVersion,
-    pub balance: OptionalFeatureVersion,
+    pub advanced_minimum_balance_pre_check: OptionalFeatureVersion,
     pub nonce: OptionalFeatureVersion,
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,
@@ -161,6 +161,7 @@ pub struct DriveAbciStateTransitionCommonValidationVersions {
     pub validate_state_transition_identity_signed: FeatureVersion,
     pub validate_unique_identity_public_key_hashes_in_state: FeatureVersion,
     pub validate_master_key_uniqueness: FeatureVersion,
+    pub validate_simple_pre_check_balance: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
