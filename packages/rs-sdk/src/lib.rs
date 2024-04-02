@@ -75,14 +75,5 @@ pub use sdk::{RequestSettings, Sdk, SdkBuilder};
 pub use dpp;
 pub use rs_dapi_client as dapi_client;
 
-pub use dpp::version;
-pub use dpp::bincode;
-pub use dpp::bls_signatures;
-pub use dpp::data_contracts;
-pub use dpp::ed25519_dalek;
-pub use dpp::jsonschema;
-pub use dpp::platform_serialization;
-pub use dpp::platform_value;
-
 /// Version of the SDK
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
