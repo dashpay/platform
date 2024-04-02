@@ -22,7 +22,7 @@ pub struct NonceOutOfBoundsError {
 
 impl NonceOutOfBoundsError {
     pub fn new(nonce: IdentityNonce) -> Self {
-        Self { nonce: nonce }
+        Self { nonce }
     }
 
     pub fn identity_contract_nonce(&self) -> IdentityNonce {

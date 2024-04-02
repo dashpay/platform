@@ -1,5 +1,4 @@
 use std::convert::{TryFrom, TryInto};
-use std::io;
 
 use dashcore::consensus::{deserialize, Encodable};
 use dashcore::transaction::special_transaction::TransactionPayload;
@@ -132,11 +131,9 @@ impl InstantAssetLockProof {
             ProtocolError::IdentifierError(String::from("No output at a given index"))
         })?;
 
-        let output_vec: Vec<u8> = outpoint
-            .try_into()
-            .map_err(|e: io::Error| ProtocolError::EncodingError(e.to_string()))?;
+        let outpoint_bytes: [u8; 36] = outpoint.into();
 
-        let hash = hash_double(output_vec);
+        let hash = hash_double(outpoint_bytes.as_slice());
 
         Ok(Identifier::new(hash))
     }

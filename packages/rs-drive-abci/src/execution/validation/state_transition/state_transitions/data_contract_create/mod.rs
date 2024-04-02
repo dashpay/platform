@@ -1,11 +1,11 @@
-mod basic_structure;
+mod advanced_structure;
 mod identity_nonce;
 mod state;
 
 use dpp::block::block_info::BlockInfo;
+use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
 use drive::grovedb::TransactionArg;
@@ -15,13 +15,13 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
-use crate::execution::validation::state_transition::data_contract_create::basic_structure::v0::DataContractCreatedStateTransitionBasicStructureValidationV0;
+use crate::execution::validation::state_transition::data_contract_create::advanced_structure::v0::DataContractCreatedStateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::data_contract_create::state::v0::DataContractCreateStateTransitionStateValidationV0;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0,
+    StateTransitionAdvancedStructureValidationV0, StateTransitionStateValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
@@ -33,6 +33,7 @@ impl ValidationMode {
             ValidationMode::CheckTx => false,
             ValidationMode::RecheckTx => false,
             ValidationMode::Validator => true,
+            ValidationMode::NoValidation => false,
         }
     }
 }
@@ -65,11 +66,13 @@ impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
     }
 }
 
-impl StateTransitionBasicStructureValidationV0 for DataContractCreateTransition {
-    fn validate_basic_structure(
+impl StateTransitionAdvancedStructureValidationV0 for DataContractCreateTransition {
+    fn validate_advanced_structure(
         &self,
+        _identity: &PartialIdentity,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, Error> {
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match platform_version
             .drive_abci
             .validation_and_processing
@@ -77,7 +80,7 @@ impl StateTransitionBasicStructureValidationV0 for DataContractCreateTransition 
             .contract_create_state_transition
             .basic_structure
         {
-            Some(0) => self.validate_base_structure_v0(platform_version),
+            Some(0) => self.validate_advanced_structure_v0(execution_context),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_basic_structure".to_string(),
                 known_versions: vec![0],
@@ -88,6 +91,10 @@ impl StateTransitionBasicStructureValidationV0 for DataContractCreateTransition 
                 known_versions: vec![0],
             })),
         }
+    }
+
+    fn has_advanced_structure_validation_without_state(&self) -> bool {
+        true
     }
 }
 

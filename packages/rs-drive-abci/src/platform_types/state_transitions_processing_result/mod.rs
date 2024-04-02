@@ -18,9 +18,9 @@ pub enum StateTransitionExecutionResult {
     /// proposal.
     UnpaidConsensusError(ConsensusError),
     /// State Transition execution failed due to the internal drive-abci error
-    DriveAbciError(String),
+    InternalError(String),
     /// State Transition was successfully executed
-    SuccessfulExecution(EstimatedFeeResult, FeeResult),
+    SuccessfulExecution(Option<EstimatedFeeResult>, FeeResult),
 }
 
 /// State Transitions Processing Result produced by [process_raw_state_transitions] and represents
@@ -40,7 +40,7 @@ impl StateTransitionsProcessingResult {
     /// Add a new execution result
     pub fn add(&mut self, execution_result: StateTransitionExecutionResult) -> Result<(), Error> {
         match &execution_result {
-            StateTransitionExecutionResult::DriveAbciError(_) => {
+            StateTransitionExecutionResult::InternalError(_) => {
                 self.failed_count += 1;
             }
             StateTransitionExecutionResult::PaidConsensusError(_, actual_fees) => {

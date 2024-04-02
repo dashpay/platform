@@ -59,8 +59,7 @@ impl ValidatorSetV0 {
             return Err(Error::Execution(ExecutionError::CorruptedCachedState(
                 format!(
                     "updating validator set doesn't match quorum hash ours: {} theirs: {}",
-                    self.quorum_hash.to_string(),
-                    rhs.quorum_hash.to_string()
+                    self.quorum_hash, rhs.quorum_hash
                 ),
             )));
         }
@@ -93,7 +92,7 @@ impl ValidatorSetV0 {
                         Some(Err(Error::Execution(ExecutionError::CorruptedCachedState(
                             format!(
                                 "validator set does not contain all same members, missing {}",
-                                pro_tx_hash.to_string()
+                                pro_tx_hash
                             ),
                         ))))
                     },

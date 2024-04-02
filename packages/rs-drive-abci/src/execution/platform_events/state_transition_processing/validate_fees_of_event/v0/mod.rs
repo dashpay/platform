@@ -68,7 +68,6 @@ where
                 ValidationOperation::add_many_to_fee_result(
                     execution_operations,
                     &mut estimated_fee_result,
-                    &block_info.epoch,
                     platform_version,
                 )?;
 
@@ -120,7 +119,6 @@ where
                 ValidationOperation::add_many_to_fee_result(
                     execution_operations,
                     &mut estimated_fee_result,
-                    &block_info.epoch,
                     platform_version,
                 )?;
 
@@ -146,9 +144,10 @@ where
                     ))
                 }
             }
-            ExecutionEvent::Free { .. } => Ok(ConsensusValidationResult::new_with_data(
-                FeeResult::default(),
-            )),
+            ExecutionEvent::Free { .. }
+            | ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. } => Ok(
+                ConsensusValidationResult::new_with_data(FeeResult::default()),
+            ),
         }
     }
 }

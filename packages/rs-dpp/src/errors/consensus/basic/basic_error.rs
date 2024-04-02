@@ -9,7 +9,7 @@ use crate::consensus::basic::data_contract::{
     DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError,
     DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
     IncompatibleDataContractSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
-    InvalidDataContractIdError, InvalidDataContractVersionError,
+    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, InvalidJsonSchemaRefError,
     SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
@@ -32,7 +32,8 @@ use crate::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     IdentityAssetLockProofLockedTransactionMismatchError,
     IdentityAssetLockTransactionIsNotFoundError,
-    IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    IdentityAssetLockTransactionOutPointAlreadyConsumedError,
+    IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     IdentityAssetLockTransactionOutputNotFoundError, IdentityCreditTransferToSelfError,
     InvalidAssetLockProofCoreChainHeightError, InvalidAssetLockProofTransactionHeightError,
     InvalidAssetLockTransactionOutputReturnSizeError,
@@ -235,8 +236,13 @@ pub enum BasicError {
     IdentityAssetLockTransactionIsNotFoundError(IdentityAssetLockTransactionIsNotFoundError),
 
     #[error(transparent)]
-    IdentityAssetLockTransactionOutPointAlreadyExistsError(
-        IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    IdentityAssetLockTransactionOutPointAlreadyConsumedError(
+        IdentityAssetLockTransactionOutPointAlreadyConsumedError,
+    ),
+
+    #[error(transparent)]
+    IdentityAssetLockTransactionOutPointNotEnoughBalanceError(
+        IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
     ),
 
     #[error(transparent)]
@@ -339,6 +345,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     IdentityCreditTransferToSelfError(IdentityCreditTransferToSelfError),
+
+    #[error(transparent)]
+    InvalidDocumentTypeNameError(InvalidDocumentTypeNameError),
 }
 
 impl From<BasicError> for ConsensusError {

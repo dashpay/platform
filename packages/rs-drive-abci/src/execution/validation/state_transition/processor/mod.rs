@@ -11,8 +11,12 @@ use dpp::state_transition::StateTransition;
 
 use drive::grovedb::TransactionArg;
 
-/// There are 3 stages in a state transition processing:
-/// Structure, Signature and State validation,
+/// There are multiple stages in a state transition processing:
+///     Basic Structure
+///     Signature
+///     Balance
+///     Advanced Structure
+///     State
 ///
 /// The structure validation verifies that the form of the state transition is good, for example
 /// that a contract is well formed, or that a document is valid against the contract.

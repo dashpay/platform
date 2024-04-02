@@ -10,9 +10,6 @@ pub use validation_result::{
 use crate::version::PlatformVersion;
 #[cfg(feature = "validation")]
 use crate::ProtocolError;
-
-#[cfg(feature = "validation")]
-pub mod block_time_window;
 #[cfg(feature = "validation")]
 pub(crate) mod byte_array_meta;
 #[cfg(feature = "validation")]
