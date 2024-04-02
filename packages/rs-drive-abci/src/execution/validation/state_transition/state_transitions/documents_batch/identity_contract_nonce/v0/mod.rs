@@ -9,6 +9,10 @@ use dpp::state_transition::StateTransitionLike;
 
 use dpp::validation::SimpleConsensusValidationResult;
 
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
@@ -20,6 +24,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         tx: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
@@ -30,21 +35,23 @@ impl DocumentsBatchStateTransitionIdentityContractNonceV0 for DocumentsBatchTran
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         tx: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         // We should validate that all newly created documents have valid ids
         for transition in self.transitions() {
             let revision_nonce = transition.identity_contract_nonce();
             let identity_id = self.owner_id();
-            let (existing_nonce, _unused_fees) =
-                platform.drive.fetch_identity_contract_nonce_with_fees(
-                    identity_id.to_buffer(),
-                    transition.data_contract_id().to_buffer(),
-                    block_info,
-                    true,
-                    tx,
-                    platform_version,
-                )?;
+            let (existing_nonce, fee) = platform.drive.fetch_identity_contract_nonce_with_fees(
+                identity_id.to_buffer(),
+                transition.data_contract_id().to_buffer(),
+                block_info,
+                true,
+                tx,
+                platform_version,
+            )?;
+
+            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
             let result = if let Some(existing_nonce) = existing_nonce {
                 validate_identity_nonce_update(existing_nonce, revision_nonce, identity_id)

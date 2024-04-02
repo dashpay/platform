@@ -27,10 +27,6 @@ pub const MAX_CREDITS: Credits = 9223372036854775807 as Credits; //i64 Max
 
 pub const CREDITS_PER_DUFF: Credits = 1000;
 
-/// This is the amount of credits we need to have left over in the identity to be able to do a
-/// withdrawal or a credit transfer
-pub const MIN_LEFTOVER_CREDITS_BEFORE_PROCESSING: Credits = 100000;
-
 /// Trait for signed and unsigned credits
 
 pub trait Creditable {

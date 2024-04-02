@@ -3,6 +3,7 @@ use crate::version::contracts::SystemDataContractVersions;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::DriveVersion;
+use crate::version::fee::FeeVersion;
 #[cfg(feature = "mock-versions")]
 use crate::version::mocks::v2_test::TEST_PLATFORM_V2;
 #[cfg(feature = "mock-versions")]
@@ -47,6 +48,7 @@ pub struct PlatformVersion {
     pub dpp: DPPVersion,
     pub drive: DriveVersion,
     pub drive_abci: DriveAbciVersion,
+    pub fee_version: FeeVersion,
     pub abci_structure: AbciStructureVersion,
     pub platform_architecture: PlatformArchitectureVersion,
     pub system_data_contracts: SystemDataContractVersions,
