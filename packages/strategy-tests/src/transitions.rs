@@ -224,24 +224,27 @@ pub fn instant_asset_lock_is_lock_fixture(tx_id: Txid) -> InstantLock {
 /// - If there's an error during the creation of the identity top-up transition.
 pub fn create_identity_top_up_transition(
     identity: &Identity,
-    create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
+    asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
-    let (asset_lock_proof, private_key) = create_asset_lock(200000).ok_or(
-        ProtocolError::Generic("Failed to create asset lock proof".to_string()),
-    )?;
+    if let Some(proof_and_pk) = asset_lock_proofs.pop() {
+        let (asset_lock_proof, private_key) = proof_and_pk;
+        let pk_bytes = private_key.to_bytes();
 
-    let pk_bytes = private_key.to_bytes();
-
-    IdentityTopUpTransition::try_from_identity(
-        identity,
-        asset_lock_proof,
-        pk_bytes.as_ref(),
-        0,
-        platform_version,
-        None,
-    )
-    .map_err(|e| ProtocolError::Generic(format!("Error creating top up transition: {:?}", e)))
+        IdentityTopUpTransition::try_from_identity(
+            identity,
+            asset_lock_proof,
+            pk_bytes.as_ref(),
+            0,
+            platform_version,
+            None,
+        )
+        .map_err(|e| ProtocolError::Generic(format!("Error creating top up transition: {:?}", e)))
+    } else {
+        Err(ProtocolError::Generic(
+            "No asset lock proofs available for create_identity_top_up_transition".to_string(),
+        ))
+    }
 }
 
 /// Creates a state transition for updating an identity by adding a specified number of new public authentication keys.
@@ -292,8 +295,14 @@ pub fn create_identity_update_transition_add_keys(
 ) -> (StateTransition, (Identifier, Vec<IdentityPublicKey>)) {
     identity.bump_revision();
 
-    let start_id =
-        (identity.public_keys().len() as u32 + keys_already_added_this_block_count) as KeyID;
+    let start_id = (identity
+        .public_keys()
+        .values()
+        .map(|pk| pk.id())
+        .max()
+        .expect("Expected a max public key id") as u32
+        + keys_already_added_this_block_count
+        + 1) as KeyID;
 
     let keys = IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(
         start_id,
@@ -628,7 +637,7 @@ pub fn create_identities_state_transitions(
     balance: u64,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
-    create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
+    asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
     let (mut identities, mut keys) =
@@ -693,28 +702,28 @@ pub fn create_identities_state_transitions(
                     id_pub_key_v0.set_id(new_id);
                 });
 
-            // Attempt to create an asset lock
-            match create_asset_lock(balance) {
-                Some((proof, private_key)) => {
-                    let pk = private_key.to_bytes();
-                    match IdentityCreateTransition::try_from_identity_with_signer(
-                        &identity,
-                        proof,
-                        &pk,
-                        signer,
-                        &NativeBlsModule,
-                        platform_version,
-                    ) {
-                        Ok(identity_create_transition) => {
-                            identity.set_id(identity_create_transition.owner_id());
-                            Ok((identity, identity_create_transition))
-                        }
-                        Err(e) => Err(e),
+            if let Some(proof_and_pk) = asset_lock_proofs.pop() {
+                let (asset_lock_proof, private_key) = proof_and_pk;
+                let pk = private_key.to_bytes();
+                match IdentityCreateTransition::try_from_identity_with_signer(
+                    &identity,
+                    asset_lock_proof,
+                    &pk,
+                    signer,
+                    &NativeBlsModule,
+                    platform_version,
+                ) {
+                    Ok(identity_create_transition) => {
+                        identity.set_id(identity_create_transition.owner_id());
+                        Ok((identity, identity_create_transition))
                     }
+                    Err(e) => Err(e),
                 }
-                None => Err(ProtocolError::Generic(
-                    "Failed to create asset lock proof".to_string(),
-                )),
+            } else {
+                Err(ProtocolError::Generic(
+                    "No asset lock proofs available for create_identities_state_transitions"
+                        .to_string(),
+                ))
             }
         })
         .collect::<Result<Vec<(Identity, StateTransition)>, ProtocolError>>()

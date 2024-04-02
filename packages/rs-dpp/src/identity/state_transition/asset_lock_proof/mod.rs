@@ -175,7 +175,7 @@ impl AssetLockProof {
     pub fn create_identifier(&self) -> Result<Identifier, ProtocolError> {
         match self {
             AssetLockProof::Instant(instant_proof) => instant_proof.create_identifier(),
-            AssetLockProof::Chain(chain_proof) => chain_proof.create_identifier(),
+            AssetLockProof::Chain(chain_proof) => Ok(chain_proof.create_identifier()),
         }
     }
 

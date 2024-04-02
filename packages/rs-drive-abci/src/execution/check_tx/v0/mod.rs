@@ -5,7 +5,7 @@ use crate::execution::validation::state_transition::check_tx_verification::state
 #[cfg(test)]
 use crate::platform_types::event_execution_result::EventExecutionResult;
 #[cfg(test)]
-use crate::platform_types::event_execution_result::EventExecutionResult::ConsensusExecutionError;
+use crate::platform_types::event_execution_result::EventExecutionResult::UnpaidConsensusExecutionError;
 use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
@@ -20,8 +20,6 @@ use crate::execution::validation::state_transition::processor::process_state_tra
 use crate::platform_types::platform_state::PlatformState;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
-#[cfg(test)]
-use dpp::validation::SimpleConsensusValidationResult;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 #[cfg(test)]
@@ -56,19 +54,19 @@ where
             Some(transaction),
         )?;
 
-        if state_transition_execution_event.is_valid() {
-            let execution_event = state_transition_execution_event.into_data()?;
+        if state_transition_execution_event.has_data() {
+            let (execution_event, errors) =
+                state_transition_execution_event.into_data_and_errors()?;
             self.execute_event(
                 execution_event,
+                errors,
                 state_read_guard.last_block_info(),
                 transaction,
                 platform_ref.state.current_platform_version()?,
             )
         } else {
-            Ok(ConsensusExecutionError(
-                SimpleConsensusValidationResult::new_with_errors(
-                    state_transition_execution_event.errors,
-                ),
+            Ok(UnpaidConsensusExecutionError(
+                state_transition_execution_event.errors,
             ))
         }
     }
@@ -180,7 +178,9 @@ where
 #[cfg(test)]
 mod tests {
     use crate::config::PlatformConfig;
-    use crate::platform_types::event_execution_result::EventExecutionResult::SuccessfulPaidExecution;
+    use crate::platform_types::event_execution_result::EventExecutionResult::{
+        SuccessfulPaidExecution, UnsuccessfulPaidExecution,
+    };
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
     use crate::test::helpers::setup::TestPlatformBuilder;
@@ -235,6 +235,8 @@ mod tests {
     use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
     use dpp::platform_value::Bytes32;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+    use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+    use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
     use dpp::system_data_contracts::dashpay_contract;
     use dpp::system_data_contracts::SystemDataContract::Dashpay;
     use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
@@ -432,7 +434,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2796590);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2961150);
 
         let check_result = platform
             .check_tx(
@@ -623,7 +625,7 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 736520);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 901080);
 
         let check_result = platform
             .check_tx(
@@ -765,7 +767,7 @@ mod tests {
         // since a fee multiplier of 100 means 100% more of 1 (gives 2)
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            2796590 * 2
+            2961150 * 2
         );
 
         let check_result = platform
@@ -1003,7 +1005,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2796590);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2961150);
 
         platform
             .drive
@@ -1087,7 +1089,7 @@ mod tests {
 
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
-            5704920
+            5804610
         );
 
         let check_result = platform
@@ -1199,7 +1201,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2796590);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2961150);
 
         platform
             .drive
@@ -1318,7 +1320,7 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1127060);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1226750);
 
         let check_result = platform
             .check_tx(
@@ -1824,7 +1826,7 @@ mod tests {
         assert!(matches!(
             validation_result.errors.first().expect("expected an error"),
             ConsensusError::BasicError(
-                BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(_)
+                BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_)
             )
         ));
 
@@ -1840,7 +1842,7 @@ mod tests {
         assert!(matches!(
             validation_result.errors.first().expect("expected an error"),
             ConsensusError::BasicError(
-                BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(_)
+                BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_)
             )
         ));
     }
@@ -2130,7 +2132,7 @@ mod tests {
         assert!(matches!(
             validation_result.errors.first().expect("expected an error"),
             ConsensusError::BasicError(
-                BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(_)
+                BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_)
             )
         ));
 
@@ -2146,7 +2148,258 @@ mod tests {
         assert!(matches!(
             validation_result.errors.first().expect("expected an error"),
             ConsensusError::BasicError(
-                BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(_)
+                BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_)
+            )
+        ));
+    }
+
+    #[test]
+    fn identity_can_create_with_semi_used_outpoint() {
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig::default())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
+        let platform_state = platform.state.load();
+        let platform_version = platform_state.current_platform_version().unwrap();
+
+        let mut signer = SimpleSigner::default();
+
+        let mut rng = StdRng::seed_from_u64(567);
+
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(3), platform_version)
+                .expect("expected to get key pair");
+
+        signer.add_key(master_key.clone(), master_private_key.clone());
+
+        let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            1,
+            Some(19),
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        signer.add_key(key.clone(), private_key.clone());
+
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(&mut rng, platform_version)
+            .unwrap();
+
+        let asset_lock_proof = instant_asset_lock_proof_fixture(Some(
+            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
+        ));
+
+        let identifier = asset_lock_proof
+            .create_identifier()
+            .expect("expected an identifier");
+
+        let identity: Identity = IdentityV0 {
+            id: identifier,
+            public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
+            balance: 1000000000,
+            revision: 0,
+        }
+        .into();
+
+        let mut identity_create_transition: StateTransition =
+            IdentityCreateTransition::try_from_identity_with_signer(
+                &identity,
+                asset_lock_proof,
+                pk.as_slice(),
+                &signer,
+                &NativeBlsModule,
+                platform_version,
+            )
+            .expect("expected an identity create transition");
+
+        let valid_identity_create_transition = identity_create_transition.clone();
+
+        // let's add an error so this fails on state validation
+
+        if let StateTransition::IdentityCreate(identity_create_transition_inner) =
+            &mut identity_create_transition
+        {
+            // let's create a new key that isn't signed
+            let master_key = identity_create_transition_inner
+                .public_keys_mut()
+                .get_mut(0)
+                .expect("expected master key");
+            master_key.set_signature(vec![].into());
+        };
+
+        let identity_create_serialized_transition = identity_create_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        platform
+            .drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create state structure");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let validation_result = platform
+            .execute_tx(identity_create_serialized_transition, &transaction)
+            .expect("expected to execute identity_create tx");
+        assert!(matches!(validation_result, UnsuccessfulPaidExecution(..)));
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        // now lets try to recreate the valid identity
+
+        // This one will use the balance on the outpoint that was already saved
+
+        let valid_identity_create_serialized_transition = valid_identity_create_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let validation_result = platform
+            .execute_tx(valid_identity_create_serialized_transition, &transaction)
+            .expect("expected to execute identity_create tx");
+        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(&mut rng, platform_version)
+            .unwrap();
+
+        let asset_lock_proof_top_up = instant_asset_lock_proof_fixture(Some(
+            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
+        ));
+
+        let identity_top_up_transition: StateTransition =
+            IdentityTopUpTransition::try_from_identity(
+                &identity,
+                asset_lock_proof_top_up.clone(),
+                pk.as_slice(),
+                0,
+                platform_version,
+                None,
+            )
+            .expect("expected an identity create transition");
+
+        let identity_top_up_serialized_transition = identity_top_up_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let validation_result = platform
+            .check_tx(
+                identity_top_up_serialized_transition.as_slice(),
+                FirstTimeCheck,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(validation_result.errors.is_empty());
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let validation_result = platform
+            .execute_tx(identity_top_up_serialized_transition.clone(), &transaction)
+            .expect("expected to execute identity top up tx");
+        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        // At this point we try creating a new identity with a used asset lock
+
+        let mut signer = SimpleSigner::default();
+
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(4), platform_version)
+                .expect("expected to get key pair");
+
+        signer.add_key(master_key.clone(), master_private_key.clone());
+
+        let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            1,
+            Some(50),
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        signer.add_key(key.clone(), private_key.clone());
+
+        let identifier = asset_lock_proof_top_up
+            .create_identifier()
+            .expect("expected an identifier");
+
+        let identity: Identity = IdentityV0 {
+            id: identifier,
+            public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
+            balance: 1000000000,
+            revision: 0,
+        }
+        .into();
+
+        let identity_create_transition: StateTransition =
+            IdentityCreateTransition::try_from_identity_with_signer(
+                &identity,
+                asset_lock_proof_top_up,
+                pk.as_slice(),
+                &signer,
+                &NativeBlsModule,
+                platform_version,
+            )
+            .expect("expected an identity create transition");
+
+        let identity_create_serialized_transition = identity_create_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let validation_result = platform
+            .check_tx(
+                identity_create_serialized_transition.as_slice(),
+                FirstTimeCheck,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(matches!(
+            validation_result.errors.first().expect("expected an error"),
+            ConsensusError::BasicError(
+                BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_)
+            )
+        ));
+
+        let validation_result = platform
+            .check_tx(
+                identity_create_serialized_transition.as_slice(),
+                Recheck,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        assert!(matches!(
+            validation_result.errors.first().expect("expected an error"),
+            ConsensusError::BasicError(
+                BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_)
             )
         ));
     }

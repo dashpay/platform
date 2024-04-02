@@ -8,6 +8,10 @@ use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTr
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::version::PlatformVersion;
 
+use crate::execution::types::execution_operation::{RetrieveIdentityInfo, ValidationOperation};
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
@@ -17,6 +21,7 @@ pub(in crate::execution::validation::state_transition) trait IdentityTopUpStateT
         &self,
         drive: &Drive,
         tx: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<PartialIdentity>, Error>;
 }
@@ -26,9 +31,14 @@ impl IdentityTopUpStateTransitionIdentityRetrievalV0 for IdentityTopUpTransition
         &self,
         drive: &Drive,
         tx: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<PartialIdentity>, Error> {
         let mut validation_result = ConsensusValidationResult::<PartialIdentity>::default();
+
+        execution_context.add_operation(ValidationOperation::RetrieveIdentity(
+            RetrieveIdentityInfo::only_balance(),
+        ));
 
         let maybe_partial_identity = drive.fetch_identity_with_balance(
             self.identity_id().to_buffer(),

@@ -41,7 +41,7 @@ use dpp::state_transition::data_contract_update_transition::methods::DataContrac
 use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
-use rand::{thread_rng, Rng};
+use rand::Rng;
 use tracing::error;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use bincode::{Decode, Encode};
@@ -125,6 +125,7 @@ pub struct StartIdentities {
     pub number_of_identities: u8,
     pub keys_per_identity: u8,
     pub starting_balances: u64, // starting balance in duffs
+    pub extra_keys: KeyMaps,
 }
 
 /// Identities to register on the first block of the strategy
@@ -332,7 +333,7 @@ impl Strategy {
     /// # Parameters
     /// - `document_query_callback`: Callback for querying documents based on specified criteria.
     /// - `identity_fetch_callback`: Callback for fetching identity details, including public keys.
-    /// - `create_asset_lock`: Callback for creating asset lock proofs, primarily for identity transactions.
+    /// - `asset_lock_proofs`: A vector of asset lock proofs and associated private keys.
     /// - `block_info`: Information about the current block, such as its height and timestamp.
     /// - `current_identities`: A mutable list of identities present in the simulation, potentially expanded with new identities.
     /// - `known_contracts`: A mutable map of contracts known in the simulation, including any updates.
@@ -356,7 +357,7 @@ impl Strategy {
     /// let (state_transitions, finalize_ops) = strategy.state_transitions_for_block(
     ///     &mut document_query_callback,
     ///     &mut identity_fetch_callback,
-    ///     &mut create_asset_lock,
+    ///     &mut asset_lock_proofs,
     ///     &block_info,
     ///     &mut current_identities,
     ///     &mut known_contracts,
@@ -380,7 +381,7 @@ impl Strategy {
             Identifier,
             Option<IdentityKeysRequest>,
         ) -> PartialIdentity,
-        create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
+        asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         known_contracts: &mut BTreeMap<String, DataContract>,
@@ -403,7 +404,7 @@ impl Strategy {
             self.start_identities.starting_balances,
             signer,
             rng,
-            create_asset_lock,
+            asset_lock_proofs,
             config,
             platform_version,
         ) {
@@ -417,8 +418,6 @@ impl Strategy {
         // Create state_transitions vec and identities vec based on identity_state_transitions outcome
         let (identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
-
-        // Do we also need to add identities to the identity_nonce_counter?
 
         // Add initial contracts for contracts_with_updates on first block of strategy
         if block_info.height == config.start_block_height {
@@ -436,7 +435,7 @@ impl Strategy {
                 .operations_based_transitions(
                     document_query_callback,
                     identity_fetch_callback,
-                    create_asset_lock,
+                    asset_lock_proofs,
                     block_info,
                     current_identities,
                     known_contracts,
@@ -481,7 +480,7 @@ impl Strategy {
     /// # Parameters
     /// - `document_query_callback`: A callback function for querying existing documents based on specified criteria.
     /// - `identity_fetch_callback`: A callback function for fetching identity information, including public keys.
-    /// - `create_asset_lock`: A callback function for creating asset lock proofs for identity transactions.
+    /// - `asset_lock_proofs`: A vector of asset lock proofs and associated private keys.
     /// - `block_info`: Information about the current block, including height and time.
     /// - `current_identities`: A mutable reference to the list of current identities involved in the operations.
     /// - `known_contracts`: A mutable reference to a map of known contracts and their updates.
@@ -506,7 +505,7 @@ impl Strategy {
     /// let (state_transitions, finalize_ops) = strategy.operations_based_transitions(
     ///     &mut document_query_callback,
     ///     &mut identity_fetch_callback,
-    ///     &mut create_asset_lock,
+    ///     &mut asset_lock_proofs,
     ///     &block_info,
     ///     &mut current_identities,
     ///     &mut known_contracts,
@@ -528,7 +527,7 @@ impl Strategy {
             Identifier,
             Option<IdentityKeysRequest>,
         ) -> PartialIdentity,
-        create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
+        asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
         block_info: &BlockInfo,
         current_identities: &mut [Identity],
         known_contracts: &mut BTreeMap<String, DataContract>,
@@ -969,7 +968,7 @@ impl Strategy {
                         for random_identity in cyclic_identities.take(count.into()) {
                             match crate::transitions::create_identity_top_up_transition(
                                 random_identity,
-                                create_asset_lock,
+                                asset_lock_proofs,
                                 platform_version,
                             ) {
                                 Ok(transition) => operations.push(transition),
@@ -999,7 +998,7 @@ impl Strategy {
                                     }
 
                                     // Select a random identity from the current_identities
-                                    let random_index = thread_rng().gen_range(0..identities_count);
+                                    let random_index = rng.gen_range(0..identities_count);
                                     let random_identity = &mut current_identities[random_index];
 
                                     // Get keys already added
@@ -1072,23 +1071,40 @@ impl Strategy {
 
                     // Generate state transition for identity transfer operation
                     OperationType::IdentityTransfer if current_identities.len() > 1 => {
-                        let identities_clone = current_identities.to_owned();
-                        // Sender is the first in the list, which should be loaded_identity
-                        let owner = &mut current_identities[0];
-                        // Recipient is the second in the list
-                        let recipient = &identities_clone[1];
                         for _ in 0..count {
+                            let identities_count = current_identities.len();
+                            if identities_count == 0 {
+                                break;
+                            }
+
+                            // Select a random identity from the current_identities for the sender
+                            let random_index_sender = rng.gen_range(0..identities_count);
+
+                            // Clone current_identities to a Vec for manipulation
+                            let mut unused_identities: Vec<_> =
+                                current_identities.iter().cloned().collect();
+                            unused_identities.remove(random_index_sender); // Remove the sender
+                            let unused_identities_count = unused_identities.len();
+
+                            // Select a random identity from the remaining ones for the recipient
+                            let random_index_recipient = rng.gen_range(0..unused_identities_count);
+                            let recipient = &unused_identities[random_index_recipient];
+
+                            // Use the sender index on the original slice
+                            let sender = &mut current_identities[random_index_sender];
+
                             let state_transition =
                                 crate::transitions::create_identity_credit_transfer_transition(
-                                    owner,
+                                    sender,
                                     recipient,
                                     identity_nonce_counter,
                                     signer,
-                                    1000,
+                                    300000,
                                 );
                             operations.push(state_transition);
                         }
                     }
+
                     OperationType::ContractCreate(params, doc_type_range)
                         if !current_identities.is_empty() =>
                     {
@@ -1285,7 +1301,7 @@ impl Strategy {
     /// - `block_info`: Provides details about the current block, such as height, to guide the generation of state transitions.
     /// - `signer`: A mutable reference to a signer instance, used for signing the state transitions of identities.
     /// - `rng`: A mutable reference to a random number generator, for creating randomized elements where necessary.
-    /// - `create_asset_lock`: A mutable reference to a callback function that generates an asset lock proof and associated private key, used in identity creation transactions.
+    /// - `asset_lock_proofs`: A vector of asset lock proofs and associated private keys.
     /// - `config`: Configuration details of the strategy, including the start block height.
     /// - `platform_version`: Specifies the version of the Dash Platform, ensuring compatibility with its features and behaviors.
     ///
@@ -1295,7 +1311,7 @@ impl Strategy {
     /// # Examples
     /// ```ignore
     /// // Assuming `strategy` is an instance of `Strategy`, with `block_info`, `signer`, `rng`,
-    /// // `create_asset_lock`, `config`, and `platform_version` properly initialized:
+    /// // `asset_lock_proofs`, `config`, and `platform_version` properly initialized:
     /// let identity_transitions = strategy.identity_state_transitions_for_block(
     ///     &block_info,
     ///     &mut signer,
@@ -1315,7 +1331,7 @@ impl Strategy {
         amount: u64,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
-        create_asset_lock: &mut impl FnMut(u64) -> Option<(AssetLockProof, PrivateKey)>,
+        asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
         config: &StrategyConfig,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
@@ -1326,13 +1342,13 @@ impl Strategy {
             && self.start_identities.number_of_identities > 0
         {
             let mut new_transitions = crate::transitions::create_identities_state_transitions(
-                self.start_identities.number_of_identities.into(), // number of identities
-                self.start_identities.keys_per_identity.into(),    // number of keys per identity
-                &self.identities_inserts.extra_keys,
+                self.start_identities.number_of_identities.into(),
+                self.start_identities.keys_per_identity.into(),
+                &self.start_identities.extra_keys,
                 amount,
                 signer,
                 rng,
-                create_asset_lock,
+                asset_lock_proofs,
                 platform_version,
             )?;
             state_transitions.append(&mut new_transitions);
@@ -1343,15 +1359,16 @@ impl Strategy {
         if block_info.height > config.start_block_height {
             let frequency = &self.identities_inserts.frequency;
             if frequency.check_hit(rng) {
-                let count = frequency.events(rng);
+                let count = frequency.events(rng); // number of identities to create
+
                 let mut new_transitions = crate::transitions::create_identities_state_transitions(
-                    count,                                       // number of identities
-                    self.identities_inserts.start_keys as KeyID, // number of keys per identity
+                    count,
+                    self.identities_inserts.start_keys as KeyID,
                     &self.identities_inserts.extra_keys,
                     200000, // 0.002 dash
                     signer,
                     rng,
-                    create_asset_lock,
+                    asset_lock_proofs,
                     platform_version,
                 )?;
                 state_transitions.append(&mut new_transitions);
@@ -1725,6 +1742,7 @@ mod tests {
                 number_of_identities: 2,
                 keys_per_identity: 3,
                 starting_balances: 100_000_000,
+                extra_keys: BTreeMap::new(),
             },
             identities_inserts: Default::default(),
             identity_contract_nonce_gaps: None,
