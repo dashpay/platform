@@ -3,7 +3,9 @@ mod basic_structure;
 mod nonce;
 mod state;
 
+use dapi_grpc::platform::v0::get_epochs_info_response::get_epochs_info_response_v0::EpochInfo;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -87,6 +89,7 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
+        epoch: &Epoch,
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {

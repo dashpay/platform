@@ -124,6 +124,7 @@ mod tests {
 
         use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
         use dpp::block::block_info::BlockInfo;
+        use dpp::block::epoch::Epoch;
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
@@ -204,6 +205,7 @@ mod tests {
                     None,
                     &platform_ref,
                     ValidationMode::Validator,
+                    &Epoch::new(0).unwrap(),
                     &mut execution_context,
                     None,
                 )
@@ -291,6 +293,7 @@ mod tests {
                     None,
                     &platform_ref,
                     ValidationMode::Validator,
+                    &Epoch::new(0).unwrap(),
                     &mut execution_context,
                     None,
                 )
@@ -447,6 +450,7 @@ mod tests {
                     None,
                     &platform_ref,
                     ValidationMode::Validator,
+                    &Epoch::new(0).unwrap(),
                     &mut execution_context,
                     None,
                 )
