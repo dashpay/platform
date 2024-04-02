@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use dpp::block::block_info::BlockInfo;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{BlockHash, ChainLock};
@@ -8,14 +9,16 @@ mod tests {
 
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::strategy::{
-        ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
-        UpgradingInfo,
+        ChainExecutionOutcome, ChainExecutionParameters, CoreHeightIncrease,
+        MasternodeListChangesStrategy, NetworkStrategy, StrategyRandomness, UpgradingInfo,
     };
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
+    use drive_abci::mimic::MimicExecuteBlockOptions;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
     use platform_version::version::mocks::v3_test::TEST_PROTOCOL_VERSION_3;
+    use strategy_tests::frequency::Frequency;
     use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
     #[test]
@@ -279,7 +282,6 @@ mod tests {
                         operations: vec![],
                         start_identities: StartIdentities::default(),
                         identities_inserts: IdentityInsertInfo::default(),
-
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -292,7 +294,6 @@ mod tests {
                         proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
                         upgrade_three_quarters_life: 0.2,
                     }),
-
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -381,16 +382,6 @@ mod tests {
                     //most nodes were hit (63 were not)
                 }
 
-                // Propose a new version for next epoch
-
-                let mut next_epoch_strategy = strategy.clone();
-
-                next_epoch_strategy.upgrading_info = Some(UpgradingInfo {
-                    current_protocol_version: 1,
-                    proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_3, 1)],
-                    upgrade_three_quarters_life: 0.0,
-                });
-
                 let platform = abci_app.platform;
 
                 let block_start = state
@@ -419,13 +410,13 @@ mod tests {
                         proposers,
                         quorums,
                         current_quorum_hash,
-                        current_proposer_versions: None,
+                        current_proposer_versions: Some(current_proposer_versions.clone()),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
-                    next_epoch_strategy,
+                    strategy.clone(),
                     config.clone(),
                     StrategyRandomness::SeedEntropy(7),
                 );
@@ -447,8 +438,7 @@ mod tests {
                     assert_eq!(state.current_protocol_version_in_consensus(), 1);
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     assert_eq!(counter.get(&1).unwrap(), None); //no one has proposed 1 yet
-                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), None);
-                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_3).unwrap(), Some(&1));
+                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&1));
                 }
 
                 // we locked in
@@ -507,6 +497,135 @@ mod tests {
 
         // Wait for the thread to finish and assert that it didn't panic.
         handler.join().expect("Thread has panicked");
+    }
+
+    #[test]
+    fn run_chain_on_epoch_change_with_new_version_and_removing_votes() {
+        let strategy = NetworkStrategy {
+            total_hpmns: 50,
+            upgrading_info: Some(UpgradingInfo {
+                current_protocol_version: 1,
+                proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
+                upgrade_three_quarters_life: 0.0,
+            }),
+            core_height_increase: CoreHeightIncrease::KnownCoreHeightIncreases(vec![1, 2, 3, 4, 5]),
+            // Remove HPMNs to trigger remove_validators_proposed_app_versions
+            proposer_strategy: MasternodeListChangesStrategy {
+                removed_hpmns: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // 1 block is 1 epoch
+        let epoch_time_length_s = 60;
+
+        let config = PlatformConfig {
+            validator_set_quorum_size: 30,
+            execution: ExecutionConfig {
+                // Upgrade to new version even we have only one vote
+                protocol_version_upgrade_percentage_needed: 1,
+                epoch_time_length_s,
+                ..Default::default()
+            },
+            block_spacing_ms: epoch_time_length_s * 1000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            end_time_ms,
+            ..
+        } = run_chain_for_strategy(&mut platform, 1, strategy.clone(), config.clone(), 13);
+
+        let platform = abci_app.platform;
+
+        let state = platform.state.load();
+        let counter = platform.drive.cache.protocol_versions_counter.read();
+
+        assert_eq!(state.last_committed_block_epoch().index, 0);
+        assert_eq!(state.current_protocol_version_in_consensus(), 1);
+        assert_eq!(state.next_epoch_protocol_version(), 1);
+        assert_eq!(state.last_committed_core_height(), 2);
+        assert_eq!(counter.get(&1).unwrap(), None);
+        assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&1));
+        assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_3).unwrap(), None);
+
+        drop(counter);
+
+        // Next bock is epoch change. We want to test our protocol
+        // upgrade logic. We will propose a new version and remove HPMN
+        // to make sure all protocol version count functions are called during block execution.
+
+        let last_committed_block_info = state
+            .last_committed_block_info()
+            .as_ref()
+            .unwrap()
+            .basic_info();
+
+        let proposer_pro_tx_hash = proposers
+            .first()
+            .expect("we should have proposers")
+            .masternode
+            .pro_tx_hash;
+
+        let current_quorum_with_test_info =
+            quorums.get(&current_quorum_hash).expect("expected quorum");
+
+        // We want to add proposal for a new version
+        let proposed_version = TEST_PROTOCOL_VERSION_3;
+
+        let block_info = BlockInfo {
+            time_ms: end_time_ms + epoch_time_length_s + 1,
+            height: last_committed_block_info.height + 1,
+            core_height: last_committed_block_info.core_height,
+            epoch: Default::default(),
+        };
+
+        abci_app
+            .mimic_execute_block(
+                proposer_pro_tx_hash.into(),
+                current_quorum_with_test_info,
+                proposed_version,
+                block_info,
+                0,
+                &[],
+                false,
+                Vec::new(),
+                MimicExecuteBlockOptions {
+                    dont_finalize_block: strategy.dont_finalize_block(),
+                    rounds_before_finalization: strategy
+                        .failure_testing
+                        .as_ref()
+                        .and_then(|failure_testing| failure_testing.rounds_before_successful_block),
+                    max_tx_bytes_per_block: strategy.max_tx_bytes_per_block,
+                    independent_process_proposal_verification: strategy
+                        .independent_process_proposal_verification,
+                },
+            )
+            .expect("expected to execute a block");
+
+        let state = platform.state.load();
+        let counter = platform.drive.cache.protocol_versions_counter.read();
+
+        assert_eq!(state.last_committed_block_epoch().index, 1);
+        assert_eq!(state.current_protocol_version_in_consensus(), 1);
+        assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
+        assert_eq!(counter.get(&1).unwrap(), None);
+        assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), None);
+        assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_3).unwrap(), Some(&1));
+        assert_eq!(state.last_committed_core_height(), 3);
     }
 
     #[test]
