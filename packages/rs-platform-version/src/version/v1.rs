@@ -70,7 +70,9 @@ use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
 
-pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
+pub const PROTOCOL_VERSION_1: u32 = 1;
+
+pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
     protocol_version: 1,
     identity: FeatureVersionBounds {
         min_version: 0,
@@ -529,6 +531,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
                 check_for_desired_protocol_upgrade: 0,
                 upgrade_protocol_version_on_epoch_change: 0,
+                protocol_version_upgrade_percentage_needed: 75,
             },
             block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
                 add_process_epoch_change_operations: 0,

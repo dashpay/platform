@@ -16,8 +16,11 @@ mod tests {
     use drive_abci::mimic::MimicExecuteBlockOptions;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
-    use platform_version::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
-    use platform_version::version::mocks::v3_test::TEST_PROTOCOL_VERSION_3;
+    use platform_version::version::mocks::v2_test::{TEST_PLATFORM_V2, TEST_PROTOCOL_VERSION_2};
+    use platform_version::version::mocks::v3_test::{TEST_PLATFORM_V3, TEST_PROTOCOL_VERSION_3};
+    use platform_version::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
+    use platform_version::version::v1::{PLATFORM_V1, PROTOCOL_VERSION_1};
+    use platform_version::version::PLATFORM_TEST_VERSIONS;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
@@ -501,10 +504,27 @@ mod tests {
 
     #[test]
     fn run_chain_on_epoch_change_with_new_version_and_removing_votes() {
+        // Add a new version to upgrade to new protocol version only with one vote
+        const TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE: u32 =
+            (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES) + 4;
+
+        let mut test_platform_v4 = PLATFORM_V1.clone();
+        test_platform_v4
+            .drive_abci
+            .methods
+            .protocol_upgrade
+            .protocol_version_upgrade_percentage_needed = 1;
+
+        PlatformVersion::replace_test_versions(vec![
+            TEST_PLATFORM_V2,
+            TEST_PLATFORM_V3,
+            test_platform_v4,
+        ]);
+
         let strategy = NetworkStrategy {
             total_hpmns: 50,
             upgrading_info: Some(UpgradingInfo {
-                current_protocol_version: 1,
+                current_protocol_version: TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE,
                 proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
                 upgrade_three_quarters_life: 0.0,
             }),
@@ -526,11 +546,10 @@ mod tests {
         let config = PlatformConfig {
             validator_set_quorum_size: 30,
             execution: ExecutionConfig {
-                // Upgrade to new version even we have only one vote
-                protocol_version_upgrade_percentage_needed: 1,
                 epoch_time_length_s,
                 ..Default::default()
             },
+            initial_protocol_version: TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE,
             block_spacing_ms: epoch_time_length_s * 1000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -555,12 +574,24 @@ mod tests {
         let counter = platform.drive.cache.protocol_versions_counter.read();
 
         assert_eq!(state.last_committed_block_epoch().index, 0);
-        assert_eq!(state.current_protocol_version_in_consensus(), 1);
-        assert_eq!(state.next_epoch_protocol_version(), 1);
+        assert_eq!(
+            state.current_protocol_version_in_consensus(),
+            TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE
+        );
+        assert_eq!(
+            state.next_epoch_protocol_version(),
+            TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE
+        );
         assert_eq!(state.last_committed_core_height(), 2);
         assert_eq!(counter.get(&1).unwrap(), None);
         assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&1));
         assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_3).unwrap(), None);
+        assert_eq!(
+            counter
+                .get(&TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE)
+                .unwrap(),
+            None
+        );
 
         drop(counter);
 
@@ -620,7 +651,10 @@ mod tests {
         let counter = platform.drive.cache.protocol_versions_counter.read();
 
         assert_eq!(state.last_committed_block_epoch().index, 1);
-        assert_eq!(state.current_protocol_version_in_consensus(), 1);
+        assert_eq!(
+            state.current_protocol_version_in_consensus(),
+            TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE
+        );
         assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
         assert_eq!(counter.get(&1).unwrap(), None);
         assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), None);

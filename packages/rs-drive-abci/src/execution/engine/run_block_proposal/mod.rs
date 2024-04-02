@@ -74,13 +74,7 @@ where
 
 Please update your software to the latest version: https://docs.dash.org/platform-protocol-upgrade
 
-{}% of evo masternodes voted to upgrade for the network protocol version from {} to {next_protocol_version}.
-
 Your software version: {}, latest supported protocol version: {}."#,
-                    self.config
-                        .execution
-                        .protocol_version_upgrade_percentage_needed,
-                    last_committed_platform_version.protocol_version,
                     env!("CARGO_PKG_VERSION"),
                     PlatformVersion::latest().protocol_version
                 );

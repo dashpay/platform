@@ -112,11 +112,6 @@ pub struct ExecutionConfig {
         deserialize_with = "from_str_or_number"
     )]
     pub epoch_time_length_s: u64,
-
-    /// The percentage needed of HPMNs to upgrade the protocol
-    /// It always needs to be higher than the rounded amount after applying the percentage
-    #[serde(default = "ExecutionConfig::default_protocol_version_upgrade_percentage_needed")]
-    pub protocol_version_upgrade_percentage_needed: u64,
 }
 
 fn from_str_or_number<'de, D, T>(deserializer: D) -> Result<T, D::Error>
@@ -240,10 +235,6 @@ impl ExecutionConfig {
     fn default_epoch_time_length_s() -> u64 {
         788400
     }
-
-    fn default_protocol_version_upgrade_percentage_needed() -> u64 {
-        75
-    }
 }
 
 impl PlatformConfig {
@@ -326,8 +317,6 @@ impl Default for ExecutionConfig {
             validator_set_rotation_block_count:
                 ExecutionConfig::default_validator_set_rotation_block_count(),
             epoch_time_length_s: ExecutionConfig::default_epoch_time_length_s(),
-            protocol_version_upgrade_percentage_needed:
-                Self::default_protocol_version_upgrade_percentage_needed(),
         }
     }
 }
