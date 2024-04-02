@@ -1,4 +1,5 @@
 use crate::drive::Drive;
+use crate::error::cache::CacheError;
 use crate::error::Error;
 use dpp::util::deserializer::ProtocolVersion;
 use grovedb::TransactionArg;
@@ -14,7 +15,7 @@ pub struct ProtocolVersionsCache {
     pub global_cache: IntMap<ProtocolVersion, u64>,
     block_cache: IntMap<ProtocolVersion, u64>,
     loaded: bool,
-    is_counter_getter_disabled: bool,
+    is_global_cache_blocked: bool,
 }
 
 #[cfg(feature = "full")]
@@ -46,36 +47,30 @@ impl ProtocolVersionsCache {
     /// Tries to get a version from block cache if present
     /// if block cache doesn't have the version set
     /// then it tries get the version from global cache
-    pub fn get(&self, version: &ProtocolVersion) -> Option<&u64> {
-        if let Some(count) = self.block_cache.get(version) {
+    pub fn get(&self, version: &ProtocolVersion) -> Result<Option<&u64>, Error> {
+        if self.is_global_cache_blocked {
+            return Err(Error::Cache(CacheError::GlobalCacheIsBlocked));
+        }
+
+        let counter = if let Some(count) = self.block_cache.get(version) {
             Some(count)
         } else {
             self.global_cache.get(version)
-        }
+        };
+
+        Ok(counter)
     }
 
-    /// Disable the getter
-    /// If disabled, then `get_if_enabled` will return None
-    pub fn disable_counter_getter(&mut self) {
-        self.is_counter_getter_disabled = true;
+    /// Disable the global cache to do not allow get counters
+    /// If global cache is blocked then [get] will return an error
+    pub fn block_global_cache(&mut self) {
+        self.is_global_cache_blocked = true;
     }
 
-    /// Enable the getter
-    /// If disabled, then [get_if_enabled] will return None
-    /// This function enable the normal behaviour of the [get] function
-    pub fn enabled_counter_getter(&mut self) {
-        self.is_counter_getter_disabled = false;
-    }
-
-    /// Calls the [get] function if enabled
-    /// or return `None` if disabled
-    /// See [disable_counter_getter] and [enabled_counter_getter]
-    pub fn get_if_enabled(&self, version: &ProtocolVersion) -> Option<&u64> {
-        if self.is_counter_getter_disabled {
-            None
-        } else {
-            self.get(version)
-        }
+    /// Unblock the global cache
+    /// This function enables the normal behaviour of [get] function
+    pub fn unblock_global_cache(&mut self) {
+        self.is_global_cache_blocked = false;
     }
 
     /// Merge block cache to global cache

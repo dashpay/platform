@@ -15,12 +15,6 @@ use dashcore::Network;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 
-use crate::block::epoch::Epoch;
-use crate::fee::default_costs::EpochCosts;
-use crate::fee::default_costs::KnownCostItem::{
-    VerifySignatureBLS12_381, VerifySignatureBip13ScriptHash, VerifySignatureEcdsaHash160,
-    VerifySignatureEcdsaSecp256k1, VerifySignatureEddsa25519Hash160,
-};
 use crate::fee::Credits;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -108,22 +102,38 @@ impl KeyType {
     pub fn signature_verify_cost(
         &self,
         platform_version: &PlatformVersion,
-        epoch: &Epoch,
     ) -> Result<Credits, ProtocolError> {
         match platform_version.dpp.costs.signature_verify {
             0 => Ok(match self {
                 KeyType::ECDSA_SECP256K1 => {
-                    epoch.cost_for_known_cost_item(VerifySignatureEcdsaSecp256k1)
+                    platform_version
+                        .fee_version
+                        .signature
+                        .verify_signature_ecdsa_secp256k1
                 }
-                KeyType::BLS12_381 => epoch.cost_for_known_cost_item(VerifySignatureBLS12_381),
+                KeyType::BLS12_381 => {
+                    platform_version
+                        .fee_version
+                        .signature
+                        .verify_signature_bls12_381
+                }
                 KeyType::ECDSA_HASH160 => {
-                    epoch.cost_for_known_cost_item(VerifySignatureEcdsaHash160)
+                    platform_version
+                        .fee_version
+                        .signature
+                        .verify_signature_ecdsa_hash160
                 }
                 KeyType::BIP13_SCRIPT_HASH => {
-                    epoch.cost_for_known_cost_item(VerifySignatureBip13ScriptHash)
+                    platform_version
+                        .fee_version
+                        .signature
+                        .verify_signature_bip13_script_hash
                 }
                 KeyType::EDDSA_25519_HASH160 => {
-                    epoch.cost_for_known_cost_item(VerifySignatureEddsa25519Hash160)
+                    platform_version
+                        .fee_version
+                        .signature
+                        .verify_signature_eddsa25519_hash160
                 }
             }),
             version => Err(ProtocolError::UnknownVersionMismatch {

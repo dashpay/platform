@@ -28,7 +28,7 @@ where
             .is_epoch_change_but_not_genesis()
         {
             protocol_versions_counter.clear_global_cache();
-            protocol_versions_counter.enabled_counter_getter();
+            protocol_versions_counter.unblock_global_cache();
         }
 
         // Update proposed versions with new proposal from the current block

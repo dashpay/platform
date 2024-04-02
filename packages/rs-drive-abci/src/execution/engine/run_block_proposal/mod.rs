@@ -52,9 +52,9 @@ where
         // even if we are switching to a new version in this block.
         let last_committed_platform_version = platform_state.current_platform_version()?;
 
-        // This EpochInfo is based on the last committed platform version
-        // it must be replaced with new version
-        let mut epoch_info = self.gather_epoch_info(
+        // !!!! This EpochInfo is based on the last committed platform version
+        // !!!! and will be used for the first block of the epoch.
+        let epoch_info = self.gather_epoch_info(
             &block_proposal,
             transaction,
             platform_state,
@@ -70,31 +70,15 @@ where
             // We should panic if this node is not supported a new protocol version
             let Ok(next_platform_version) = PlatformVersion::get(next_protocol_version) else {
                 panic!(
-                    r#"Failed to upgrade the network protocol version {next_protocol_version}. Please update your software to the latest version.
+                    r#"Failed to upgrade the network protocol version {next_protocol_version}.
 
-{}% of evo masternodes voted to upgrade for the network protocol version from {} to {next_protocol_version}.
+Please update your software to the latest version: https://docs.dash.org/platform-protocol-upgrade
 
 Your software version: {}, latest supported protocol version: {}."#,
-                    self.config
-                        .execution
-                        .protocol_version_upgrade_percentage_needed,
-                    last_committed_platform_version.protocol_version,
                     env!("CARGO_PKG_VERSION"),
                     PlatformVersion::latest().protocol_version
                 );
             };
-
-            // Replace EpochInfo created to the new protocol version if needed
-            if platform_state.current_protocol_version_in_consensus() != next_protocol_version {
-                // TODO: We are calculating epoch info once again which is not great
-                //  but it happens only once on protocol version upgrade (once a month?)
-                epoch_info = self.gather_epoch_info(
-                    &block_proposal,
-                    transaction,
-                    platform_state,
-                    next_platform_version,
-                )?;
-            }
 
             next_platform_version
         } else {

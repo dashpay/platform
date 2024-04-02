@@ -12,6 +12,7 @@ pub struct DPPVersion {
     pub contract_versions: ContractVersions,
     pub document_versions: DocumentVersions,
     pub identity_versions: IdentityVersions,
+    pub asset_lock_versions: AssetLockVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -24,14 +25,16 @@ pub struct StateTransitionVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct IdentityTransitionVersions {
+    pub max_public_keys_in_creation: u16,
     pub asset_locks: IdentityTransitionAssetLockVersions,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct IdentityTransitionAssetLockVersions {
+    pub required_asset_lock_duff_balance_for_processing_start_for_identity_create: u64,
+    pub required_asset_lock_duff_balance_for_processing_start_for_identity_top_up: u64,
     pub validate_asset_lock_transaction_structure: FeatureVersion,
     pub validate_instant_asset_lock_proof_structure: FeatureVersion,
-    pub minimal_asset_lock_value: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -57,7 +60,6 @@ pub struct CostVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPValidationVersions {
-    pub validate_time_in_block_time_window: FeatureVersion,
     pub json_schema_validator: JsonSchemaValidatorVersions,
     pub data_contract: DataContractValidationVersions,
     pub document_type: DocumentTypeValidationVersions,
@@ -198,6 +200,11 @@ pub struct RecursiveSchemaValidatorVersions {
     pub traversal_validator: FeatureVersion,
     pub byte_array_has_no_items_as_parent_validator: FeatureVersion,
     pub pattern_is_valid_regex_validator: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct AssetLockVersions {
+    pub reduced_asset_lock_value: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

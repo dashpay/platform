@@ -82,10 +82,6 @@ pub enum ExecutionError {
     #[error("protocol upgrade incoherence error: {0}")]
     ProtocolUpgradeIncoherence(&'static str),
 
-    /// A protocol upgrade should happen only on epoch change
-    #[error("unexpected protocol upgrade: it should happen only on epoch change")]
-    UnexpectedProtocolVersionUpgrade,
-
     /// Data is missing from the drive.
     #[error("drive missing data error: {0}")]
     DriveMissingData(String),

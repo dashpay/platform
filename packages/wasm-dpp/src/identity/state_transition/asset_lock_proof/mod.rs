@@ -73,7 +73,9 @@ impl AssetLockProofWasm {
                 InstantAssetLockProofWasm::from(instant.to_owned()).create_identifier()
             }
             AssetLockProof::Chain(chain) => {
-                ChainAssetLockProofWasm::from(chain.to_owned()).create_identifier()
+                let identifier =
+                    ChainAssetLockProofWasm::from(chain.to_owned()).create_identifier();
+                Ok(identifier)
             }
         }
     }

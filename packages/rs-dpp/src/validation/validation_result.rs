@@ -237,6 +237,17 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
             )))
     }
 
+    pub fn into_data_and_errors(self) -> Result<(TData, Vec<E>), ProtocolError> {
+        Ok((
+            self.data
+                .ok_or(ProtocolError::CorruptedCodeExecution(format!(
+                    "trying to push validation result into data (errors are {:?})",
+                    self.errors
+                )))?,
+            self.errors,
+        ))
+    }
+
     pub fn data_as_borrowed(&self) -> Result<&TData, ProtocolError> {
         self.data
             .as_ref()

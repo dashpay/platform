@@ -181,9 +181,9 @@ describe('Dash - Client', function suite() {
   describe('#platform.identities.topUp', async () => {
     it('should top up an identity', async () => {
       // Registering an identity we're going to top up
-      const identity = await client.platform.identities.register(1000);
+      const identity = await client.platform.identities.register(200000);
       // Topping up the identity
-      await client.platform.identities.topUp(identity.getId(), 1000);
+      await client.platform.identities.topUp(identity.getId(), 60000);
 
       expect(identity).to.be.not.null;
 
@@ -206,7 +206,7 @@ describe('Dash - Client', function suite() {
 
     it('should throw TransitionBroadcastError when transport resolves error', async () => {
       // Registering an identity we're going to top up
-      const identity = await client.platform.identities.register(10000);
+      const identity = await client.platform.identities.register(200000);
 
       const errorResponse = {
         error: {
@@ -234,7 +234,7 @@ describe('Dash - Client', function suite() {
 
   describe('#platform.identities.update', async () => {
     it('should update an identity', async () => {
-      const identity = await client.platform.identities.register(1000);
+      const identity = await client.platform.identities.register(200000);
 
       const privateKey = new PrivateKey(privateKeyFixture);
 
@@ -271,7 +271,7 @@ describe('Dash - Client', function suite() {
 
     it('should throw TransitionBroadcastError when transport resolves error', async () => {
       // Registering an identity we're going to top up
-      const identity = await client.platform.identities.register(10000);
+      const identity = await client.platform.identities.register(200000);
 
       const errorResponse = {
         error: {

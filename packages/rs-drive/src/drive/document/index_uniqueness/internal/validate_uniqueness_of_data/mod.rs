@@ -10,8 +10,8 @@ use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
-use dpp::validation::SimpleConsensusValidationResult;
 
+use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;

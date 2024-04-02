@@ -59,7 +59,7 @@ describe('DPNS', () => {
 
     before(async () => {
       ownerClient = await createClientWithFundedWallet(
-        10000,
+        200000,
         process.env.DPNS_OWNER_PRIVATE_KEY,
       );
 
@@ -67,7 +67,7 @@ describe('DPNS', () => {
       identity = await ownerClient.platform.identities.get(dpnsOwnerId);
 
       expect(identity).to.exist();
-      await ownerClient.platform.identities.topUp(dpnsOwnerId, 1000);
+      await ownerClient.platform.identities.topUp(dpnsOwnerId, 60000);
     });
 
     after(async () => {

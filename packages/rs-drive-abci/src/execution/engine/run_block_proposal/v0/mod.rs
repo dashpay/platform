@@ -1,4 +1,3 @@
-use chrono::{TimeZone, Utc};
 use dpp::block::epoch::Epoch;
 
 use dpp::validation::ValidationResult;
@@ -140,16 +139,6 @@ where
                 .expect("current epoch index should be in range"),
         );
 
-        // Update protocol version for this block
-        let previous_block_protocol_version = last_committed_platform_state
-            .current_platform_version()?
-            .protocol_version;
-        let current_block_protocol_version = platform_version.protocol_version;
-
-        block_platform_state
-            .set_current_protocol_version_in_consensus(current_block_protocol_version);
-
-        // Protocol version can be changed only on epoch change
         if epoch_info.is_epoch_change_but_not_genesis() {
             tracing::info!(
                 epoch_index = epoch_info.current_epoch_index(),
@@ -159,67 +148,19 @@ where
                     .expect("must be set since we aren't on genesis"),
                 epoch_info.current_epoch_index(),
             );
-
-            if current_block_protocol_version == previous_block_protocol_version {
-                tracing::info!(
-                    epoch_index = epoch_info.current_epoch_index(),
-                    "protocol version remains the same {}",
-                    current_block_protocol_version,
-                );
-            } else {
-                tracing::info!(
-                    epoch_index = epoch_info.current_epoch_index(),
-                    "protocol version changed from {} to {}",
-                    previous_block_protocol_version,
-                    current_block_protocol_version,
-                );
-            };
-
-            // Update block platform state with current and next epoch protocol versions
-            // if it was proposed
-            // This should happen only on epoch change
-            self.upgrade_protocol_version(
-                last_committed_platform_state,
-                &mut block_platform_state,
-                transaction,
-                platform_version,
-            )?;
-        } else if current_block_protocol_version != previous_block_protocol_version {
-            // It might happen only in case of error in the code.
-            return Err(Error::Execution(
-                ExecutionError::UnexpectedProtocolVersionUpgrade,
-            ));
         }
 
-        // Warn user to update software if the next protocol version is not supported
-        let latest_supported_protocol_version = PlatformVersion::latest().protocol_version;
-        let next_epoch_protocol_version = block_platform_state.next_epoch_protocol_version();
-        if block_platform_state.next_epoch_protocol_version() > latest_supported_protocol_version {
-            let genesis_time_ms = self.get_genesis_time(
-                block_info.height,
-                block_info.time_ms,
-                transaction,
-                platform_version,
-            )?;
-
-            let next_epoch_activation_datetime_ms = genesis_time_ms
-                + (epoch_info.current_epoch_index() as u64
-                    * self.config.execution.epoch_time_length_s
-                    * 1000);
-
-            let next_epoch_activation_datetime = Utc
-                .timestamp_millis_opt(next_epoch_activation_datetime_ms as i64)
-                .single()
-                .expect("next_epoch_activation_date must always be in the range");
-
-            tracing::warn!(
-                next_epoch_protocol_version,
-                latest_supported_protocol_version,
-                "The node doesn't support new protocol version {} that will be activated starting from {}. Please update your software, otherwise the node won't be able to participate in the network.",
-                next_epoch_protocol_version,
-                next_epoch_activation_datetime.to_rfc2822(),
-            );
-        }
+        // Update block platform state with current and next epoch protocol versions
+        // if it was proposed
+        // This is happening only on epoch change
+        self.upgrade_protocol_version_on_epoch_change(
+            &block_info,
+            &epoch_info,
+            last_committed_platform_state,
+            &mut block_platform_state,
+            transaction,
+            platform_version,
+        )?;
 
         // If there is a core chain lock update, we should start by verifying it
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
