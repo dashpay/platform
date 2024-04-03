@@ -7,6 +7,10 @@ pub mod property_names {
     pub const OWNER_ID: &str = "$ownerId";
     pub const CREATED_AT: &str = "$createdAt";
     pub const UPDATED_AT: &str = "$updatedAt";
+    pub const CREATED_AT_BLOCK_HEIGHT: &str = "$createdAtBlockHeight";
+    pub const UPDATED_AT_BLOCK_HEIGHT: &str = "$updatedAtBlockHeight";
+    pub const CREATED_AT_CORE_BLOCK_HEIGHT: &str = "$createdAtCoreBlockHeight";
+    pub const UPDATED_AT_CORE_BLOCK_HEIGHT: &str = "$updatedAtCoreBlockHeight";
 }
 
 pub const IDENTIFIER_FIELDS: [&str; 3] = [

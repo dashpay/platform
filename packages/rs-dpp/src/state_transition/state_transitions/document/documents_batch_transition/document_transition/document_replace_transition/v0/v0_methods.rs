@@ -2,7 +2,6 @@ use platform_value::Value;
 
 use std::collections::BTreeMap;
 
-use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
@@ -23,12 +22,6 @@ pub trait DocumentReplaceTransitionV0Methods {
 
     /// Sets the value of the `revision` field in the `DocumentReplaceTransitionV0`.
     fn set_revision(&mut self, revision: Revision);
-
-    /// Returns a reference to the `updated_at` field of the `DocumentReplaceTransitionV0`.
-    fn updated_at(&self) -> Option<TimestampMillis>;
-
-    /// Sets the value of the `updated_at` field in the `DocumentReplaceTransitionV0`.
-    fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>);
 
     /// Returns a reference to the `data` field of the `DocumentReplaceTransitionV0`.
     fn data(&self) -> &BTreeMap<String, Value>;
@@ -59,14 +52,6 @@ impl DocumentReplaceTransitionV0Methods for DocumentReplaceTransitionV0 {
 
     fn set_revision(&mut self, revision: Revision) {
         self.revision = revision;
-    }
-
-    fn updated_at(&self) -> Option<TimestampMillis> {
-        self.updated_at
-    }
-
-    fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>) {
-        self.updated_at = updated_at;
     }
 
     fn data(&self) -> &BTreeMap<String, Value> {

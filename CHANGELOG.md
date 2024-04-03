@@ -1,3 +1,90 @@
+## [1.0.0-dev.9](https://github.com/dashpay/platform/compare/v1.0.0-dev.8...v1.0.0-dev.9) (2024-03-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** don't allow duplicate mock expectations (#1788)
+* created_at and updated_at from block time (#1780)
+* created_at_block_height and variants (#1784)
+
+
+### Features
+
+* created_at and updated_at from block time ([#1780](https://github.com/dashpay/platform/issues/1780))
+* created_at_block_height and variants ([#1784](https://github.com/dashpay/platform/issues/1784))
+
+
+### Bug Fixes
+
+* **drive:** internal error on querying proofs ([#1747](https://github.com/dashpay/platform/issues/1747))
+* identity add keys in strategy tests ([#1727](https://github.com/dashpay/platform/issues/1727))
+* **sdk:** don't allow duplicate mock expectations ([#1788](https://github.com/dashpay/platform/issues/1788))
+* query retry on race condition ([#1776](https://github.com/dashpay/platform/issues/1776))
+* identity state transition validation fixes ([#1786](https://github.com/dashpay/platform/issues/1786))
+
+
+### Code Refactoring
+
+* make strategy start identities a new struct ([#1764](https://github.com/dashpay/platform/issues/1764))
+* updated descriptions and function names in strategy tests plus readme file ([#1785](https://github.com/dashpay/platform/issues/1785))
+  
+
+### Miscellaneous Chores
+
+* **dashmate:** readme fixes ([#1624](https://github.com/dashpay/platform/issues/1624))
+* fix npm audit for follow-redirects package ([#1781](https://github.com/dashpay/platform/issues/1781))
+* **dapi:** use broadcast_tx instead of deprecated broadcast_tx_sync ([#1775](https://github.com/dashpay/platform/issues/1775))
+  
+
+### Build System
+
+* rs-tenderdash-abci 0.14.0-dev.9 ([#1782](https://github.com/dashpay/platform/issues/1782))
+
+
+### Continuous Integration
+
+* enforce warnings as errors ([#1783](https://github.com/dashpay/platform/issues/1783))
+* update doc build branch in action config ([#1748](https://github.com/dashpay/platform/issues/1748))
+
+## [1.0.0-dev.8](https://github.com/dashpay/platform/compare/v1.0.0-dev.7...v1.0.0-dev.8) (2024-03-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** identity update can not disable a key it is also adding (#1772)
+* **platform:** key disabled at based on state transition block time (#1771)
+* **platform:** data contract validation improvements (#1768)
+* update tenderdash to 0.14-dev.4 (#1770)
+* **platform:** advanced data contract structure validation position (#1763)
+
+### Features
+
+* **platform:** identity update can not disable a key it is also adding ([#1772](https://github.com/dashpay/platform/issues/1772))
+* **platform:** key disabled at based on state transition block time ([#1771](https://github.com/dashpay/platform/issues/1771))
+
+
+### Bug Fixes
+
+* **platform:** advanced data contract structure validation position ([#1763](https://github.com/dashpay/platform/issues/1763))
+* **platform:** data contract validation improvements ([#1768](https://github.com/dashpay/platform/issues/1768))
+* **platform:** wrong state used to get current validator set ([#1773](https://github.com/dashpay/platform/issues/1773))
+* remove unnecessary clone
+* update strategy test document transitions with initial contract ids
+
+
+### Code Refactoring
+
+* **drive:** relax versioning of calls with fees ([#1762](https://github.com/dashpay/platform/issues/1762))
+* drop unused includes; use calculate_sign_hash ([#1767](https://github.com/dashpay/platform/issues/1767))
+* resolve various warnings during build or by clippy ([#1761](https://github.com/dashpay/platform/issues/1761))
+* strategy test start identities ([#1749](https://github.com/dashpay/platform/issues/1749))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** upgrade to Core 20.1 ([#1760](https://github.com/dashpay/platform/issues/1760))
+* update tenderdash to 0.14-dev.4 ([#1770](https://github.com/dashpay/platform/issues/1770))
+
 ## [1.0.0-dev.7](https://github.com/dashpay/platform/compare/v1.0.0-dev.6...v1.0.0-dev.7) (2024-03-08)
 
 

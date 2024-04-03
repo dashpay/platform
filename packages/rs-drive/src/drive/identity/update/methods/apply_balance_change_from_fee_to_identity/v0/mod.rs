@@ -48,15 +48,14 @@ impl Drive {
     /// If calculated balance is below 0 it will go to negative balance
     ///
     /// Balances are stored in the identity under key 0
-    pub fn apply_balance_change_from_fee_to_identity_operations_v0(
+    #[inline(always)]
+    pub(super) fn apply_balance_change_from_fee_to_identity_operations_v0(
         &self,
         balance_change: BalanceChangeForIdentity,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<LowLevelDriveOperation>, FeeResult), Error> {
         let mut drive_operations = vec![];
-
-        let _drive_version = &platform_version.drive;
 
         if matches!(balance_change.change(), BalanceChange::NoBalanceChange) {
             return Ok((drive_operations, balance_change.into_fee_result()));

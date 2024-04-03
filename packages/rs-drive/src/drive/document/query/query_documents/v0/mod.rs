@@ -77,6 +77,7 @@ impl Drive {
     ///
     /// * `Result<QueryDocumentsOutcome, Error>` - Returns `QueryDocumentsOutcome` on success with the list of documents,
     ///    number of skipped items, and cost. If the operation fails, it returns an `Error`.
+    #[inline(always)]
     pub(super) fn query_documents_v0(
         &self,
         query: DriveQuery,

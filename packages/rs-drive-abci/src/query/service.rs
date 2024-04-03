@@ -1,6 +1,7 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use crate::rpc::core::DefaultCoreRPC;
@@ -26,7 +27,10 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use dpp::version::PlatformVersion;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::thread::sleep;
+use std::time::Duration;
 use tracing::Instrument;
 
 /// Service to handle platform queries
@@ -47,7 +51,7 @@ impl QueryService {
         Self { platform }
     }
 
-    async fn handle_blocking_query<RQ, RS>(
+    async fn handle_blocking_query<'a, RQ, RS>(
         &self,
         request: Request<RQ>,
         query_method: QueryMethod<RQ, RS>,
@@ -55,33 +59,93 @@ impl QueryService {
     ) -> Result<Response<RS>, Status>
     where
         RS: Clone + Send + 'static,
-        RQ: Send + 'static,
+        RQ: Send + Clone + 'static,
     {
         let platform = Arc::clone(&self.platform);
 
         spawn_blocking_task_with_name_if_supported("query", move || {
-            let platform_state = platform.state.load();
+            let mut result;
 
-            let platform_version = platform_state
-                .current_platform_version()
-                .map_err(|_| Status::unavailable("platform is not initialized"))?;
+            let request_query = request.into_inner();
 
-            let mut result = query_method(
-                &platform,
-                request.into_inner(),
-                &platform_state,
-                platform_version,
-            )
-            .map_err(error_into_status)?;
+            let mut query_counter = 0;
 
-            if result.is_valid() {
-                let response = result
+            loop {
+                let platform_state = platform.state.load();
+
+                let platform_version = platform_state
+                    .current_platform_version()
+                    .map_err(|_| Status::unavailable("platform is not initialized"))?;
+
+                let mut needs_restart = false;
+
+                loop {
+                    let committed_block_height_guard = platform
+                        .committed_block_height_guard
+                        .load(Ordering::Relaxed);
+                    let mut counter = 0;
+                    if platform_state.last_committed_block_height() == committed_block_height_guard
+                    {
+                        break;
+                    } else {
+                        counter += 1;
+                        sleep(Duration::from_millis(10))
+                    }
+
+                    // We try for up to 1 second
+                    if counter >= 100 {
+                        query_counter += 1;
+                        needs_restart = true;
+                        break;
+                    }
+                }
+
+                if query_counter > 3 {
+                    return Err(query_error_into_status(QueryError::NotServiceable(
+                        "platform is saturated (did not attempt query)".to_string(),
+                    )));
+                }
+
+                if needs_restart {
+                    continue;
+                }
+
+                result = query_method(
+                    &platform,
+                    request_query.clone(),
+                    &platform_state,
+                    platform_version,
+                );
+
+                let committed_block_height_guard = platform
+                    .committed_block_height_guard
+                    .load(Ordering::Relaxed);
+
+                if platform_state.last_committed_block_height() == committed_block_height_guard {
+                    // in this case the query almost certainly executed correctly
+                    break;
+                } else {
+                    query_counter += 1;
+
+                    if query_counter > 2 {
+                        // This should never be possible
+                        return Err(query_error_into_status(QueryError::NotServiceable(
+                            "platform is saturated".to_string(),
+                        )));
+                    }
+                }
+            }
+
+            let mut query_result = result.map_err(error_into_status)?;
+
+            if query_result.is_valid() {
+                let response = query_result
                     .into_data()
                     .map_err(|error| error_into_status(error.into()))?;
 
                 Ok(Response::new(response))
             } else {
-                let error = result.errors.swap_remove(0);
+                let error = query_result.errors.swap_remove(0);
 
                 Err(query_error_into_status(error))
             }

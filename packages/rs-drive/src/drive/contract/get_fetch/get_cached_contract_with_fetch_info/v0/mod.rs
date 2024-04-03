@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 impl Drive {
     /// Returns the contract fetch info with the given ID if it's in cache.
+    #[inline(always)]
     pub(super) fn get_cached_contract_with_fetch_info_v0(
         &self,
         contract_id: [u8; 32],

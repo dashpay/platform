@@ -5,13 +5,18 @@ use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransition;
 
 use drive::grovedb::TransactionArg;
 
-/// There are 3 stages in a state transition processing:
-/// Structure, Signature and State validation,
+/// There are multiple stages in a state transition processing:
+///     Basic Structure
+///     Signature
+///     Balance
+///     Advanced Structure
+///     State
 ///
 /// The structure validation verifies that the form of the state transition is good, for example
 /// that a contract is well formed, or that a document is valid against the contract.
@@ -25,6 +30,7 @@ use drive::grovedb::TransactionArg;
 ///
 pub(in crate::execution) fn process_state_transition<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
+    block_info: &BlockInfo,
     state_transition: StateTransition,
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
@@ -36,6 +42,7 @@ pub(in crate::execution) fn process_state_transition<'a, C: CoreRPCLike>(
     {
         0 => v0::process_state_transition_v0(
             platform,
+            block_info,
             state_transition,
             transaction,
             platform_version,

@@ -16,9 +16,9 @@ pub(crate) mod v0;
 impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
-        _action: Option<StateTransitionAction>,
+        action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
-        _validation_mode: ValidationMode,
+        validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -31,7 +31,12 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
             .contract_update_state_transition
             .state
         {
-            0 => self.validate_state_v0(platform, tx, platform_version),
+            0 => {
+                if action.is_some() {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution("data contract update is calling validate state, and the action is already known. It should not be known at this point")));
+                }
+                self.validate_state_v0(platform, validation_mode, tx, platform_version)
+            }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: validate_state".to_string(),
                 known_versions: vec![0],

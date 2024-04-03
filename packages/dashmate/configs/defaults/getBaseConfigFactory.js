@@ -206,7 +206,7 @@ export default function getBaseConfigFactory(homeDir) {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:experimental',
+              image: 'dashpay/tenderdash:0.14.0-dev.4',
             },
             p2p: {
               host: '0.0.0.0',
@@ -222,6 +222,7 @@ export default function getBaseConfigFactory(homeDir) {
               host: '127.0.0.1',
               port: 26657,
               maxOpenConnections: 900,
+              timeoutBroadcastTx: 0,
             },
             pprof: {
               enabled: false,
@@ -236,6 +237,10 @@ export default function getBaseConfigFactory(homeDir) {
               cacheSize: 15000,
               size: 5000,
               maxTxsBytes: 1073741824,
+              timeoutCheckTx: '0',
+              txEnqueueTimeout: '0',
+              txSendRateLimit: 0,
+              txRecvRateLimit: 0,
             },
             consensus: {
               createEmptyBlocks: true,

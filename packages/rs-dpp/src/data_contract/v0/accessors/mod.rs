@@ -6,7 +6,7 @@ use crate::data_contract::errors::DataContractError;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
-use crate::ProtocolError;
+
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 
@@ -27,20 +27,20 @@ impl DataContractV0Getters for DataContractV0 {
         self.owner_id
     }
 
-    fn document_type_cloned_for_name(&self, name: &str) -> Result<DocumentType, ProtocolError> {
+    fn document_type_cloned_for_name(&self, name: &str) -> Result<DocumentType, DataContractError> {
         self.document_type_cloned_optional_for_name(name)
             .ok_or_else(|| {
-                ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
-                    "can not get document type from contract",
-                ))
+                DataContractError::DocumentTypeNotFound(
+                    "can not get document type from contract".to_string(),
+                )
             })
     }
 
-    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, ProtocolError> {
+    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, DataContractError> {
         self.document_type_optional_for_name(name).ok_or_else(|| {
-            ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
-                "can not get document type from contract",
-            ))
+            DataContractError::DocumentTypeNotFound(
+                "can not get document type from contract".to_string(),
+            )
         })
     }
 

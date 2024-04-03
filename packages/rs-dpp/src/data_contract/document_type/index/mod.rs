@@ -8,7 +8,7 @@ pub enum OrderBy {
     Desc,
 }
 
-use crate::data_contract::errors::{DataContractError, StructureError};
+use crate::data_contract::errors::DataContractError;
 
 use crate::ProtocolError;
 use anyhow::anyhow;
@@ -174,7 +174,7 @@ impl Index {
 }
 
 impl TryFrom<&[(Value, Value)]> for Index {
-    type Error = ProtocolError;
+    type Error = DataContractError;
 
     fn try_from(index_type_value_map: &[(Value, Value)]) -> Result<Self, Self::Error> {
         // Decouple the map
@@ -188,20 +188,16 @@ impl TryFrom<&[(Value, Value)]> for Index {
         let mut index_properties: Vec<IndexProperty> = Vec::new();
 
         for (key_value, value_value) in index_type_value_map {
-            let key = key_value.to_str().map_err(ProtocolError::ValueError)?;
+            let key = key_value.to_str()?;
 
             match key {
                 "name" => {
                     name = Some(
                         value_value
                             .as_text()
-                            .ok_or({
-                                ProtocolError::DataContractError(
-                                    DataContractError::InvalidContractStructure(
-                                        "index name should be a string".to_string(),
-                                    ),
-                                )
-                            })?
+                            .ok_or(DataContractError::InvalidContractStructure(
+                                "index name should be a string".to_string(),
+                            ))?
                             .to_owned(),
                     );
                 }
@@ -212,25 +208,26 @@ impl TryFrom<&[(Value, Value)]> for Index {
                 }
                 "properties" => {
                     let properties =
-                        value_value.as_array().ok_or(ProtocolError::StructureError(
-                            StructureError::ValueWrongType("properties value should be an array"),
-                        ))?;
+                        value_value
+                            .as_array()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "properties value should be an array".to_string(),
+                            ))?;
 
                     // Iterate over this and get the index properties
                     for property in properties {
-                        let property_map = property.as_map().ok_or(
-                            ProtocolError::StructureError(StructureError::ValueWrongType(
-                                "each property of an index should be a map",
-                            )),
-                        )?;
+                        let property_map =
+                            property.as_map().ok_or(DataContractError::ValueWrongType(
+                                "each property of an index should be a map".to_string(),
+                            ))?;
 
                         let index_property = IndexProperty::from_platform_value(property_map)?;
                         index_properties.push(index_property);
                     }
                 }
                 _ => {
-                    return Err(ProtocolError::StructureError(
-                        StructureError::ValueWrongType("unexpected property name"),
+                    return Err(DataContractError::ValueWrongType(
+                        "unexpected property name".to_string(),
                     ))
                 }
             }
@@ -251,20 +248,20 @@ impl TryFrom<&[(Value, Value)]> for Index {
 impl IndexProperty {
     pub fn from_platform_value(
         index_property_map: &[(Value, Value)],
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<Self, DataContractError> {
         let property = &index_property_map[0];
 
         let key = property
             .0 // key
             .as_text()
-            .ok_or(ProtocolError::DataContractError(
-                DataContractError::KeyWrongType("key should be of type string"),
+            .ok_or(DataContractError::KeyWrongType(
+                "key should be of type string".to_string(),
             ))?;
         let value = property
             .1 // value
             .as_text()
-            .ok_or(ProtocolError::DataContractError(
-                DataContractError::ValueWrongType("value should be of type string"),
+            .ok_or(DataContractError::ValueWrongType(
+                "value should be of type string".to_string(),
             ))?;
 
         let ascending = value == "asc";

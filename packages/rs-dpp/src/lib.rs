@@ -35,6 +35,7 @@ mod bls;
 #[cfg(feature = "fixtures-and-mocks")]
 pub mod tests;
 
+pub mod asset_lock;
 pub mod balances;
 pub mod block;
 pub mod fee;
@@ -62,6 +63,10 @@ pub mod prelude {
     pub use crate::identity::IdentityPublicKey;
     #[cfg(feature = "validation")]
     pub use crate::validation::ConsensusValidationResult;
+
+    pub type BlockHeight = u64;
+
+    pub type CoreBlockHeight = u32;
     pub type TimestampMillis = u64;
     pub type Revision = u64;
     pub type IdentityNonce = u64;

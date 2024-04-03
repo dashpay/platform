@@ -19,6 +19,7 @@ use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Validate that a document replace transition action would be unique in the state
+    #[inline(always)]
     pub(super) fn validate_document_replace_transition_action_uniqueness_v0(
         &self,
         contract: &DataContract,
@@ -36,6 +37,12 @@ impl Drive {
             allow_original: true,
             created_at: document_replace_transition.created_at(),
             updated_at: document_replace_transition.updated_at(),
+            created_at_block_height: document_replace_transition.created_at_block_height(),
+            updated_at_block_height: document_replace_transition.updated_at_block_height(),
+            created_at_core_block_height: document_replace_transition
+                .created_at_core_block_height(),
+            updated_at_core_block_height: document_replace_transition
+                .updated_at_core_block_height(),
             data: document_replace_transition.data(),
         };
         self.validate_uniqueness_of_data(request, transaction, platform_version)

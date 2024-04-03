@@ -4,6 +4,7 @@ pub mod contracts;
 pub mod dpp_versions;
 pub mod drive_abci_versions;
 pub mod drive_versions;
+pub mod fee;
 #[cfg(feature = "mock-versions")]
 pub mod mocks;
 mod v1;

@@ -13,6 +13,7 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// Adds a document using bincode serialization
+    #[inline(always)]
     pub(super) fn add_document_v0(
         &self,
         owned_document_info: OwnedDocumentInfo,

@@ -2,7 +2,7 @@
 name = "platform-versioning"
 authors = ["Samuel Westrich <sam@dash.org>"]
 description = "Version derivation"
-version = "1.0.0-dev.7"
+version = "1.0.0-dev.9"
 edition = "2021"
 rust-version = "1.76"
 license = "MIT"

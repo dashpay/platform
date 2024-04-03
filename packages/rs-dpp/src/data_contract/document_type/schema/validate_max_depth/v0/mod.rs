@@ -9,7 +9,8 @@ use crate::validation::SimpleConsensusValidationResult;
 
 const MAX_DEPTH: usize = 500;
 
-pub fn validate_max_depth_v0(value: &Value) -> SimpleConsensusValidationResult {
+#[inline(always)]
+pub(super) fn validate_max_depth_v0(value: &Value) -> SimpleConsensusValidationResult {
     let mut result = SimpleConsensusValidationResult::default();
     let schema_depth = match calculate_max_depth(value) {
         Ok(depth) => depth,
@@ -190,7 +191,7 @@ mod test {
         let err = get_ref_error(result);
         assert_eq!(
             err.message(),
-            "invalid ref for max depth '#/$defs/object': value error: structure error: unable to get property $defs in $defs.object"
+            "invalid ref for max depth '#/$defs/object': value decoding error: StructureError(\"unable to get property $defs in $defs.object\")"
                 .to_string()
         );
     }
@@ -220,7 +221,7 @@ mod test {
         let err = get_ref_error(result);
         assert_eq!(
             err.message(),
-            "invalid ref for max depth 'https://json-schema.org/some': Generic Error: only local references are allowed"
+            "invalid ref for max depth 'https://json-schema.org/some': invalid uri error: only local uri references are allowed"
                 .to_string()
         );
     }
@@ -250,7 +251,7 @@ mod test {
         let err = get_ref_error(result);
         assert_eq!(
             err.message(),
-            "invalid ref for max depth '': Generic Error: only local references are allowed"
+            "invalid ref for max depth '': invalid uri error: only local uri references are allowed"
                 .to_string()
         );
     }

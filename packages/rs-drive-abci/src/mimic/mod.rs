@@ -15,7 +15,6 @@ use ciborium::Value as CborValue;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
-use dpp::data_contract::errors::StructureError;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::string_encoding::{decode, Encoding};
 use dpp::platform_value::Value;
@@ -189,9 +188,9 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
 
                 let info_cbor_map: BTreeMap<String, CborValue> =
                     ciborium::de::from_reader(info_bytes.as_slice()).map_err(|_| {
-                        ProtocolError::StructureError(StructureError::InvalidCBOR(
-                            "unable to decode document for document call",
-                        ))
+                        ProtocolError::InvalidCBOR(
+                            "unable to decode document for document call".to_string(),
+                        )
                     })?;
                 let info_map: BTreeMap<String, Value> = Value::convert_from_cbor_map(info_cbor_map)
                     .map_err(ProtocolError::ValueError)?;

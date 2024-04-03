@@ -14,6 +14,7 @@ use bincode::{Decode, Encode};
 ))]
 use dashcore::signer;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_version::version::PlatformVersion;
 
 mod abstract_state_transition;
 #[cfg(any(
@@ -49,6 +50,8 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 pub use traits::*;
 
+use crate::balances::credits::CREDITS_PER_DUFF;
+use crate::fee::Credits;
 #[cfg(any(
     feature = "state-transition-signing",
     feature = "state-transition-validation"
@@ -57,7 +60,6 @@ use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGetter
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
-#[cfg(feature = "state-transition-signing")]
 use crate::identity::Purpose;
 #[cfg(any(
     feature = "state-transition-signing",
@@ -286,6 +288,33 @@ impl StateTransition {
         )
     }
 
+    pub fn required_asset_lock_balance_for_processing_start(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
+        match self {
+            StateTransition::IdentityCreate(_) => {
+                platform_version
+                    .dpp
+                    .state_transitions
+                    .identities
+                    .asset_locks
+                    .required_asset_lock_duff_balance_for_processing_start_for_identity_create
+                    * CREDITS_PER_DUFF
+            }
+            StateTransition::IdentityTopUp(_) => {
+                platform_version
+                    .dpp
+                    .state_transitions
+                    .identities
+                    .asset_locks
+                    .required_asset_lock_duff_balance_for_processing_start_for_identity_top_up
+                    * CREDITS_PER_DUFF
+            }
+            _ => 0,
+        }
+    }
+
     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         if skip_signature {
             Ok(hash_double_to_vec(self.signable_bytes()?))
@@ -332,9 +361,14 @@ impl StateTransition {
         call_getter_method_identity_signed!(self, signature_public_key_id)
     }
 
-    /// returns the security level requirement for the state transition
+    /// returns the key security level requirement for the state transition
     pub fn security_level_requirement(&self) -> Option<Vec<SecurityLevel>> {
         call_getter_method_identity_signed!(self, security_level_requirement)
+    }
+
+    /// returns the key purpose requirement for the state transition
+    pub fn purpose_requirement(&self) -> Option<Purpose> {
+        call_getter_method_identity_signed!(self, purpose_requirement)
     }
 
     /// returns the signature as a byte-array

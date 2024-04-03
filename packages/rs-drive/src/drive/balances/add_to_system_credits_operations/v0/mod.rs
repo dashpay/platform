@@ -16,6 +16,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// The operations to add to system credits
+    #[inline(always)]
     pub(super) fn add_to_system_credits_operations_v0(
         &self,
         amount: u64,

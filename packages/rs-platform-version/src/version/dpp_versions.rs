@@ -12,24 +12,29 @@ pub struct DPPVersion {
     pub contract_versions: ContractVersions,
     pub document_versions: DocumentVersions,
     pub identity_versions: IdentityVersions,
+    pub asset_lock_versions: AssetLockVersions,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct StateTransitionVersions {
+    pub max_state_transition_size: u64,
+    pub max_transitions_in_documents_batch: u16,
     pub documents: DocumentTransitionVersions,
     pub identities: IdentityTransitionVersions,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct IdentityTransitionVersions {
+    pub max_public_keys_in_creation: u16,
     pub asset_locks: IdentityTransitionAssetLockVersions,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct IdentityTransitionAssetLockVersions {
+    pub required_asset_lock_duff_balance_for_processing_start_for_identity_create: u64,
+    pub required_asset_lock_duff_balance_for_processing_start_for_identity_top_up: u64,
     pub validate_asset_lock_transaction_structure: FeatureVersion,
     pub validate_instant_asset_lock_proof_structure: FeatureVersion,
-    pub minimal_asset_lock_value: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -55,9 +60,9 @@ pub struct CostVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPValidationVersions {
-    pub validate_time_in_block_time_window: FeatureVersion,
     pub json_schema_validator: JsonSchemaValidatorVersions,
     pub data_contract: DataContractValidationVersions,
+    pub document_type: DocumentTypeValidationVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -71,10 +76,16 @@ pub struct DataContractValidationVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct DocumentTypeValidationVersions {
+    pub validate_update: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct JsonSchemaValidatorVersions {
     pub new: FeatureVersion,
     pub validate: FeatureVersion,
     pub compile: FeatureVersion,
+    pub compile_and_validate: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -124,6 +135,10 @@ pub struct DocumentFeatureVersionBounds {
 
 #[derive(Clone, Debug, Default)]
 pub struct ContractVersions {
+    /// The maximum that we can store a data contract in the state. There is a possibility that a client
+    /// sends a state transition serialized in a specific version and that the system re-serializes it
+    /// to the current version, and in so doing increases it's size.
+    pub max_serialized_size: u32,
     /// This is how we serialize and deserialize a contract
     pub contract_serialization_version: FeatureVersionBounds,
     /// This is the structure of the Contract as it is defined for code paths
@@ -188,6 +203,11 @@ pub struct RecursiveSchemaValidatorVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct AssetLockVersions {
+    pub reduced_asset_lock_value: FeatureVersionBounds,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct IdentityVersions {
     /// This is the structure of the Identity as it is defined for code paths
     pub identity_structure_version: FeatureVersion,
@@ -214,6 +234,7 @@ pub struct DocumentVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DocumentMethodVersions {
+    pub is_equal_ignoring_timestamps: FeatureVersion,
     pub hash: FeatureVersion,
     pub get_raw_for_contract: FeatureVersion,
     pub get_raw_for_document_type: FeatureVersion,

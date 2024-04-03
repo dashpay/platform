@@ -11,6 +11,7 @@ use integer_encoding::VarInt;
 
 impl Drive {
     /// Gets the next protocol version from the backing store
+    #[inline(always)]
     pub(super) fn fetch_next_protocol_version_v0(
         &self,
         transaction: TransactionArg,

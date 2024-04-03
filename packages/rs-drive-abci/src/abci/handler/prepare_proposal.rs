@@ -152,7 +152,7 @@ where
             StateTransitionExecutionResult::UnpaidConsensusError(..) => TxAction::Removed,
             // We shouldn't include in the block any state transitions that produced an internal error
             // during execution
-            StateTransitionExecutionResult::DriveAbciError(..) => TxAction::Removed,
+            StateTransitionExecutionResult::InternalError(..) => TxAction::Removed,
         };
 
         let tx_result: ExecTxResult =
@@ -207,8 +207,13 @@ where
         valid_tx_count,
         delayed_tx_count,
         failed_tx_count,
-        "Prepared proposal with {} transitions for height: {}, round: {} in {} ms",
+        "Prepared proposal with {} transition{} for height: {}, round: {} in {} ms",
         valid_tx_count + invalid_paid_tx_count,
+        if valid_tx_count + invalid_paid_tx_count > 0 {
+            "s"
+        } else {
+            ""
+        },
         request.height,
         request.round,
         elapsed_time_ms,

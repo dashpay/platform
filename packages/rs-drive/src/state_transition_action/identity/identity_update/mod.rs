@@ -5,7 +5,7 @@ pub mod v0;
 
 use crate::state_transition_action::identity::identity_update::v0::IdentityUpdateTransitionActionV0;
 use derive_more::From;
-use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
+use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::platform_value::Identifier;
 use dpp::prelude::{Revision, UserFeeIncrease};
 
@@ -36,13 +36,6 @@ impl IdentityUpdateTransitionAction {
             IdentityUpdateTransitionAction::V0(transition) => {
                 (transition.add_public_keys, transition.disable_public_keys)
             }
-        }
-    }
-
-    /// Public Keys Disabled At
-    pub fn public_keys_disabled_at(&self) -> Option<TimestampMillis> {
-        match self {
-            IdentityUpdateTransitionAction::V0(transition) => transition.public_keys_disabled_at,
         }
     }
 

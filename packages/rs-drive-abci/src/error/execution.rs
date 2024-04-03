@@ -53,7 +53,7 @@ pub enum ExecutionError {
 
     /// The platform encountered a corrupted cache state error.
     #[error("platform corrupted cached state error: {0}")]
-    CorruptedCachedState(&'static str),
+    CorruptedCachedState(String),
 
     /// The fork is not yet active for core.
     #[error("initialization fork not active: {0}")]

@@ -1,7 +1,5 @@
-
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::GroveError;
 use dpp::version::drive_versions::DriveVersion;
