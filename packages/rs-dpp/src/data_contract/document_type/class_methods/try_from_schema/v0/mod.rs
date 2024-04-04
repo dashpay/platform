@@ -43,6 +43,7 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
+use crate::validation::operations::ValidationOperation;
 
 const UNIQUE_INDEX_LIMIT_V0: usize = 16;
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
@@ -93,6 +94,7 @@ impl DocumentTypeV0 {
         default_keeps_history: bool,
         default_mutability: bool,
         validate: bool, // we don't need to validate if loaded from state
+        validation_operations: &mut Vec<ValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         // Create a full root JSON Schema from shorten contract document type schema
@@ -116,6 +118,7 @@ impl DocumentTypeV0 {
 
         #[cfg(feature = "validation")]
         if validate {
+            
             // Make sure a document type name is compliant
             if !name
                 .chars()
@@ -128,6 +131,11 @@ impl DocumentTypeV0 {
                 )));
             }
 
+            // Validate document schema depth
+            let mut result = validate_max_depth(&root_schema, platform_version)?;
+            
+            validation_operations.push(ValidationOperation::BaseDocumentTypeSchemaValidation);
+
             // Make sure JSON Schema is compilable
             let root_json_schema = root_schema.try_to_validating_json().map_err(|e| {
                 ProtocolError::ConsensusError(
@@ -137,6 +145,12 @@ impl DocumentTypeV0 {
 
             json_schema_validator.compile(&root_json_schema, platform_version)?;
 
+            if !result.is_valid() {
+                let error = result.errors.remove(0);
+
+                return Err(ProtocolError::ConsensusError(Box::new(error)));
+            }
+
             // Validate against JSON Schema
             DOCUMENT_META_SCHEMA_V0
                 .validate(&root_schema.try_to_validating_json().map_err(|e| {
@@ -145,15 +159,6 @@ impl DocumentTypeV0 {
                     )
                 })?)
                 .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
-
-            // Validate document schema depth
-            let mut result = validate_max_depth(&root_schema, platform_version)?;
-
-            if !result.is_valid() {
-                let error = result.errors.remove(0);
-
-                return Err(ProtocolError::ConsensusError(Box::new(error)));
-            }
 
             // TODO: Are we still aiming to use RE2 with linear time complexity to protect from ReDoS attacks?
             //  If not we can remove this validation
@@ -761,6 +766,7 @@ mod tests {
                 false,
                 false,
                 true,
+                &mut vec![],
                 platform_version,
             )
             .expect("should be valid");
@@ -789,6 +795,7 @@ mod tests {
                 false,
                 false,
                 true,
+                &mut vec![],
                 platform_version,
             );
 
@@ -826,6 +833,7 @@ mod tests {
                 false,
                 false,
                 true,
+                &mut vec![],
                 platform_version,
             );
 
@@ -863,6 +871,7 @@ mod tests {
                 false,
                 false,
                 true,
+                &mut vec![],
                 platform_version,
             );
 
@@ -884,6 +893,7 @@ mod tests {
                 false,
                 false,
                 true,
+                &mut vec![],
                 platform_version,
             );
 

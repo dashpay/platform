@@ -6,6 +6,7 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
+use crate::validation::operations::ValidationOperation;
 
 impl DocumentTypeV0 {
     pub(in crate::data_contract) fn create_document_types_from_document_schemas_v0(
@@ -15,6 +16,7 @@ impl DocumentTypeV0 {
         documents_keep_history_contract_default: bool,
         documents_mutable_contract_default: bool,
         validate: bool,
+        validation_operations: &mut Vec<ValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
         let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
@@ -40,6 +42,7 @@ impl DocumentTypeV0 {
                     documents_keep_history_contract_default,
                     documents_mutable_contract_default,
                     validate,
+                    validation_operations,
                     platform_version,
                 )?,
                 version => {

@@ -8,6 +8,7 @@ use crate::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use crate::ProtocolError;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use crate::validation::operations::ValidationOperation;
 
 pub mod bincode;
 
@@ -31,7 +32,7 @@ impl<'de> Deserialize<'de> for DataContractV0 {
         let current_version =
             PlatformVersion::get_current().map_err(|e| serde::de::Error::custom(e.to_string()))?;
         // when deserializing from json/platform_value/cbor we always want to validate (as this is not coming from the state)
-        DataContractV0::try_from_platform_versioned_v0(serialization_format, true, current_version)
+        DataContractV0::try_from_platform_versioned_v0(serialization_format, true, &mut vec![], current_version)
             .map_err(serde::de::Error::custom)
     }
 }
@@ -40,6 +41,7 @@ impl DataContractV0 {
     pub(in crate::data_contract) fn try_from_platform_versioned(
         value: DataContractInSerializationFormat,
         validate: bool,
+        validation_operations: &mut Vec<ValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match value {
@@ -53,6 +55,7 @@ impl DataContractV0 {
                         let data_contract = DataContractV0::try_from_platform_versioned_v0(
                             serialization_format_v0,
                             validate,
+                            validation_operations,
                             platform_version,
                         )?;
 
@@ -71,6 +74,7 @@ impl DataContractV0 {
     pub(in crate::data_contract) fn try_from_platform_versioned_v0(
         data_contract_data: DataContractInSerializationFormatV0,
         validate: bool,
+        validation_operations: &mut Vec<ValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let DataContractInSerializationFormatV0 {
@@ -89,6 +93,7 @@ impl DataContractV0 {
             config.documents_keep_history_contract_default(),
             config.documents_mutable_contract_default(),
             validate,
+            validation_operations,
             platform_version,
         )?;
 

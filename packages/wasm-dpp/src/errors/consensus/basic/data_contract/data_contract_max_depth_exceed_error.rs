@@ -22,11 +22,6 @@ impl DataContractMaxDepthExceedErrorWasm {
         self.inner.max_depth()
     }
 
-    #[wasm_bindgen(js_name=getSchemaDepth)]
-    pub fn get_schema_depth(&self) -> usize {
-        self.inner.schema_depth()
-    }
-
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
         ConsensusError::from(self.inner.clone()).code()

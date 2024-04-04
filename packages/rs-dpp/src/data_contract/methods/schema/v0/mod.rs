@@ -3,6 +3,7 @@ use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
+use crate::validation::operations::ValidationOperation;
 
 pub trait DataContractSchemaMethodsV0 {
     fn set_document_schemas(
@@ -10,6 +11,7 @@ pub trait DataContractSchemaMethodsV0 {
         schemas: BTreeMap<DocumentName, Value>,
         defs: Option<BTreeMap<DefinitionName, Value>>,
         validate: bool,
+        validation_operations: &mut Vec<ValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError>;
 
@@ -18,6 +20,7 @@ pub trait DataContractSchemaMethodsV0 {
         name: &str,
         schema: Value,
         validate: bool,
+        validation_operations: &mut Vec<ValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError>;
 
@@ -27,6 +30,7 @@ pub trait DataContractSchemaMethodsV0 {
         &mut self,
         defs: Option<BTreeMap<DefinitionName, Value>>,
         validate: bool,
+        validation_operations: &mut Vec<ValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError>;
 }

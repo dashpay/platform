@@ -17,6 +17,7 @@ mod json_schema_validator;
 #[cfg(feature = "validation")]
 pub(crate) mod meta_validators;
 mod validation_result;
+pub mod operations;
 
 #[cfg(feature = "validation")]
 /// Validator validates data of given type

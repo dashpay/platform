@@ -955,6 +955,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     enrich_with_base_schema: 0,
                     find_identifier_and_binary_paths: 0,
                     validate_max_depth: 0,
+                    max_depth: 200,
                     recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
                         traversal_validator: 0,
                         byte_array_has_no_items_as_parent_validator: 0,

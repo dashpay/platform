@@ -4,6 +4,7 @@ use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
+use crate::validation::operations::ValidationOperation;
 
 mod v0;
 
@@ -16,6 +17,7 @@ impl DocumentType {
         default_keeps_history: bool,
         default_mutability: bool,
         validate: bool,
+        validation_operations: &mut Vec<ValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version
@@ -33,6 +35,7 @@ impl DocumentType {
                 default_keeps_history,
                 default_mutability,
                 validate,
+                validation_operations,
                 platform_version,
             )
             .map(|document_type| document_type.into()),
