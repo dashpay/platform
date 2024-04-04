@@ -88,7 +88,7 @@ impl DataContractFactoryV0 {
         });
 
         let data_contract =
-            DataContract::try_from_platform_versioned(format, true, platform_version)?;
+            DataContract::try_from_platform_versioned(format, true, &mut vec![], platform_version)?;
 
         CreatedDataContract::from_contract_and_identity_nonce(
             data_contract,
@@ -344,6 +344,7 @@ mod tests {
         let contract_value = DataContract::try_from_platform_versioned(
             result.data_contract().to_owned(),
             false,
+            &mut vec![],
             platform_version,
         )
         .unwrap()

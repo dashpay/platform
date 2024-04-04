@@ -39,6 +39,7 @@ use crate::identity::SecurityLevel;
 use crate::util::json_schema::resolve_uri;
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
+use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -93,6 +94,7 @@ impl DocumentTypeV0 {
         default_keeps_history: bool,
         default_mutability: bool,
         validate: bool, // we don't need to validate if loaded from state
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         // Create a full root JSON Schema from shorten contract document type schema
@@ -128,6 +130,27 @@ impl DocumentTypeV0 {
                 )));
             }
 
+            // Validate document schema depth
+            let mut result = validate_max_depth(&root_schema, platform_version)?;
+
+            if !result.is_valid() {
+                let error = result.errors.remove(0);
+
+                let schema_size = result.into_data()?.size;
+
+                validation_operations.push(
+                    ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
+                );
+
+                return Err(ProtocolError::ConsensusError(Box::new(error)));
+            }
+
+            let schema_size = result.into_data()?.size;
+
+            validation_operations.push(
+                ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
+            );
+
             // Make sure JSON Schema is compilable
             let root_json_schema = root_schema.try_to_validating_json().map_err(|e| {
                 ProtocolError::ConsensusError(
@@ -146,29 +169,20 @@ impl DocumentTypeV0 {
                 })?)
                 .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
 
-            // Validate document schema depth
-            let mut result = validate_max_depth(&root_schema, platform_version)?;
-
-            if !result.is_valid() {
-                let error = result.errors.remove(0);
-
-                return Err(ProtocolError::ConsensusError(Box::new(error)));
-            }
-
             // TODO: Are we still aiming to use RE2 with linear time complexity to protect from ReDoS attacks?
             //  If not we can remove this validation
             // Validate reg exp compatibility with RE2 and byteArray usage
-            result.merge(traversal_validator(
+            let mut traversal_validator_result = traversal_validator(
                 &root_schema,
                 &[
                     pattern_is_valid_regex_validator,
                     byte_array_has_no_items_as_parent_validator,
                 ],
                 platform_version,
-            )?);
+            )?;
 
-            if !result.is_valid() {
-                let error = result.errors.remove(0);
+            if !traversal_validator_result.is_valid() {
+                let error = traversal_validator_result.errors.remove(0);
 
                 return Err(ProtocolError::ConsensusError(Box::new(error)));
             }
@@ -205,6 +219,12 @@ impl DocumentTypeV0 {
 
         #[cfg(feature = "validation")]
         if validate {
+            validation_operations.push(
+                ProtocolValidationOperation::DocumentTypeSchemaPropertyValidation(
+                    property_values.values().len() as u64,
+                ),
+            );
+
             // We should validate that the positions are continuous
             for (pos, value) in property_values.values().enumerate() {
                 if value.get_integer::<u32>(property_names::POSITION)? != pos as u32 {
@@ -281,6 +301,13 @@ impl DocumentTypeV0 {
 
                         #[cfg(feature = "validation")]
                         if validate {
+                            validation_operations.push(
+                                ProtocolValidationOperation::DocumentTypeSchemaIndexValidation(
+                                    index.properties.len() as u64,
+                                    index.unique,
+                                ),
+                            );
+
                             // Unique indices produces significant load on the system during state validation
                             // so we need to limit their number to prevent of spikes and DoS attacks
                             if index.unique {
@@ -761,6 +788,7 @@ mod tests {
                 false,
                 false,
                 true,
+                &mut vec![],
                 platform_version,
             )
             .expect("should be valid");
@@ -789,6 +817,7 @@ mod tests {
                 false,
                 false,
                 true,
+                &mut vec![],
                 platform_version,
             );
 
@@ -826,6 +855,7 @@ mod tests {
                 false,
                 false,
                 true,
+                &mut vec![],
                 platform_version,
             );
 
@@ -863,6 +893,7 @@ mod tests {
                 false,
                 false,
                 true,
+                &mut vec![],
                 platform_version,
             );
 
@@ -884,6 +915,7 @@ mod tests {
                 false,
                 false,
                 true,
+                &mut vec![],
                 platform_version,
             );
 
