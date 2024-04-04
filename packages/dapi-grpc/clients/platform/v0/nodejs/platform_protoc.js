@@ -24494,7 +24494,8 @@ proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.Ep
     firstBlockHeight: jspb.Message.getFieldWithDefault(msg, 2, 0),
     firstCoreBlockHeight: jspb.Message.getFieldWithDefault(msg, 3, 0),
     startTime: jspb.Message.getFieldWithDefault(msg, 4, 0),
-    feeMultiplier: jspb.Message.getFloatingPointFieldWithDefault(msg, 5, 0.0)
+    feeMultiplier: jspb.Message.getFloatingPointFieldWithDefault(msg, 5, 0.0),
+    protocolVersion: jspb.Message.getFieldWithDefault(msg, 6, 0)
   };
 
   if (includeInstance) {
@@ -24550,6 +24551,10 @@ proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.Ep
     case 5:
       var value = /** @type {number} */ (reader.readDouble());
       msg.setFeeMultiplier(value);
+      break;
+    case 6:
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setProtocolVersion(value);
       break;
     default:
       reader.skipField();
@@ -24612,6 +24617,13 @@ proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.Ep
   if (f !== 0.0) {
     writer.writeDouble(
       5,
+      f
+    );
+  }
+  f = message.getProtocolVersion();
+  if (f !== 0) {
+    writer.writeUint32(
+      6,
       f
     );
   }
@@ -24705,6 +24717,24 @@ proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.Ep
  */
 proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.setFeeMultiplier = function(value) {
   return jspb.Message.setProto3FloatField(this, 5, value);
+};
+
+
+/**
+ * optional uint32 protocol_version = 6;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.getProtocolVersion = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 6, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.setProtocolVersion = function(value) {
+  return jspb.Message.setProto3IntField(this, 6, value);
 };
 
 

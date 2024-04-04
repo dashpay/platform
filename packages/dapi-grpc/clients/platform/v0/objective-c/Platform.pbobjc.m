@@ -6926,11 +6926,13 @@ typedef struct GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos__storage
 @dynamic firstCoreBlockHeight;
 @dynamic startTime;
 @dynamic feeMultiplier;
+@dynamic protocolVersion;
 
 typedef struct GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo__storage_ {
   uint32_t _has_storage_[1];
   uint32_t number;
   uint32_t firstCoreBlockHeight;
+  uint32_t protocolVersion;
   uint64_t firstBlockHeight;
   uint64_t startTime;
   double feeMultiplier;
@@ -6986,6 +6988,15 @@ typedef struct GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo__storage_
         .offset = (uint32_t)offsetof(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo__storage_, feeMultiplier),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeDouble,
+      },
+      {
+        .name = "protocolVersion",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo_FieldNumber_ProtocolVersion,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo__storage_, protocolVersion),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
       },
     };
     GPBDescriptor *localDescriptor =
