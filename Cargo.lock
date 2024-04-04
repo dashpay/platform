@@ -1002,7 +1002,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "dapi-grpc-macros",
  "futures-core",
@@ -1018,7 +1018,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc-macros"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "dapi-grpc",
  "heck 0.4.1",
@@ -1124,7 +1124,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1134,7 +1134,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1227,7 +1227,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "dpns-contract"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1237,7 +1237,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1288,7 +1288,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -1325,7 +1325,7 @@ dependencies = [
 
 [[package]]
 name = "drive-abci"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -1380,7 +1380,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "dapi-grpc",
  "dpp",
@@ -1581,7 +1581,7 @@ checksum = "658bd65b1cf4c852a3cc96f18a8ce7b5640f6b703f905c7d74532294c2a63984"
 
 [[package]]
 name = "feature-flags-contract"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2451,7 +2451,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2932,7 +2932,7 @@ checksum = "d231b230927b5e4ad203db57bbcbee2802f6bce620b1e4a9024a07d94e2907ec"
 
 [[package]]
 name = "platform-serialization"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "platform-version",
@@ -2940,7 +2940,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2950,7 +2950,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "base64 0.13.1",
  "bincode 2.0.0-rc.3",
@@ -2971,7 +2971,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value-convertible"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "quote",
  "syn 2.0.55",
@@ -2979,14 +2979,14 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "platform-versioning"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3529,7 +3529,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "backon",
  "chrono",
@@ -3546,7 +3546,7 @@ dependencies = [
 
 [[package]]
 name = "rs-sdk"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -4013,7 +4013,7 @@ checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 
 [[package]]
 name = "simple-signer"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -4104,7 +4104,7 @@ dependencies = [
 
 [[package]]
 name = "strategy-tests"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dpp",
@@ -5029,7 +5029,7 @@ checksum = "ed9d5b4305409d1fc9482fee2d7f9bcbf24b3972bf59817ef757e23982242a93"
 
 [[package]]
 name = "wasm-dpp"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5274,7 +5274,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 dependencies = [
  "num_enum",
  "platform-value",
