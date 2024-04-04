@@ -118,32 +118,6 @@ mod tests {
     use dpp::state_transition::StateTransition;
     use tenderdash_abci::Application;
 
-    #[allow(dead_code)]
-    #[deprecated(note = "This function is marked as unused.")]
-    #[allow(deprecated)]
-    pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
-        let mut quorums = QuorumListExtendedInfo::new();
-
-        for i in 0..n {
-            let i_bytes = [i as u8; 32];
-
-            let hash = QuorumHash::from_byte_array(i_bytes);
-
-            let details = ExtendedQuorumDetails {
-                creation_height: i,
-                health_ratio: (i as f32) / (n as f32),
-                mined_block_hash: BlockHash::from_slice(&i_bytes).unwrap(),
-                num_valid_members: i,
-                quorum_index: Some(i),
-            };
-
-            if let Some(v) = quorums.insert(hash, details) {
-                panic!("duplicate record {:?}={:?}", hash, v)
-            }
-        }
-        quorums
-    }
-
     #[test]
     fn run_chain_nothing_happening() {
         let strategy = NetworkStrategy {
@@ -792,7 +766,7 @@ mod tests {
                 .index,
             0
         );
-        assert!(counter.get(&1).unwrap() > &240);
+        assert!(counter.get(&1).unwrap().unwrap() > &240);
     }
 
     #[test]
@@ -1144,7 +1118,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "e955d7935da01eb2ee8b1935a49ceb4b7021ffce1dec5bb401ce1de5cdf330b5".to_string()
+            "bb11d456206e85b3225ffbd35d915ab1c92e1a64057057b272fb3931325caa22".to_string()
         )
     }
 
@@ -1833,7 +1807,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "fc22e76c2c15988d2f4352033038c050ab3605c0c15dc66f9483d5519f3b13ee".to_string()
+            "3ed0fbb75dbb645d9972f16fc6be7c0e2e3c1ed4b7a035b8a12935a871c7106e".to_string()
         )
     }
 
@@ -1958,7 +1932,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "b133bfc5814892d75ff2324be0076b892f8225c5057ad3fba04962ac4444f67e".to_string()
+            "608b5592cdb3822899cd90fecb542dd90c377fc26b2e995ed083c9760955703f".to_string()
         )
     }
 
