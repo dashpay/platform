@@ -333,8 +333,7 @@ where
 
         // Process fees
         let processed_block_fees = self.process_block_fees(
-            block_execution_context.block_state_info(),
-            &epoch_info,
+            &block_execution_context,
             block_fees_v0.into(),
             transaction,
             platform_version,

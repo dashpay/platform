@@ -55,14 +55,6 @@ impl<C> Platform<C> {
 
                 block_platform_state
                     .set_current_protocol_version_in_consensus(current_block_protocol_version);
-
-                // Store current protocol version in drive state
-                // TODO: This will be removed in #1778
-                self.drive.store_current_protocol_version(
-                    platform_version.protocol_version,
-                    Some(transaction),
-                    &platform_version.drive,
-                )?;
             };
 
             // Determine a new protocol version for the next epoch if enough proposers voted
