@@ -15,7 +15,7 @@ authors = [
 anyhow = { version = "1.0.75" }
 async-trait = { version = "0.1.68" }
 base64 = "0.20.0"
-bls-signatures = { git = "https://github.com/dashpay/bls-signatures", tag = "v1.3.1" }
+bls-signatures = { git = "https://github.com/dashpay/bls-signatures", tag = "v1.3.1", optional = true }
 bs58 = "0.4.0"
 byteorder = { version = "1.4" }
 chrono = { version = "0.4.35", default-features = false, features = [
@@ -85,6 +85,7 @@ all_features = [
   "system_contracts",
   "state-transitions",
   "extended-document",
+  "bls-signatures",
   "cbor",
   "validation",
   "identity-hashing",
@@ -114,6 +115,27 @@ all_features = [
   "random-identities",
   "random-documents",
   "random-document-types",
+  "fee-distribution",
+  "client",
+]
+
+rs-sdk-features = [
+  "json-object",
+  "platform-value",
+  "system_contracts",
+  "state-transitions",
+  "validation",
+  "identity-hashing",
+  "identity-serialization",
+  "document-value-conversion",
+  "data-contract-value-conversion",
+  "identity-value-conversion",
+  "state-transition-serde-conversion",
+  "state-transition-value-conversion",
+  "state-transition-json-conversion",
+  "state-transition-validation",
+  "state-transition-signing",
+  "state-transitions",
   "fee-distribution",
   "client",
 ]
@@ -154,7 +176,6 @@ all_features_without_client = [
   "random-document-types",
   "fee-distribution",
 ]
-drive = ["state-transitions", "fee-distribution", "system_contracts"]
 abci = [
   "state-transitions",
   "state-transition-validation",
@@ -172,7 +193,7 @@ json-object = ["platform-value"]
 platform-value = []
 identity-hashing = ["identity-serialization"]
 message-signing = []
-message-signature-verification = []
+message-signature-verification = ["bls-signatures"]
 document-serde-conversion = []
 document-value-conversion = ["document-serde-conversion"]
 document-json-conversion = ["document-value-conversion"]
@@ -201,7 +222,7 @@ state-transition-signing = ["state-transitions", "message-signing", "state-trans
 state-transitions = []
 system_contracts = ["factories"]
 fixtures-and-mocks = ["system_contracts"]
-random-public-keys = []
+random-public-keys = ["bls-signatures"]
 random-identities = ["random-public-keys"]
 random-documents = []
 random-document-types = []

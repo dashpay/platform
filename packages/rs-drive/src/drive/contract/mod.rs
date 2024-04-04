@@ -32,36 +32,36 @@
 //! This module defines functions pertinent toDataContracts stored in Drive.
 //!
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod apply;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 mod contract_fetch_info;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod estimation_costs;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod get_fetch;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod insert;
 /// Various paths for contract operations
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod paths;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub(crate) mod prove;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) mod queries;
 #[cfg(feature = "fixtures-and-mocks")]
 /// Test helpers and utility methods
 pub mod test_helpers;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod update;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub use contract_fetch_info::*;
 
 /// How many contracts to fetch at once. This is an arbitrary number and is needed to prevent
 /// the server from being overloaded with requests.
 pub const MAX_CONTRACT_HISTORY_FETCH_LIMIT: u16 = 10;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use dpp::block::block_info::BlockInfo;

@@ -18,7 +18,7 @@ pub struct ProtocolVersionsCache {
     is_global_cache_blocked: bool,
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl ProtocolVersionsCache {
     /// Create a new ProtocolVersionsCache instance
     pub fn new() -> Self {

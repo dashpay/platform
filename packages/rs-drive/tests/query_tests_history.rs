@@ -30,52 +30,52 @@
 //! Query Tests History
 //!
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::borrow::Cow;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::collections::{BTreeMap, HashMap};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::fmt::{Debug, Formatter};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::option::Option::None;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::document::Document;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::util::cbor_serializer;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use rand::seq::SliceRandom;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use rand::{Rng, SeedableRng};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use serde_json::json;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::common;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::tests::helpers::setup::setup_drive;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::batch::GroveDbOpBatch;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::config::DriveConfig;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::flags::StorageFlags;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::Drive;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::error::{query::QuerySyntaxError, Error};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::query::DriveQuery;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
@@ -86,10 +86,10 @@ use dpp::document::DocumentV0Getters;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Person {
@@ -104,7 +104,7 @@ struct Person {
     age: u8,
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl Debug for Person {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Person")
@@ -119,7 +119,7 @@ impl Debug for Person {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 impl Person {
     fn random_people_for_block_times(
         count: usize,
@@ -180,7 +180,7 @@ impl Person {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 /// Sets up the `family-contract-with-history` contract to test queries on.
 pub fn setup(
     count: usize,
@@ -267,14 +267,14 @@ pub fn setup(
     (drive, contract)
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_setup() {
     let range_inserts = vec![0, 2];
     setup(10, Some(range_inserts), 73509);
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[test]
 fn test_query_historical() {
     let (drive, contract) = setup(10, None, 73509);

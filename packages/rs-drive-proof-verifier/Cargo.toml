@@ -19,7 +19,7 @@ dapi-grpc = { path = "../dapi-grpc" }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
-dpp = { path = "../rs-dpp" }
+dpp = { path = "../rs-dpp", default-features = false }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "0.14.0-dev.11", features = [
   "grpc",
 ] }

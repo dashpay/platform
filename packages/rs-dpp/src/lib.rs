@@ -50,6 +50,7 @@ pub mod system_data_contracts;
 pub mod withdrawal;
 
 pub use async_trait;
+
 pub use bls::*;
 
 pub mod prelude {
@@ -77,6 +78,7 @@ pub mod prelude {
 }
 
 pub use bincode;
+#[cfg(all(not(target_arch = "wasm32"), feature = "bls-signatures"))]
 pub use bls_signatures;
 pub use data_contracts;
 pub use ed25519_dalek;

@@ -33,7 +33,7 @@ use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
-use dpp::NativeBlsModule;
+use dpp::native_bls::NativeBlsModule;
 use rand::prelude::{IteratorRandom, StdRng};
 use simple_signer::signer::SimpleSigner;
 

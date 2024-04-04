@@ -20,12 +20,9 @@ use dpp::state_transition::StateTransition;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use dpp::{
-    consensus::signature::{
-        InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError,
-        SignatureError,
-    },
-    NativeBlsModule,
+use dpp::consensus::signature::{
+    InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError,
+    SignatureError,
 };
 use drive::dpp::identity::KeyType;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
@@ -33,6 +30,7 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use lazy_static::lazy_static;
 use std::collections::HashSet;
+use dpp::native_bls::NativeBlsModule;
 
 lazy_static! {
     static ref SUPPORTED_KEY_TYPES: HashSet<KeyType> = {

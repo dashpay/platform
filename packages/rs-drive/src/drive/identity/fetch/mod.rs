@@ -1,56 +1,56 @@
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::identity::identity_path_vec;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::Drive;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::drive::RootTree;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::error::drive::DriveError;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::error::Error;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::query::Query;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::query::QueryItem;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use grovedb::query_result_type::QueryResultType::{
     QueryElementResultType, QueryKeyElementPairResultType,
 };
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use grovedb::Element::SumItem;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use grovedb::TransactionArg;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::{PathQuery, SizedQuery};
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use std::collections::BTreeMap;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod balance;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod fetch_by_public_key_hashes;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod full_identity;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod nonce;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod partial_identity;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod prove;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) mod queries;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod revision;
 
 impl Drive {
-    #[cfg(any(feature = "full", feature = "verify"))]
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// The query for the identity revision
     pub fn identity_revision_query(identity_id: &[u8; 32]) -> PathQuery {
         let identity_path = identity_path_vec(identity_id.as_slice());
@@ -66,7 +66,7 @@ impl Drive {
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(feature = "server")]
     /// Given a vector of identities, fetches the identities from storage.
     pub fn verify_all_identities_exist(
         &self,
@@ -94,7 +94,7 @@ impl Drive {
         Ok(result_items.len() == ids.len())
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(feature = "server")]
     /// Given a vector of identities, fetches the identities from storage.
     pub fn fetch_identities_balances(
         &self,

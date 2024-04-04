@@ -15,7 +15,7 @@ use grovedb_costs::OperationCost;
 #[cfg(feature = "fixtures-and-mocks")]
 use platform_version::version::PlatformVersion;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// DataContract and fetch information
 #[derive(PartialEq, Debug, Clone)]
 pub struct DataContractFetchInfo {

@@ -34,17 +34,17 @@
 
 // Module: add_update_multiple_documents_operations
 // This module contains functionality for adding operations to update multiple documents
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod add_update_multiple_documents_operations;
 
 // Module: update_document_for_contract
 // This module contains functionality for updating a document for a given contract
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod update_document_for_contract;
 
 // Module: update_document_for_contract_id
 // This module contains functionality for updating a document associated with a given contract id
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod update_document_for_contract_id;
 
 // Module: update_document_with_serialization_for_contract

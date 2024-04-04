@@ -4,7 +4,7 @@ version = "1.0.0-dev.10"
 edition = "2021"
 
 [dependencies]
-dpp = { path = "../rs-dpp", features = ["all_features"] }
+dpp = { path = "../rs-dpp", default-features = false, features = ["rs-sdk-features"] }
 dapi-grpc = { path = "../dapi-grpc" }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [

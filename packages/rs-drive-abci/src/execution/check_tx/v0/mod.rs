@@ -223,7 +223,7 @@ mod tests {
         instant_asset_lock_proof_fixture,
     };
     use dpp::version::PlatformVersion;
-    use dpp::NativeBlsModule;
+    use dpp::native_bls::NativeBlsModule;
 
     use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
     use dpp::consensus::state::state_error::StateError;

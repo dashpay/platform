@@ -44,12 +44,13 @@ mod tests {
     };
     use crate::version::PlatformVersion;
     use crate::withdrawal::Pooling;
-    use crate::{NativeBlsModule, ProtocolError};
+    use crate::ProtocolError;
     use platform_version::version::LATEST_PLATFORM_VERSION;
     use platform_version::TryIntoPlatformVersioned;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
+    use crate::bls::native_bls::NativeBlsModule;
 
     #[test]
     #[cfg(feature = "random-identities")]

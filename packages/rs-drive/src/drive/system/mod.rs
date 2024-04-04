@@ -1,6 +1,6 @@
 mod estimation_costs;
 /// Genesis time module
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub mod genesis_time;
 /// Protocol version module
 pub mod protocol_version;

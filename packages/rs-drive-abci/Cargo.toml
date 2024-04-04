@@ -24,7 +24,7 @@ serde_with = { version = "3.1.0", features = [
   "macros",
 ], default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
-  "full",
+  "server",
   "grovedb_operations_logging",
 ] }
 thiserror = "1.0.30"

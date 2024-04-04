@@ -1,28 +1,9 @@
-use crate::{ProtocolError, PublicKeyValidationError};
-#[cfg(not(target_arch = "wasm32"))]
-use anyhow::anyhow;
 use bls_signatures::{PrivateKey, PublicKey};
-use std::convert::TryInto;
-
-pub trait BlsModule {
-    fn validate_public_key(&self, pk: &[u8]) -> Result<(), PublicKeyValidationError>;
-    fn verify_signature(
-        &self,
-        signature: &[u8],
-        data: &[u8],
-        public_key: &[u8],
-    ) -> Result<bool, ProtocolError>;
-    fn private_key_to_public_key(&self, private_key: &[u8]) -> Result<Vec<u8>, ProtocolError>;
-    fn sign(&self, data: &[u8], private_key: &[u8]) -> Result<Vec<u8>, ProtocolError>;
-}
-
-// TODO: write tests for the native BLS module
+use anyhow::anyhow;
+use crate::{BlsModule, ProtocolError, PublicKeyValidationError};
 
 #[derive(Default)]
-#[cfg(not(target_arch = "wasm32"))]
 pub struct NativeBlsModule;
-
-#[cfg(not(target_arch = "wasm32"))]
 impl BlsModule for NativeBlsModule {
     fn validate_public_key(&self, pk: &[u8]) -> Result<(), PublicKeyValidationError> {
         match PublicKey::from_bytes(pk) {
