@@ -2,16 +2,16 @@ use crate::fee::Credits;
 use platform_version::version::PlatformVersion;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DPPValidationOperation {
+pub enum ProtocolValidationOperation {
     DocumentTypeSchemaValidationForSize(u64),
     DocumentTypeSchemaPropertyValidation(u64),
     DocumentTypeSchemaIndexValidation(u64, bool),
 }
 
-impl DPPValidationOperation {
+impl ProtocolValidationOperation {
     pub fn processing_cost(&self, platform_version: &PlatformVersion) -> Credits {
         match self {
-            DPPValidationOperation::DocumentTypeSchemaValidationForSize(size) => {
+            ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(size) => {
                 platform_version
                     .fee_version
                     .data_contract
@@ -22,14 +22,14 @@ impl DPPValidationOperation {
                             .data_contract
                             .document_type_size_fee
             }
-            DPPValidationOperation::DocumentTypeSchemaPropertyValidation(properties_count) => {
+            ProtocolValidationOperation::DocumentTypeSchemaPropertyValidation(properties_count) => {
                 *properties_count
                     * platform_version
                         .fee_version
                         .data_contract
                         .document_type_per_property_fee
             }
-            DPPValidationOperation::DocumentTypeSchemaIndexValidation(
+            ProtocolValidationOperation::DocumentTypeSchemaIndexValidation(
                 index_properties_count,
                 is_unique,
             ) => {

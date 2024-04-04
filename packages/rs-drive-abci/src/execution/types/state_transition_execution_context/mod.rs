@@ -5,7 +5,7 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::v0::StateTransitionExecutionContextV0;
 use derive_more::From;
 use dpp::fee::fee_result::FeeResult;
-use dpp::validation::operations::DPPValidationOperation;
+use dpp::validation::operations::ProtocolValidationOperation;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 
 /// V0 module
@@ -25,7 +25,7 @@ pub trait StateTransitionExecutionContextMethodsV0 {
     /// Add operations to the state transition execution context
     fn add_operations(&mut self, operations: Vec<ValidationOperation>);
     /// Add dpp operations to the state transition execution context
-    fn add_dpp_operations(&mut self, operations: Vec<DPPValidationOperation>);
+    fn add_dpp_operations(&mut self, operations: Vec<ProtocolValidationOperation>);
     /// Consume the operations of the context
     fn operations_consume(self) -> Vec<ValidationOperation>;
     /// Returns a slice of operations, does not consume the context
@@ -55,13 +55,11 @@ impl StateTransitionExecutionContextMethodsV0 for StateTransitionExecutionContex
         }
     }
 
-    fn add_dpp_operations(&mut self, operations: Vec<DPPValidationOperation>) {
+    fn add_dpp_operations(&mut self, operations: Vec<ProtocolValidationOperation>) {
         match self {
-            StateTransitionExecutionContext::V0(v0) => v0.operations.extend(
-                operations
-                    .into_iter()
-                    .map(ValidationOperation::DPPValidationOperation),
-            ),
+            StateTransitionExecutionContext::V0(v0) => v0
+                .operations
+                .extend(operations.into_iter().map(ValidationOperation::Protocol)),
         }
     }
 

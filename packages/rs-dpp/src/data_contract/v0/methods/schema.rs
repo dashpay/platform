@@ -4,7 +4,7 @@ use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DefinitionName, DocumentName};
-use crate::validation::operations::DPPValidationOperation;
+use crate::validation::operations::ProtocolValidationOperation;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
@@ -16,7 +16,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         schemas: BTreeMap<DocumentName, Value>,
         defs: Option<BTreeMap<DefinitionName, Value>>,
         validate: bool,
-        validation_operations: &mut Vec<DPPValidationOperation>,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         self.document_types = DocumentType::create_document_types_from_document_schemas(
@@ -38,7 +38,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         name: &str,
         schema: Value,
         validate: bool,
-        validation_operations: &mut Vec<DPPValidationOperation>,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         let document_type = DocumentType::try_from_schema(
@@ -74,7 +74,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         &mut self,
         defs: Option<BTreeMap<DefinitionName, Value>>,
         validate: bool,
-        validation_operations: &mut Vec<DPPValidationOperation>,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         let document_schemas = self

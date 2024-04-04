@@ -1,7 +1,7 @@
 use crate::state_transition_action::contract::data_contract_create::v0::DataContractCreateTransitionActionV0;
 use crate::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::validation::operations::DPPValidationOperation;
+use dpp::validation::operations::ProtocolValidationOperation;
 use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
 
@@ -12,7 +12,7 @@ impl DataContractCreateTransitionAction {
     pub fn try_from_transition(
         value: DataContractCreateTransition,
         validate: bool,
-        validation_operations: &mut Vec<DPPValidationOperation>,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match value {
@@ -35,7 +35,7 @@ impl DataContractCreateTransitionAction {
     pub fn try_from_borrowed_transition(
         value: &DataContractCreateTransition,
         validate: bool,
-        validation_operations: &mut Vec<DPPValidationOperation>,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match value {

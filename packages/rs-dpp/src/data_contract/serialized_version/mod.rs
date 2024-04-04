@@ -4,7 +4,7 @@ use crate::data_contract::{DataContract, DefinitionName, DocumentName};
 use crate::version::PlatformVersion;
 use std::collections::BTreeMap;
 
-use crate::validation::operations::DPPValidationOperation;
+use crate::validation::operations::ProtocolValidationOperation;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
@@ -165,7 +165,7 @@ impl DataContract {
     pub fn try_from_platform_versioned(
         value: DataContractInSerializationFormat,
         validate: bool,
-        validation_operations: &mut Vec<DPPValidationOperation>,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match value {

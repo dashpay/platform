@@ -39,7 +39,7 @@ use crate::identity::SecurityLevel;
 use crate::util::json_schema::resolve_uri;
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
-use crate::validation::operations::DPPValidationOperation;
+use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -94,7 +94,7 @@ impl DocumentTypeV0 {
         default_keeps_history: bool,
         default_mutability: bool,
         validate: bool, // we don't need to validate if loaded from state
-        validation_operations: &mut Vec<DPPValidationOperation>,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         // Create a full root JSON Schema from shorten contract document type schema
@@ -139,7 +139,7 @@ impl DocumentTypeV0 {
                 let schema_size = result.into_data()?.size;
 
                 validation_operations.push(
-                    DPPValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
+                    ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
                 );
 
                 return Err(ProtocolError::ConsensusError(Box::new(error)));
@@ -148,7 +148,7 @@ impl DocumentTypeV0 {
             let schema_size = result.into_data()?.size;
 
             validation_operations.push(
-                DPPValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
+                ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
             );
 
             // Make sure JSON Schema is compilable
@@ -220,7 +220,7 @@ impl DocumentTypeV0 {
         #[cfg(feature = "validation")]
         if validate {
             validation_operations.push(
-                DPPValidationOperation::DocumentTypeSchemaPropertyValidation(
+                ProtocolValidationOperation::DocumentTypeSchemaPropertyValidation(
                     property_values.values().len() as u64,
                 ),
             );
@@ -302,7 +302,7 @@ impl DocumentTypeV0 {
                         #[cfg(feature = "validation")]
                         if validate {
                             validation_operations.push(
-                                DPPValidationOperation::DocumentTypeSchemaIndexValidation(
+                                ProtocolValidationOperation::DocumentTypeSchemaIndexValidation(
                                     index.properties.len() as u64,
                                     index.unique,
                                 ),

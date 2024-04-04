@@ -3,7 +3,7 @@ pub use v0::*;
 
 use crate::data_contract::{DefinitionName, DocumentName};
 use crate::prelude::DataContract;
-use crate::validation::operations::DPPValidationOperation;
+use crate::validation::operations::ProtocolValidationOperation;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
@@ -15,7 +15,7 @@ impl DataContractSchemaMethodsV0 for DataContract {
         schemas: BTreeMap<DocumentName, Value>,
         defs: Option<BTreeMap<DefinitionName, Value>>,
         validate: bool,
-        validation_operations: &mut Vec<DPPValidationOperation>,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         match self {
@@ -34,7 +34,7 @@ impl DataContractSchemaMethodsV0 for DataContract {
         name: &str,
         schema: Value,
         validate: bool,
-        validation_operations: &mut Vec<DPPValidationOperation>,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         match self {
@@ -64,7 +64,7 @@ impl DataContractSchemaMethodsV0 for DataContract {
         &mut self,
         defs: Option<BTreeMap<DefinitionName, Value>>,
         validate: bool,
-        validation_operations: &mut Vec<DPPValidationOperation>,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         match self {

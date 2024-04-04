@@ -7,7 +7,7 @@ use crate::data_contract::DataContract;
 use crate::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use crate::ProtocolError;
 
-use crate::validation::operations::DPPValidationOperation;
+use crate::validation::operations::ProtocolValidationOperation;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub mod bincode;
@@ -46,7 +46,7 @@ impl DataContractV0 {
     pub(in crate::data_contract) fn try_from_platform_versioned(
         value: DataContractInSerializationFormat,
         validate: bool,
-        validation_operations: &mut Vec<DPPValidationOperation>,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match value {
@@ -79,7 +79,7 @@ impl DataContractV0 {
     pub(in crate::data_contract) fn try_from_platform_versioned_v0(
         data_contract_data: DataContractInSerializationFormatV0,
         validate: bool,
-        validation_operations: &mut Vec<DPPValidationOperation>,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let DataContractInSerializationFormatV0 {
