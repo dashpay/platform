@@ -37,9 +37,7 @@ use {
 };
 
 #[cfg(feature = "verify")]
-use {
-    crate::drive::verify::RootHash,
-};
+use crate::drive::verify::RootHash;
 
 #[cfg(feature = "server")]
 pub use grovedb::{

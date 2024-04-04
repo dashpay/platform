@@ -31,7 +31,10 @@ pub enum DriveEncoding {
 /// Drive configuration struct
 pub struct DriveConfig {
     /// Boolean if batching consistency verification is enabled
-    #[cfg_attr(feature = "serde", serde(default = "default_batching_consistency_verification"))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "default_batching_consistency_verification")
+    )]
     pub batching_consistency_verification: bool,
 
     /// Boolean if has_raw is enabled
@@ -39,24 +42,33 @@ pub struct DriveConfig {
     pub has_raw_enabled: bool,
 
     /// The default returned count if no limit is set
-    #[cfg_attr(feature = "serde", serde(
-        default = "default_default_query_limit",
-        deserialize_with = "from_str_or_number"
-    ))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            default = "default_default_query_limit",
+            deserialize_with = "from_str_or_number"
+        )
+    )]
     pub default_query_limit: u16,
 
     /// The default returned count if no limit is set
-    #[cfg_attr(feature = "serde", serde(
-        default = "default_epochs_per_era",
-        deserialize_with = "from_str_or_number"
-    ))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            default = "default_epochs_per_era",
+            deserialize_with = "from_str_or_number"
+        )
+    )]
     pub epochs_per_era: u16,
 
     /// The limit for user defined queries
-    #[cfg_attr(feature = "serde", serde(
-        default = "default_max_query_limit",
-        deserialize_with = "from_str_or_number"
-    ))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            default = "default_max_query_limit",
+            deserialize_with = "from_str_or_number"
+        )
+    )]
     pub max_query_limit: u16,
 
     /// Default genesis time
@@ -64,17 +76,23 @@ pub struct DriveConfig {
     pub default_genesis_time: Option<u64>,
 
     /// Maximum number of contracts in global cache
-    #[cfg_attr(feature = "serde", serde(
-        default = "default_data_contracts_cache_size",
-        deserialize_with = "from_str_or_number"
-    ))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            default = "default_data_contracts_cache_size",
+            deserialize_with = "from_str_or_number"
+        )
+    )]
     pub data_contracts_global_cache_size: u64,
 
     /// Maximum number of contracts in block candidate cache
-    #[cfg_attr(feature = "serde", serde(
-        default = "default_data_contracts_cache_size",
-        deserialize_with = "from_str_or_number"
-    ))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            default = "default_data_contracts_cache_size",
+            deserialize_with = "from_str_or_number"
+        )
+    )]
     pub data_contracts_block_cache_size: u64,
 }
 
