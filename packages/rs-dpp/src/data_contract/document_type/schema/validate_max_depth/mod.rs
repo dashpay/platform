@@ -1,4 +1,4 @@
-use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
+use crate::validation::ConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;

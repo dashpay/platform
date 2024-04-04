@@ -1,10 +1,10 @@
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
+use crate::validation::operations::DPPValidationOperation;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
-use crate::validation::operations::ValidationOperation;
 
 mod v0;
 
@@ -17,7 +17,7 @@ impl DocumentType {
         default_keeps_history: bool,
         default_mutability: bool,
         validate: bool,
-        validation_operations: &mut Vec<ValidationOperation>,
+        validation_operations: &mut Vec<DPPValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version

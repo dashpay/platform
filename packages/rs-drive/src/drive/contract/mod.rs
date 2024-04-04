@@ -232,7 +232,7 @@ mod tests {
         });
 
         contract
-            .set_document_schema("note2", note2_schema, true, platform_version)
+            .set_document_schema("note2", note2_schema, true, &mut vec![], platform_version)
             .expect("should set a document schema");
 
         drive

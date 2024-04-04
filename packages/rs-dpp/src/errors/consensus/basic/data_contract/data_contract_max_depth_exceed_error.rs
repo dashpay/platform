@@ -21,9 +21,7 @@ pub struct DataContractMaxDepthExceedError {
 
 impl DataContractMaxDepthExceedError {
     pub fn new(max_depth: usize) -> Self {
-        Self {
-            max_depth,
-        }
+        Self { max_depth }
     }
     pub fn max_depth(&self) -> usize {
         self.max_depth

@@ -4,7 +4,6 @@ use crate::execution::validation::state_transition::transformer::StateTransition
 use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
-use dapi_grpc::platform::v0::get_epochs_info_response::get_epochs_info_response_v0::EpochInfo;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::identity::PartialIdentity;

@@ -5,7 +5,6 @@ mod identity_contract_nonce;
 mod state;
 mod transformer;
 
-use dapi_grpc::platform::v0::get_epochs_info_response::get_epochs_info_response_v0::EpochInfo;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::identity::PartialIdentity;

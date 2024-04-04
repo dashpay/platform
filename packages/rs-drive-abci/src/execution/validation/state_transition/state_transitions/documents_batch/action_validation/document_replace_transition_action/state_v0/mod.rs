@@ -27,8 +27,8 @@ impl DocumentReplaceTransitionActionStateValidationV0 for DocumentReplaceTransit
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
-        epoch: &Epoch,
-        execution_context: &mut StateTransitionExecutionContext,
+        _epoch: &Epoch,
+        _execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {

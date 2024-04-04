@@ -1,17 +1,22 @@
 use platform_value::Value;
-use std::collections::BTreeSet;
 use platform_version::version::PlatformVersion;
+use std::collections::BTreeSet;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::consensus::basic::BasicError;
 use crate::data_contract::document_type::schema::MaxDepthValidationResult;
 use crate::util::json_schema::resolve_uri;
-use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
+use crate::validation::ConsensusValidationResult;
 
 #[inline(always)]
-pub(super) fn validate_max_depth_v0(platform_value: &Value, platform_version: &PlatformVersion) -> ConsensusValidationResult<MaxDepthValidationResult> {
-    let max_allowed_depth = platform_version.dpp.contract_versions
+pub(super) fn validate_max_depth_v0(
+    platform_value: &Value,
+    platform_version: &PlatformVersion,
+) -> ConsensusValidationResult<MaxDepthValidationResult> {
+    let max_allowed_depth = platform_version
+        .dpp
+        .contract_versions
         .document_type_versions
         .schema
         .max_depth as usize;
@@ -19,17 +24,20 @@ pub(super) fn validate_max_depth_v0(platform_value: &Value, platform_version: &P
     let mut max_reached_depth: usize = 0;
     let mut visited: BTreeSet<*const Value> = BTreeSet::new();
     let ref_value = Value::Text("$ref".to_string());
-    
-    let mut size : u64 = 1; // we start at 1, because we are a value
+
+    let mut size: u64 = 1; // we start at 1, because we are a value
 
     while let Some((value, depth)) = values_depth_queue.pop() {
         match value {
             Value::Map(map) => {
                 let new_depth = depth + 1;
                 if new_depth > max_allowed_depth {
-                    return ConsensusValidationResult::new_with_error(BasicError::DataContractMaxDepthExceedError(
-                        DataContractMaxDepthExceedError::new(max_allowed_depth),
-                    ).into());
+                    return ConsensusValidationResult::new_with_error(
+                        BasicError::DataContractMaxDepthExceedError(
+                            DataContractMaxDepthExceedError::new(max_allowed_depth),
+                        )
+                        .into(),
+                    );
                 }
                 if max_reached_depth < new_depth {
                     max_reached_depth = new_depth
@@ -48,16 +56,31 @@ pub(super) fn validate_max_depth_v0(platform_value: &Value, platform_version: &P
                                 )
                             }) {
                                 Ok(resolved) => resolved,
-                                Err(e) => return ConsensusValidationResult::new_with_error(e.into()),
+                                Err(e) => {
+                                    return ConsensusValidationResult::new_with_data_and_errors(
+                                        MaxDepthValidationResult {
+                                            depth: max_reached_depth as u16, // Not possible this is bigger than u16 max
+                                            size,
+                                        },
+                                        vec![e.into()],
+                                    );
+                                }
                             };
 
                             if visited.contains(&(resolved as *const Value)) {
-                                return ConsensusValidationResult::new_with_error(BasicError::InvalidJsonSchemaRefError(
-                                    InvalidJsonSchemaRefError::new(format!(
-                                        "the ref '{}' contains cycles",
-                                        uri
-                                    )),
-                                ).into());
+                                return ConsensusValidationResult::new_with_data_and_errors(
+                                    MaxDepthValidationResult {
+                                        depth: max_reached_depth as u16, // Not possible this is bigger than u16 max
+                                        size,
+                                    },
+                                    vec![BasicError::InvalidJsonSchemaRefError(
+                                        InvalidJsonSchemaRefError::new(format!(
+                                            "the ref '{}' contains cycles",
+                                            uri
+                                        )),
+                                    )
+                                    .into()],
+                                );
                             }
 
                             visited.insert(resolved as *const Value);
@@ -65,7 +88,7 @@ pub(super) fn validate_max_depth_v0(platform_value: &Value, platform_version: &P
                             continue;
                         }
                     }
-                    
+
                     if v.is_map() || v.is_array() {
                         values_depth_queue.push((v, new_depth))
                     }
@@ -127,7 +150,7 @@ mod test {
               }
         )
         .into();
-        
+
         let result = validate_max_depth_v0(&schema, PlatformVersion::first());
 
         let err = result.errors.first().expect("expected an error");
@@ -164,11 +187,10 @@ mod test {
               }
         )
         .into();
-        let result = validate_max_depth_v0(&schema, PlatformVersion::first()).data.expect("expected data");
-        assert_eq!(result, MaxDepthValidationResult {
-            depth: 5,
-            size: 19,
-        });
+        let result = validate_max_depth_v0(&schema, PlatformVersion::first())
+            .data
+            .expect("expected data");
+        assert_eq!(result, MaxDepthValidationResult { depth: 5, size: 19 });
     }
 
     #[test]
@@ -278,14 +300,20 @@ mod test {
               }
         )
         .into();
-        let found_depth = validate_max_depth_v0(&schema, PlatformVersion::first()).data.expect("expected data").depth;
+        let found_depth = validate_max_depth_v0(&schema, PlatformVersion::first())
+            .data
+            .expect("expected data")
+            .depth;
         assert_eq!(found_depth, 3);
     }
 
     #[test]
     fn should_calculate_valid_depth_for_empty_json() {
         let schema: Value = json!({}).into();
-        let found_depth = validate_max_depth_v0(&schema, PlatformVersion::first()).data.expect("expected data").depth;
+        let found_depth = validate_max_depth_v0(&schema, PlatformVersion::first())
+            .data
+            .expect("expected data")
+            .depth;
         assert_eq!(found_depth, 1);
     }
 
@@ -304,10 +332,12 @@ mod test {
 
         })
         .into();
-        
-        let found_depth = validate_max_depth_v0(&schema, PlatformVersion::first()).data.expect("expected data").depth;
-        
+
+        let found_depth = validate_max_depth_v0(&schema, PlatformVersion::first())
+            .data
+            .expect("expected data")
+            .depth;
+
         assert_eq!(found_depth, 4);
     }
-    
 }

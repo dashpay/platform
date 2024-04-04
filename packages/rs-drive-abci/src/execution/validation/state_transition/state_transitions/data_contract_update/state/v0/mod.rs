@@ -56,6 +56,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
     fn transform_into_action_v0(
         &self,
         validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -70,7 +71,8 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let action = self.transform_into_action_v0(validation_mode, platform_version)?;
+        let action =
+            self.transform_into_action_v0(validation_mode, execution_context, platform_version)?;
 
         if !action.is_valid() {
             return Ok(action);
@@ -439,13 +441,19 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
     fn transform_into_action_v0(
         &self,
         validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let mut validation_operations = vec![];
+
         let result = DataContractUpdateTransitionAction::try_from_borrowed_transition(
             self,
             validation_mode.should_validate_contract_on_transform_into_action(),
+            &mut validation_operations,
             platform_version,
         );
+
+        execution_context.add_dpp_operations(validation_operations);
 
         // Return validation result if any consensus errors happened
         // during data contract validation

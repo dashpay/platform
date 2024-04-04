@@ -92,17 +92,18 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let mut validation_operations = vec![];
+
         // The transformation of the state transition into the state transition action will transform
         // The contract in serialized form into it's execution form
-        
-        let mut validation_operations = vec![];
-        
         let result = DataContractCreateTransitionAction::try_from_borrowed_transition(
             self,
             validation_mode.should_validate_contract_on_transform_into_action(),
             &mut validation_operations,
             platform_version,
         );
+
+        execution_context.add_dpp_operations(validation_operations);
 
         // Return validation result if any consensus errors happened
         // during data contract validation

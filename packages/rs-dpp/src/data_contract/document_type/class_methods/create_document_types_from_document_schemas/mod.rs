@@ -3,11 +3,11 @@ mod v0;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DocumentName;
+use crate::validation::operations::DPPValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
-use crate::validation::operations::ValidationOperation;
 
 impl DocumentType {
     /// Retrieve document types from a value array.
@@ -40,7 +40,7 @@ impl DocumentType {
         documents_keep_history_contract_default: bool,
         documents_mutable_contract_default: bool,
         validate: bool,
-        validation_operations: &mut Vec<ValidationOperation>,
+        validation_operations: &mut Vec<DPPValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
         match platform_version
