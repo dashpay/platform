@@ -3,15 +3,14 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **drive:** provide protocol version in epoch info query (#1778)
-* **platform:** improved state processing fees (#1805)
-* **drive:** versioning issues on epoch change (#1769)
-* **drive-abci:** better processing costs of state transitions (no schema processing improvements) (#1800)
-* **platform:** mitigate issues of asset lock based transitions (#1796)
-* **dpp:** validate document type name (#1798)
-* **platform:** various document validation improvements (#1795)
-* **platform:** use inline on versioned functions (#1793)
-* **platform:** max state transition size (#1792)
+There are multiple breaking changes that make previously created state invalid:
+* **drive:** addition key-value in epoch trees (#1778)
+* **platform:** processing costs were updated for some state transitions (#1805, #1800)
+* **drive:** now we count and persist a version proposal vote on the epoch change (#1769)
+* **drive:** protocol version for the first block of an epoch might be different (#1769)
+* **platform:** ST validation was changed, as well as some constants (#1796, #1795)
+* **dpp:** document type name must be 1 to 64 alphanumeric chars and "_", or "-" (#1798)
+* **platform:** max state transition is 20 kB (#1792)
 
 ### Features
 
