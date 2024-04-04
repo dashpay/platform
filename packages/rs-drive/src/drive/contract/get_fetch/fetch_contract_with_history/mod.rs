@@ -160,6 +160,7 @@ mod tests {
                     "niceDocument",
                     updated_document.clone(),
                     true,
+                    &mut vec![],
                     platform_version,
                 )
                 .expect("to be able to set document schema");

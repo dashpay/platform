@@ -118,32 +118,6 @@ mod tests {
     use dpp::state_transition::StateTransition;
     use tenderdash_abci::Application;
 
-    #[allow(dead_code)]
-    #[deprecated(note = "This function is marked as unused.")]
-    #[allow(deprecated)]
-    pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
-        let mut quorums = QuorumListExtendedInfo::new();
-
-        for i in 0..n {
-            let i_bytes = [i as u8; 32];
-
-            let hash = QuorumHash::from_byte_array(i_bytes);
-
-            let details = ExtendedQuorumDetails {
-                creation_height: i,
-                health_ratio: (i as f32) / (n as f32),
-                mined_block_hash: BlockHash::from_slice(&i_bytes).unwrap(),
-                num_valid_members: i,
-                quorum_index: Some(i),
-            };
-
-            if let Some(v) = quorums.insert(hash, details) {
-                panic!("duplicate record {:?}={:?}", hash, v)
-            }
-        }
-        quorums
-    }
-
     #[test]
     fn run_chain_nothing_happening() {
         let strategy = NetworkStrategy {

@@ -206,6 +206,7 @@ impl DataContractWasm {
                 document_schemas_map,
                 defs,
                 !skip_validation,
+                &mut vec![],
                 platform_version,
             )
             .with_js_error()
@@ -229,7 +230,13 @@ impl DataContractWasm {
         let platform_version = PlatformVersion::first();
 
         self.inner
-            .set_document_schema(name, schema_value, !skip_validation, platform_version)
+            .set_document_schema(
+                name,
+                schema_value,
+                !skip_validation,
+                &mut vec![],
+                platform_version,
+            )
             .with_js_error()
     }
 
@@ -289,7 +296,12 @@ impl DataContractWasm {
             .transpose()?;
 
         self.inner
-            .set_schema_defs(maybe_schema_defs, !skip_validation, platform_version)
+            .set_schema_defs(
+                maybe_schema_defs,
+                !skip_validation,
+                &mut vec![],
+                platform_version,
+            )
             .with_js_error()?;
 
         Ok(())
@@ -427,7 +439,7 @@ impl DataContractWasm {
     ) -> Result<Self, JsValue> {
         let platform_version = PlatformVersion::first();
 
-        DataContract::try_from_platform_versioned(value, validate, platform_version)
+        DataContract::try_from_platform_versioned(value, validate, &mut vec![], platform_version)
             .with_js_error()
             .map(Into::into)
     }

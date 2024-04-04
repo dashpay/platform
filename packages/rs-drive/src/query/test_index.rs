@@ -85,6 +85,7 @@ mod tests {
             false,
             false,
             true,
+            &mut vec![],
             platform_version,
         )
         .expect("expected to create a document type")
