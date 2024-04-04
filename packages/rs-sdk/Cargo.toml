@@ -1,6 +1,6 @@
 [package]
 name = "rs-sdk"
-version = "1.0.0-dev.9"
+version = "1.0.0-dev.10"
 edition = "2021"
 
 [dependencies]
